@@ -1,0 +1,15 @@
+[settings]
+os=Linux
+arch=x86_64
+compiler=gcc
+compiler.version=15
+compiler.libcxx=libstdc++11
+compiler.cppstd=26
+build_type=Release
+
+[conf]
+tools.build:cxxflags=["-O3", "-march=native", "-flto=auto", "-fvisibility=hidden", "-DNDEBUG"]
+tools.build:cflags=["-O3", "-march=native", "-flto=auto", "-fvisibility=hidden", "-DNDEBUG"]
+
+tools.build:sharedlinkflags=["-flto=auto", "-Wl,-O1", "-Wl,--as-needed"]
+tools.build:exelinkflags=["-flto=auto", "-Wl,-O1", "-Wl,--as-needed"]
