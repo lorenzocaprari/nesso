@@ -1,11 +1,16 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-BUILD_DIR="build/Release"
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
-if [ ! -f "$PROJECT_ROOT/$BUILD_DIR/compile_commands.json" ]; then
-    echo "Error: compile_commands.json not found in $PROJECT_ROOT/$BUILD_DIR"
+# Determine build directory: prefer Release, fall back to Debug
+BUILD_DIR=""
+if [ -f "$PROJECT_ROOT/build/Release/compile_commands.json" ]; then
+    BUILD_DIR="build/Release"
+elif [ -f "$PROJECT_ROOT/build/Debug/compile_commands.json" ]; then
+    BUILD_DIR="build/Debug"
+else
+    echo "Error: compile_commands.json not found in build/Release or build/Debug"
     echo "Make sure to build the project first to generate compile_commands.json"
     exit 1
 fi
