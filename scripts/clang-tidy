@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+BUILD_DIR="build/Release"
+PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+if [ ! -f "$PROJECT_ROOT/$BUILD_DIR/compile_commands.json" ]; then
+    echo "Error: compile_commands.json not found in $PROJECT_ROOT/$BUILD_DIR"
+    echo "Make sure to build the project first to generate compile_commands.json"
+    exit 1
+fi
+
+# Find C/C++ source files in src/
+SOURCE_FILES=$(find "$PROJECT_ROOT/src" -name "*.cpp" -o -name "*.c" -o -name "*.cc" -o -name "*.cxx")
+
+if [ -z "$SOURCE_FILES" ]; then
+    echo "No C/C++ source files found in src/"
+    exit 0
+fi
+
+echo "Running clang-tidy on source files..."
+cd "$PROJECT_ROOT"
+clang-tidy -p "$BUILD_DIR" $SOURCE_FILES
+
+echo "clang-tidy check completed."
