@@ -1,15 +1,24 @@
-name: C++26 Strict CI
+name: Pipeline
 
 on:
   push:
       branches: [ "main" ]
+      paths-ignore:
+        - '.devcontainer/**'
   pull_request:
       branches: [ "main" ]
+      paths-ignore:
+        - '.devcontainer/**'
   workflow_dispatch:
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
   build-gcc-26:
     runs-on: ubuntu-latest
+
+    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
 
     container:
       image: ghcr.io/${{ github.repository_owner }}/mach-build-env:latest
