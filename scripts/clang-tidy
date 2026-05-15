@@ -14,6 +14,9 @@ fi
 
 echo "🔍 Using build directory: $BUILD_DIR"
 
+# Clean compilation database: remove GCC module-specific flags that clang-tidy doesn't understand
+sed -i 's/ -fmodules-ts//g; s/ -fmodule-mapper=[^ ]*//g; s/ -fdeps-format=[^ ]*//g' "$BUILD_DIR/compile_commands.json"
+
 if command -v run-clang-tidy &> /dev/null; then
     echo "🚀 Running parallel analysis with run-clang-tidy..."
     run-clang-tidy -p "$BUILD_DIR" -j"$(nproc)" "src/.*"
