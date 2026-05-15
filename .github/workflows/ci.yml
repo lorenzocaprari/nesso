@@ -15,6 +15,51 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
+  lint:
+    runs-on: ubuntu-latest
+
+    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
+
+    container:
+      image: ghcr.io/${{ github.repository_owner }}/mach-build-env:latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Mark repository safe for Git
+        run: |
+            git config --global --add safe.directory "$(pwd)"
+
+      - name: Run Linter
+        run: |
+            bash scripts/lint
+
+  clang-tidy:
+    runs-on: ubuntu-latest
+
+    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
+
+    container:
+      image: ghcr.io/${{ github.repository_owner }}/mach-build-env:latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Install Dependencies (Conan)
+        run: |
+            conan profile detect --force
+            conan install . -pr:h ./conan/profiles/gcc-26 -pr:b default --build=missing
+
+      - name: Build
+        run: |
+            conan build .  -pr:h ./conan/profiles/gcc-26 -pr:b default --build=missing
+
+      - name: Run Clang-Tidy
+        run: |
+            bash scripts/clang-tidy
+
   build-gcc-26:
     runs-on: ubuntu-latest
 
@@ -35,3 +80,24 @@ jobs:
       - name: Build
         run: |
             conan build .  -pr:h ./conan/profiles/gcc-26 -pr:b default --build=missing
+
+  build-gcc-26-debug:
+    runs-on: ubuntu-latest
+
+    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
+
+    container:
+      image: ghcr.io/${{ github.repository_owner }}/mach-build-env:latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Install Dependencies (Conan)
+        run: |
+            conan profile detect --force
+            conan install . -pr:h ./conan/profiles/gcc-26-debug -pr:b default --build=missing
+
+      - name: Build
+        run: |
+            conan build .  -pr:h ./conan/profiles/gcc-26-debug -pr:b default --build=missing
