@@ -23,7 +23,7 @@ RUN update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-15 100 \
     && update-alternatives --install /usr/bin/clang-tidy clang-tidy /usr/bin/clang-tidy-21 100 \
     && update-alternatives --install /usr/bin/run-clang-tidy run-clang-tidy /usr/bin/run-clang-tidy-21 100
 
-# Install Conan 2
-RUN pip install conan --break-system-packages
+# Install Conan 2 and pre-commit
+RUN pip install conan pre-commit --break-system-packages
 
 LABEL org.opencontainers.image.source=https://github.com/lorenzocaprari/mach1
