@@ -3,16 +3,11 @@ FROM ubuntu:26.04
 # Avoid interactive prompts
 ENV DEBIAN_FRONTEND=noninteractive
 
-FROM ubuntu:26.04
-
-# Avoid interactive prompts
-ENV DEBIAN_FRONTEND=noninteractive
-
-# Install dependencies, GCC 15, and native Clang-Tidy 21 directly
+# Install dependencies, GCC 15, native Clang-Tidy 21, and lcov for CI coverage
 RUN apt-get update && apt-get install -y \
     build-essential \
     software-properties-common wget curl git jq ccache python3-pip \
-    cmake ninja-build\
+    cmake ninja-build lcov \
     && add-apt-repository ppa:ubuntu-toolchain-r/test -y \
     && apt-get update && apt-get install -y \
     gcc-15 g++-15 clang-tidy-21

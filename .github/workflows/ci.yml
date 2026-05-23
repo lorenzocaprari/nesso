@@ -128,3 +128,32 @@ jobs:
         run: |
             cd build/Release
             ctest -V
+
+  coverage:
+    runs-on: ubuntu-latest
+    needs: [build-gcc-26, build-gcc-26-debug]
+
+    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
+
+    container:
+      image: ghcr.io/${{ github.repository_owner }}/mach-build-env:latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Create Conan Default Profile
+        run: |
+            conan profile detect --force
+
+      - name: Run Coverage Script
+        run: |
+            chmod +x scripts/code-coverage
+            ./scripts/code-coverage conan/profiles/code-coverage
+
+      - name: Upload Coverage Report
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: build/coverage/report
+          if-no-files-found: warn
