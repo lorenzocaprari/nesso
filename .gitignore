@@ -1,0 +1,4 @@
+build/
+coverage-report/
+coverage.info
+coverage.cleaned
