@@ -101,3 +101,30 @@ jobs:
       - name: Build
         run: |
             conan build .  -pr:h ./conan/profiles/gcc-26-debug -pr:b default --build=missing
+
+  run-unit-tests-release:
+    runs-on: ubuntu-latest
+    needs: [build-gcc-26, build-gcc-26-debug]
+
+    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
+
+    container:
+      image: ghcr.io/${{ github.repository_owner }}/mach-build-env:latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Install Dependencies (Conan)
+        run: |
+            conan profile detect --force
+            conan install . -pr:h ./conan/profiles/gcc-26 -pr:b default --build=missing
+
+      - name: Build (for tests)
+        run: |
+            conan build .  -pr:h ./conan/profiles/gcc-26 -pr:b default --build=missing
+
+      - name: Run Unit Tests
+        run: |
+            cd build/Release
+            ctest -V
