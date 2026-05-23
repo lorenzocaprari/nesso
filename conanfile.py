@@ -15,6 +15,7 @@ class Mach1Conan(ConanFile):
 
     def requirements(self):
         self.requires("cli11/2.6.2")
+        self.requires("catch2/3.14.0")
 
     def generate(self):
         tc = CMakeToolchain(self)
@@ -28,6 +29,7 @@ class Mach1Conan(ConanFile):
         cmake = CMake(self)
         cmake.configure()
         cmake.build()
+        cmake.test()
 
     def package(self):
         cmake = CMake(self)
