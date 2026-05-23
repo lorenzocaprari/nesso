@@ -1,0 +1,17 @@
+[settings]
+os=Linux
+arch=x86_64
+compiler=gcc
+compiler.version=15
+compiler.libcxx=libstdc++11
+compiler.cppstd=26
+build_type=Debug
+
+[conf]
+# Compiler flags suitable for coverage builds
+tools.build:cxxflags=["-g", "-O0", "-fno-omit-frame-pointer", "-Wall", "-Wextra", "-Wpedantic", "-Wshadow", "-Wconversion", "-Wsign-conversion", "-D_GLIBCXX_DEBUG", "-D_GLIBCXX_DEBUG_PEDANTIC", "--coverage"]
+
+tools.build:cflags=["-g", "-O0", "-fno-omit-frame-pointer", "-Wall", "-Wextra", "--coverage"]
+
+tools.build:sharedlinkflags=["--coverage"]
+tools.build:exelinkflags=["--coverage"]
