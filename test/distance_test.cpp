@@ -1,0 +1,111 @@
+#include <array>
+#include <catch2/catch_all.hpp>
+#include <mach_core/core_types.hpp>
+#include <mach_core/distance.hpp>
+
+using namespace mach_core;
+using mach_core::math::CosineSimilarity;
+
+TEMPLATE_TEST_CASE("CosineSimilarity handles well-formed vectors", "[CosineSimilarity][core][Unit]", float, double)
+{
+    GIVEN("Two identical vectors")
+    {
+        std::array<TestType, 3> a = {1.0, 2.0, 3.0};
+        std::array<TestType, 3> b = {1.0, 2.0, 3.0};
+
+        WHEN("computing the cosine similarity")
+        {
+            auto result = CosineSimilarity::calculate<TestType>(a, b);
+
+            THEN("the operation succeeds and reports maximal similarity")
+            {
+                REQUIRE(result.has_value());
+                REQUIRE(result.value() == Catch::Approx(1.0));
+            }
+        }
+    }
+
+    GIVEN("Two orthogonal vectors")
+    {
+        std::array<TestType, 2> a = {1.0, 0.0};
+        std::array<TestType, 2> b = {0.0, 1.0};
+
+        WHEN("computing the cosine similarity")
+        {
+            auto result = CosineSimilarity::calculate<TestType>(a, b);
+
+            THEN("the operation succeeds and reports zero similarity")
+            {
+                REQUIRE(result.has_value());
+                REQUIRE(result.value() == Catch::Approx(0.0));
+            }
+        }
+    }
+
+    GIVEN("Two diametrically opposed vectors")
+    {
+        std::array<TestType, 3> a = {1.0, 2.0, 3.0};
+        std::array<TestType, 3> b = {-1.0, -2.0, -3.0};
+
+        WHEN("computing the cosine similarity")
+        {
+            auto result = CosineSimilarity::calculate<TestType>(a, b);
+
+            THEN("the operation succeeds and reports minimal similarity")
+            {
+                REQUIRE(result.has_value());
+                REQUIRE(result.value() == Catch::Approx(-1.0));
+            }
+        }
+    }
+
+    GIVEN("A zero vector paired with a non-zero vector")
+    {
+        std::array<TestType, 3> a = {0.0, 0.0, 0.0};
+        std::array<TestType, 3> b = {1.0, 2.0, 3.0};
+
+        WHEN("computing the cosine similarity")
+        {
+            auto result = CosineSimilarity::calculate<TestType>(a, b);
+
+            THEN("the division-by-zero guard reports zero similarity instead of failing")
+            {
+                REQUIRE(result.has_value());
+                REQUIRE(result.value() == Catch::Approx(0.0));
+            }
+        }
+    }
+}
+
+TEMPLATE_TEST_CASE("CosineSimilarity rejects invalid inputs", "[CosineSimilarity][core][Unit]", float, double)
+{
+    GIVEN("Two vectors with mismatched dimensionality")
+    {
+        std::array<TestType, 3> a = {1.0, 2.0, 3.0};
+        std::array<TestType, 2> b = {1.0, 2.0};
+
+        WHEN("computing the cosine similarity")
+        {
+            auto result = CosineSimilarity::calculate<TestType>(a, b);
+
+            THEN("the operation fails with MismatchedDimensions")
+            {
+                REQUIRE_FALSE(result.has_value());
+                REQUIRE(result.error() == EngineError::MismatchedDimensions);
+            }
+        }
+    }
+
+    GIVEN("Two empty vectors")
+    {
+        std::span<const TestType> a{};
+        std::span<const TestType> b{};
+
+        WHEN("computing the cosine similarity")
+        {
+            auto result = CosineSimilarity::calculate<TestType>(a, b);
+
+            THEN("the operation fails rather than dividing by zero") { REQUIRE_FALSE(result.has_value()); }
+        }
+    }
+}
