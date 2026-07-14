@@ -6,3 +6,9 @@ target_link_libraries(storage_engine_test PRIVATE mach_core
                                                   Catch2::Catch2WithMain)
 target_include_directories(storage_engine_test
                            PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/include")
+
+add_executable(distance_test distance_test.cpp)
+add_test(NAME distance_test COMMAND distance_test)
+target_link_libraries(distance_test PRIVATE mach_core Catch2::Catch2WithMain)
+target_include_directories(distance_test
+                           PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/include")
