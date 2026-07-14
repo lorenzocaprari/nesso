@@ -23,12 +23,13 @@ int main(int argc, char *argv[]) noexcept
         std::string dbPath = "vectors.mach1";
         app.add_option("-p,--path", dbPath, "Path to the vector database storage file");
 
+        uint64_t dimensions = 128;
+        app.add_option("-d,--dims", dimensions, "Dimensionality of the vector space")->default_val(128);
+
         // --------------------------------------------------------------------
         // Subcommand: INIT
         // --------------------------------------------------------------------
-        uint64_t dimensions = 128;
         auto *initCmd = app.add_subcommand("init", "Initialize an empty database index container");
-        initCmd->add_option("-d,--dims", dimensions, "Dimensionality of the vector space")->default_val(128);
 
         // --------------------------------------------------------------------
         // Subcommand: INDEX
@@ -66,10 +67,9 @@ int main(int argc, char *argv[]) noexcept
         }
         else if (indexCmd->parsed())
         {
-            std::println("Opening database container at '{}' for ingestion...", dbPath);
+            std::println("Opening database container at '{}' for ingestion (dimensions: {})...", dbPath, dimensions);
 
-            // Match the 256 dimensions we initialized the database with!
-            auto result = engine.createOrOpen(dbPath, 256);
+            auto result = engine.createOrOpen(dbPath, dimensions);
             if (!result)
             {
                 // Now we cast the EngineError enum to an integer so we can
