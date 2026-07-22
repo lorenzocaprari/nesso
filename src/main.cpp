@@ -4,11 +4,15 @@
 
 #include <CLI/CLI.hpp>
 #include <mach_core/storage_engine.hpp>
+#include <mach_core/vector_search.hpp>
 
 #include <exception>
+#include <filesystem>
 #include <format>
+#include <fstream>
 #include <iostream>
 #include <print>
+#include <vector>
 
 int main(int argc, char *argv[]) noexcept
 {
@@ -40,6 +44,17 @@ int main(int argc, char *argv[]) noexcept
                              "Path to the raw floating-point binary file")
             ->required()
             ->check(CLI::ExistingFile); // Validates file existence out-of-the-box
+
+        // --------------------------------------------------------------------
+        // Subcommand: SEARCH
+        // --------------------------------------------------------------------
+        std::string queryFile;
+        size_t topK = 10;
+        auto *searchCmd = app.add_subcommand("search", "Return the nearest vectors by cosine similarity");
+        searchCmd->add_option("-q,--query-file", queryFile, "Path to one raw floating-point query vector")
+            ->required()
+            ->check(CLI::ExistingFile);
+        searchCmd->add_option("-k,--top-k", topK, "Maximum number of nearest vectors to return")->default_val(10);
 
         // Parse command line arguments
         CLI11_PARSE(app, argc, argv);
@@ -113,6 +128,53 @@ int main(int argc, char *argv[]) noexcept
 
             std::println("Ingestion complete. Added {} new vectors.", ingestedCount);
             std::println("New total vector count on disk: {}", engine.getVectorCount());
+        }
+        else if (searchCmd->parsed())
+        {
+            if (!std::filesystem::exists(dbPath))
+            {
+                std::println(std::cerr, "Error: Database container '{}' does not exist.", dbPath);
+                return 1;
+            }
+
+            auto openResult = engine.createOrOpen(dbPath, dimensions);
+            if (!openResult)
+            {
+                std::println(std::cerr, "Error: Could not open database target file. Code: {}",
+                             static_cast<int>(openResult.error()));
+                return 1;
+            }
+
+            const auto expectedQuerySize = engine.getDimensions() * sizeof(float);
+            if (std::filesystem::file_size(queryFile) != expectedQuerySize)
+            {
+                std::println(std::cerr, "Error: Query file must contain exactly one {}-dimension float vector.",
+                             engine.getDimensions());
+                return 1;
+            }
+
+            std::vector<float> query(engine.getDimensions());
+            std::ifstream infile(queryFile, std::ios::binary);
+            // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+            auto *queryData = reinterpret_cast<char *>(query.data());
+            infile.read(queryData, static_cast<std::streamsize>(expectedQuerySize));
+            if (!infile)
+            {
+                std::println(std::cerr, "Error: Failed to read query vector.");
+                return 1;
+            }
+
+            auto results = mach_core::searchTopKCosine<float>(engine, query, topK);
+            if (!results)
+            {
+                std::println(std::cerr, "Error: Search failed. Code: {}", static_cast<int>(results.error()));
+                return 1;
+            }
+
+            for (const auto &result : *results)
+            {
+                std::println("index: {}, score: {}", result.index, result.score);
+            }
         }
     }
     catch (const std::format_error &e)
