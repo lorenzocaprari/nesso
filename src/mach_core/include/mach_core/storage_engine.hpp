@@ -33,6 +33,7 @@ template <SupportedScalar T> class StorageEngine
     [[nodiscard]] std::expected<void, EngineError> appendVector(std::span<const T> vector) noexcept;
     [[nodiscard]] std::expected<std::span<const T>, EngineError> getVector(uint64_t index) const noexcept;
 
+    [[nodiscard]] bool isOpen() const noexcept { return m_header != nullptr; }
     [[nodiscard]] uint64_t getVectorCount() const noexcept { return m_header != nullptr ? m_header->vector_count : 0; }
     [[nodiscard]] uint64_t getDimensions() const noexcept { return m_header != nullptr ? m_header->dimensions : 0; }
 

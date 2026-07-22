@@ -8,10 +8,9 @@ compiler.cppstd=26
 build_type=Debug
 
 [conf]
-# Compiler flags suitable for coverage builds
+tools.info.package_id:confs=["tools.build:cxxflags", "tools.build:cflags", "tools.build:exelinkflags", "tools.build:sharedlinkflags"]
+
 tools.build:cxxflags=["-g", "-O0", "-fno-omit-frame-pointer", "-Wall", "-Wextra", "-Wpedantic", "-Wshadow", "-Wconversion", "-Wsign-conversion", "-D_GLIBCXX_DEBUG", "-D_GLIBCXX_DEBUG_PEDANTIC", "--coverage"]
-
 tools.build:cflags=["-g", "-O0", "-fno-omit-frame-pointer", "-Wall", "-Wextra", "--coverage"]
-
 tools.build:sharedlinkflags=["--coverage"]
 tools.build:exelinkflags=["--coverage"]
