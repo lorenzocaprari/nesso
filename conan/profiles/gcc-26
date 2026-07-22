@@ -8,8 +8,8 @@ compiler.cppstd=26
 build_type=Release
 
 [conf]
-tools.build:cxxflags=["-O3", "-march=native", "-flto=auto", "-fvisibility=hidden", "-DNDEBUG"]
-tools.build:cflags=["-O3", "-march=native", "-flto=auto", "-fvisibility=hidden", "-DNDEBUG"]
-
-tools.build:sharedlinkflags=["-flto=auto", "-Wl,-O1", "-Wl,--as-needed"]
-tools.build:exelinkflags=["-flto=auto", "-Wl,-O1", "-Wl,--as-needed"]
+# Consumer-only (applied in conanfile generate → CMakeToolchain; deps stay clean)
+user.mach1:cxxflags=["-O3", "-march=native", "-flto=auto", "-fvisibility=hidden", "-DNDEBUG"]
+user.mach1:cflags=["-O3", "-march=native", "-flto=auto", "-fvisibility=hidden", "-DNDEBUG"]
+user.mach1:sharedlinkflags=["-flto=auto", "-Wl,-O1", "-Wl,--as-needed"]
+user.mach1:exelinkflags=["-flto=auto", "-Wl,-O1", "-Wl,--as-needed"]

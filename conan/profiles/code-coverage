@@ -8,9 +8,8 @@ compiler.cppstd=26
 build_type=Debug
 
 [conf]
-tools.info.package_id:confs=["tools.build:cxxflags", "tools.build:cflags", "tools.build:exelinkflags", "tools.build:sharedlinkflags"]
-
-tools.build:cxxflags=["-g", "-O0", "-fno-omit-frame-pointer", "-Wall", "-Wextra", "-Wpedantic", "-Wshadow", "-Wconversion", "-Wsign-conversion", "-D_GLIBCXX_DEBUG", "-D_GLIBCXX_DEBUG_PEDANTIC", "--coverage"]
-tools.build:cflags=["-g", "-O0", "-fno-omit-frame-pointer", "-Wall", "-Wextra", "--coverage"]
-tools.build:sharedlinkflags=["--coverage"]
-tools.build:exelinkflags=["--coverage"]
+# Consumer-only (deps reuse the same Debug package ID as gcc-26-debug)
+user.mach1:cxxflags=["-g", "-O0", "-fno-omit-frame-pointer", "-Wall", "-Wextra", "-Wpedantic", "-Wshadow", "-Wconversion", "-Wsign-conversion", "-D_GLIBCXX_DEBUG", "-D_GLIBCXX_DEBUG_PEDANTIC", "--coverage"]
+user.mach1:cflags=["-g", "-O0", "-fno-omit-frame-pointer", "-Wall", "-Wextra", "--coverage"]
+user.mach1:sharedlinkflags=["--coverage"]
+user.mach1:exelinkflags=["--coverage"]
