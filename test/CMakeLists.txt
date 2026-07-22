@@ -1,4 +1,16 @@
 find_package(Catch2 CONFIG REQUIRED)
+find_package(nlohmann_json CONFIG REQUIRED)
+find_package(onnxruntime CONFIG REQUIRED)
+
+add_executable(dependency_link_test dependency_link_test.cpp)
+add_test(NAME dependency_link_test COMMAND dependency_link_test)
+target_link_libraries(
+  dependency_link_test
+  PRIVATE Catch2::Catch2WithMain nlohmann_json::nlohmann_json
+          onnxruntime::onnxruntime)
+# Linkage smoke test only — keep out of the coverage gate.
+target_compile_options(dependency_link_test PRIVATE -fno-profile-arcs
+                                                    -fno-test-coverage)
 
 add_executable(storage_engine_test storage_engine_test.cpp)
 add_test(NAME storage_engine_test COMMAND storage_engine_test)
