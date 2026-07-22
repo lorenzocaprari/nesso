@@ -1,23 +1,13 @@
 name: Build and Push Docker Image
 
+# Manual rebuild of mach-build-env:latest.
+# Automatic rebuilds on Dockerfile / conanfile / profiles changes run in Pipeline
+# (ci.yml) before dependent jobs, so CI never races an stale image.
 on:
-  push:
-    paths:
-      - '.devcontainer/Dockerfile'
-      - 'conanfile.py'
-      - 'conan/profiles/**'
-    branches: [ "main" ]
-  pull_request:
-    paths:
-      - '.devcontainer/Dockerfile'
-      - 'conanfile.py'
-      - 'conan/profiles/**'
-    branches: [ "main" ]
   workflow_dispatch:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository }}-build-env
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
@@ -26,7 +16,7 @@ jobs:
     timeout-minutes: 360
     permissions:
       contents: read
-      packages: write # Critical permission to upload to GHCR
+      packages: write
 
     steps:
       - name: Checkout repository
@@ -50,10 +40,24 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Resolve image tags
+        id: tags
+        run: |
+          set -euo pipefail
+          owner_lc="$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')"
+          reg="${{ env.REGISTRY }}/${owner_lc}/mach-build-env"
+          sha='${{ github.sha }}'
+          {
+            echo "tags<<EOF"
+            echo "${reg}:latest"
+            echo "${reg}:sha-${sha}"
+            echo "EOF"
+          } >> "${GITHUB_OUTPUT}"
+
       - name: Build and push Docker image
         uses: docker/build-push-action@v5
         with:
           context: .
           file: .devcontainer/Dockerfile
           push: true
-          tags: ${{ env.REGISTRY }}/${{ github.repository_owner }}/mach-build-env:latest
+          tags: ${{ steps.tags.outputs.tags }}
