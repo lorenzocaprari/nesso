@@ -8,7 +8,6 @@ compiler.cppstd=26
 build_type=Release
 
 [conf]
-# Consumer-only (applied in conanfile generate → CMakeToolchain; deps stay clean)
 user.mach1:cxxflags=["-O3", "-march=native", "-flto=auto", "-fvisibility=hidden", "-DNDEBUG"]
 user.mach1:cflags=["-O3", "-march=native", "-flto=auto", "-fvisibility=hidden", "-DNDEBUG"]
 user.mach1:sharedlinkflags=["-flto=auto", "-Wl,-O1", "-Wl,--as-needed"]

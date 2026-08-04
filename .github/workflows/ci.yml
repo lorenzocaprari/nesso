@@ -22,21 +22,19 @@ jobs:
     outputs:
       build_env: ${{ steps.filter.outputs.build_env }}
     steps:
-      - name: Detect build-env inputs
+      - name: Detect toolchain image inputs
         uses: dorny/paths-filter@v3
         id: filter
         with:
           filters: |
             build_env:
               - '.devcontainer/Dockerfile'
-              - 'conanfile.py'
-              - 'conan/profiles/**'
 
   build-env:
     needs: changes
     if: needs.changes.outputs.build_env == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 360
+    timeout-minutes: 30
     permissions:
       contents: read
       packages: write
@@ -45,17 +43,6 @@ jobs:
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
-
-      - name: Free disk space
-        uses: jlumbroso/free-disk-space@v1.3.1
-        with:
-          tool-cache: true
-          android: true
-          dotnet: true
-          haskell: true
-          large-packages: true
-          docker-images: true
-          swap-storage: true
 
       - name: Log into ${{ env.REGISTRY }}
         uses: docker/login-action@v3
@@ -121,6 +108,76 @@ jobs:
             echo "image=${{ env.REGISTRY }}/${owner_lc}/mach-build-env:latest" >> "${GITHUB_OUTPUT}"
           fi
 
+  conan-warm:
+    needs: resolve-image
+    if: needs.resolve-image.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    container:
+      image: ${{ needs.resolve-image.outputs.image }}
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+    env:
+      CONAN_HOME: ${{ github.workspace }}/.conan2
+      CCACHE_DIR: ${{ github.workspace }}/.ccache
+      CCACHE_COMPRESS: "1"
+      CCACHE_MAXSIZE: 2G
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Restore Conan cache
+        id: cache-conan
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ env.CONAN_HOME }}
+          key: conan-${{ hashFiles('conanfile.py', 'conan/profiles/**') }}
+          restore-keys: |
+            conan-
+
+      - name: Restore ccache
+        id: cache-ccache
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ env.CCACHE_DIR }}
+          key: ccache-warm-${{ hashFiles('conanfile.py', 'conan/profiles/**') }}
+          restore-keys: |
+            ccache-warm-
+            ccache-
+
+      - name: Configure Conan and ccache
+        run: |
+          mkdir -p "${CONAN_HOME}" "${CCACHE_DIR}"
+          conf="${CONAN_HOME}/global.conf"
+          if [ -f "${conf}" ]; then
+            sed -i '/tools\.cmake\.cmaketoolchain:cache_variables/d' "${conf}"
+          fi
+          conan profile detect --force
+          grep -q 'CMAKE_CXX_COMPILER_LAUNCHER' "${conf}" || printf '%s\n' \
+            'tools.cmake.cmaketoolchain:extra_variables={"CMAKE_C_COMPILER_LAUNCHER": "ccache", "CMAKE_CXX_COMPILER_LAUNCHER": "ccache"}' \
+            >> "${conf}"
+
+      - name: Warm Conan packages
+        run: |
+          conan install . -pr:h ./conan/profiles/gcc-26 -pr:b default --build=missing
+          conan install . -pr:h ./conan/profiles/gcc-26-debug -pr:b default --build=missing
+          conan cache clean "*" --build --source --download --temp
+
+      - name: Save Conan cache
+        if: steps.cache-conan.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ env.CONAN_HOME }}
+          key: ${{ steps.cache-conan.outputs.cache-primary-key }}
+
+      - name: Save ccache
+        if: steps.cache-ccache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ env.CCACHE_DIR }}
+          key: ${{ steps.cache-ccache.outputs.cache-primary-key }}
+
   # Explicit if: default success() is false when build-env was skipped upstream,
   # which would skip every consumer even after resolve-image succeeds.
   lint:
@@ -143,22 +200,58 @@ jobs:
         run: bash scripts/lint
 
   clang-tidy:
-    needs: resolve-image
-    if: needs.resolve-image.result == 'success'
+    needs: [resolve-image, conan-warm]
+    if: >-
+      needs.resolve-image.result == 'success' &&
+      needs.conan-warm.result == 'success' &&
+      (github.event_name == 'workflow_dispatch' ||
+       (github.event_name == 'push' && github.ref == 'refs/heads/main'))
     runs-on: ubuntu-latest
     container:
       image: ${{ needs.resolve-image.outputs.image }}
       credentials:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
+    env:
+      CONAN_HOME: ${{ github.workspace }}/.conan2
+      CCACHE_DIR: ${{ github.workspace }}/.ccache
+      CCACHE_COMPRESS: "1"
+      CCACHE_MAXSIZE: 2G
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Install Dependencies (Conan)
+      - name: Cache Conan packages
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.CONAN_HOME }}
+          key: conan-${{ hashFiles('conanfile.py', 'conan/profiles/**') }}
+          restore-keys: |
+            conan-
+
+      - name: Cache ccache
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.CCACHE_DIR }}
+          key: ccache-tidy-${{ hashFiles('conanfile.py', 'conan/profiles/**', 'src/**', 'CMakeLists.txt') }}
+          restore-keys: |
+            ccache-tidy-
+            ccache-
+
+      - name: Configure Conan and ccache
         run: |
+          mkdir -p "${CONAN_HOME}" "${CCACHE_DIR}"
+          conf="${CONAN_HOME}/global.conf"
+          if [ -f "${conf}" ]; then
+            sed -i '/tools\.cmake\.cmaketoolchain:cache_variables/d' "${conf}"
+          fi
           conan profile detect --force
-          conan install . -pr:h ./conan/profiles/gcc-26 -pr:b default --build=missing
+          grep -q 'CMAKE_CXX_COMPILER_LAUNCHER' "${conf}" || printf '%s\n' \
+            'tools.cmake.cmaketoolchain:extra_variables={"CMAKE_C_COMPILER_LAUNCHER": "ccache", "CMAKE_CXX_COMPILER_LAUNCHER": "ccache"}' \
+            >> "${conf}"
+
+      - name: Install Dependencies (Conan)
+        run: conan install . -pr:h ./conan/profiles/gcc-26 -pr:b default --build=missing
 
       - name: Build
         run: conan build . -pr:h ./conan/profiles/gcc-26 -pr:b default --build=missing
@@ -166,70 +259,63 @@ jobs:
       - name: Run Clang-Tidy
         run: bash scripts/clang-tidy
 
+      - name: ccache stats
+        if: always()
+        run: ccache -s
+
   build-gcc-26:
-    needs: resolve-image
-    if: needs.resolve-image.result == 'success'
-    runs-on: ubuntu-latest
-    container:
-      image: ${{ needs.resolve-image.outputs.image }}
-      credentials:
-        username: ${{ github.actor }}
-        password: ${{ secrets.GITHUB_TOKEN }}
-    steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
-
-      - name: Install Dependencies (Conan)
-        run: |
-          conan profile detect --force
-          conan install . -pr:h ./conan/profiles/gcc-26 -pr:b default --build=missing
-
-      - name: Build
-        run: conan build . -pr:h ./conan/profiles/gcc-26 -pr:b default --build=missing
-
-  build-gcc-26-debug:
-    needs: resolve-image
-    if: needs.resolve-image.result == 'success'
-    runs-on: ubuntu-latest
-    container:
-      image: ${{ needs.resolve-image.outputs.image }}
-      credentials:
-        username: ${{ github.actor }}
-        password: ${{ secrets.GITHUB_TOKEN }}
-    steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
-
-      - name: Install Dependencies (Conan)
-        run: |
-          conan profile detect --force
-          conan install . -pr:h ./conan/profiles/gcc-26-debug -pr:b default --build=missing
-
-      - name: Build
-        run: conan build . -pr:h ./conan/profiles/gcc-26-debug -pr:b default --build=missing
-
-  run-unit-tests-release:
-    needs: [resolve-image, build-gcc-26, build-gcc-26-debug]
+    needs: [resolve-image, conan-warm]
     if: >-
       needs.resolve-image.result == 'success' &&
-      needs.build-gcc-26.result == 'success' &&
-      needs.build-gcc-26-debug.result == 'success'
+      needs.conan-warm.result == 'success'
     runs-on: ubuntu-latest
     container:
       image: ${{ needs.resolve-image.outputs.image }}
       credentials:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
+    env:
+      CONAN_HOME: ${{ github.workspace }}/.conan2
+      CCACHE_DIR: ${{ github.workspace }}/.ccache
+      CCACHE_COMPRESS: "1"
+      CCACHE_MAXSIZE: 2G
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Install Dependencies (Conan)
-        run: |
-          conan profile detect --force
-          conan install . -pr:h ./conan/profiles/gcc-26 -pr:b default --build=missing
+      - name: Cache Conan packages
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.CONAN_HOME }}
+          key: conan-${{ hashFiles('conanfile.py', 'conan/profiles/**') }}
+          restore-keys: |
+            conan-
 
-      - name: Build (for tests)
+      - name: Cache ccache
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.CCACHE_DIR }}
+          key: ccache-release-${{ hashFiles('conanfile.py', 'conan/profiles/**', 'src/**', 'CMakeLists.txt') }}
+          restore-keys: |
+            ccache-release-
+            ccache-
+
+      - name: Configure Conan and ccache
+        run: |
+          mkdir -p "${CONAN_HOME}" "${CCACHE_DIR}"
+          conf="${CONAN_HOME}/global.conf"
+          if [ -f "${conf}" ]; then
+            sed -i '/tools\.cmake\.cmaketoolchain:cache_variables/d' "${conf}"
+          fi
+          conan profile detect --force
+          grep -q 'CMAKE_CXX_COMPILER_LAUNCHER' "${conf}" || printf '%s\n' \
+            'tools.cmake.cmaketoolchain:extra_variables={"CMAKE_C_COMPILER_LAUNCHER": "ccache", "CMAKE_CXX_COMPILER_LAUNCHER": "ccache"}' \
+            >> "${conf}"
+
+      - name: Install Dependencies (Conan)
+        run: conan install . -pr:h ./conan/profiles/gcc-26 -pr:b default --build=missing
+
+      - name: Build
         run: conan build . -pr:h ./conan/profiles/gcc-26 -pr:b default --build=missing
 
       - name: Run Unit Tests
@@ -237,29 +323,130 @@ jobs:
           cd build/Release
           ctest -V
 
-  coverage:
-    needs: [resolve-image, build-gcc-26, build-gcc-26-debug]
+      - name: ccache stats
+        if: always()
+        run: ccache -s
+
+  build-gcc-26-debug:
+    needs: [resolve-image, conan-warm]
     if: >-
       needs.resolve-image.result == 'success' &&
-      needs.build-gcc-26.result == 'success' &&
-      needs.build-gcc-26-debug.result == 'success'
+      needs.conan-warm.result == 'success'
     runs-on: ubuntu-latest
     container:
       image: ${{ needs.resolve-image.outputs.image }}
       credentials:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
+    env:
+      CONAN_HOME: ${{ github.workspace }}/.conan2
+      CCACHE_DIR: ${{ github.workspace }}/.ccache
+      CCACHE_COMPRESS: "1"
+      CCACHE_MAXSIZE: 2G
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Create Conan Default Profile
-        run: conan profile detect --force
+      - name: Cache Conan packages
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.CONAN_HOME }}
+          key: conan-${{ hashFiles('conanfile.py', 'conan/profiles/**') }}
+          restore-keys: |
+            conan-
+
+      - name: Cache ccache
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.CCACHE_DIR }}
+          key: ccache-debug-${{ hashFiles('conanfile.py', 'conan/profiles/**', 'src/**', 'CMakeLists.txt') }}
+          restore-keys: |
+            ccache-debug-
+            ccache-
+
+      - name: Configure Conan and ccache
+        run: |
+          mkdir -p "${CONAN_HOME}" "${CCACHE_DIR}"
+          conf="${CONAN_HOME}/global.conf"
+          if [ -f "${conf}" ]; then
+            sed -i '/tools\.cmake\.cmaketoolchain:cache_variables/d' "${conf}"
+          fi
+          conan profile detect --force
+          grep -q 'CMAKE_CXX_COMPILER_LAUNCHER' "${conf}" || printf '%s\n' \
+            'tools.cmake.cmaketoolchain:extra_variables={"CMAKE_C_COMPILER_LAUNCHER": "ccache", "CMAKE_CXX_COMPILER_LAUNCHER": "ccache"}' \
+            >> "${conf}"
+
+      - name: Install Dependencies (Conan)
+        run: conan install . -pr:h ./conan/profiles/gcc-26-debug -pr:b default --build=missing
+
+      - name: Build
+        run: conan build . -pr:h ./conan/profiles/gcc-26-debug -pr:b default --build=missing
+
+      - name: ccache stats
+        if: always()
+        run: ccache -s
+
+  coverage:
+    needs: [resolve-image, conan-warm, build-gcc-26, build-gcc-26-debug]
+    if: >-
+      needs.resolve-image.result == 'success' &&
+      needs.conan-warm.result == 'success' &&
+      needs.build-gcc-26.result == 'success' &&
+      needs.build-gcc-26-debug.result == 'success' &&
+      (github.event_name == 'workflow_dispatch' ||
+       (github.event_name == 'push' && github.ref == 'refs/heads/main'))
+    runs-on: ubuntu-latest
+    container:
+      image: ${{ needs.resolve-image.outputs.image }}
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+    env:
+      CONAN_HOME: ${{ github.workspace }}/.conan2
+      CCACHE_DIR: ${{ github.workspace }}/.ccache
+      CCACHE_COMPRESS: "1"
+      CCACHE_MAXSIZE: 2G
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Cache Conan packages
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.CONAN_HOME }}
+          key: conan-${{ hashFiles('conanfile.py', 'conan/profiles/**') }}
+          restore-keys: |
+            conan-
+
+      - name: Cache ccache
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.CCACHE_DIR }}
+          key: ccache-coverage-${{ hashFiles('conanfile.py', 'conan/profiles/**', 'src/**', 'CMakeLists.txt') }}
+          restore-keys: |
+            ccache-coverage-
+            ccache-
+
+      - name: Configure Conan and ccache
+        run: |
+          mkdir -p "${CONAN_HOME}" "${CCACHE_DIR}"
+          conf="${CONAN_HOME}/global.conf"
+          if [ -f "${conf}" ]; then
+            sed -i '/tools\.cmake\.cmaketoolchain:cache_variables/d' "${conf}"
+          fi
+          conan profile detect --force
+          grep -q 'CMAKE_CXX_COMPILER_LAUNCHER' "${conf}" || printf '%s\n' \
+            'tools.cmake.cmaketoolchain:extra_variables={"CMAKE_C_COMPILER_LAUNCHER": "ccache", "CMAKE_CXX_COMPILER_LAUNCHER": "ccache"}' \
+            >> "${conf}"
 
       - name: Run Coverage Script
         run: |
           chmod +x scripts/code-coverage
           ./scripts/code-coverage conan/profiles/code-coverage
+
+      - name: ccache stats
+        if: always()
+        run: ccache -s
 
       - name: Upload Coverage Report
         uses: actions/upload-artifact@v4
