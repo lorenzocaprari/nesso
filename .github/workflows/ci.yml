@@ -1,52 +1,73 @@
 name: Pipeline
 
 on:
-  push:
-    branches: ["main"]
   pull_request:
     branches: ["main"]
   workflow_dispatch:
+    inputs:
+      force_image_rebuild:
+        description: Force rebuild of mach-build-env even if inputs are unchanged
+        type: boolean
+        default: false
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
   REGISTRY: ghcr.io
+  CONAN_HOME: /opt/conan2
 
 permissions:
   contents: read
   packages: read
-  pull-requests: read
 
 jobs:
-  changes:
-    runs-on: ubuntu-latest
-    outputs:
-      build_env: ${{ steps.filter.outputs.build_env }}
-    steps:
-      - name: Detect build-env inputs
-        uses: dorny/paths-filter@v3
-        id: filter
-        with:
-          filters: |
-            build_env:
-              - '.devcontainer/Dockerfile'
-              - 'conanfile.py'
-              - 'conan/profiles/**'
-
-  build-env:
-    needs: changes
-    if: needs.changes.outputs.build_env == 'true'
+  prepare-image:
     runs-on: ubuntu-latest
     timeout-minutes: 360
     permissions:
       contents: read
       packages: write
     outputs:
-      image: ${{ steps.tags.outputs.image }}
+      image: ${{ steps.select.outputs.image }}
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
+      - name: Resolve image reference
+        id: select
+        run: |
+          set -euo pipefail
+          owner_lc="$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')"
+          reg="${{ env.REGISTRY }}/${owner_lc}/mach-build-env"
+          deps_hash="$(sha256sum .devcontainer/Dockerfile conanfile.py conan.lock \
+            conan/profiles/gcc-26 conan/profiles/gcc-26-debug | sha256sum | cut -c1-16)"
+          cache_ref="${reg}:buildcache"
+          {
+            echo "image=${reg}:deps-${deps_hash}"
+            echo "cache_ref=${cache_ref}"
+          } >> "${GITHUB_OUTPUT}"
+
+      - name: Log into ${{ env.REGISTRY }}
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Check dependency image
+        id: image
+        run: |
+          if [ '${{ inputs.force_image_rebuild }}' != 'true' ] &&
+            docker buildx imagetools inspect '${{ steps.select.outputs.image }}' >/dev/null 2>&1; then
+            echo "rebuild=false" >> "${GITHUB_OUTPUT}"
+          else
+            echo "rebuild=true" >> "${GITHUB_OUTPUT}"
+          fi
+
       - name: Free disk space
+        if: steps.image.outputs.rebuild == 'true'
         uses: jlumbroso/free-disk-space@v1.3.1
         with:
           tool-cache: true
@@ -57,78 +78,22 @@ jobs:
           docker-images: true
           swap-storage: true
 
-      - name: Log into ${{ env.REGISTRY }}
-        uses: docker/login-action@v3
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Resolve image tags
-        id: tags
-        run: |
-          set -euo pipefail
-          owner_lc="$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')"
-          reg="${{ env.REGISTRY }}/${owner_lc}/mach-build-env"
-          if [ '${{ github.event_name }}' = 'pull_request' ]; then
-            sha='${{ github.event.pull_request.head.sha }}'
-          else
-            sha='${{ github.sha }}'
-          fi
-          sha_tag="${reg}:sha-${sha}"
-          {
-            echo "sha_tag=${sha_tag}"
-            if [ '${{ github.event_name }}' = 'push' ] && [ '${{ github.ref }}' = 'refs/heads/main' ]; then
-              echo "image=${reg}:latest"
-              echo "tags<<EOF"
-              echo "${reg}:latest"
-              echo "${sha_tag}"
-              echo "EOF"
-            else
-              echo "image=${sha_tag}"
-              echo "tags<<EOF"
-              echo "${sha_tag}"
-              echo "EOF"
-            fi
-          } >> "${GITHUB_OUTPUT}"
-
       - name: Build and push mach-build-env
+        if: steps.image.outputs.rebuild == 'true'
         uses: docker/build-push-action@v5
         with:
           context: .
           file: .devcontainer/Dockerfile
           push: true
-          tags: ${{ steps.tags.outputs.tags }}
+          tags: ${{ steps.select.outputs.image }}
+          cache-from: type=registry,ref=${{ steps.select.outputs.cache_ref }}
+          cache-to: type=registry,ref=${{ steps.select.outputs.cache_ref }},mode=max
 
-  resolve-image:
-    needs: [changes, build-env]
-    if: >-
-      always() &&
-      needs.changes.result == 'success' &&
-      (needs.build-env.result == 'success' || needs.build-env.result == 'skipped')
-    runs-on: ubuntu-latest
-    outputs:
-      image: ${{ steps.set.outputs.image }}
-    steps:
-      - name: Select container image
-        id: set
-        run: |
-          set -euo pipefail
-          owner_lc="$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')"
-          if [ '${{ needs.build-env.result }}' = 'success' ]; then
-            echo "image=${{ needs.build-env.outputs.image }}" >> "${GITHUB_OUTPUT}"
-          else
-            echo "image=${{ env.REGISTRY }}/${owner_lc}/mach-build-env:latest" >> "${GITHUB_OUTPUT}"
-          fi
-
-  # Explicit if: default success() is false when build-env was skipped upstream,
-  # which would skip every consumer even after resolve-image succeeds.
   lint:
-    needs: resolve-image
-    if: needs.resolve-image.result == 'success'
+    needs: prepare-image
     runs-on: ubuntu-latest
     container:
-      image: ${{ needs.resolve-image.outputs.image }}
+      image: ${{ needs.prepare-image.outputs.image }}
       credentials:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
@@ -143,11 +108,10 @@ jobs:
         run: bash scripts/lint
 
   clang-tidy:
-    needs: resolve-image
-    if: needs.resolve-image.result == 'success'
+    needs: prepare-image
     runs-on: ubuntu-latest
     container:
-      image: ${{ needs.resolve-image.outputs.image }}
+      image: ${{ needs.prepare-image.outputs.image }}
       credentials:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
@@ -158,20 +122,25 @@ jobs:
       - name: Install Dependencies (Conan)
         run: |
           conan profile detect --force
-          conan install . -pr:h ./conan/profiles/gcc-26 -pr:b default --build=missing
+          # --no-remote: use only packages baked into mach-build-env (avoid
+          # ConanCenter recipe drift rebuilding Boost/ORT).
+          conan install . -pr:h ./conan/profiles/gcc-26 -pr:b default --lockfile=conan.lock --build=missing --no-remote
 
-      - name: Build
-        run: conan build . -pr:h ./conan/profiles/gcc-26 -pr:b default --build=missing
+      - name: Configure
+        run: |
+          cmake -S . -B build/Release -G Ninja \
+            -DCMAKE_TOOLCHAIN_FILE=build/Release/generators/conan_toolchain.cmake \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
 
       - name: Run Clang-Tidy
         run: bash scripts/clang-tidy
 
   build-gcc-26:
-    needs: resolve-image
-    if: needs.resolve-image.result == 'success'
+    needs: prepare-image
     runs-on: ubuntu-latest
     container:
-      image: ${{ needs.resolve-image.outputs.image }}
+      image: ${{ needs.prepare-image.outputs.image }}
       credentials:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
@@ -182,17 +151,27 @@ jobs:
       - name: Install Dependencies (Conan)
         run: |
           conan profile detect --force
-          conan install . -pr:h ./conan/profiles/gcc-26 -pr:b default --build=missing
+          conan install . -pr:h ./conan/profiles/gcc-26 -pr:b default --lockfile=conan.lock --build=missing --no-remote
 
       - name: Build
-        run: conan build . -pr:h ./conan/profiles/gcc-26 -pr:b default --build=missing
+        run: conan build . -pr:h ./conan/profiles/gcc-26 -pr:b default --lockfile=conan.lock --build=missing --no-remote
+
+      - name: Archive Release build
+        run: tar -czf release-build.tar.gz build/Release
+
+      - name: Upload Release build
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-build
+          path: release-build.tar.gz
+          retention-days: 1
+          if-no-files-found: error
 
   build-gcc-26-debug:
-    needs: resolve-image
-    if: needs.resolve-image.result == 'success'
+    needs: prepare-image
     runs-on: ubuntu-latest
     container:
-      image: ${{ needs.resolve-image.outputs.image }}
+      image: ${{ needs.prepare-image.outputs.image }}
       credentials:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
@@ -203,49 +182,36 @@ jobs:
       - name: Install Dependencies (Conan)
         run: |
           conan profile detect --force
-          conan install . -pr:h ./conan/profiles/gcc-26-debug -pr:b default --build=missing
+          conan install . -pr:h ./conan/profiles/gcc-26-debug -pr:b default --lockfile=conan.lock --build=missing --no-remote
 
       - name: Build
-        run: conan build . -pr:h ./conan/profiles/gcc-26-debug -pr:b default --build=missing
+        run: conan build . -pr:h ./conan/profiles/gcc-26-debug -pr:b default --lockfile=conan.lock --build=missing --no-remote
 
-  run-unit-tests-release:
-    needs: [resolve-image, build-gcc-26, build-gcc-26-debug]
-    if: >-
-      needs.resolve-image.result == 'success' &&
-      needs.build-gcc-26.result == 'success' &&
-      needs.build-gcc-26-debug.result == 'success'
+  unit-tests-release:
+    needs: [prepare-image, build-gcc-26]
     runs-on: ubuntu-latest
     container:
-      image: ${{ needs.resolve-image.outputs.image }}
+      image: ${{ needs.prepare-image.outputs.image }}
       credentials:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
     steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
+      - name: Download Release build
+        uses: actions/download-artifact@v4
+        with:
+          name: release-build
 
-      - name: Install Dependencies (Conan)
-        run: |
-          conan profile detect --force
-          conan install . -pr:h ./conan/profiles/gcc-26 -pr:b default --build=missing
+      - name: Extract Release build
+        run: tar -xzf release-build.tar.gz
 
-      - name: Build (for tests)
-        run: conan build . -pr:h ./conan/profiles/gcc-26 -pr:b default --build=missing
-
-      - name: Run Unit Tests
-        run: |
-          cd build/Release
-          ctest -V
+      - name: Run Release unit tests
+        run: ctest --test-dir build/Release -V
 
   coverage:
-    needs: [resolve-image, build-gcc-26, build-gcc-26-debug]
-    if: >-
-      needs.resolve-image.result == 'success' &&
-      needs.build-gcc-26.result == 'success' &&
-      needs.build-gcc-26-debug.result == 'success'
+    needs: prepare-image
     runs-on: ubuntu-latest
     container:
-      image: ${{ needs.resolve-image.outputs.image }}
+      image: ${{ needs.prepare-image.outputs.image }}
       credentials:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
