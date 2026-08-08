@@ -8,12 +8,28 @@ REQUIRED_BRANCHES=44.5
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
 conan profile detect --force
-conan build . -of build/coverage -pr:h "${1:-conan/profiles/code-coverage}" -pr:b default --build=missing
+# In CI, stick to packages baked into mach-build-env (no ConanCenter drift).
+remote_args=()
+if [[ "${CI:-}" == "true" ]]; then
+  remote_args+=(--no-remote)
+fi
+conan build . -of build/coverage -pr:h "${1:-conan/profiles/code-coverage}" -pr:b default --lockfile=conan.lock --build=missing "${remote_args[@]}"
+ctest --test-dir build/coverage/build/Debug --output-on-failure
 
-lcov() { command lcov --rc branch_coverage=1 --ignore-errors inconsistent,mismatch "$@" >/dev/null; }
+# Local default: ~/.conan2. CI: CONAN_HOME=/opt/conan2 (GHA overrides HOME).
+conan_cache="${CONAN_HOME:-${HOME}/.conan2}"
+# unused: Conan paths may be absent when deps were not built with --coverage.
+lcov() {
+  command lcov --rc branch_coverage=1 --ignore-errors inconsistent,mismatch,unused "$@" >/dev/null
+}
 lcov --directory build/coverage/build/Debug --capture --output-file build/coverage/coverage.info
-lcov --remove build/coverage/coverage.info '/usr/*' "${HOME}/.conan2/*" --output-file build/coverage/coverage.cleaned
-genhtml --branch-coverage --rc branch_coverage=1 build/coverage/coverage.cleaned --output-directory build/coverage/report >/dev/null
+lcov --remove build/coverage/coverage.info \
+  '/usr/*' \
+  "${conan_cache}/*" \
+  --output-file build/coverage/coverage.cleaned
+genhtml --branch-coverage --rc branch_coverage=1 \
+  build/coverage/coverage.cleaned \
+  --output-directory build/coverage/report >/dev/null
 
 summary=$(command lcov --rc branch_coverage=1 --summary build/coverage/coverage.cleaned 2>&1)
 pct() { echo "$summary" | grep -E "^[[:space:]]+${1}\\.+" | awk -F: '{print $2}' | awk '{print $1}' | tr -d '%'; }

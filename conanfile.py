@@ -20,6 +20,8 @@ class Mach1Conan(ConanFile):
         self.requires("onnxruntime/1.18.1")
 
     def configure(self):
+        # Static: shared ORT can hide OrtGetApiBase under -fvisibility=hidden,
+        # and that package ID survives the consumer-only flag split.
         self.options["onnxruntime"].shared = False
 
     def generate(self):
@@ -44,7 +46,6 @@ class Mach1Conan(ConanFile):
         cmake = CMake(self)
         cmake.configure()
         cmake.build()
-        cmake.test()
 
     def package(self):
         cmake = CMake(self)

@@ -23,17 +23,26 @@ RUN update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-15 100 \
 RUN pip install conan pre-commit --break-system-packages \
     && rm -rf /root/.cache/pip
 
-# Prebuild Conan deps (onnxruntime + graph) into the image package cache.
-# Coverage reuses the Debug package ID after consumer-only flag split.
-# Drop build/source/download trees after each install so peak disk stays under
-# GHA runner limits (ORT object files alone can fill the disk).
-COPY conanfile.py /tmp/mach1/conanfile.py
-COPY conan/profiles /tmp/mach1/conan/profiles
+# Fixed path: GitHub Actions container jobs override HOME to /github/home, so a
+# cache under ~/.conan2 is invisible to CI. Bake and consume from CONAN_HOME.
+ENV CONAN_HOME=/opt/conan2
+
+# Prebuild Conan deps into the image package cache.
+# Release and Debug are separate layers so BuildKit can reuse independently.
+# Coverage reuses the Debug package ID (consumer-only --coverage flags).
+# Drop build/source/download trees after each install to keep peak disk down.
+# Remote is only for this bake; CI jobs use --no-remote against this cache.
 WORKDIR /tmp/mach1
+COPY conanfile.py /tmp/mach1/conanfile.py
+COPY conan.lock /tmp/mach1/conan.lock
+COPY conan/profiles/gcc-26 /tmp/mach1/conan/profiles/gcc-26
 RUN conan profile detect --force \
-    && conan install . -pr:h=conan/profiles/gcc-26 -pr:b=default --build=missing \
-    && conan cache clean "*" --build --source --download --temp \
-    && conan install . -pr:h=conan/profiles/gcc-26-debug -pr:b=default --build=missing \
+    && conan remote add conancenter https://center2.conan.io --force \
+    && conan install . -pr:h=conan/profiles/gcc-26 -pr:b=default --lockfile=conan.lock --build=missing \
+    && conan cache clean "*" --build --source --download --temp
+
+COPY conan/profiles/gcc-26-debug /tmp/mach1/conan/profiles/gcc-26-debug
+RUN conan install . -pr:h=conan/profiles/gcc-26-debug -pr:b=default --lockfile=conan.lock --build=missing \
     && conan cache clean "*" --build --source --download --temp \
     && rm -rf /tmp/mach1 /tmp/* /var/tmp/*
 WORKDIR /
