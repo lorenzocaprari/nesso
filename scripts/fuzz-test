@@ -1,0 +1,85 @@
+#!/usr/bin/env bash
+# AFL++ fuzz of mach1 CLI opening a DB path (no custom harness).
+# Builds an AFL-instrumented + ASan binary with afl-clang-fast++.
+# Requires: afl++ (afl-fuzz, afl-clang-fast++), Conan cli11 in cache.
+#
+# Local / CI:
+#   ./scripts/fuzz-test
+#   MACH1_FUZZ_MAX_TOTAL_TIME=120 ./scripts/fuzz-test
+set -euo pipefail
+
+cd "$(dirname "${BASH_SOURCE[0]}")/.."
+
+for cmd in afl-fuzz afl-clang-fast++; do
+  if ! command -v "${cmd}" >/dev/null 2>&1; then
+    echo "error: ${cmd} not found. Install AFL++ (e.g. sudo apt install afl++)" >&2
+    exit 2
+  fi
+done
+
+OUT_DIR="${MACH1_FUZZ_OUT:-build/fuzz}"
+SEEDS_DIR="${MACH1_FUZZ_SEEDS:-fuzz/seeds/storage}"
+FINDINGS_DIR="${OUT_DIR}/afl-out"
+MAX_TOTAL_TIME="${MACH1_FUZZ_MAX_TOTAL_TIME:-60}"
+DIMS="${MACH1_FUZZ_DIMS:-2}"
+BIN="${OUT_DIR}/mach1_afl"
+
+mkdir -p "${OUT_DIR}"
+
+CLI11_PKG="$(conan cache path 'cli11/2.6.2:da39a3ee5e6b4b0d3255bfef95601890afd80709' 2>/dev/null || true)"
+if [[ -z "${CLI11_PKG}" || ! -d "${CLI11_PKG}/include" ]]; then
+  CLI_HPP="$(find "${CONAN_HOME:-${HOME}/.conan2}/p" -path '*/include/CLI/CLI.hpp' 2>/dev/null | head -n1 || true)"
+  if [[ -z "${CLI_HPP}" ]]; then
+    echo "error: CLI11 not in Conan cache; run: conan install . -pr:h conan/profiles/gcc-26 --lockfile=conan.lock --build=missing" >&2
+    exit 2
+  fi
+  CLI11_INC="$(cd "$(dirname "${CLI_HPP}")/.." && pwd)"
+else
+  CLI11_INC="${CLI11_PKG}/include"
+fi
+
+echo "fuzz-test: building AFL+ASan instrumented ${BIN}"
+export AFL_USE_ASAN=1
+unset ASAN_OPTIONS UBSAN_OPTIONS || true
+
+afl-clang-fast++ -std=c++26 -O1 -g -fno-omit-frame-pointer \
+  -I src/mach_core/include \
+  -I "${CLI11_INC}" \
+  src/main.cpp \
+  src/mach_core/storage_engine.cpp \
+  src/mach_core/distance.cpp \
+  src/mach_core/vector_search.cpp \
+  -o "${BIN}"
+
+QUERY_FILE="${OUT_DIR}/query.bin"
+python3 - "${DIMS}" "${QUERY_FILE}" <<'PY'
+import struct, sys
+dims = int(sys.argv[1])
+path = sys.argv[2]
+open(path, "wb").write(struct.pack(f"<{dims}f", *([1.0] + [0.0] * (dims - 1))))
+PY
+
+export ASAN_OPTIONS="${ASAN_OPTIONS:-detect_leaks=0:abort_on_error=1:symbolize=0:allocator_may_return_null=1}"
+export UBSAN_OPTIONS="${UBSAN_OPTIONS:-halt_on_error=1:print_stacktrace=1}"
+export AFL_NO_UI="${AFL_NO_UI:-1}"
+# GHA/containers: core_pattern is '|…' and not writable; ASan still reports crashes.
+export AFL_I_DONT_CARE_ABOUT_MISSING_CRASHES="${AFL_I_DONT_CARE_ABOUT_MISSING_CRASHES:-1}"
+# Avoid CPU governor abort in containers/VMs.
+export AFL_SKIP_CPUFREQ="${AFL_SKIP_CPUFREQ:-1}"
+
+rm -rf "${FINDINGS_DIR}"
+mkdir -p "${FINDINGS_DIR}"
+
+echo "fuzz-test: afl-fuzz -V ${MAX_TOTAL_TIME}s seeds=${SEEDS_DIR}"
+afl-fuzz -V "${MAX_TOTAL_TIME}" -i "${SEEDS_DIR}" -o "${FINDINGS_DIR}" -m none -- \
+  "${BIN}" -p @@ -d "${DIMS}" search -q "${QUERY_FILE}" -k 1
+
+CRASH_DIR="${FINDINGS_DIR}/default/crashes"
+mapfile -t crashes < <(find "${CRASH_DIR}" -type f -name 'id:*' 2>/dev/null | sort || true)
+if ((${#crashes[@]} > 0)); then
+  echo "error: fuzz-test found ${#crashes[@]} unique crash(es):" >&2
+  printf '  %s\n' "${crashes[@]}" >&2
+  exit 1
+fi
+
+echo "fuzz-test OK (0 crashes in ${MAX_TOTAL_TIME}s)"

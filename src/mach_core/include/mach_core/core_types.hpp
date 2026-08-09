@@ -22,7 +22,8 @@ enum class EngineError : uint8_t
     MmapMappingFailure,
     MismatchedDimensions,
     IndexOutOfBounds,
-    DatabaseNotInitialized
+    DatabaseNotInitialized,
+    CorruptDatabase
 };
 
 // Packed structure containing file metadata on disk
