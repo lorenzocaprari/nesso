@@ -2,6 +2,7 @@
 #include <catch2/catch_all.hpp>
 #include <cstdlib>
 #include <filesystem>
+#include <fstream>
 #include <mach_core/core_types.hpp>
 #include <mach_core/storage_engine.hpp>
 #include <vector>
@@ -133,6 +134,79 @@ SCENARIO("StorageEngine rejects invalid operations", "[StorageEngine][core][Unit
                 REQUIRE_FALSE(result.has_value());
                 REQUIRE(result.error() == EngineError::IndexOutOfBounds);
             }
+        }
+    }
+}
+
+SCENARIO("StorageEngine rejects corrupt on-disk headers", "[StorageEngine][core][Unit]")
+{
+    GIVEN("A truncated file smaller than DatabaseHeader")
+    {
+        const auto db_path = makeTempDbPath();
+        TestDatabaseGuard guard(db_path);
+        {
+            std::ofstream out(db_path, std::ios::binary);
+            const char bytes[] = {'M', 'A', 'C', 'H'};
+            out.write(bytes, 4);
+        }
+
+        StorageEngine<float> engine;
+        auto result = engine.createOrOpen(db_path, 2);
+
+        THEN("open fails with CorruptDatabase")
+        {
+            REQUIRE_FALSE(result.has_value());
+            REQUIRE(result.error() == EngineError::CorruptDatabase);
+        }
+    }
+
+    GIVEN("A full-size header with invalid magic")
+    {
+        const auto db_path = makeTempDbPath();
+        TestDatabaseGuard guard(db_path);
+        {
+            DatabaseHeader header{};
+            header.magic = {'B', 'A', 'D', '!'};
+            header.version = 1;
+            header.dimensions = 2;
+            header.vector_count = 0;
+            std::ofstream out(db_path, std::ios::binary);
+            // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+            out.write(reinterpret_cast<const char *>(&header), sizeof(header));
+        }
+
+        StorageEngine<float> engine;
+        auto result = engine.createOrOpen(db_path, 2);
+
+        THEN("open fails with CorruptDatabase")
+        {
+            REQUIRE_FALSE(result.has_value());
+            REQUIRE(result.error() == EngineError::CorruptDatabase);
+        }
+    }
+
+    GIVEN("A header claiming more vectors than the file can hold")
+    {
+        const auto db_path = makeTempDbPath();
+        TestDatabaseGuard guard(db_path);
+        {
+            DatabaseHeader header{};
+            header.magic = {'M', 'A', 'C', 'H'};
+            header.version = 1;
+            header.dimensions = 2;
+            header.vector_count = 1000000;
+            std::ofstream out(db_path, std::ios::binary);
+            // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+            out.write(reinterpret_cast<const char *>(&header), sizeof(header));
+        }
+
+        StorageEngine<float> engine;
+        auto result = engine.createOrOpen(db_path, 2);
+
+        THEN("open fails with CorruptDatabase")
+        {
+            REQUIRE_FALSE(result.has_value());
+            REQUIRE(result.error() == EngineError::CorruptDatabase);
         }
     }
 }

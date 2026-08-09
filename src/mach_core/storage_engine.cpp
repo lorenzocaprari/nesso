@@ -2,15 +2,48 @@
 // SPDX-License-Identifier: MIT
 #include "include/mach_core/storage_engine.hpp"
 
-// Linux system headers
+#include <algorithm>
+#include <array>
 #include <fcntl.h>
 #include <fstream>
+#include <limits>
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#include <utility>
 
 namespace mach_core
 {
+
+static constexpr std::array<uint8_t, 4> MAGIC{{'M', 'A', 'C', 'H'}};
+static constexpr uint32_t SUPPORTED_VERSION = 1;
+
+template <SupportedScalar T>
+[[nodiscard]] static bool payloadSizeBytes(uint64_t vectorCount, uint64_t dimensions, size_t &outBytes) noexcept
+{
+    if (dimensions == 0)
+    {
+        return false;
+    }
+
+    const size_t elementBytes = sizeof(T);
+    if (dimensions > (std::numeric_limits<size_t>::max() / elementBytes))
+    {
+        return false;
+    }
+    const size_t rowBytes = static_cast<size_t>(dimensions) * elementBytes;
+    if (vectorCount > 0 && vectorCount > (std::numeric_limits<size_t>::max() / rowBytes))
+    {
+        return false;
+    }
+    const size_t payloadBytes = static_cast<size_t>(vectorCount) * rowBytes;
+    if (payloadBytes > (std::numeric_limits<size_t>::max() - sizeof(DatabaseHeader)))
+    {
+        return false;
+    }
+    outBytes = sizeof(DatabaseHeader) + payloadBytes;
+    return true;
+}
 
 // --- Move Semantics (Transferring resource ownership cleanly) ---
 template <SupportedScalar T> StorageEngine<T>::StorageEngine(StorageEngine &&other) noexcept
@@ -64,6 +97,11 @@ std::expected<void, EngineError> StorageEngine<T>::createOrOpen(const std::files
 {
     close(); // Enforce reset protection
 
+    if (dimensions == 0)
+    {
+        return std::unexpected(EngineError::MismatchedDimensions);
+    }
+
     const bool isNewFile = !std::filesystem::exists(path);
     if (isNewFile)
     {
@@ -81,28 +119,30 @@ std::expected<void, EngineError> StorageEngine<T>::createOrOpen(const std::files
         return std::unexpected(EngineError::FileOpenFailure);
     }
 
-    // 2. Compute minimum structural geometry sizing
+    struct stat st{};
+    if (::fstat(m_fd, &st) == -1)
+    {
+        close();
+        return std::unexpected(EngineError::FileOpenFailure);
+    }
+
     size_t targetSize = sizeof(DatabaseHeader);
     if (!isNewFile)
     {
-        struct stat st{};
-        if (::fstat(m_fd, &st) == 0 && st.st_size > 0)
-        {
-            targetSize = static_cast<size_t>(st.st_size);
-        }
-    }
-    else
-    {
-        // Reserve baseline memory layout map for a clean index signature
-        if (::ftruncate(m_fd, static_cast<off_t>(targetSize)) == -1)
+        if (std::cmp_less(st.st_size, sizeof(DatabaseHeader)))
         {
             close();
-            return std::unexpected(EngineError::FileResizeFailure);
+            return std::unexpected(EngineError::CorruptDatabase);
         }
+        targetSize = static_cast<size_t>(st.st_size);
+    }
+    else if (::ftruncate(m_fd, static_cast<off_t>(targetSize)) == -1)
+    {
+        close();
+        return std::unexpected(EngineError::FileResizeFailure);
     }
     m_mapped_size = targetSize;
 
-    // 3. Mount Memory Mapping space
     m_raw_mmap = static_cast<uint8_t *>(::mmap(nullptr, m_mapped_size, PROT_READ | PROT_WRITE, MAP_SHARED, m_fd, 0));
     if (m_raw_mmap == MAP_FAILED)
     {
@@ -111,7 +151,6 @@ std::expected<void, EngineError> StorageEngine<T>::createOrOpen(const std::files
         return std::unexpected(EngineError::MmapMappingFailure);
     }
 
-    // 4. Overlap structures
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast) We are intentionally overlaying a struct on raw bytes
     m_header = reinterpret_cast<DatabaseHeader *>(m_raw_mmap);
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast) We are intentionally overlaying a struct on raw bytes
@@ -119,13 +158,30 @@ std::expected<void, EngineError> StorageEngine<T>::createOrOpen(const std::files
 
     if (isNewFile)
     {
+        m_header->magic = MAGIC;
+        m_header->version = SUPPORTED_VERSION;
         m_header->dimensions = dimensions;
         m_header->vector_count = 0;
+        return {};
     }
-    else if (m_header->dimensions != dimensions)
+
+    if (m_header->magic != MAGIC || m_header->version != SUPPORTED_VERSION)
+    {
+        close();
+        return std::unexpected(EngineError::CorruptDatabase);
+    }
+    if (m_header->dimensions != dimensions)
     {
         close();
         return std::unexpected(EngineError::MismatchedDimensions);
+    }
+
+    size_t requiredBytes = 0;
+    if (!payloadSizeBytes<T>(m_header->vector_count, m_header->dimensions, requiredBytes) ||
+        requiredBytes > m_mapped_size)
+    {
+        close();
+        return std::unexpected(EngineError::CorruptDatabase);
     }
 
     return {};
@@ -143,19 +199,32 @@ std::expected<void, EngineError> StorageEngine<T>::appendVector(std::span<const 
     {
         return std::unexpected(EngineError::MismatchedDimensions);
     }
+    if (m_header->vector_count == std::numeric_limits<uint64_t>::max()) [[unlikely]]
+    {
+        return std::unexpected(EngineError::FileResizeFailure);
+    }
 
-    // Compute exact expanded byte alignment boundaries
     const uint64_t nextIndex = m_header->vector_count;
-    const size_t requiredSize = sizeof(DatabaseHeader) + ((nextIndex + 1) * m_header->dimensions * sizeof(T));
+    size_t requiredSize = 0;
+    if (!payloadSizeBytes<T>(nextIndex + 1, m_header->dimensions, requiredSize))
+    {
+        return std::unexpected(EngineError::CorruptDatabase);
+    }
 
-    // Dynamic file mapping expansion if we exhaust current scale
     if (requiredSize > m_mapped_size)
     {
-        // Remap execution window (Unmap old map, step size forward, map new
-        // address block)
         ::munmap(m_raw_mmap, m_mapped_size);
 
-        const size_t newAllocatedScale = m_mapped_size * 2 > requiredSize ? m_mapped_size * 2 : requiredSize;
+        size_t newAllocatedScale = m_mapped_size;
+        if (newAllocatedScale > (std::numeric_limits<size_t>::max() / 2))
+        {
+            newAllocatedScale = requiredSize;
+        }
+        else
+        {
+            newAllocatedScale = std::max(newAllocatedScale * 2, requiredSize);
+        }
+
         if (::ftruncate(m_fd, static_cast<off_t>(newAllocatedScale)) == -1)
         {
             m_raw_mmap = nullptr;
@@ -180,11 +249,9 @@ std::expected<void, EngineError> StorageEngine<T>::appendVector(std::span<const 
         m_vector_data_pool = reinterpret_cast<T *>(m_raw_mmap + sizeof(DatabaseHeader));
     }
 
-    // Direct memory copy right into the memory mapped disk location
     T *writeTarget = m_vector_data_pool + (nextIndex * m_header->dimensions);
     std::copy(vector.begin(), vector.end(), writeTarget);
 
-    // Update index metadata safely
     m_header->vector_count++;
     return {};
 }
@@ -202,12 +269,16 @@ std::expected<std::span<const T>, EngineError> StorageEngine<T>::getVector(uint6
         return std::unexpected(EngineError::IndexOutOfBounds);
     }
 
+    size_t endOffset = 0;
+    if (!payloadSizeBytes<T>(index + 1, m_header->dimensions, endOffset) || endOffset > m_mapped_size)
+    {
+        return std::unexpected(EngineError::CorruptDatabase);
+    }
+
     const T *readSource = m_vector_data_pool + (index * m_header->dimensions);
     return std::span<const T>(readSource, m_header->dimensions);
 }
 
-// Explicit template instantiation to keep logic in the implementation
-// compilation block
 template class StorageEngine<float>;
 template class StorageEngine<double>;
 

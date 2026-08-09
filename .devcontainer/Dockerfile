@@ -3,21 +3,43 @@ FROM ubuntu:26.04
 # Avoid interactive prompts
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Install dependencies, GCC 15, native Clang-Tidy 21, and lcov for CI coverage
+# Install dependencies, GCC 15, Clang 21 (+ compiler-rt for ASan/AFL), tidy, lcov
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     software-properties-common wget curl git jq ccache python3-pip \
     cmake ninja-build lcov \
     && add-apt-repository ppa:ubuntu-toolchain-r/test -y \
     && apt-get update && apt-get install -y --no-install-recommends \
-    gcc-15 g++-15 clang-tidy-21 \
+    gcc-15 g++-15 \
+    clang-21 clang-tidy-21 libclang-rt-21-dev \
+    afl++ \
     && rm -rf /var/lib/apt/lists/*
 
 # Set GCC 15 and LLVM 21 as defaults
 RUN update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-15 100 \
     && update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-15 100 \
+    && update-alternatives --install /usr/bin/clang clang /usr/bin/clang-21 100 \
+    && update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-21 100 \
     && update-alternatives --install /usr/bin/clang-tidy clang-tidy /usr/bin/clang-tidy-21 100 \
     && update-alternatives --install /usr/bin/run-clang-tidy run-clang-tidy /usr/bin/run-clang-tidy-21 100
+
+# Ubuntu ships compiler-rt under lib/linux/*-x86_64.a; some Clang drivers look for
+# lib/<triple>/libclang_rt.*.a (unprefixed). Bridge so AFL_USE_ASAN links cleanly.
+RUN rt_lib="/usr/lib/llvm-21/lib/clang/21/lib" \
+    && if [ -d "${rt_lib}/linux" ] && [ ! -e "${rt_lib}/x86_64-pc-linux-gnu" ]; then \
+         mkdir -p "${rt_lib}/x86_64-pc-linux-gnu" \
+         && for kind in asan asan_cxx asan_static asan-preinit \
+              ubsan_standalone ubsan_standalone_cxx fuzzer fuzzer_no_main; do \
+              for src in \
+                "${rt_lib}/linux/libclang_rt.${kind}-x86_64.a" \
+                "${rt_lib}/linux/libclang_rt.${kind}.a"; do \
+                if [ -f "${src}" ]; then \
+                  ln -sfn "${src}" "${rt_lib}/x86_64-pc-linux-gnu/libclang_rt.${kind}.a"; \
+                  break; \
+                fi; \
+              done; \
+            done; \
+       fi
 
 # Install Conan 2 and pre-commit
 RUN pip install conan pre-commit --break-system-packages \
