@@ -187,6 +187,17 @@ jobs:
       - name: Build
         run: conan build . -pr:h ./conan/profiles/gcc-26-debug -pr:b default --lockfile=conan.lock --build=missing --no-remote
 
+      - name: Archive Debug build
+        run: tar -czf debug-build.tar.gz build/Debug
+
+      - name: Upload Debug build
+        uses: actions/upload-artifact@v4
+        with:
+          name: debug-build
+          path: debug-build.tar.gz
+          retention-days: 1
+          if-no-files-found: error
+
   unit-tests-release:
     needs: [prepare-image, build-gcc-26]
     runs-on: ubuntu-latest
@@ -204,8 +215,83 @@ jobs:
       - name: Extract Release build
         run: tar -xzf release-build.tar.gz
 
-      - name: Run Release unit tests
+      - name: Run Catch2 unit tests (includes search_oracle_test)
         run: ctest --test-dir build/Release -V
+
+  unit-tests-debug:
+    needs: [prepare-image, build-gcc-26-debug]
+    runs-on: ubuntu-latest
+    container:
+      image: ${{ needs.prepare-image.outputs.image }}
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - name: Download Debug build
+        uses: actions/download-artifact@v4
+        with:
+          name: debug-build
+
+      - name: Extract Debug build
+        run: tar -xzf debug-build.tar.gz
+
+      - name: Run Catch2 unit tests (ASan/UBSan, includes search_oracle_test)
+        run: |
+          export ASAN_OPTIONS=halt_on_error=1:detect_leaks=1:abort_on_error=1
+          export UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1
+          ctest --test-dir build/Debug -V
+
+  fuzz-test:
+    needs: prepare-image
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    container:
+      image: ${{ needs.prepare-image.outputs.image }}
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Install AFL++ toolchain (idempotent if baked into image)
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            clang-21 libclang-rt-21-dev afl++
+          rm -rf /var/lib/apt/lists/*
+          # Bridge Ubuntu linux/*-x86_64.a layout ↔ triple-dir names AFL/Clang may request.
+          rt_lib="/usr/lib/llvm-21/lib/clang/21/lib"
+          if [ -d "${rt_lib}/linux" ] && [ ! -e "${rt_lib}/x86_64-pc-linux-gnu" ]; then
+            mkdir -p "${rt_lib}/x86_64-pc-linux-gnu"
+            for kind in asan asan_cxx asan_static asan-preinit \
+              ubsan_standalone ubsan_standalone_cxx fuzzer fuzzer_no_main; do
+              for src in \
+                "${rt_lib}/linux/libclang_rt.${kind}-x86_64.a" \
+                "${rt_lib}/linux/libclang_rt.${kind}.a"; do
+                if [ -f "${src}" ]; then
+                  ln -sfn "${src}" "${rt_lib}/x86_64-pc-linux-gnu/libclang_rt.${kind}.a"
+                  break
+                fi
+              done
+            done
+          fi
+
+      - name: Ensure Conan default profile
+        run: conan profile detect --force
+
+      - name: Run fuzz-test (AFL++ CLI + ASan)
+        run: |
+          chmod +x scripts/fuzz-test
+          MACH1_FUZZ_MAX_TOTAL_TIME=60 ./scripts/fuzz-test
+
+      - name: Upload AFL findings on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuzz-test-findings
+          path: build/fuzz/afl-out
+          if-no-files-found: warn
 
   coverage:
     needs: prepare-image
