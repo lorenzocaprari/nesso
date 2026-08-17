@@ -20,11 +20,11 @@ int main(int argc, char *argv[])
     mach_core::StorageEngine<float> engine;
     // Fuzz the DB-open path: AFL mutates the file at argv[1].
     // dims=2 keeps the query cheap; corrupt headers / dims are the attack surface.
-    engine.open(argv[1], 2);
+    engine.createOrOpen(argv[1], 2);
     if (engine.isOpen())
     {
         std::array<float, 2> query{1.0F, 0.0F};
-        mach_core::searchTopKCosine(engine, std::span<const float>(query), 1);
+        (void)mach_core::searchTopKCosine(engine, std::span<const float>(query), 1);
     }
     return 0;
 }
