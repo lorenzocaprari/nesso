@@ -8,4 +8,4 @@ enable_testing()
 add_subdirectory(src)
 add_subdirectory(test)
 
-install(TARGETS mach1 RUNTIME DESTINATION bin)
+install(TARGETS vecgrep RUNTIME DESTINATION bin)

@@ -3,16 +3,16 @@
 // Licensed under the MIT License. See LICENSE for details.
 
 #include <CLI/CLI.hpp>
-#include <mach_core/storage_engine.hpp>
-#include <mach_core/vector_search.hpp>
+#include <mach_core/core_types.hpp>
+#include <mach_core/embedder.hpp>
+#include <mach_core/log_index.hpp>
 
 #include <exception>
 #include <filesystem>
 #include <format>
-#include <fstream>
 #include <iostream>
 #include <print>
-#include <vector>
+#include <string>
 
 int main(int argc, char *argv[]) noexcept
 {
@@ -20,162 +20,75 @@ int main(int argc, char *argv[]) noexcept
     {
         std::ios_base::sync_with_stdio(false);
 
-        CLI::App app{"Mach1 - High Performance Vector Database & Semantic Indexer"};
-        app.require_subcommand(1); // Enforce that a verb (subcommand) must be provided
+        CLI::App app{"VecGrep - offline hybrid search for system and robotics logs"};
+        app.require_subcommand(1);
 
-        // Shared configuration flags across subcommands
-        std::string dbPath = "vectors.mach1";
-        app.add_option("-p,--path", dbPath, "Path to the vector database storage file");
+        std::string dbPath = "index.vecgrep";
+        std::string modelPath;
+        std::string vocabPath;
 
-        uint64_t dimensions = 128;
-        app.add_option("-d,--dims", dimensions, "Dimensionality of the vector space")->default_val(128);
+        auto *indexCmd = app.add_subcommand("index", "Ingest a UTF-8 log file into the hybrid index");
+        std::string logFile;
+        indexCmd->add_option("-f,--log-file", logFile, "Path to the log file")->required()->check(CLI::ExistingFile);
+        bool syncIngest = false;
+        indexCmd->add_flag("--sync", syncIngest, "Use single-threaded ingest instead of the jthread pipeline");
+        indexCmd->add_option("-p,--path", dbPath, "Path to the VecGrep index");
+        indexCmd->add_option("-m,--model", modelPath, "INT8 ONNX MiniLM model (omit to use the hash stub embedder)");
+        indexCmd->add_option("--vocab", vocabPath, "WordPiece vocab.txt for the ONNX model");
 
-        // --------------------------------------------------------------------
-        // Subcommand: INIT
-        // --------------------------------------------------------------------
-        auto *initCmd = app.add_subcommand("init", "Initialize an empty database index container");
-
-        // --------------------------------------------------------------------
-        // Subcommand: INDEX
-        // --------------------------------------------------------------------
-        std::string inputFile;
-        auto *indexCmd = app.add_subcommand("index", "Ingest external raw vector binary data");
-        indexCmd->add_option("-f,--file", inputFile,
-                             "Path to the raw floating-point binary file")
-            ->required()
-            ->check(CLI::ExistingFile); // Validates file existence out-of-the-box
-
-        // --------------------------------------------------------------------
-        // Subcommand: SEARCH
-        // --------------------------------------------------------------------
-        std::string queryFile;
+        auto *searchCmd = app.add_subcommand("search", "Hybrid search (semantic + BM25 fused with RRF)");
+        std::string query;
+        searchCmd->add_option("-q,--query", query, "Query string")->required();
         size_t topK = 10;
-        auto *searchCmd = app.add_subcommand("search", "Return the nearest vectors by cosine similarity");
-        searchCmd->add_option("-q,--query-file", queryFile, "Path to one raw floating-point query vector")
-            ->required()
-            ->check(CLI::ExistingFile);
-        searchCmd->add_option("-k,--top-k", topK, "Maximum number of nearest vectors to return")->default_val(10);
+        searchCmd->add_option("-k,--top-k", topK, "Maximum number of hits to return")->default_val(10);
+        searchCmd->add_option("-p,--path", dbPath, "Path to the VecGrep index");
+        searchCmd->add_option("-m,--model", modelPath, "INT8 ONNX MiniLM model (omit to use the hash stub embedder)");
+        searchCmd->add_option("--vocab", vocabPath, "WordPiece vocab.txt for the ONNX model");
 
-        // Parse command line arguments
         CLI11_PARSE(app, argc, argv);
 
-        // Instantiate our RAII storage engine
-        mach_core::StorageEngine<float> engine;
-
-        // --------------------------------------------------------------------
-        // Command Routing & Action Layer
-        // --------------------------------------------------------------------
-        if (initCmd->parsed())
+        auto embedder = mach_core::makeEmbedder(modelPath, vocabPath);
+        if (!embedder)
         {
-            std::println("Initializing database container at '{}'...", dbPath);
-
-            auto result = engine.createOrOpen(dbPath, dimensions);
-            if (!result)
-            {
-                std::println(std::cerr, "Error: Failed to initialize. Code: {}", static_cast<int>(result.error()));
-                return 1;
-            }
-
-            std::println("Database container created successfully. Target "
-                         "Dimensions: {}",
-                         engine.getDimensions());
+            std::println(std::cerr, "Error: failed to load embedder. Code: {}",
+                         static_cast<int>(embedder.error()));
+            return 1;
         }
-        else if (indexCmd->parsed())
+
+        mach_core::LogIndex index;
+        auto opened = index.open(dbPath);
+        if (!opened)
         {
-            std::println("Opening database container at '{}' for ingestion (dimensions: {})...", dbPath, dimensions);
-
-            auto result = engine.createOrOpen(dbPath, dimensions);
-            if (!result)
-            {
-                // Now we cast the EngineError enum to an integer so we can
-                // actually see WHY it failed
-                std::println(std::cerr, "Error: Could not open database target file. Code: {}",
-                             static_cast<int>(result.error()));
-                return 1;
-            }
-
-            std::println("Streaming ingestion target identified: '{}'", inputFile);
-            std::println("Current vector count before ingest: {}", engine.getVectorCount());
-
-            // Binary Streaming Loop
-            std::ifstream infile(inputFile, std::ios::binary);
-            if (!infile)
-            {
-                std::println(std::cerr, "Failed to open input file stream.");
-                return 1;
-            }
-
-            // Create a single allocation buffer sized exactly to our database schema
-            std::vector<float> buffer(engine.getDimensions());
-            size_t ingestedCount = 0;
-            // We are intentionally treating the float buffer as raw bytes for streaming
-            // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-            char *bufferData = reinterpret_cast<char *>(buffer.data());
-            const auto readSize = static_cast<std::streamsize>(buffer.size() * sizeof(float));
-
-            // Read exactly 'dimensions * sizeof(float)' bytes per loop
-            while (infile.read(bufferData, readSize))
-            {
-                auto appendRes = engine.appendVector(buffer);
-                if (!appendRes)
-                {
-                    std::println(std::cerr, "Fatal error appending vector at index {}. Code: {}", ingestedCount,
-                                 static_cast<int>(appendRes.error()));
-                    break;
-                }
-                ingestedCount++;
-            }
-
-            std::println("Ingestion complete. Added {} new vectors.", ingestedCount);
-            std::println("New total vector count on disk: {}", engine.getVectorCount());
+            std::println(std::cerr, "Error: failed to open index '{}'. Code: {}", dbPath,
+                         static_cast<int>(opened.error()));
+            return 1;
         }
-        else if (searchCmd->parsed())
+
+        if (indexCmd->parsed())
         {
-            if (!std::filesystem::exists(dbPath))
+            auto added = index.ingestFile(logFile, **embedder, !syncIngest);
+            if (!added)
             {
-                std::println(std::cerr, "Error: Database container '{}' does not exist.", dbPath);
+                std::println(std::cerr, "Error: ingest failed. Code: {}", static_cast<int>(added.error()));
                 return 1;
             }
-
-            auto openResult = engine.createOrOpen(dbPath, dimensions);
-            if (!openResult)
-            {
-                std::println(std::cerr, "Error: Could not open database target file. Code: {}",
-                             static_cast<int>(openResult.error()));
-                return 1;
-            }
-
-            const auto expectedQuerySize = engine.getDimensions() * sizeof(float);
-            if (std::filesystem::file_size(queryFile) != expectedQuerySize)
-            {
-                std::println(std::cerr, "Error: Query file must contain exactly one {}-dimension float vector.",
-                             engine.getDimensions());
-                return 1;
-            }
-
-            std::vector<float> query(engine.getDimensions());
-            std::ifstream infile(queryFile, std::ios::binary);
-            // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-            auto *queryData = reinterpret_cast<char *>(query.data());
-            infile.read(queryData, static_cast<std::streamsize>(expectedQuerySize));
-            if (!infile)
-            {
-                std::println(std::cerr, "Error: Failed to read query vector.");
-                return 1;
-            }
-
-            auto results = mach_core::searchTopKCosine<float>(engine, query, topK);
-            if (!results)
-            {
-                std::println(std::cerr, "Error: Search failed. Code: {}", static_cast<int>(results.error()));
-                return 1;
-            }
-
-            for (const auto &result : *results)
-            {
-                std::println("index: {}, score: {}", result.index, result.score);
-            }
+            std::println("Indexed {} lines from '{}'. Total vectors: {}", *added, logFile, index.vectorCount());
+            return 0;
         }
+
+        auto hits = index.search(query, topK, **embedder);
+        if (!hits)
+        {
+            std::println(std::cerr, "Error: search failed. Code: {}", static_cast<int>(hits.error()));
+            return 1;
+        }
+
+        std::println("LINE\tRRF\tTEXT");
+        for (const auto &hit : *hits)
+        {
+            std::println("{}\t{:.6f}\t{}", hit.lineNo, hit.rrfScore, hit.text);
+        }
+        return 0;
     }
     catch (const std::format_error &e)
     {

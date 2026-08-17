@@ -55,6 +55,10 @@ function(vecgrep_add_test name)
 endfunction()
 
 vecgrep_add_test(log_line_store_test)
-vecgrep_add_test(vector_index_test)
 vecgrep_add_test(embedder_test)
 vecgrep_add_test(tokenizer_test)
+vecgrep_add_test(bm25_test)
+vecgrep_add_test(rrf_test)
+vecgrep_add_test(vector_index_test)
+vecgrep_add_test(log_index_test)
+
