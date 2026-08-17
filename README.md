@@ -1,35 +1,81 @@
-# Mach1 🚀
+# VecGrep
 
-**High-Performance Vector Database & Semantic Indexer**
+**Offline hybrid search for system and robotics logs.**
 
-Mach1 is a modern, enterprise-grade vector database designed for absolute maximum throughput and zero-overhead data ingestion. Built entirely on C++26, it leverages Data-Oriented Design (DOD) and strict RAII principles to manage high-dimensional AI embeddings (like LLM output vectors) with extreme efficiency.
+VecGrep is a C++26 CLI that runs **semantic + lexical (BM25)** search over unstructured logs with no cloud APIs. Embeddings come from an INT8 `all-MiniLM-L6-v2` ONNX model (or a deterministic hash stub when no model is supplied). Rank lists are fused with Reciprocal Rank Fusion.
 
-## ⚡ Core Features
+## Features
 
-* **Zero-Copy Architecture:** Utilizes Linux memory mapping (`mmap`) to interact directly with disk storage at native RAM speeds. No massive heap allocations, no memory overhead.
-* **Data-Oriented Design:** Embeddings are tightly packed in flat memory arenas to maximize CPU cache locality and alignment for SIMD vectorization.
-* **Type-Safe Math Engine:** Implements `std::expected` for purely value-based, linear error handling without the stack-unwinding penalty of traditional C++ exceptions.
-* **Modern C++26 Standard:** Built using the latest features, concepts, and standard library components.
-* **Robust CLI Parsing:** Subcommand routing and automatic file validation powered by the industrial-grade `CLI11` framework.
-* **Decoupled Toolchain:** Completely relies on Conan 2 to handle package provision and inject rigorous compiler diagnostics (`-Wall`, `-Wsign-conversion`, ASan/UBSan).
+* **Hybrid search:** 384-d cosine k-NN plus BM25, combined with RRF
+* **Edge inference:** ONNX Runtime C++ API, INT8 MiniLM, native WordPiece tokenizer
+* **Zero-copy store:** mmap packing of embeddings; JSONL sidecar maps ids to original log lines
+* **SIMD cosine:** AVX2 with a scalar fallback (`-march=x86-64-v2` portable builds)
+* **Async ingest:** `std::jthread` pipeline (I/O → embed → index); `--sync` for single-threaded mode
 
----
+## Prerequisites
 
-## 🛠️ Prerequisites
+* GCC 15+ (C++26)
+* CMake 3.28+
+* Conan 2.x
+* Linux (POSIX mmap)
 
-To build Mach1, your system must meet the following baseline requirements:
+## Build
 
-* **Compiler:** GCC 15.0+ (Requires full C++26 support)
-* **Build System:** CMake 3.28 or higher
-* **Package Manager:** Conan 2.x
-* **OS:** Linux (Requires POSIX `mmap` and `ftruncate` APIs)
-
----
-
-## 🏗️ Build Instructions
-
-Mach1 uses a decoupled build system. CMake manages the target layouts, while Conan 2 orchestrates the dependencies and compiler flags via the `CMakeDeps` and `CMakeToolchain` generators.
-
-**1. Install dependencies and generate CMake bindings:**
 ```bash
 conan install . -pr=./conan/profiles/gcc-26-debug --build=missing
+conan build . -pr:h ./conan/profiles/gcc-26 -pr:b default --build=missing
+```
+
+The CLI binary is `vecgrep`.
+
+## Usage
+
+Index a log (hash stub embedder — no model required):
+
+```bash
+vecgrep index --log-file robot.log --path /tmp/robot.vecgrep
+vecgrep search --query "CAN timeout 0x1A4" --path /tmp/robot.vecgrep -k 10
+```
+
+With MiniLM INT8:
+
+```bash
+vecgrep index --log-file robot.log --path /tmp/robot.vecgrep \
+  --model models/all-MiniLM-L6-v2-int8.onnx --vocab models/vocab.txt
+vecgrep search --query "actuator overcurrent on joint 3" --path /tmp/robot.vecgrep \
+  --model models/all-MiniLM-L6-v2-int8.onnx --vocab models/vocab.txt
+```
+
+Output is TSV:
+
+```
+LINE	RRF	TEXT
+2	0.032258	CAN timeout on bus 0x1A4
+```
+
+`--sync` disables the ingest thread pipeline.
+
+## ONNX model contract
+
+Expected MiniLM graph:
+
+| Tensor | Type | Shape |
+|---|---|---|
+| `input_ids` | int64 | `[batch, seq]` |
+| `attention_mask` | int64 | `[batch, seq]` |
+| `token_type_ids` | int64 | `[batch, seq]` (zeros if the graph requires it) |
+| output | float32 | `[batch, 384]` or `[batch, seq, 384]` |
+
+If the output is `[batch, seq, 384]`, VecGrep mean-pools with the attention mask and L2-normalizes.
+
+`models/all-MiniLM-L6-v2-int8.onnx` is the official sentence-transformers `onnx/model_qint8_avx512.onnx` (~22 MB) plus `models/vocab.txt`. CI still uses `test/fixtures/tiny_minilm.onnx` and does not download weights.
+
+## Architecture
+
+```
+log lines ─┬─► WordPiece + ONNX (or HashEmbedder) ─► mmap vector store
+           └─► lexical tokens ─► BM25 inverted index
+query ─► both legs ─► RRF ─► original line + line number
+```
+
+The Conan package name remains `mach1`; the product/CLI name is VecGrep.
