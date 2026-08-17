@@ -56,3 +56,5 @@ endfunction()
 
 vecgrep_add_test(log_line_store_test)
 vecgrep_add_test(vector_index_test)
+vecgrep_add_test(embedder_test)
+vecgrep_add_test(tokenizer_test)

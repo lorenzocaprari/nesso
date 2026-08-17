@@ -1,0 +1,15 @@
+[PAD]
+[UNK]
+[CLS]
+[SEP]
+hello
+world
+can
+timeout
+bus
+##llo
+0x1a4
+the
+quick
+brown
+fox
