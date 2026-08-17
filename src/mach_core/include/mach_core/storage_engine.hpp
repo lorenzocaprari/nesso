@@ -36,6 +36,7 @@ template <SupportedScalar T> class StorageEngine
     [[nodiscard]] bool isOpen() const noexcept { return m_header != nullptr; }
     [[nodiscard]] uint64_t getVectorCount() const noexcept { return m_header != nullptr ? m_header->vector_count : 0; }
     [[nodiscard]] uint64_t getDimensions() const noexcept { return m_header != nullptr ? m_header->dimensions : 0; }
+    [[nodiscard]] const T *vectorData() const noexcept { return m_vector_data_pool; }
 
   private:
     int m_fd{-1};                      // Linux native file descriptor

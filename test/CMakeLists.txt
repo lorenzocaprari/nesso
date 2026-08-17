@@ -44,3 +44,15 @@ target_link_libraries(double_search_test PRIVATE mach_core)
 # coverage gate.
 target_compile_options(double_search_test PRIVATE -fno-profile-arcs
                                                   -fno-test-coverage)
+
+set(VECGREP_FIXTURES_DIR "${CMAKE_CURRENT_SOURCE_DIR}/fixtures")
+
+function(vecgrep_add_test name)
+  add_executable(${name} ${name}.cpp)
+  add_test(NAME ${name} COMMAND ${name})
+  target_link_libraries(${name} PRIVATE mach_core Catch2::Catch2WithMain)
+  target_compile_definitions(${name} PRIVATE FIXTURES_DIR="${VECGREP_FIXTURES_DIR}")
+endfunction()
+
+vecgrep_add_test(log_line_store_test)
+vecgrep_add_test(vector_index_test)

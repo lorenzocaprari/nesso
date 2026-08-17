@@ -23,8 +23,14 @@ enum class EngineError : uint8_t
     MismatchedDimensions,
     IndexOutOfBounds,
     DatabaseNotInitialized,
-    CorruptDatabase
+    CorruptDatabase,
+    SidecarIoFailure,
+    TokenizerFailure,
+    ModelLoadFailure,
+    InferenceFailure
 };
+
+inline constexpr uint64_t kEmbeddingDims = 384;
 
 // Packed structure containing file metadata on disk
 #pragma pack(push, 1)

@@ -1,0 +1,5 @@
+boot sequence complete
+CAN timeout on bus 0x1A4
+motor current spike at joint 3
+heartbeat ok
+CAN bus recovered after timeout

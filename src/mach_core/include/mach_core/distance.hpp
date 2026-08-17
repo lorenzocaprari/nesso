@@ -16,6 +16,10 @@ class CosineSimilarity
   public:
     template <SupportedScalar T>
     [[nodiscard]] static std::expected<T, EngineError> calculate(std::span<const T> a, std::span<const T> b) noexcept;
+
+    template <SupportedScalar T>
+    [[nodiscard]] static std::expected<T, EngineError> calculateScalar(std::span<const T> a,
+                                                                       std::span<const T> b) noexcept;
 };
 
 } // namespace mach_core::math
