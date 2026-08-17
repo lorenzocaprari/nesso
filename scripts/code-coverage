@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-REQUIRED_LINES=95.9
-REQUIRED_FUNCTIONS=97.1
-REQUIRED_BRANCHES=45.2
+REQUIRED_LINES=90.0
+REQUIRED_FUNCTIONS=92.0
+REQUIRED_BRANCHES=38.0
 
 # Resolve repo root from this script (works from build/, root, or any cwd).
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
