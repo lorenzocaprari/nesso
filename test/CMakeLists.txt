@@ -56,6 +56,15 @@ target_link_libraries(wordpiece_tokenizer_test PRIVATE mach_embed
 target_compile_definitions(wordpiece_tokenizer_test
                            PRIVATE MACH1_TEST_FIXTURES="${MACH1_TEST_FIXTURES}")
 
+add_executable(log_chunker_test log_chunker_test.cpp)
+add_test(NAME log_chunker_test COMMAND log_chunker_test)
+target_link_libraries(log_chunker_test PRIVATE mach_parser
+                                               Catch2::Catch2WithMain)
+target_compile_definitions(log_chunker_test
+                           PRIVATE MACH1_TEST_FIXTURES="${MACH1_TEST_FIXTURES}")
+target_compile_options(log_chunker_test PRIVATE -fno-profile-arcs
+                                                -fno-test-coverage)
+
 add_executable(onnx_embedder_test onnx_embedder_test.cpp)
 target_link_libraries(onnx_embedder_test PRIVATE mach_embed
                                                  Catch2::Catch2WithMain)
