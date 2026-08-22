@@ -29,6 +29,17 @@ class DistanceMetrics
                                                                          std::span<const T> b) noexcept;
 };
 
+namespace detail
+{
+template <SupportedScalar T> [[nodiscard]] T dotProductScalar(std::span<const T> a, std::span<const T> b) noexcept;
+template <SupportedScalar T>
+[[nodiscard]] T l2SquaredDistanceScalar(std::span<const T> a, std::span<const T> b) noexcept;
+#ifdef __AVX2__
+[[nodiscard]] float dotProductAvx2(std::span<const float> a, std::span<const float> b) noexcept;
+[[nodiscard]] float l2SquaredDistanceAvx2(std::span<const float> a, std::span<const float> b) noexcept;
+#endif
+} // namespace detail
+
 } // namespace mach_core::math
 
 #endif // MACH_CORE_DISTANCE_HPP
