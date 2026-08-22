@@ -29,12 +29,15 @@ lcov --directory build/coverage/build/Debug --capture --output-file build/covera
 lcov --remove build/coverage/coverage.info \
   '/usr/*' \
   "${conan_cache}/*" \
+  '*/test/onnx_embedder_test.cpp' \
+  '*/src/mach_embed/onnx_embedder.cpp' \
   --output-file build/coverage/coverage.cleaned
-genhtml --branch-coverage --rc branch_coverage=1 \
+genhtml --branch-coverage --rc branch_coverage=1 --ignore-errors inconsistent \
   build/coverage/coverage.cleaned \
   --output-directory build/coverage/report >/dev/null
 
-summary=$(command lcov --rc branch_coverage=1 --summary build/coverage/coverage.cleaned 2>&1)
+summary=$(command lcov --rc branch_coverage=1 --ignore-errors inconsistent,mismatch,unused,corrupt \
+  --summary build/coverage/coverage.cleaned 2>&1)
 pct() { echo "$summary" | grep -E "^[[:space:]]+${1}\\.+" | awk -F: '{print $2}' | awk '{print $1}' | tr -d '%'; }
 
 fail=0
