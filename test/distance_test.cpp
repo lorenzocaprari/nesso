@@ -163,3 +163,58 @@ TEMPLATE_TEST_CASE("DistanceMetrics::dotProduct rejects invalid inputs", "[Dista
         }
     }
 }
+
+TEMPLATE_TEST_CASE("DistanceMetrics::l2SquaredDistance computes known values", "[DistanceMetrics][core][Unit]", float,
+                   double)
+{
+    GIVEN("Two vectors with a known delta")
+    {
+        std::array<TestType, 3> a = {1.0, 2.0, 3.0};
+        std::array<TestType, 3> b = {2.0, 4.0, 6.0};
+
+        WHEN("computing the squared L2 distance")
+        {
+            auto result = DistanceMetrics::l2SquaredDistance<TestType>(a, b);
+
+            THEN("the operation succeeds with the expected sum of squares")
+            {
+                REQUIRE(result.has_value());
+                REQUIRE(result.value() == Catch::Approx(14.0));
+            }
+        }
+    }
+}
+
+TEMPLATE_TEST_CASE("DistanceMetrics::l2SquaredDistance rejects invalid inputs", "[DistanceMetrics][core][Unit]", float,
+                   double)
+{
+    GIVEN("Two vectors with mismatched dimensionality")
+    {
+        std::array<TestType, 3> a = {1.0, 2.0, 3.0};
+        std::array<TestType, 2> b = {1.0, 2.0};
+
+        WHEN("computing the squared L2 distance")
+        {
+            auto result = DistanceMetrics::l2SquaredDistance<TestType>(a, b);
+
+            THEN("the operation fails with MismatchedDimensions")
+            {
+                REQUIRE_FALSE(result.has_value());
+                REQUIRE(result.error() == EngineError::MismatchedDimensions);
+            }
+        }
+    }
+
+    GIVEN("Two empty vectors")
+    {
+        std::span<const TestType> a{};
+        std::span<const TestType> b{};
+
+        WHEN("computing the squared L2 distance")
+        {
+            auto result = DistanceMetrics::l2SquaredDistance<TestType>(a, b);
+
+            THEN("the operation fails") { REQUIRE_FALSE(result.has_value()); }
+        }
+    }
+}
