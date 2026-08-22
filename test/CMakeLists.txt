@@ -56,6 +56,16 @@ target_link_libraries(wordpiece_tokenizer_test PRIVATE mach_embed
 target_compile_definitions(wordpiece_tokenizer_test
                            PRIVATE MACH1_TEST_FIXTURES="${MACH1_TEST_FIXTURES}")
 
+add_executable(onnx_embedder_test onnx_embedder_test.cpp)
+target_link_libraries(onnx_embedder_test PRIVATE mach_embed
+                                                 Catch2::Catch2WithMain)
+target_compile_definitions(onnx_embedder_test
+                           PRIVATE MACH1_TEST_FIXTURES="${MACH1_TEST_FIXTURES}")
+target_compile_options(onnx_embedder_test PRIVATE -fno-profile-arcs
+                                                  -fno-test-coverage)
+add_test(NAME onnx_embedder_test COMMAND $<TARGET_FILE:onnx_embedder_test>
+                                         --allow-running-no-tests)
+
 add_executable(double_search_test double_search_test.cpp)
 add_test(NAME double_search_test COMMAND double_search_test)
 target_link_libraries(double_search_test PRIVATE mach_core)
