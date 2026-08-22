@@ -1,0 +1,8 @@
+[PAD]
+[unused0]
+[CLS]
+[SEP]
+hello
+world
+##ing
+testing
