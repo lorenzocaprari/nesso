@@ -9,13 +9,13 @@ Nesso is a Linux-native CLI for searching local text by meaning. The current bin
 ## Today
 
 - Memory-mapped vector store with cosine top-k search
-- CLI subcommands: `init`, `index`, `search` on raw float32 vector files
+- CLI subcommands: `init`, `index`, `search` on raw float32 vector files, plus `grep` over logs
 - Brute-force linear scan (no ANN index yet)
 - Conan 2 toolchain with ASan/UBSan debug builds and CI coverage gates
 
 ## Target (in progress)
 
-Semantic search over `.log`, `.json`, and `.jsonl` files via a local ONNX MiniLM embedder and an in-memory embedding store. Commit 15 adds a `grep`-style command on the existing binary.
+Semantic search over `.log`, `.json`, and `.jsonl` files via a local ONNX MiniLM embedder and an in-memory embedding store.
 
 ## Non-goals
 
@@ -42,7 +42,21 @@ ctest --test-dir build/Debug --output-on-failure
 
 Release profile: replace `gcc-26-debug` with `gcc-26`.
 
-## Usage (current CLI)
+## Semantic grep
+
+Download the embedding model once:
+
+```bash
+./scripts/fetch-model
+```
+
+Search a log file by meaning:
+
+```bash
+./build/Debug/mach1 grep --log app.log --query "database connection error" -k 5 --model-dir models/
+```
+
+## Usage (current vector CLI)
 
 Initialize a database container:
 

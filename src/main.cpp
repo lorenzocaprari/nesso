@@ -4,6 +4,10 @@
 
 #include "commands/storage_commands.hpp"
 
+#ifndef MACH1_FUZZ_STORAGE_ONLY
+#include "commands/grep_command.hpp"
+#endif
+
 #include <CLI/CLI.hpp>
 #include <mach_core/storage_engine.hpp>
 
@@ -42,6 +46,20 @@ int main(int argc, char *argv[]) noexcept
             ->check(CLI::ExistingFile);
         searchCmd->add_option("-k,--top-k", topK, "Maximum number of nearest vectors to return")->default_val(10);
 
+#ifndef MACH1_FUZZ_STORAGE_ONLY
+        std::string logFile;
+        std::string queryText;
+        std::string modelDir = "models";
+        auto *grepCmd = app.add_subcommand("grep", "Semantic search over a log file");
+        grepCmd->add_option("--log", logFile, "Path to a .log, .json, or .jsonl file")
+            ->required()
+            ->check(CLI::ExistingFile);
+        grepCmd->add_option("--query", queryText, "Natural-language query")->required();
+        grepCmd->add_option("-k,--top-k", topK, "Maximum number of matches to return")->default_val(5);
+        grepCmd->add_option("--model-dir", modelDir, "Directory containing model.onnx and vocab.txt")
+            ->default_val("models");
+#endif
+
         CLI11_PARSE(app, argc, argv);
 
         mach_core::StorageEngine<float> engine;
@@ -58,6 +76,12 @@ int main(int argc, char *argv[]) noexcept
         {
             return mach1::commands::runSearch(engine, dbPath, dimensions, queryFile, topK);
         }
+#ifndef MACH1_FUZZ_STORAGE_ONLY
+        if (grepCmd->parsed())
+        {
+            return mach1::commands::runGrep(logFile, queryText, topK, modelDir);
+        }
+#endif
     }
     catch (const std::format_error &e)
     {
