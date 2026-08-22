@@ -47,10 +47,7 @@ std::expected<std::vector<SearchResult<T>>, EngineError> searchTopKCosine(const 
 
     const auto resultOrder = [](const SearchResult<T> &left, const SearchResult<T> &right)
     { return left.score != right.score ? left.score > right.score : left.index < right.index; };
-    const size_t resultCount = std::min(k, results.size());
-    std::partial_sort(results.begin(), results.begin() + static_cast<std::ptrdiff_t>(resultCount), results.end(),
-                      resultOrder);
-    results.resize(resultCount);
+    detail::selectTopKInPlace(results, k, resultOrder);
     return results;
 }
 
