@@ -23,6 +23,10 @@ class DistanceMetrics
   public:
     template <SupportedScalar T>
     [[nodiscard]] static std::expected<T, EngineError> dotProduct(std::span<const T> a, std::span<const T> b) noexcept;
+
+    template <SupportedScalar T>
+    [[nodiscard]] static std::expected<T, EngineError> l2SquaredDistance(std::span<const T> a,
+                                                                         std::span<const T> b) noexcept;
 };
 
 } // namespace mach_core::math
