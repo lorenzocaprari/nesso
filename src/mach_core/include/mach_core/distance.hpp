@@ -18,6 +18,13 @@ class CosineSimilarity
     [[nodiscard]] static std::expected<T, EngineError> calculate(std::span<const T> a, std::span<const T> b) noexcept;
 };
 
+class DistanceMetrics
+{
+  public:
+    template <SupportedScalar T>
+    [[nodiscard]] static std::expected<T, EngineError> dotProduct(std::span<const T> a, std::span<const T> b) noexcept;
+};
+
 } // namespace mach_core::math
 
 #endif // MACH_CORE_DISTANCE_HPP
