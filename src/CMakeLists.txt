@@ -1,6 +1,7 @@
 find_package(CLI11 CONFIG REQUIRED)
 
 add_subdirectory(mach_core)
+add_subdirectory(mach_embed)
 
 add_executable(mach1 main.cpp)
 target_link_libraries(mach1 PRIVATE mach_core CLI11::CLI11)

@@ -2,7 +2,9 @@ find_package(Catch2 CONFIG REQUIRED)
 find_package(nlohmann_json CONFIG REQUIRED)
 find_package(onnxruntime CONFIG REQUIRED)
 
-set(MACH1_TEST_FIXTURES "${CMAKE_SOURCE_DIR}/test/fixtures")
+file(COPY "${CMAKE_CURRENT_SOURCE_DIR}/fixtures"
+     DESTINATION "${CMAKE_CURRENT_BINARY_DIR}")
+set(MACH1_TEST_FIXTURES "${CMAKE_CURRENT_BINARY_DIR}/fixtures")
 
 add_executable(dependency_link_test dependency_link_test.cpp)
 add_test(NAME dependency_link_test COMMAND dependency_link_test)
@@ -46,6 +48,13 @@ add_executable(search_oracle_test search_oracle_test.cpp)
 add_test(NAME search_oracle_test COMMAND search_oracle_test)
 target_link_libraries(search_oracle_test PRIVATE mach_core
                                                  Catch2::Catch2WithMain)
+
+add_executable(wordpiece_tokenizer_test wordpiece_tokenizer_test.cpp)
+add_test(NAME wordpiece_tokenizer_test COMMAND wordpiece_tokenizer_test)
+target_link_libraries(wordpiece_tokenizer_test PRIVATE mach_embed
+                                                       Catch2::Catch2WithMain)
+target_compile_definitions(wordpiece_tokenizer_test
+                           PRIVATE MACH1_TEST_FIXTURES="${MACH1_TEST_FIXTURES}")
 
 add_executable(double_search_test double_search_test.cpp)
 add_test(NAME double_search_test COMMAND double_search_test)
