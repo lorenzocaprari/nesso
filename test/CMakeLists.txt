@@ -2,13 +2,14 @@ find_package(Catch2 CONFIG REQUIRED)
 find_package(nlohmann_json CONFIG REQUIRED)
 find_package(onnxruntime CONFIG REQUIRED)
 
+set(MACH1_TEST_FIXTURES "${CMAKE_SOURCE_DIR}/test/fixtures")
+
 add_executable(dependency_link_test dependency_link_test.cpp)
 add_test(NAME dependency_link_test COMMAND dependency_link_test)
 target_link_libraries(
   dependency_link_test
   PRIVATE Catch2::Catch2WithMain nlohmann_json::nlohmann_json
           onnxruntime::onnxruntime)
-# Linkage smoke test only — keep out of the coverage gate.
 target_compile_options(dependency_link_test PRIVATE -fno-profile-arcs
                                                     -fno-test-coverage)
 
@@ -24,6 +25,10 @@ add_test(NAME distance_test COMMAND distance_test)
 target_link_libraries(distance_test PRIVATE mach_core Catch2::Catch2WithMain)
 target_include_directories(distance_test
                            PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/include")
+target_compile_definitions(distance_test PRIVATE MACH1_DISTANCE_DETAIL_TEST=1)
+if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64")
+  target_compile_options(distance_test PRIVATE -mavx2)
+endif()
 
 add_executable(vector_search_test vector_search_test.cpp)
 add_test(NAME vector_search_test COMMAND vector_search_test)
@@ -40,7 +45,5 @@ target_link_libraries(search_oracle_test PRIVATE mach_core
 add_executable(double_search_test double_search_test.cpp)
 add_test(NAME double_search_test COMMAND double_search_test)
 target_link_libraries(double_search_test PRIVATE mach_core)
-# Exercise the double instantiations without adding test-harness branches to the
-# coverage gate.
 target_compile_options(double_search_test PRIVATE -fno-profile-arcs
                                                   -fno-test-coverage)

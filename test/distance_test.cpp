@@ -5,6 +5,7 @@
 
 using namespace mach_core;
 using mach_core::math::CosineSimilarity;
+using mach_core::math::DistanceMetrics;
 
 TEMPLATE_TEST_CASE("CosineSimilarity handles well-formed vectors", "[CosineSimilarity][core][Unit]", float, double)
 {
@@ -106,6 +107,59 @@ TEMPLATE_TEST_CASE("CosineSimilarity rejects invalid inputs", "[CosineSimilarity
             auto result = CosineSimilarity::calculate<TestType>(a, b);
 
             THEN("the operation fails rather than dividing by zero") { REQUIRE_FALSE(result.has_value()); }
+        }
+    }
+}
+
+TEMPLATE_TEST_CASE("DistanceMetrics::dotProduct computes known values", "[DistanceMetrics][core][Unit]", float, double)
+{
+    GIVEN("Two aligned vectors")
+    {
+        std::array<TestType, 3> a = {1.0, 2.0, 3.0};
+        std::array<TestType, 3> b = {4.0, 5.0, 6.0};
+
+        WHEN("computing the dot product")
+        {
+            auto result = DistanceMetrics::dotProduct<TestType>(a, b);
+
+            THEN("the operation succeeds with the expected sum")
+            {
+                REQUIRE(result.has_value());
+                REQUIRE(result.value() == Catch::Approx(32.0));
+            }
+        }
+    }
+}
+
+TEMPLATE_TEST_CASE("DistanceMetrics::dotProduct rejects invalid inputs", "[DistanceMetrics][core][Unit]", float, double)
+{
+    GIVEN("Two vectors with mismatched dimensionality")
+    {
+        std::array<TestType, 3> a = {1.0, 2.0, 3.0};
+        std::array<TestType, 2> b = {1.0, 2.0};
+
+        WHEN("computing the dot product")
+        {
+            auto result = DistanceMetrics::dotProduct<TestType>(a, b);
+
+            THEN("the operation fails with MismatchedDimensions")
+            {
+                REQUIRE_FALSE(result.has_value());
+                REQUIRE(result.error() == EngineError::MismatchedDimensions);
+            }
+        }
+    }
+
+    GIVEN("Two empty vectors")
+    {
+        std::span<const TestType> a{};
+        std::span<const TestType> b{};
+
+        WHEN("computing the dot product")
+        {
+            auto result = DistanceMetrics::dotProduct<TestType>(a, b);
+
+            THEN("the operation fails") { REQUIRE_FALSE(result.has_value()); }
         }
     }
 }

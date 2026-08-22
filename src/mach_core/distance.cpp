@@ -58,4 +58,30 @@ template std::expected<float, EngineError> CosineSimilarity::calculate<float>(st
 template std::expected<double, EngineError> CosineSimilarity::calculate<double>(std::span<const double>,
                                                                                 std::span<const double>) noexcept;
 
+template <SupportedScalar T>
+std::expected<T, EngineError> DistanceMetrics::dotProduct(std::span<const T> a, std::span<const T> b) noexcept
+{
+    if (a.size() != b.size()) [[unlikely]]
+    {
+        return std::unexpected(EngineError::MismatchedDimensions);
+    }
+    if (a.empty()) [[unlikely]]
+    {
+        return std::unexpected(EngineError::DatabaseNotInitialized);
+    }
+
+    T sum = 0.0;
+#pragma GCC ivdep
+    for (size_t i = 0; i < a.size(); ++i)
+    {
+        sum += a[i] * b[i];
+    }
+    return sum;
+}
+
+template std::expected<float, EngineError> DistanceMetrics::dotProduct<float>(std::span<const float>,
+                                                                              std::span<const float>) noexcept;
+template std::expected<double, EngineError> DistanceMetrics::dotProduct<double>(std::span<const double>,
+                                                                                std::span<const double>) noexcept;
+
 } // namespace mach_core::math
