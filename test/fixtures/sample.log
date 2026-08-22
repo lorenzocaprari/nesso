@@ -1,0 +1,5 @@
+alpha line
+
+beta line that is intentionally very long and should be skipped because it exceeds the configured maximum line length for the log chunker implementation used in unit tests for mach_parser library code
+
+gamma line

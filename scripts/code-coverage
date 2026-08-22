@@ -31,6 +31,7 @@ lcov --remove build/coverage/coverage.info \
   "${conan_cache}/*" \
   '*/test/onnx_embedder_test.cpp' \
   '*/src/mach_embed/onnx_embedder.cpp' \
+  '*/test/log_chunker_test.cpp' \
   --output-file build/coverage/coverage.cleaned
 genhtml --branch-coverage --rc branch_coverage=1 --ignore-errors inconsistent \
   build/coverage/coverage.cleaned \
