@@ -2,6 +2,8 @@
 #include <catch2/catch_all.hpp>
 #include <mach_core/core_types.hpp>
 #include <mach_core/distance.hpp>
+#include <random>
+#include <vector>
 
 using namespace mach_core;
 using mach_core::math::CosineSimilarity;
@@ -218,3 +220,51 @@ TEMPLATE_TEST_CASE("DistanceMetrics::l2SquaredDistance rejects invalid inputs", 
         }
     }
 }
+
+#ifdef __AVX2__
+TEST_CASE("DistanceMetrics AVX2 dotProduct matches scalar oracle", "[DistanceMetrics][core][Unit][avx2]")
+{
+    std::mt19937 rng{0xC0FFEEU};
+    std::uniform_real_distribution<float> dist(-10.0F, 10.0F);
+
+    for (const size_t size : {1U, 7U, 8U, 9U, 16U, 31U, 64U})
+    {
+        std::vector<float> a(size);
+        std::vector<float> b(size);
+        for (size_t i = 0; i < size; ++i)
+        {
+            a[i] = dist(rng);
+            b[i] = dist(rng);
+        }
+
+        const std::span<const float> aSpan{a.data(), a.size()};
+        const std::span<const float> bSpan{b.data(), b.size()};
+        const float scalar = mach_core::math::detail::dotProductScalar(aSpan, bSpan);
+        const float avx2 = mach_core::math::detail::dotProductAvx2(aSpan, bSpan);
+        REQUIRE(avx2 == Catch::Approx(scalar).margin(1e-4F));
+    }
+}
+
+TEST_CASE("DistanceMetrics AVX2 l2SquaredDistance matches scalar oracle", "[DistanceMetrics][core][Unit][avx2]")
+{
+    std::mt19937 rng{0xBEEFU};
+    std::uniform_real_distribution<float> dist(-10.0F, 10.0F);
+
+    for (const size_t size : {1U, 7U, 8U, 9U, 16U, 31U, 64U})
+    {
+        std::vector<float> a(size);
+        std::vector<float> b(size);
+        for (size_t i = 0; i < size; ++i)
+        {
+            a[i] = dist(rng);
+            b[i] = dist(rng);
+        }
+
+        const std::span<const float> aSpan{a.data(), a.size()};
+        const std::span<const float> bSpan{b.data(), b.size()};
+        const float scalar = mach_core::math::detail::l2SquaredDistanceScalar(aSpan, bSpan);
+        const float avx2 = mach_core::math::detail::l2SquaredDistanceAvx2(aSpan, bSpan);
+        REQUIRE(avx2 == Catch::Approx(scalar).margin(1e-4F));
+    }
+}
+#endif
