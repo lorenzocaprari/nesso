@@ -1,35 +1,78 @@
-# Mach1 🚀
+# Nesso
 
-**High-Performance Vector Database & Semantic Indexer**
+**Local semantic search for unstructured text** (C++26)
 
-Mach1 is a modern, enterprise-grade vector database designed for absolute maximum throughput and zero-overhead data ingestion. Built entirely on C++26, it leverages Data-Oriented Design (DOD) and strict RAII principles to manage high-dimensional AI embeddings (like LLM output vectors) with extreme efficiency.
+by **Lorenzo Caprari**
 
-## ⚡ Core Features
+Nesso is a Linux-native CLI for searching local text by meaning. The current binary is still named `mach1`; a full code rename is planned after the semantic search MVP lands.
 
-* **Zero-Copy Architecture:** Utilizes Linux memory mapping (`mmap`) to interact directly with disk storage at native RAM speeds. No massive heap allocations, no memory overhead.
-* **Data-Oriented Design:** Embeddings are tightly packed in flat memory arenas to maximize CPU cache locality and alignment for SIMD vectorization.
-* **Type-Safe Math Engine:** Implements `std::expected` for purely value-based, linear error handling without the stack-unwinding penalty of traditional C++ exceptions.
-* **Modern C++26 Standard:** Built using the latest features, concepts, and standard library components.
-* **Robust CLI Parsing:** Subcommand routing and automatic file validation powered by the industrial-grade `CLI11` framework.
-* **Decoupled Toolchain:** Completely relies on Conan 2 to handle package provision and inject rigorous compiler diagnostics (`-Wall`, `-Wsign-conversion`, ASan/UBSan).
+## Today
 
----
+- Memory-mapped vector store with cosine top-k search
+- CLI subcommands: `init`, `index`, `search` on raw float32 vector files
+- Brute-force linear scan (no ANN index yet)
+- Conan 2 toolchain with ASan/UBSan debug builds and CI coverage gates
 
-## 🛠️ Prerequisites
+## Target (in progress)
 
-To build Mach1, your system must meet the following baseline requirements:
+Semantic search over `.log`, `.json`, and `.jsonl` files via a local ONNX MiniLM embedder and an in-memory vector index. Commit 15 adds a `grep`-style command on the existing binary.
 
-* **Compiler:** GCC 15.0+ (Requires full C++26 support)
-* **Build System:** CMake 3.28 or higher
-* **Package Manager:** Conan 2.x
-* **OS:** Linux (Requires POSIX `mmap` and `ftruncate` APIs)
+## Non-goals
 
----
+- Not a hosted vector database (Qdrant, pgvector, etc.)
+- No approximate nearest-neighbor index yet
+- Linux only (POSIX `mmap`)
 
-## 🏗️ Build Instructions
+## Prerequisites
 
-Mach1 uses a decoupled build system. CMake manages the target layouts, while Conan 2 orchestrates the dependencies and compiler flags via the `CMakeDeps` and `CMakeToolchain` generators.
+- **Compiler:** GCC 15+ with C++26 support
+- **Build system:** CMake 3.28+
+- **Package manager:** Conan 2.x
+- **OS:** Linux
 
-**1. Install dependencies and generate CMake bindings:**
+## Build
+
 ```bash
-conan install . -pr=./conan/profiles/gcc-26-debug --build=missing
+conan install . -pr:h ./conan/profiles/gcc-26-debug -pr:b default \
+  --lockfile=conan.lock --build=missing
+conan build . -pr:h ./conan/profiles/gcc-26-debug -pr:b default \
+  --lockfile=conan.lock --build=missing
+ctest --test-dir build/Debug --output-on-failure
+```
+
+Release profile: replace `gcc-26-debug` with `gcc-26`.
+
+## Usage (current CLI)
+
+Initialize a database container:
+
+```bash
+./build/Debug/mach1 -p vectors.mach1 -d 128 init
+```
+
+Ingest raw float32 vectors (each record is `dimensions * sizeof(float)` bytes):
+
+```bash
+./build/Debug/mach1 -p vectors.mach1 -d 128 index -f vectors.bin
+```
+
+Search by cosine similarity:
+
+```bash
+./build/Debug/mach1 -p vectors.mach1 -d 128 search -q query.bin -k 10
+```
+
+## Development
+
+Local CI gate (run before pushing):
+
+```bash
+bash scripts/lint
+./scripts/code-coverage conan/profiles/code-coverage
+```
+
+See [.github/workflows/ci.yml](.github/workflows/ci.yml) for the full pipeline (lint, clang-tidy, Release/Debug builds, unit tests, fuzz, coverage).
+
+## License
+
+MIT — see LICENSE.
