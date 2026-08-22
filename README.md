@@ -15,7 +15,7 @@ Nesso is a Linux-native CLI for searching local text by meaning. The current bin
 
 ## Target (in progress)
 
-Semantic search over `.log`, `.json`, and `.jsonl` files via a local ONNX MiniLM embedder and an in-memory vector index. Commit 15 adds a `grep`-style command on the existing binary.
+Semantic search over `.log`, `.json`, and `.jsonl` files via a local ONNX MiniLM embedder and an in-memory embedding store. Commit 15 adds a `grep`-style command on the existing binary.
 
 ## Non-goals
 
