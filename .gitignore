@@ -4,3 +4,4 @@ coverage.info
 coverage.cleaned
 build/fuzz/
 fuzz-*.log
+models/

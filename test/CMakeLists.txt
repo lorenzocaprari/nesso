@@ -37,6 +37,11 @@ target_link_libraries(vector_search_test PRIVATE mach_core
 target_include_directories(vector_search_test
                            PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/include")
 
+add_executable(embedding_store_test embedding_store_test.cpp)
+add_test(NAME embedding_store_test COMMAND embedding_store_test)
+target_link_libraries(embedding_store_test PRIVATE mach_core
+                                                   Catch2::Catch2WithMain)
+
 add_executable(search_oracle_test search_oracle_test.cpp)
 add_test(NAME search_oracle_test COMMAND search_oracle_test)
 target_link_libraries(search_oracle_test PRIVATE mach_core

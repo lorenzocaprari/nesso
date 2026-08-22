@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+MODEL_DIR="${1:-${ROOT}/models}"
+VOCAB_URL="https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2/resolve/main/vocab.txt"
+MODEL_URL="https://huggingface.co/Xenova/all-MiniLM-L6-v2/resolve/main/onnx/model_quantized.onnx"
+
+mkdir -p "${MODEL_DIR}"
+
+if ! command -v curl >/dev/null 2>&1; then
+  echo "error: curl is required" >&2
+  exit 2
+fi
+
+echo "fetch-model: downloading vocab.txt"
+curl -fsSL "${VOCAB_URL}" -o "${MODEL_DIR}/vocab.txt"
+
+echo "fetch-model: downloading model_quantized.onnx"
+curl -fsSL "${MODEL_URL}" -o "${MODEL_DIR}/model.onnx"
+
+echo "fetch-model OK: ${MODEL_DIR}"

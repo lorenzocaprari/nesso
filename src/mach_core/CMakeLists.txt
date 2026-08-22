@@ -1,4 +1,5 @@
-add_library(mach_core storage_engine.cpp distance.cpp vector_search.cpp)
+add_library(mach_core storage_engine.cpp distance.cpp vector_search.cpp
+                      embedding_store.cpp)
 target_include_directories(mach_core
                            PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
 if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64")

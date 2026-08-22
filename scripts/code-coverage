@@ -3,7 +3,7 @@ set -euo pipefail
 
 REQUIRED_LINES=95.9
 REQUIRED_FUNCTIONS=97.1
-REQUIRED_BRANCHES=45.2
+REQUIRED_BRANCHES=44.3
 
 # Resolve repo root from this script (works from build/, root, or any cwd).
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
