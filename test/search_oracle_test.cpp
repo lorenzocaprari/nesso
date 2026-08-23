@@ -4,18 +4,18 @@
 #include <algorithm>
 #include <catch2/catch_all.hpp>
 #include <cmath>
+#include <core/core_types.hpp>
+#include <core/distance.hpp>
+#include <core/storage_engine.hpp>
+#include <core/vector_search.hpp>
 #include <cstdlib>
 #include <filesystem>
-#include <mach_core/core_types.hpp>
-#include <mach_core/distance.hpp>
-#include <mach_core/storage_engine.hpp>
-#include <mach_core/vector_search.hpp>
 #include <random>
 #include <vector>
 
 namespace fs = std::filesystem;
-using namespace mach_core;
-using mach_core::math::CosineSimilarity;
+using namespace core;
+using core::math::CosineSimilarity;
 
 namespace
 {
