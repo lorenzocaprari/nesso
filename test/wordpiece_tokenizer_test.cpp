@@ -1,16 +1,16 @@
 #include <catch2/catch_all.hpp>
-#include <mach_embed/wordpiece_tokenizer.hpp>
+#include <embed/wordpiece_tokenizer.hpp>
 
 #include <filesystem>
 
-#ifndef MACH1_TEST_FIXTURES
-#error "MACH1_TEST_FIXTURES must be defined"
+#ifndef NESSO_TEST_FIXTURES
+#error "NESSO_TEST_FIXTURES must be defined"
 #endif
 
 TEST_CASE("WordPieceTokenizer encodes known strings", "[WordPieceTokenizer][embed][Unit]")
 {
-    const std::filesystem::path vocabPath = std::filesystem::path(MACH1_TEST_FIXTURES) / "tiny_vocab.txt";
-    const auto tokenizer = mach_embed::WordPieceTokenizer::fromVocabFile(vocabPath, 16);
+    const std::filesystem::path vocabPath = std::filesystem::path(NESSO_TEST_FIXTURES) / "tiny_vocab.txt";
+    const auto tokenizer = embed::WordPieceTokenizer::fromVocabFile(vocabPath, 16);
     REQUIRE(tokenizer.has_value());
 
     const auto encoded = tokenizer->encode("hello world");
@@ -21,8 +21,8 @@ TEST_CASE("WordPieceTokenizer encodes known strings", "[WordPieceTokenizer][embe
 
 TEST_CASE("WordPieceTokenizer truncates at max sequence length", "[WordPieceTokenizer][embed][Unit]")
 {
-    const std::filesystem::path vocabPath = std::filesystem::path(MACH1_TEST_FIXTURES) / "tiny_vocab.txt";
-    const auto tokenizer = mach_embed::WordPieceTokenizer::fromVocabFile(vocabPath, 4);
+    const std::filesystem::path vocabPath = std::filesystem::path(NESSO_TEST_FIXTURES) / "tiny_vocab.txt";
+    const auto tokenizer = embed::WordPieceTokenizer::fromVocabFile(vocabPath, 4);
     REQUIRE(tokenizer.has_value());
 
     const auto encoded = tokenizer->encode("hello world testing");
@@ -33,8 +33,8 @@ TEST_CASE("WordPieceTokenizer truncates at max sequence length", "[WordPieceToke
 
 TEST_CASE("WordPieceTokenizer rejects empty input", "[WordPieceTokenizer][embed][Unit]")
 {
-    const std::filesystem::path vocabPath = std::filesystem::path(MACH1_TEST_FIXTURES) / "tiny_vocab.txt";
-    const auto tokenizer = mach_embed::WordPieceTokenizer::fromVocabFile(vocabPath);
+    const std::filesystem::path vocabPath = std::filesystem::path(NESSO_TEST_FIXTURES) / "tiny_vocab.txt";
+    const auto tokenizer = embed::WordPieceTokenizer::fromVocabFile(vocabPath);
     REQUIRE(tokenizer.has_value());
     REQUIRE_FALSE(tokenizer->encode("").has_value());
 }

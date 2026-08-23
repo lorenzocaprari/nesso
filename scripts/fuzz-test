@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# AFL++ fuzz of mach1 CLI opening a DB path (no custom harness).
-# Builds an AFL-instrumented + ASan mach1 via Conan + CMake (same link graph as CI).
+# AFL++ fuzz of nesso CLI opening a DB path (no custom harness).
+# Builds an AFL-instrumented + ASan nesso via Conan + CMake (same link graph as CI).
 # Requires: afl++ (afl-fuzz, afl-clang-fast++), Conan deps in cache.
 #
 # Local / CI:
 #   ./scripts/fuzz-test
-#   MACH1_FUZZ_MAX_TOTAL_TIME=120 ./scripts/fuzz-test
+#   NESSO_FUZZ_MAX_TOTAL_TIME=120 ./scripts/fuzz-test
 set -euo pipefail
 
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
@@ -17,18 +17,18 @@ for cmd in afl-fuzz afl-clang-fast++; do
   fi
 done
 
-OUT_DIR="${MACH1_FUZZ_OUT:-build/fuzz}"
-SEEDS_DIR="${MACH1_FUZZ_SEEDS:-fuzz/seeds/storage}"
+OUT_DIR="${NESSO_FUZZ_OUT:-build/fuzz}"
+SEEDS_DIR="${NESSO_FUZZ_SEEDS:-fuzz/seeds/storage}"
 FINDINGS_DIR="${OUT_DIR}/afl-out"
-MAX_TOTAL_TIME="${MACH1_FUZZ_MAX_TOTAL_TIME:-60}"
-DIMS="${MACH1_FUZZ_DIMS:-2}"
+MAX_TOTAL_TIME="${NESSO_FUZZ_MAX_TOTAL_TIME:-60}"
+DIMS="${NESSO_FUZZ_DIMS:-2}"
 # gcc-26-fuzz: no LTO (ORT is gcc static) and no profile ASan — AFL_USE_ASAN instruments via afl-clang-fast++.
-CONAN_PROFILE="${MACH1_FUZZ_CONAN_PROFILE:-conan/profiles/gcc-26-fuzz}"
+CONAN_PROFILE="${NESSO_FUZZ_CONAN_PROFILE:-conan/profiles/gcc-26-fuzz}"
 CMAKE_B="${OUT_DIR}/build/Release"
 TOOLCHAIN="${CMAKE_B}/generators/conan_toolchain.cmake"
-FUZZ_TARGET=mach1
-if [[ -f src/commands/grep_command.cpp ]]; then
-  FUZZ_TARGET=mach1_fuzz
+FUZZ_TARGET=nesso
+if [[ -f src/grep_command.cpp ]]; then
+  FUZZ_TARGET=nesso_fuzz
 fi
 BIN="${CMAKE_B}/src/${FUZZ_TARGET}"
 

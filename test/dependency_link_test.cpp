@@ -15,5 +15,5 @@ TEST_CASE("nlohmann_json parses a trivial object", "[deps][Unit]")
 
 TEST_CASE("onnxruntime constructs an Ort::Env", "[deps][Unit]")
 {
-    REQUIRE_NOTHROW(Ort::Env{ORT_LOGGING_LEVEL_WARNING, "mach1-deps"});
+    REQUIRE_NOTHROW(Ort::Env{ORT_LOGGING_LEVEL_WARNING, "nesso-deps"});
 }

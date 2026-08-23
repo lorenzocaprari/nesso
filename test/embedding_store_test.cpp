@@ -1,12 +1,12 @@
 #include <array>
 #include <catch2/catch_all.hpp>
-#include <mach_core/core_types.hpp>
-#include <mach_core/embedding_store.hpp>
-#include <mach_core/vector_search.hpp>
+#include <core/core_types.hpp>
+#include <core/embedding_store.hpp>
+#include <core/vector_search.hpp>
 #include <span>
 #include <vector>
 
-using namespace mach_core;
+using namespace core;
 
 TEST_CASE("EmbeddingStore ranks normalized embeddings by dot product", "[EmbeddingStore][core][Unit]")
 {

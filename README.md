@@ -4,7 +4,7 @@
 
 by **Lorenzo Caprari**
 
-Nesso is a Linux-native CLI for searching local text by meaning. The current binary is still named `mach1`; a full code rename is planned after the semantic search MVP lands.
+Nesso is a Linux-native CLI for searching local text by meaning.
 
 ## Today
 
@@ -53,7 +53,7 @@ Download the embedding model once:
 Search a log file by meaning:
 
 ```bash
-./build/Debug/mach1 grep --log app.log --query "database connection error" -k 5 --model-dir models/
+./build/Debug/nesso grep --log app.log --query "database connection error" -k 5 --model-dir models/
 ```
 
 ## Usage (current vector CLI)
@@ -61,19 +61,19 @@ Search a log file by meaning:
 Initialize a database container:
 
 ```bash
-./build/Debug/mach1 -p vectors.mach1 -d 128 init
+./build/Debug/nesso -p vectors.nesso -d 128 init
 ```
 
 Ingest raw float32 vectors (each record is `dimensions * sizeof(float)` bytes):
 
 ```bash
-./build/Debug/mach1 -p vectors.mach1 -d 128 index -f vectors.bin
+./build/Debug/nesso -p vectors.nesso -d 128 index -f vectors.bin
 ```
 
 Search by cosine similarity:
 
 ```bash
-./build/Debug/mach1 -p vectors.mach1 -d 128 search -q query.bin -k 10
+./build/Debug/nesso -p vectors.nesso -d 128 search -q query.bin -k 10
 ```
 
 ## Development

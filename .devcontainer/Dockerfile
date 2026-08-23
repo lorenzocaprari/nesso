@@ -54,19 +54,19 @@ ENV CONAN_HOME=/opt/conan2
 # Coverage reuses the Debug package ID (consumer-only --coverage flags).
 # Drop build/source/download trees after each install to keep peak disk down.
 # Remote is only for this bake; CI jobs use --no-remote against this cache.
-WORKDIR /tmp/mach1
-COPY conanfile.py /tmp/mach1/conanfile.py
-COPY conan.lock /tmp/mach1/conan.lock
-COPY conan/profiles/gcc-26 /tmp/mach1/conan/profiles/gcc-26
+WORKDIR /tmp/nesso
+COPY conanfile.py /tmp/nesso/conanfile.py
+COPY conan.lock /tmp/nesso/conan.lock
+COPY conan/profiles/gcc-26 /tmp/nesso/conan/profiles/gcc-26
 RUN conan profile detect --force \
     && conan remote add conancenter https://center2.conan.io --force \
     && conan install . -pr:h=conan/profiles/gcc-26 -pr:b=default --lockfile=conan.lock --build=missing \
     && conan cache clean "*" --build --source --download --temp
 
-COPY conan/profiles/gcc-26-debug /tmp/mach1/conan/profiles/gcc-26-debug
+COPY conan/profiles/gcc-26-debug /tmp/nesso/conan/profiles/gcc-26-debug
 RUN conan install . -pr:h=conan/profiles/gcc-26-debug -pr:b=default --lockfile=conan.lock --build=missing \
     && conan cache clean "*" --build --source --download --temp \
-    && rm -rf /tmp/mach1 /tmp/* /var/tmp/*
+    && rm -rf /tmp/nesso /tmp/* /var/tmp/*
 WORKDIR /
 
-LABEL org.opencontainers.image.source=https://github.com/lorenzocaprari/mach1
+LABEL org.opencontainers.image.source=https://github.com/lorenzocaprari/nesso

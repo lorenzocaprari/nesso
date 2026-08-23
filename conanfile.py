@@ -2,8 +2,8 @@ from conan import ConanFile
 from conan.tools.cmake import CMake, CMakeToolchain, CMakeDeps, cmake_layout
 
 
-class Mach1Conan(ConanFile):
-    name = "mach1"
+class Nesso(ConanFile):
+    name = "nesso"
     version = "0.1.0"
     package_type = "application"
 
@@ -28,15 +28,15 @@ class Mach1Conan(ConanFile):
         tc = CMakeToolchain(self)
         tc.generator = "Ninja"
         tc.cache_variables["CMAKE_EXPORT_COMPILE_COMMANDS"] = "ON"
-        # Profile consumer flags (user.mach1:*) — not tools.build:*, so deps keep
+        # Profile consumer flags (user.nesso:*) — not tools.build:*, so deps keep
         # stable package IDs and are not rebuilt with ASan/coverage/LTO.
-        tc.extra_cxxflags = list(self.conf.get("user.mach1:cxxflags", check_type=list, default=[]))
-        tc.extra_cflags = list(self.conf.get("user.mach1:cflags", check_type=list, default=[]))
+        tc.extra_cxxflags = list(self.conf.get("user.nesso:cxxflags", check_type=list, default=[]))
+        tc.extra_cflags = list(self.conf.get("user.nesso:cflags", check_type=list, default=[]))
         tc.extra_exelinkflags = list(
-            self.conf.get("user.mach1:exelinkflags", check_type=list, default=[])
+            self.conf.get("user.nesso:exelinkflags", check_type=list, default=[])
         )
         tc.extra_sharedlinkflags = list(
-            self.conf.get("user.mach1:sharedlinkflags", check_type=list, default=[])
+            self.conf.get("user.nesso:sharedlinkflags", check_type=list, default=[])
         )
         tc.generate()
         deps = CMakeDeps(self)
