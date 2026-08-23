@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       force_image_rebuild:
-        description: Force rebuild of mach-build-env even if inputs are unchanged
+        description: Force rebuild of nesso-build-env even if inputs are unchanged
         type: boolean
         default: false
 
@@ -37,7 +37,7 @@ jobs:
         run: |
           set -euo pipefail
           owner_lc="$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')"
-          reg="${{ env.REGISTRY }}/${owner_lc}/mach-build-env"
+          reg="${{ env.REGISTRY }}/${owner_lc}/nesso-build-env"
           deps_hash="$(sha256sum .devcontainer/Dockerfile conanfile.py conan.lock \
             conan/profiles/gcc-26 conan/profiles/gcc-26-debug | sha256sum | cut -c1-16)"
           cache_ref="${reg}:buildcache"
@@ -78,7 +78,7 @@ jobs:
           docker-images: true
           swap-storage: true
 
-      - name: Build and push mach-build-env
+      - name: Build and push nesso-build-env
         if: steps.image.outputs.rebuild == 'true'
         uses: docker/build-push-action@v5
         with:
@@ -122,7 +122,7 @@ jobs:
       - name: Install Dependencies (Conan)
         run: |
           conan profile detect --force
-          # --no-remote: use only packages baked into mach-build-env (avoid
+          # --no-remote: use only packages baked into nesso-build-env (avoid
           # ConanCenter recipe drift rebuilding Boost/ORT).
           conan install . -pr:h ./conan/profiles/gcc-26 -pr:b default --lockfile=conan.lock --build=missing --no-remote
 
@@ -283,7 +283,7 @@ jobs:
       - name: Run fuzz-test (AFL++ CLI + ASan)
         run: |
           chmod +x scripts/fuzz-test
-          MACH1_FUZZ_MAX_TOTAL_TIME=60 ./scripts/fuzz-test
+          NESSO_FUZZ_MAX_TOTAL_TIME=60 ./scripts/fuzz-test
 
       - name: Upload AFL findings on failure
         if: failure()

@@ -1,14 +1,14 @@
 #include <array>
 #include <catch2/catch_all.hpp>
+#include <core/core_types.hpp>
+#include <core/storage_engine.hpp>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
-#include <mach_core/core_types.hpp>
-#include <mach_core/storage_engine.hpp>
 #include <vector>
 
 namespace fs = std::filesystem;
-using namespace mach_core;
+using namespace core;
 
 class TestDatabaseGuard
 {
@@ -146,7 +146,7 @@ SCENARIO("StorageEngine rejects corrupt on-disk headers", "[StorageEngine][core]
         TestDatabaseGuard guard(db_path);
         {
             std::ofstream out(db_path, std::ios::binary);
-            const char bytes[] = {'M', 'A', 'C', 'H'};
+            const char bytes[] = {'N', 'E', 'S', 'S'};
             out.write(bytes, 4);
         }
 
@@ -191,7 +191,7 @@ SCENARIO("StorageEngine rejects corrupt on-disk headers", "[StorageEngine][core]
         TestDatabaseGuard guard(db_path);
         {
             DatabaseHeader header{};
-            header.magic = {'M', 'A', 'C', 'H'};
+            header.magic = {'N', 'E', 'S', 'S'};
             header.version = 1;
             header.dimensions = 2;
             header.vector_count = 1000000;

@@ -9,7 +9,7 @@ build_type=Debug
 
 [conf]
 # Consumer-only (deps reuse the same Debug package ID as gcc-26-debug)
-user.mach1:cxxflags=["-g", "-O0", "-fno-omit-frame-pointer", "-Wall", "-Wextra", "-Wpedantic", "-Wshadow", "-Wconversion", "-Wsign-conversion", "-D_GLIBCXX_DEBUG", "-D_GLIBCXX_DEBUG_PEDANTIC", "--coverage"]
-user.mach1:cflags=["-g", "-O0", "-fno-omit-frame-pointer", "-Wall", "-Wextra", "--coverage"]
-user.mach1:sharedlinkflags=["--coverage"]
-user.mach1:exelinkflags=["--coverage"]
+user.nesso:cxxflags=["-g", "-O0", "-fno-omit-frame-pointer", "-Wall", "-Wextra", "-Wpedantic", "-Wshadow", "-Wconversion", "-Wsign-conversion", "-D_GLIBCXX_DEBUG", "-D_GLIBCXX_DEBUG_PEDANTIC", "--coverage"]
+user.nesso:cflags=["-g", "-O0", "-fno-omit-frame-pointer", "-Wall", "-Wextra", "--coverage"]
+user.nesso:sharedlinkflags=["--coverage"]
+user.nesso:exelinkflags=["--coverage"]

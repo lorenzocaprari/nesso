@@ -1,13 +1,13 @@
 #include <array>
 #include <catch2/catch_all.hpp>
-#include <mach_core/core_types.hpp>
-#include <mach_core/distance.hpp>
+#include <core/core_types.hpp>
+#include <core/distance.hpp>
 #include <random>
 #include <vector>
 
-using namespace mach_core;
-using mach_core::math::CosineSimilarity;
-using mach_core::math::DistanceMetrics;
+using namespace core;
+using core::math::CosineSimilarity;
+using core::math::DistanceMetrics;
 
 TEMPLATE_TEST_CASE("CosineSimilarity handles well-formed vectors", "[CosineSimilarity][core][Unit]", float, double)
 {
@@ -239,8 +239,8 @@ TEST_CASE("DistanceMetrics AVX2 dotProduct matches scalar oracle", "[DistanceMet
 
         const std::span<const float> aSpan{a.data(), a.size()};
         const std::span<const float> bSpan{b.data(), b.size()};
-        const float scalar = mach_core::math::detail::dotProductScalar(aSpan, bSpan);
-        const float avx2 = mach_core::math::detail::dotProductAvx2(aSpan, bSpan);
+        const float scalar = core::math::detail::dotProductScalar(aSpan, bSpan);
+        const float avx2 = core::math::detail::dotProductAvx2(aSpan, bSpan);
         REQUIRE(avx2 == Catch::Approx(scalar).margin(1e-4F));
     }
 }
@@ -262,8 +262,8 @@ TEST_CASE("DistanceMetrics AVX2 l2SquaredDistance matches scalar oracle", "[Dist
 
         const std::span<const float> aSpan{a.data(), a.size()};
         const std::span<const float> bSpan{b.data(), b.size()};
-        const float scalar = mach_core::math::detail::l2SquaredDistanceScalar(aSpan, bSpan);
-        const float avx2 = mach_core::math::detail::l2SquaredDistanceAvx2(aSpan, bSpan);
+        const float scalar = core::math::detail::l2SquaredDistanceScalar(aSpan, bSpan);
+        const float avx2 = core::math::detail::l2SquaredDistanceAvx2(aSpan, bSpan);
         REQUIRE(avx2 == Catch::Approx(scalar).margin(1e-4F));
     }
 }
