@@ -11,7 +11,7 @@ ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 cd "${ROOT}"
 
 conan profile detect --force
-# In CI, stick to packages baked into mach-build-env (no ConanCenter drift).
+# In CI, stick to packages baked into nesso-build-env (no ConanCenter drift).
 remote_args=()
 if [[ "${CI:-}" == "true" ]]; then
   remote_args+=(--no-remote)
@@ -30,7 +30,7 @@ lcov --remove build/coverage/coverage.info \
   '/usr/*' \
   "${conan_cache}/*" \
   '*/test/onnx_embedder_test.cpp' \
-  '*/src/mach_embed/onnx_embedder.cpp' \
+  '*/src/embed/onnx_embedder.cpp' \
   '*/test/log_chunker_test.cpp' \
   '*/test/grep_integration_test.cpp' \
   --output-file build/coverage/coverage.cleaned

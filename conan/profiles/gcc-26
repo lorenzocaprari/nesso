@@ -10,7 +10,7 @@ build_type=Release
 [conf]
 # Consumer-only (applied in conanfile generate → CMakeToolchain; deps stay clean).
 # Portable ISA: -march=native breaks CI when build and test runners differ (SIGILL).
-user.mach1:cxxflags=["-O3", "-march=x86-64-v2", "-flto=auto", "-fvisibility=hidden", "-DNDEBUG"]
-user.mach1:cflags=["-O3", "-march=x86-64-v2", "-flto=auto", "-fvisibility=hidden", "-DNDEBUG"]
-user.mach1:sharedlinkflags=["-flto=auto", "-Wl,-O1", "-Wl,--as-needed"]
-user.mach1:exelinkflags=["-flto=auto", "-Wl,-O1", "-Wl,--as-needed"]
+user.nesso:cxxflags=["-O3", "-march=x86-64-v2", "-flto=auto", "-fvisibility=hidden", "-DNDEBUG"]
+user.nesso:cflags=["-O3", "-march=x86-64-v2", "-flto=auto", "-fvisibility=hidden", "-DNDEBUG"]
+user.nesso:sharedlinkflags=["-flto=auto", "-Wl,-O1", "-Wl,--as-needed"]
+user.nesso:exelinkflags=["-flto=auto", "-Wl,-O1", "-Wl,--as-needed"]

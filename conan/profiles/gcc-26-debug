@@ -9,7 +9,7 @@ build_type=Debug
 
 [conf]
 # Consumer-only (deps share stable Debug package ID with coverage)
-user.mach1:cxxflags=["-g3", "-O0", "-fno-omit-frame-pointer", "-Wall", "-Wextra", "-Wpedantic", "-Wshadow", "-Wconversion", "-Wsign-conversion", "-D_GLIBCXX_DEBUG", "-D_GLIBCXX_DEBUG_PEDANTIC", "-fsanitize=address,undefined"]
-user.mach1:cflags=["-g3", "-O0", "-fno-omit-frame-pointer", "-Wall", "-Wextra", "-Wpedantic", "-fsanitize=address,undefined"]
-user.mach1:sharedlinkflags=["-fsanitize=address,undefined"]
-user.mach1:exelinkflags=["-fsanitize=address,undefined"]
+user.nesso:cxxflags=["-g3", "-O0", "-fno-omit-frame-pointer", "-Wall", "-Wextra", "-Wpedantic", "-Wshadow", "-Wconversion", "-Wsign-conversion", "-D_GLIBCXX_DEBUG", "-D_GLIBCXX_DEBUG_PEDANTIC", "-fsanitize=address,undefined"]
+user.nesso:cflags=["-g3", "-O0", "-fno-omit-frame-pointer", "-Wall", "-Wextra", "-Wpedantic", "-fsanitize=address,undefined"]
+user.nesso:sharedlinkflags=["-fsanitize=address,undefined"]
+user.nesso:exelinkflags=["-fsanitize=address,undefined"]

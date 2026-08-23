@@ -2,14 +2,14 @@
 // SPDX-License-Identifier: MIT
 // Licensed under the MIT License. See LICENSE for details.
 
-#include "commands/storage_commands.hpp"
+#include "storage_commands.hpp"
 
-#ifndef MACH1_FUZZ_STORAGE_ONLY
-#include "commands/grep_command.hpp"
+#ifndef NESSO_FUZZ_STORAGE_ONLY
+#include "grep_command.hpp"
 #endif
 
 #include <CLI/CLI.hpp>
-#include <mach_core/storage_engine.hpp>
+#include <core/storage_engine.hpp>
 
 #include <exception>
 #include <iostream>
@@ -24,7 +24,7 @@ int main(int argc, char *argv[]) noexcept
         CLI::App app{"Nesso - local semantic search for unstructured text"};
         app.require_subcommand(1);
 
-        std::string dbPath = "vectors.mach1";
+        std::string dbPath = "vectors.nesso";
         app.add_option("-p,--path", dbPath, "Path to the vector database storage file");
 
         uint64_t dimensions = 128;
@@ -46,7 +46,7 @@ int main(int argc, char *argv[]) noexcept
             ->check(CLI::ExistingFile);
         searchCmd->add_option("-k,--top-k", topK, "Maximum number of nearest vectors to return")->default_val(10);
 
-#ifndef MACH1_FUZZ_STORAGE_ONLY
+#ifndef NESSO_FUZZ_STORAGE_ONLY
         std::string logFile;
         std::string queryText;
         std::string modelDir = "models";
@@ -62,24 +62,24 @@ int main(int argc, char *argv[]) noexcept
 
         CLI11_PARSE(app, argc, argv);
 
-        mach_core::StorageEngine<float> engine;
+        core::StorageEngine<float> engine;
 
         if (initCmd->parsed())
         {
-            return mach1::commands::runInit(engine, dbPath, dimensions);
+            return nesso::commands::runInit(engine, dbPath, dimensions);
         }
         if (indexCmd->parsed())
         {
-            return mach1::commands::runIndex(engine, dbPath, dimensions, inputFile);
+            return nesso::commands::runIndex(engine, dbPath, dimensions, inputFile);
         }
         if (searchCmd->parsed())
         {
-            return mach1::commands::runSearch(engine, dbPath, dimensions, queryFile, topK);
+            return nesso::commands::runSearch(engine, dbPath, dimensions, queryFile, topK);
         }
-#ifndef MACH1_FUZZ_STORAGE_ONLY
+#ifndef NESSO_FUZZ_STORAGE_ONLY
         if (grepCmd->parsed())
         {
-            return mach1::commands::runGrep(logFile, queryText, topK, modelDir);
+            return nesso::commands::runGrep(logFile, queryText, topK, modelDir);
         }
 #endif
     }

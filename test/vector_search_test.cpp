@@ -1,13 +1,13 @@
 #include <array>
 #include <catch2/catch_all.hpp>
+#include <core/core_types.hpp>
+#include <core/storage_engine.hpp>
+#include <core/vector_search.hpp>
 #include <cstdlib>
 #include <filesystem>
-#include <mach_core/core_types.hpp>
-#include <mach_core/storage_engine.hpp>
-#include <mach_core/vector_search.hpp>
 
 namespace fs = std::filesystem;
-using namespace mach_core;
+using namespace core;
 
 namespace
 {

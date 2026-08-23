@@ -1,29 +1,29 @@
 #include <catch2/catch_all.hpp>
-#include <mach_core/embedding_store.hpp>
-#include <mach_embed/onnx_embedder.hpp>
-#include <mach_parser/log_chunker.hpp>
+#include <core/embedding_store.hpp>
+#include <embed/onnx_embedder.hpp>
+#include <parser/log_chunker.hpp>
 
 #include <filesystem>
 #include <string>
 #include <vector>
 
-#ifndef MACH1_TEST_FIXTURES
-#error "MACH1_TEST_FIXTURES must be defined"
+#ifndef NESSO_TEST_FIXTURES
+#error "NESSO_TEST_FIXTURES must be defined"
 #endif
 
 TEST_CASE("Semantic grep ranks the expected log line", "[grep][integration]")
 {
-    const std::filesystem::path modelDir = std::filesystem::path(MACH1_TEST_FIXTURES) / ".." / ".." / "models";
+    const std::filesystem::path modelDir = std::filesystem::path(NESSO_TEST_FIXTURES) / ".." / ".." / "models";
     if (!std::filesystem::exists(modelDir / "model.onnx"))
     {
         SKIP("models/ not present; run scripts/fetch-model");
     }
 
-    const std::filesystem::path logPath = std::filesystem::path(MACH1_TEST_FIXTURES) / "grep_sample.log";
-    const auto embedder = mach_embed::OnnxEmbedder::create(modelDir);
+    const std::filesystem::path logPath = std::filesystem::path(NESSO_TEST_FIXTURES) / "grep_sample.log";
+    const auto embedder = embed::OnnxEmbedder::create(modelDir);
     REQUIRE(embedder.has_value());
 
-    const auto chunks = mach_parser::LogChunker::fromFile(logPath);
+    const auto chunks = parser::LogChunker::fromFile(logPath);
     REQUIRE(chunks.has_value());
     REQUIRE(chunks->size() == 1);
 
@@ -31,7 +31,7 @@ TEST_CASE("Semantic grep ranks the expected log line", "[grep][integration]")
     const auto embeddings = (*embedder)->embedBatch(texts);
     REQUIRE(embeddings.has_value());
 
-    mach_core::EmbeddingStore<float> store;
+    core::EmbeddingStore<float> store;
     REQUIRE(
         store.insert((*embeddings)[0], {.text = (*chunks)[0].text, .lineNumber = (*chunks)[0].lineNumber}).has_value());
 

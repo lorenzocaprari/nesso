@@ -1,27 +1,27 @@
 #include <catch2/catch_all.hpp>
-#include <mach_embed/onnx_embedder.hpp>
+#include <embed/onnx_embedder.hpp>
 
 #include <cmath>
 #include <filesystem>
 
-#ifndef MACH1_TEST_FIXTURES
-#error "MACH1_TEST_FIXTURES must be defined"
+#ifndef NESSO_TEST_FIXTURES
+#error "NESSO_TEST_FIXTURES must be defined"
 #endif
 
 TEST_CASE("OnnxEmbedder produces unit-normal 384-d embeddings", "[OnnxEmbedder][embed][integration]")
 {
-    const std::filesystem::path modelDir = std::filesystem::path(MACH1_TEST_FIXTURES) / ".." / ".." / "models";
+    const std::filesystem::path modelDir = std::filesystem::path(NESSO_TEST_FIXTURES) / ".." / ".." / "models";
     if (!std::filesystem::exists(modelDir / "model.onnx"))
     {
         SKIP("models/ not present; run scripts/fetch-model");
     }
 
-    const auto embedder = mach_embed::OnnxEmbedder::create(modelDir);
+    const auto embedder = embed::OnnxEmbedder::create(modelDir);
     REQUIRE(embedder.has_value());
 
     const auto embedding = (*embedder)->embed("database connection refused");
     REQUIRE(embedding.has_value());
-    REQUIRE(embedding->size() == mach_embed::MINILM_EMBEDDING_DIMENSIONS);
+    REQUIRE(embedding->size() == embed::MINILM_EMBEDDING_DIMENSIONS);
 
     float norm = 0.0F;
     for (const float value : *embedding)
@@ -33,13 +33,13 @@ TEST_CASE("OnnxEmbedder produces unit-normal 384-d embeddings", "[OnnxEmbedder][
 
 TEST_CASE("OnnxEmbedder ranks similar strings above dissimilar ones", "[OnnxEmbedder][embed][integration]")
 {
-    const std::filesystem::path modelDir = std::filesystem::path(MACH1_TEST_FIXTURES) / ".." / ".." / "models";
+    const std::filesystem::path modelDir = std::filesystem::path(NESSO_TEST_FIXTURES) / ".." / ".." / "models";
     if (!std::filesystem::exists(modelDir / "model.onnx"))
     {
         SKIP("models/ not present; run scripts/fetch-model");
     }
 
-    const auto embedder = mach_embed::OnnxEmbedder::create(modelDir);
+    const auto embedder = embed::OnnxEmbedder::create(modelDir);
     REQUIRE(embedder.has_value());
 
     const auto query = (*embedder)->embed("database connection refused");
@@ -64,13 +64,13 @@ TEST_CASE("OnnxEmbedder ranks similar strings above dissimilar ones", "[OnnxEmbe
 
 TEST_CASE("OnnxEmbedder embedBatch matches per-string embed", "[OnnxEmbedder][embed][integration]")
 {
-    const std::filesystem::path modelDir = std::filesystem::path(MACH1_TEST_FIXTURES) / ".." / ".." / "models";
+    const std::filesystem::path modelDir = std::filesystem::path(NESSO_TEST_FIXTURES) / ".." / ".." / "models";
     if (!std::filesystem::exists(modelDir / "model.onnx"))
     {
         SKIP("models/ not present; run scripts/fetch-model");
     }
 
-    const auto embedder = mach_embed::OnnxEmbedder::create(modelDir);
+    const auto embedder = embed::OnnxEmbedder::create(modelDir);
     REQUIRE(embedder.has_value());
 
     const std::array<std::string, 2> texts{"payment timeout", "database connection refused"};
