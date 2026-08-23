@@ -17,4 +17,5 @@ conan build . \
   -pr:h ./conan/profiles/gcc-26-debug -pr:b default \
   --lockfile=conan.lock --build=missing --no-remote
 
-echo "install: Debug build ready at build/Debug/mach1"
+bin="$(find build/Debug -maxdepth 2 -type f -name mach1 -print -quit)"
+echo "install: Debug build ready at ${bin:-build/Debug/src/mach1}"
