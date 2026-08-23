@@ -1,0 +1,8 @@
+{
+  "name": "Nesso (mach1) C++26",
+  "build": {
+    "dockerfile": "../.devcontainer/Dockerfile",
+    "context": ".."
+  },
+  "install": "bash .cursor/install.sh"
+}
