@@ -6,6 +6,8 @@ file(COPY "${CMAKE_CURRENT_SOURCE_DIR}/fixtures"
      DESTINATION "${CMAKE_CURRENT_BINARY_DIR}")
 set(NESSO_TEST_FIXTURES "${CMAKE_CURRENT_BINARY_DIR}/fixtures")
 
+add_subdirectory(fuzz)
+
 add_executable(dependency_link_test dependency_link_test.cpp)
 add_test(NAME dependency_link_test COMMAND dependency_link_test)
 target_link_libraries(
@@ -47,7 +49,7 @@ target_link_libraries(search_oracle_test PRIVATE core Catch2::Catch2WithMain)
 
 add_executable(wordpiece_tokenizer_test wordpiece_tokenizer_test.cpp)
 add_test(NAME wordpiece_tokenizer_test COMMAND wordpiece_tokenizer_test)
-target_link_libraries(wordpiece_tokenizer_test PRIVATE embed
+target_link_libraries(wordpiece_tokenizer_test PRIVATE tokenizer
                                                        Catch2::Catch2WithMain)
 target_compile_definitions(wordpiece_tokenizer_test
                            PRIVATE NESSO_TEST_FIXTURES="${NESSO_TEST_FIXTURES}")

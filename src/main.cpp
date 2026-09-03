@@ -2,11 +2,8 @@
 // SPDX-License-Identifier: MIT
 // Licensed under the MIT License. See LICENSE for details.
 
-#include "storage_commands.hpp"
-
-#ifndef NESSO_FUZZ_STORAGE_ONLY
 #include "grep_command.hpp"
-#endif
+#include "storage_commands.hpp"
 
 #include <CLI/CLI.hpp>
 #include <core/storage_engine.hpp>
@@ -46,7 +43,6 @@ int main(int argc, char *argv[]) noexcept
             ->check(CLI::ExistingFile);
         searchCmd->add_option("-k,--top-k", topK, "Maximum number of nearest vectors to return")->default_val(10);
 
-#ifndef NESSO_FUZZ_STORAGE_ONLY
         std::string logFile;
         std::string queryText;
         std::string modelDir = "models";
@@ -58,7 +54,6 @@ int main(int argc, char *argv[]) noexcept
         grepCmd->add_option("-k,--top-k", topK, "Maximum number of matches to return")->default_val(5);
         grepCmd->add_option("--model-dir", modelDir, "Directory containing model.onnx and vocab.txt")
             ->default_val("models");
-#endif
 
         CLI11_PARSE(app, argc, argv);
 
@@ -76,12 +71,10 @@ int main(int argc, char *argv[]) noexcept
         {
             return nesso::commands::runSearch(engine, dbPath, dimensions, queryFile, topK);
         }
-#ifndef NESSO_FUZZ_STORAGE_ONLY
         if (grepCmd->parsed())
         {
             return nesso::commands::runGrep(logFile, queryText, topK, modelDir);
         }
-#endif
     }
     catch (const std::format_error &e)
     {

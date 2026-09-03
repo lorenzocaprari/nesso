@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# AFL++ fuzz of nesso CLI opening a DB path (no custom harness).
-# Builds an AFL-instrumented + ASan nesso via Conan + CMake (same link graph as CI).
+# AFL++ library harnesses: StorageEngine, LogChunker, WordPieceTokenizer.
+# Builds AFL-instrumented + ASan binaries via Conan + CMake.
 # Requires: afl++ (afl-fuzz, afl-clang-fast++), Conan deps in cache.
 #
 # Local / CI:
@@ -18,23 +18,17 @@ for cmd in afl-fuzz afl-clang-fast++; do
 done
 
 OUT_DIR="${NESSO_FUZZ_OUT:-build/fuzz}"
-SEEDS_DIR="${NESSO_FUZZ_SEEDS:-fuzz/seeds/storage}"
-FINDINGS_DIR="${OUT_DIR}/afl-out"
 MAX_TOTAL_TIME="${NESSO_FUZZ_MAX_TOTAL_TIME:-60}"
-DIMS="${NESSO_FUZZ_DIMS:-2}"
-# gcc-26-fuzz: no LTO (ORT is gcc static) and no profile ASan — AFL_USE_ASAN instruments via afl-clang-fast++.
 CONAN_PROFILE="${NESSO_FUZZ_CONAN_PROFILE:-conan/profiles/gcc-26-fuzz}"
 CMAKE_B="${OUT_DIR}/build/Release"
 TOOLCHAIN="${CMAKE_B}/generators/conan_toolchain.cmake"
-FUZZ_TARGET=nesso
-if [[ -f src/grep_command.cpp ]]; then
-  FUZZ_TARGET=nesso_fuzz
-fi
-BIN="${CMAKE_B}/src/${FUZZ_TARGET}"
+BIN_DIR="${CMAKE_B}/test/fuzz"
+
+TARGETS=(nesso_fuzz_storage nesso_fuzz_parser nesso_fuzz_tokenizer)
 
 mkdir -p "${OUT_DIR}"
 
-echo "fuzz-test: Conan + CMake AFL+ASan build -> ${BIN}"
+echo "fuzz-test: Conan + CMake AFL+ASan build -> ${BIN_DIR}"
 export AFL_USE_ASAN=1
 unset ASAN_OPTIONS UBSAN_OPTIONS || true
 export CC=afl-clang-fast
@@ -59,37 +53,37 @@ cmake -S . -B "${CMAKE_B}" -G Ninja \
   -DCMAKE_C_COMPILER=afl-clang-fast \
   -DCMAKE_TOOLCHAIN_FILE="${TOOLCHAIN}"
 
-cmake --build "${CMAKE_B}" --target "${FUZZ_TARGET}"
-
-QUERY_FILE="${OUT_DIR}/query.bin"
-python3 - "${DIMS}" "${QUERY_FILE}" <<'PY'
-import struct, sys
-dims = int(sys.argv[1])
-path = sys.argv[2]
-open(path, "wb").write(struct.pack(f"<{dims}f", *([1.0] + [0.0] * (dims - 1))))
-PY
+cmake --build "${CMAKE_B}" --target "${TARGETS[@]}"
 
 export ASAN_OPTIONS="${ASAN_OPTIONS:-detect_leaks=0:abort_on_error=1:symbolize=0:allocator_may_return_null=1}"
 export UBSAN_OPTIONS="${UBSAN_OPTIONS:-halt_on_error=1:print_stacktrace=1}"
 export AFL_NO_UI="${AFL_NO_UI:-1}"
-# GHA/containers: core_pattern is '|…' and not writable; ASan still reports crashes.
 export AFL_I_DONT_CARE_ABOUT_MISSING_CRASHES="${AFL_I_DONT_CARE_ABOUT_MISSING_CRASHES:-1}"
-# Avoid CPU governor abort in containers/VMs.
 export AFL_SKIP_CPUFREQ="${AFL_SKIP_CPUFREQ:-1}"
 
-rm -rf "${FINDINGS_DIR}"
-mkdir -p "${FINDINGS_DIR}"
+run_campaign() {
+  local name="$1"
+  local seeds="$2"
+  local bin="${BIN_DIR}/nesso_fuzz_${name}"
+  local findings="${OUT_DIR}/afl-out-${name}"
 
-echo "fuzz-test: afl-fuzz -V ${MAX_TOTAL_TIME}s seeds=${SEEDS_DIR}"
-afl-fuzz -V "${MAX_TOTAL_TIME}" -i "${SEEDS_DIR}" -o "${FINDINGS_DIR}" -m none -- \
-  "${BIN}" -p @@ -d "${DIMS}" search -q "${QUERY_FILE}" -k 1
+  rm -rf "${findings}"
+  mkdir -p "${findings}"
 
-CRASH_DIR="${FINDINGS_DIR}/default/crashes"
-mapfile -t crashes < <(find "${CRASH_DIR}" -type f -name 'id:*' 2>/dev/null | sort || true)
-if ((${#crashes[@]} > 0)); then
-  echo "error: fuzz-test found ${#crashes[@]} unique crash(es):" >&2
-  printf '  %s\n' "${crashes[@]}" >&2
-  exit 1
-fi
+  echo "fuzz-test: ${name} afl-fuzz -V ${MAX_TOTAL_TIME}s seeds=${seeds}"
+  afl-fuzz -V "${MAX_TOTAL_TIME}" -i "${seeds}" -o "${findings}" -m none -- "${bin}" @@
 
-echo "fuzz-test OK (0 crashes in ${MAX_TOTAL_TIME}s)"
+  local crash_dir="${findings}/default/crashes"
+  mapfile -t crashes < <(find "${crash_dir}" -type f -name 'id:*' 2>/dev/null | sort || true)
+  if ((${#crashes[@]} > 0)); then
+    echo "error: fuzz-test ${name} found ${#crashes[@]} unique crash(es):" >&2
+    printf '  %s\n' "${crashes[@]}" >&2
+    return 1
+  fi
+}
+
+run_campaign storage test/fuzz/seeds/storage
+run_campaign parser test/fuzz/seeds/parser
+run_campaign tokenizer test/fuzz/seeds/tokenizer
+
+echo "fuzz-test OK (0 crashes in ${MAX_TOTAL_TIME}s per target)"
