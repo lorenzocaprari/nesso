@@ -280,7 +280,7 @@ jobs:
       - name: Ensure Conan default profile
         run: conan profile detect --force
 
-      - name: Run fuzz-test (AFL++ CLI + ASan)
+      - name: Run fuzz-test (AFL++ library harnesses + ASan)
         run: |
           chmod +x scripts/fuzz-test
           NESSO_FUZZ_MAX_TOTAL_TIME=60 ./scripts/fuzz-test
@@ -290,7 +290,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: fuzz-test-findings
-          path: build/fuzz/afl-out
+          path: build/fuzz/afl-out-*
           if-no-files-found: warn
 
   coverage:
