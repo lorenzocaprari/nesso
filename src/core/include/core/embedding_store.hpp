@@ -19,6 +19,7 @@ struct LogChunk
 {
     std::string text;
     uint64_t lineNumber = 0;
+    std::string source;
 };
 
 template <SupportedScalar T> struct EmbeddingSearchResult

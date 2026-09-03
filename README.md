@@ -8,8 +8,9 @@ Nesso is a Linux-native CLI for searching local text by meaning.
 
 ## Today
 
-- Memory-mapped vector store with cosine top-k search
-- CLI subcommands: `init`, `index`, `search` on raw float32 vector files, plus `grep` over logs
+- `nesso grep QUERY FILE...` — one-shot semantic search over `.log`, `.json`, and `.jsonl`
+- `nesso init` / `index` / `search` — raw float32 vector store (mmap, cosine top-k)
+- Local ONNX MiniLM embedder and an in-memory embedding store (no persisted text index)
 - Brute-force linear scan (no ANN index yet)
 - Conan 2 toolchain with ASan/UBSan debug builds and CI coverage gates
 
@@ -42,7 +43,7 @@ ctest --test-dir build/Debug --output-on-failure
 
 Release profile: replace `gcc-26-debug` with `gcc-26`.
 
-## Semantic grep
+## Usage
 
 Download the embedding model once:
 
@@ -50,31 +51,32 @@ Download the embedding model once:
 ./scripts/fetch-model
 ```
 
-Search a log file by meaning:
+Search files by meaning. `-k` is optional (default 5):
 
 ```bash
-./build/Debug/nesso grep --log app.log --query "database connection error" -k 5 --model-dir models/
+./build/Debug/nesso grep "database connection error" app.log
+./build/Debug/nesso grep "payment timeout" app.log events.jsonl dump.json -k 5
+./build/Debug/nesso grep "auth failure" app.log --model-dir models/
 ```
 
-## Usage (current vector CLI)
+### File limits
 
-Initialize a database container:
+- Formats: `.log`, `.json`, `.jsonl` only (by extension). Directories and other files are rejected.
+- `.log`: one chunk per non-empty line; lines longer than 4096 characters are skipped.
+- `.json` / `.jsonl`: only objects with a string `message` field are indexed; malformed lines/documents are skipped.
+- The whole corpus is held in memory for that invocation (parse + embeddings). Very large files will be slow and RAM-heavy until embedding is batched (see later work).
+
+## Vector store
+
+Initialize a database container, ingest raw float32 vectors, and search by cosine similarity:
 
 ```bash
 ./build/Debug/nesso -p vectors.nesso -d 128 init
-```
-
-Ingest raw float32 vectors (each record is `dimensions * sizeof(float)` bytes):
-
-```bash
 ./build/Debug/nesso -p vectors.nesso -d 128 index -f vectors.bin
-```
-
-Search by cosine similarity:
-
-```bash
 ./build/Debug/nesso -p vectors.nesso -d 128 search -q query.bin -k 10
 ```
+
+Each record in `vectors.bin` / `query.bin` is `dimensions * sizeof(float)` bytes.
 
 ## Development
 

@@ -32,8 +32,10 @@ TEST_CASE("Semantic grep ranks the expected log line", "[grep][integration]")
     REQUIRE(embeddings.has_value());
 
     core::EmbeddingStore<float> store;
-    REQUIRE(
-        store.insert((*embeddings)[0], {.text = (*chunks)[0].text, .lineNumber = (*chunks)[0].lineNumber}).has_value());
+    REQUIRE(store
+                .insert((*embeddings)[0],
+                        {.text = (*chunks)[0].text, .lineNumber = (*chunks)[0].lineNumber, .source = logPath.string()})
+                .has_value());
 
     const auto queryEmbedding = (*embedder)->embed("database connection error");
     REQUIRE(queryEmbedding.has_value());
@@ -42,4 +44,5 @@ TEST_CASE("Semantic grep ranks the expected log line", "[grep][integration]")
     REQUIRE(results.has_value());
     REQUIRE(results->size() == 1);
     REQUIRE((*results)[0].chunk.text == "database connection refused");
+    REQUIRE((*results)[0].chunk.source == logPath.string());
 }
