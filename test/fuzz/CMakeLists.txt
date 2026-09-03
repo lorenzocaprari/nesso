@@ -1,0 +1,8 @@
+add_executable(nesso_fuzz_storage fuzz_storage.cpp)
+target_link_libraries(nesso_fuzz_storage PRIVATE core)
+
+add_executable(nesso_fuzz_parser fuzz_parser.cpp)
+target_link_libraries(nesso_fuzz_parser PRIVATE parser)
+
+add_executable(nesso_fuzz_tokenizer fuzz_tokenizer.cpp)
+target_link_libraries(nesso_fuzz_tokenizer PRIVATE tokenizer)
