@@ -37,6 +37,17 @@ TEST_CASE("EmbeddingStore preserves metadata and tie order", "[EmbeddingStore][c
     REQUIRE((*results)[1].index == 1);
 }
 
+TEST_CASE("EmbeddingStore preserves source path metadata", "[EmbeddingStore][core][Unit]")
+{
+    EmbeddingStore<float> store;
+    REQUIRE(store.insert(std::array<float, 2>{1.0F, 0.0F}, {.text = "hit", .lineNumber = 3, .source = "app.log"})
+                .has_value());
+
+    const auto results = store.searchTopK(std::array<float, 2>{1.0F, 0.0F}, 1);
+    REQUIRE(results.has_value());
+    REQUIRE((*results)[0].chunk.source == "app.log");
+}
+
 TEST_CASE("EmbeddingStore rejects dimension mismatch", "[EmbeddingStore][core][Unit]")
 {
     EmbeddingStore<float> store;

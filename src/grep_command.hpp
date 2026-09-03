@@ -6,12 +6,14 @@
 
 #include <cstddef>
 #include <filesystem>
+#include <span>
 #include <string>
+#include <string_view>
 
 namespace nesso::commands
 {
 
-int runGrep(const std::filesystem::path &logPath, const std::string &query, size_t topK,
+int runGrep(std::string_view query, std::span<const std::filesystem::path> files, size_t topK,
             const std::filesystem::path &modelDir);
 
 } // namespace nesso::commands
