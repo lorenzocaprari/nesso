@@ -9,8 +9,11 @@
 #include <core/storage_engine.hpp>
 
 #include <exception>
+#include <filesystem>
 #include <iostream>
 #include <print>
+#include <string>
+#include <vector>
 
 int main(int argc, char *argv[]) noexcept
 {
@@ -36,26 +39,42 @@ int main(int argc, char *argv[]) noexcept
             ->check(CLI::ExistingFile);
 
         std::string queryFile;
-        size_t topK = 10;
+        size_t searchTopK = 10;
         auto *searchCmd = app.add_subcommand("search", "Return the nearest vectors by cosine similarity");
         searchCmd->add_option("-q,--query-file", queryFile, "Path to one raw floating-point query vector")
             ->required()
             ->check(CLI::ExistingFile);
-        searchCmd->add_option("-k,--top-k", topK, "Maximum number of nearest vectors to return")->default_val(10);
+        searchCmd->add_option("-k,--top-k", searchTopK, "Maximum number of nearest vectors to return")->default_val(10);
 
-        std::string logFile;
         std::string queryText;
+        std::vector<std::string> fileArgs;
+        size_t grepTopK = 5;
         std::string modelDir = "models";
-        auto *grepCmd = app.add_subcommand("grep", "Semantic search over a log file");
-        grepCmd->add_option("--log", logFile, "Path to a .log, .json, or .jsonl file")
+        auto *grepCmd = app.add_subcommand("grep", "Semantic search over .log, .json, and .jsonl files. "
+                                                   "Skips empty lines and log lines longer than 4096 characters. "
+                                                   "JSON objects must have a string 'message' field. "
+                                                   "Directories are not searched.");
+        grepCmd->add_option("query", queryText, "Natural-language query")->required();
+        grepCmd->add_option("files", fileArgs, "One or more .log, .json, or .jsonl files")
             ->required()
+            ->expected(1, -1)
             ->check(CLI::ExistingFile);
-        grepCmd->add_option("--query", queryText, "Natural-language query")->required();
-        grepCmd->add_option("-k,--top-k", topK, "Maximum number of matches to return")->default_val(5);
+        grepCmd->add_option("-k,--top-k", grepTopK, "Maximum number of matches to return (default: 5)")->default_val(5);
         grepCmd->add_option("--model-dir", modelDir, "Directory containing model.onnx and vocab.txt")
             ->default_val("models");
 
         CLI11_PARSE(app, argc, argv);
+
+        if (grepCmd->parsed())
+        {
+            std::vector<std::filesystem::path> files;
+            files.reserve(fileArgs.size());
+            for (const std::string &fileArg : fileArgs)
+            {
+                files.emplace_back(fileArg);
+            }
+            return nesso::commands::runGrep(queryText, files, grepTopK, modelDir);
+        }
 
         core::StorageEngine<float> engine;
 
@@ -69,11 +88,7 @@ int main(int argc, char *argv[]) noexcept
         }
         if (searchCmd->parsed())
         {
-            return nesso::commands::runSearch(engine, dbPath, dimensions, queryFile, topK);
-        }
-        if (grepCmd->parsed())
-        {
-            return nesso::commands::runGrep(logFile, queryText, topK, modelDir);
+            return nesso::commands::runSearch(engine, dbPath, dimensions, queryFile, searchTopK);
         }
     }
     catch (const std::format_error &e)
