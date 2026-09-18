@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+read_versions() {
+  python3 - "$ROOT" <<'PY'
+import re
+import sys
+from pathlib import Path
+
+root = Path(sys.argv[1])
+cmake = (root / "CMakeLists.txt").read_text()
+conan = (root / "conanfile.py").read_text()
+cmake_match = re.search(
+    r"project\s*\(\s*nesso\b.*?VERSION\s+([0-9]+\.[0-9]+\.[0-9]+)",
+    cmake,
+    re.DOTALL,
+)
+conan_match = re.search(r'^    version = "([0-9]+\.[0-9]+\.[0-9]+)"', conan, re.M)
+if cmake_match is None:
+    sys.exit("error: could not parse project VERSION from CMakeLists.txt")
+if conan_match is None:
+    sys.exit("error: could not parse version from conanfile.py")
+cmake_ver = cmake_match.group(1)
+conan_ver = conan_match.group(1)
+if cmake_ver != conan_ver:
+    sys.exit(f"error: CMake VERSION {cmake_ver} != Conan version {conan_ver}")
+print(cmake_ver)
+PY
+}
+
+ver="$(read_versions)"
+if [[ $# -ge 1 ]]; then
+  expected="$1"
+  if [[ "${expected}" != "${ver}" ]]; then
+    echo "error: expected version ${expected}, files have ${ver}" >&2
+    exit 1
+  fi
+fi
+echo "${ver}"

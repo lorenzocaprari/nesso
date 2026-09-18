@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+DEB="${1:?usage: smoke-deb DEB}"
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+if [[ ! -f "${DEB}" ]]; then
+  echo "error: deb not found: ${DEB}" >&2
+  exit 2
+fi
+
+DEB_ABS="$(cd "$(dirname "${DEB}")" && pwd)/$(basename "${DEB}")"
+
+docker run --rm \
+  -v "${DEB_ABS}:/tmp/nesso.deb:ro" \
+  -v "${ROOT}/test/fixtures:/data:ro" \
+  ubuntu:26.04 \
+  bash -euo pipefail -c '
+    export DEBIAN_FRONTEND=noninteractive
+    apt-get update
+    apt-get install -y /tmp/nesso.deb
+    nesso -V
+    nesso grep "connection refused" /data/grep_sample.log -k 3
+  '

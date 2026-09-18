@@ -6,6 +6,37 @@ by **Lorenzo Caprari**
 
 Nesso is a Linux-native CLI for searching local text by meaning.
 
+## Install
+
+Ubuntu 26.04+ (from a GitHub Release `.deb`):
+
+```bash
+sudo apt install ./nesso_*_amd64.deb
+nesso grep "database connection error" app.log
+```
+
+The `.deb` needs GCC 15 `libstdc++` (Ubuntu 26.04). Anywhere with Docker:
+
+```bash
+docker pull ghcr.io/lorenzocaprari/nesso:latest
+docker run --rm -v "$PWD:/data" -w /data ghcr.io/lorenzocaprari/nesso:latest \
+  grep "database connection error" app.log
+```
+
+Push a `vX.Y.Z` tag (must match CMake `VERSION` and Conan `version`) to publish both artifacts. CI must have published `nesso-build-env` first. First release is `v0.1.0`.
+
+From source (GCC 15+, CMake 3.28+, Conan 2, Linux):
+
+```bash
+conan install . -pr:h ./conan/profiles/gcc-26-debug -pr:b default \
+  --lockfile=conan.lock --build=missing
+conan build . -pr:h ./conan/profiles/gcc-26-debug -pr:b default \
+  --lockfile=conan.lock --build=missing
+ctest --test-dir build/Debug --output-on-failure
+```
+
+Release profile: replace `gcc-26-debug` with `gcc-26`.
+
 ## Today
 
 - `nesso grep QUERY FILE...` — one-shot semantic search over `.log`, `.json`, and `.jsonl`
@@ -31,18 +62,6 @@ Semantic search over `.log`, `.json`, and `.jsonl` files via a local ONNX MiniLM
 - **Package manager:** Conan 2.x
 - **OS:** Linux
 
-## Build
-
-```bash
-conan install . -pr:h ./conan/profiles/gcc-26-debug -pr:b default \
-  --lockfile=conan.lock --build=missing
-conan build . -pr:h ./conan/profiles/gcc-26-debug -pr:b default \
-  --lockfile=conan.lock --build=missing
-ctest --test-dir build/Debug --output-on-failure
-```
-
-Release profile: replace `gcc-26-debug` with `gcc-26`.
-
 ## Usage
 
 Download the embedding model once:
@@ -54,9 +73,10 @@ Download the embedding model once:
 Search files by meaning. `-k` is optional (default 5):
 
 ```bash
-./build/Debug/nesso grep "database connection error" app.log
-./build/Debug/nesso grep "payment timeout" app.log events.jsonl dump.json -k 5
-./build/Debug/nesso grep "auth failure" app.log --model-dir models/
+./build/Debug/src/nesso grep "database connection error" app.log
+./build/Debug/src/nesso grep "payment timeout" app.log events.jsonl dump.json -k 5
+./build/Debug/src/nesso grep "auth failure" app.log --model-dir models/
+./build/Debug/src/nesso -V
 ```
 
 ### File limits
@@ -71,9 +91,9 @@ Search files by meaning. `-k` is optional (default 5):
 Initialize a database container, ingest raw float32 vectors, and search by cosine similarity:
 
 ```bash
-./build/Debug/nesso -p vectors.nesso -d 128 init
-./build/Debug/nesso -p vectors.nesso -d 128 index -f vectors.bin
-./build/Debug/nesso -p vectors.nesso -d 128 search -q query.bin -k 10
+./build/Debug/src/nesso -p vectors.nesso -d 128 init
+./build/Debug/src/nesso -p vectors.nesso -d 128 index -f vectors.bin
+./build/Debug/src/nesso -p vectors.nesso -d 128 search -q query.bin -k 10
 ```
 
 Each record in `vectors.bin` / `query.bin` is `dimensions * sizeof(float)` bytes.
@@ -87,7 +107,7 @@ bash scripts/lint
 ./scripts/code-coverage conan/profiles/code-coverage
 ```
 
-See [.github/workflows/ci.yml](.github/workflows/ci.yml) for the full pipeline (lint, clang-tidy, Release/Debug builds, unit tests, fuzz, coverage).
+See [.github/workflows/ci.yml](.github/workflows/ci.yml) for lint, clang-tidy, Release/Debug builds, tests, fuzz, and coverage. Tag `v*` publishes via [.github/workflows/release.yml](.github/workflows/release.yml).
 
 ## License
 

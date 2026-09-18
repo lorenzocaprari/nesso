@@ -1,0 +1,28 @@
+# Runtime image: no compiler. Build with --build-arg BUILD_IMAGE=<nesso-build-env>.
+ARG BUILD_IMAGE
+FROM ${BUILD_IMAGE} AS build
+
+ARG NESSO_VERSION=0.1.0
+ENV NESSO_VERSION=${NESSO_VERSION}
+
+WORKDIR /src
+COPY . .
+RUN conan profile detect --force \
+    && conan install . -pr:h ./conan/profiles/gcc-26 -pr:b default --lockfile=conan.lock --build=missing --no-remote \
+    && conan build . -pr:h ./conan/profiles/gcc-26 -pr:b default --lockfile=conan.lock --build=missing --no-remote \
+    && install -D build/Release/src/nesso /opt/nesso/bin/nesso
+
+RUN ./scripts/fetch-model /opt/nesso/models
+
+FROM ubuntu:26.04
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates libstdc++6 libgomp1 \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=build /opt/nesso/bin/nesso /usr/local/bin/nesso
+COPY --from=build /opt/nesso/models /usr/share/nesso
+
+ENV NESSO_MODEL_DIR=/usr/share/nesso
+
+ENTRYPOINT ["nesso"]

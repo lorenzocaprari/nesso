@@ -1,0 +1,140 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Semver without v; must match CMake and Conan (dry-run, no GitHub Release)
+        required: true
+        type: string
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  REGISTRY: ghcr.io
+  CONAN_HOME: /opt/conan2
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    permissions:
+      contents: write
+      packages: write
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Resolve version
+        id: ver
+        run: |
+          set -euo pipefail
+          if [[ "${{ github.ref }}" == refs/tags/* ]]; then
+            tag='${{ github.ref_name }}'
+            if [[ ! "${tag}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+              echo "error: tag must be vX.Y.Z, got ${tag}" >&2
+              exit 1
+            fi
+            ver="${tag#v}"
+          else
+            ver='${{ inputs.version }}'
+            if [[ ! "${ver}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+              echo "error: version must be X.Y.Z, got ${ver}" >&2
+              exit 1
+            fi
+          fi
+          chmod +x scripts/check-versions
+          scripts/check-versions "${ver}"
+          echo "ver=${ver}" >> "${GITHUB_OUTPUT}"
+          echo "tag=v${ver}" >> "${GITHUB_OUTPUT}"
+
+      - name: Resolve build-env image
+        id: select
+        run: |
+          set -euo pipefail
+          owner_lc="$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')"
+          reg="${{ env.REGISTRY }}/${owner_lc}/nesso-build-env"
+          deps_hash="$(sha256sum .devcontainer/Dockerfile conanfile.py conan.lock \
+            conan/profiles/gcc-26 conan/profiles/gcc-26-debug | sha256sum | cut -c1-16)"
+          echo "build_image=${reg}:deps-${deps_hash}" >> "${GITHUB_OUTPUT}"
+          echo "runtime_image=${{ env.REGISTRY }}/${owner_lc}/nesso" >> "${GITHUB_OUTPUT}"
+
+      - name: Log into ${{ env.REGISTRY }}
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Require nesso-build-env
+        run: |
+          set -euo pipefail
+          img='${{ steps.select.outputs.build_image }}'
+          if ! docker pull "${img}"; then
+            echo "error: missing ${img}; run CI on main so nesso-build-env is published first" >&2
+            exit 1
+          fi
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push runtime image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: Dockerfile.runtime
+          push: true
+          build-args: |
+            BUILD_IMAGE=${{ steps.select.outputs.build_image }}
+            NESSO_VERSION=${{ steps.ver.outputs.ver }}
+          tags: |
+            ${{ steps.select.outputs.runtime_image }}:${{ steps.ver.outputs.tag }}
+            ${{ steps.select.outputs.runtime_image }}:${{ steps.ver.outputs.ver }}
+            ${{ steps.select.outputs.runtime_image }}:latest
+
+      - name: Extract binary and model
+        run: |
+          set -euo pipefail
+          img='${{ steps.select.outputs.runtime_image }}:${{ steps.ver.outputs.tag }}'
+          docker pull "${img}"
+          cid="$(docker create "${img}")"
+          docker cp "${cid}:/usr/local/bin/nesso" nesso
+          mkdir -p models
+          docker cp "${cid}:/usr/share/nesso/." models/
+          docker rm "${cid}"
+          chmod +x nesso
+
+      - name: Build .deb
+        run: |
+          set -euo pipefail
+          chmod +x scripts/package-deb
+          scripts/package-deb '${{ steps.ver.outputs.ver }}' ./nesso ./models .
+
+      - name: Smoke-test image and .deb
+        run: |
+          set -euo pipefail
+          chmod +x scripts/smoke-runtime-image scripts/smoke-deb
+          ./scripts/smoke-runtime-image \
+            '${{ steps.select.outputs.runtime_image }}:${{ steps.ver.outputs.tag }}'
+          ./scripts/smoke-deb './nesso_${{ steps.ver.outputs.ver }}_amd64.deb'
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: nesso-${{ steps.ver.outputs.ver }}-linux-amd64
+          path: |
+            nesso_${{ steps.ver.outputs.ver }}_amd64.deb
+            nesso
+          if-no-files-found: error
+
+      - name: GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: nesso_${{ steps.ver.outputs.ver }}_amd64.deb
+          generate_release_notes: true

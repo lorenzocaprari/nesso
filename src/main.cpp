@@ -3,6 +3,7 @@
 // Licensed under the MIT License. See LICENSE for details.
 
 #include "grep_command.hpp"
+#include "model_paths.hpp"
 #include "storage_commands.hpp"
 
 #include <CLI/CLI.hpp>
@@ -22,6 +23,10 @@ int main(int argc, char *argv[]) noexcept
         std::ios_base::sync_with_stdio(false);
 
         CLI::App app{"Nesso - local semantic search for unstructured text"};
+#ifndef NESSO_VERSION
+#define NESSO_VERSION "0.0.0"
+#endif
+        app.set_version_flag("-V,--version", NESSO_VERSION);
         app.require_subcommand(1);
 
         std::string dbPath = "vectors.nesso";
@@ -49,7 +54,7 @@ int main(int argc, char *argv[]) noexcept
         std::string queryText;
         std::vector<std::string> fileArgs;
         size_t grepTopK = 5;
-        std::string modelDir = "models";
+        std::string modelDir;
         auto *grepCmd = app.add_subcommand("grep", "Semantic search over .log, .json, and .jsonl files. "
                                                    "Skips empty lines and log lines longer than 4096 characters. "
                                                    "JSON objects must have a string 'message' field. "
@@ -60,8 +65,9 @@ int main(int argc, char *argv[]) noexcept
             ->expected(1, -1)
             ->check(CLI::ExistingFile);
         grepCmd->add_option("-k,--top-k", grepTopK, "Maximum number of matches to return (default: 5)")->default_val(5);
-        grepCmd->add_option("--model-dir", modelDir, "Directory containing model.onnx and vocab.txt")
-            ->default_val("models");
+        auto *modelDirOpt = grepCmd->add_option("--model-dir", modelDir,
+                                                "Directory containing model.onnx and vocab.txt. "
+                                                "Default: NESSO_MODEL_DIR, ./models, XDG data, /usr/share/nesso");
 
         CLI11_PARSE(app, argc, argv);
 
@@ -72,6 +78,10 @@ int main(int argc, char *argv[]) noexcept
             for (const std::string &fileArg : fileArgs)
             {
                 files.emplace_back(fileArg);
+            }
+            if (modelDirOpt->empty())
+            {
+                modelDir = nesso::resolveDefaultModelDir().string();
             }
             return nesso::commands::runGrep(queryText, files, grepTopK, modelDir);
         }

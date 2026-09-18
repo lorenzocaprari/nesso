@@ -81,6 +81,12 @@ target_compile_options(grep_integration_test PRIVATE -fno-profile-arcs
 add_test(NAME grep_integration_test COMMAND $<TARGET_FILE:grep_integration_test>
                                             --allow-running-no-tests)
 
+add_executable(model_paths_test model_paths_test.cpp
+                                ${CMAKE_SOURCE_DIR}/src/model_paths.cpp)
+add_test(NAME model_paths_test COMMAND model_paths_test)
+target_link_libraries(model_paths_test PRIVATE Catch2::Catch2WithMain)
+target_include_directories(model_paths_test PRIVATE "${CMAKE_SOURCE_DIR}/src")
+
 add_executable(double_search_test double_search_test.cpp)
 add_test(NAME double_search_test COMMAND double_search_test)
 target_link_libraries(double_search_test PRIVATE core)

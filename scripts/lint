@@ -1,3 +1,5 @@
 #!/usr/bin/env bash
 set -euo pipefail
-exec pre-commit run --all-files "$@"
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+pre-commit run --all-files "$@"
+bash "${ROOT}/scripts/check-versions"
