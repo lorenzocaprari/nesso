@@ -24,23 +24,29 @@ int main(int argc, char *argv[]) noexcept
         CLI::App app{"Nesso - local semantic search for unstructured text"};
         app.require_subcommand(1);
 
+        auto *storeCmd = app.add_subcommand("store", "Raw float32 vector store (mmap, cosine top-k)");
+        storeCmd->require_subcommand(1);
+
         std::string dbPath = "vectors.nesso";
-        app.add_option("-p,--path", dbPath, "Path to the vector database storage file");
+        storeCmd->add_option("-p,--path", dbPath, "Path to the vector database storage file");
 
         uint64_t dimensions = 128;
-        app.add_option("-d,--dims", dimensions, "Dimensionality of the vector space")->default_val(128);
+        storeCmd->add_option("-d,--dims", dimensions, "Dimensionality of the vector space")->default_val(128);
 
-        auto *initCmd = app.add_subcommand("init", "Initialize an empty database index container");
+        auto *initCmd = storeCmd->add_subcommand("init", "Initialize an empty database index container");
+        initCmd->fallthrough();
 
         std::string inputFile;
-        auto *indexCmd = app.add_subcommand("index", "Ingest external raw vector binary data");
+        auto *indexCmd = storeCmd->add_subcommand("index", "Ingest external raw vector binary data");
+        indexCmd->fallthrough();
         indexCmd->add_option("-f,--file", inputFile, "Path to the raw floating-point binary file")
             ->required()
             ->check(CLI::ExistingFile);
 
         std::string queryFile;
         size_t searchTopK = 10;
-        auto *searchCmd = app.add_subcommand("search", "Return the nearest vectors by cosine similarity");
+        auto *searchCmd = storeCmd->add_subcommand("search", "Return the nearest vectors by cosine similarity");
+        searchCmd->fallthrough();
         searchCmd->add_option("-q,--query-file", queryFile, "Path to one raw floating-point query vector")
             ->required()
             ->check(CLI::ExistingFile);
@@ -76,20 +82,24 @@ int main(int argc, char *argv[]) noexcept
             return nesso::commands::runGrep(queryText, files, grepTopK, modelDir);
         }
 
-        core::StorageEngine<float> engine;
+        if (storeCmd->parsed())
+        {
+            core::StorageEngine<float> engine;
+            if (initCmd->parsed())
+            {
+                return nesso::commands::runInit(engine, dbPath, dimensions);
+            }
+            if (indexCmd->parsed())
+            {
+                return nesso::commands::runIndex(engine, dbPath, dimensions, inputFile);
+            }
+            if (searchCmd->parsed())
+            {
+                return nesso::commands::runSearch(engine, dbPath, dimensions, queryFile, searchTopK);
+            }
+        }
 
-        if (initCmd->parsed())
-        {
-            return nesso::commands::runInit(engine, dbPath, dimensions);
-        }
-        if (indexCmd->parsed())
-        {
-            return nesso::commands::runIndex(engine, dbPath, dimensions, inputFile);
-        }
-        if (searchCmd->parsed())
-        {
-            return nesso::commands::runSearch(engine, dbPath, dimensions, queryFile, searchTopK);
-        }
+        return 1;
     }
     catch (const std::format_error &e)
     {
