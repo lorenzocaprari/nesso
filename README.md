@@ -9,14 +9,10 @@ Nesso is a Linux-native CLI for searching local text by meaning.
 ## Today
 
 - `nesso grep QUERY FILE...` — one-shot semantic search over `.log`, `.json`, and `.jsonl`
+- `nesso index` / `nesso search` — persist that text and its embeddings, then search the file
 - `nesso store init` / `index` / `search` — raw float32 vector store (mmap, cosine top-k)
-- Local ONNX MiniLM embedder and an in-memory embedding store (no persisted text index)
-- Brute-force linear scan (no ANN index yet)
+- Local ONNX MiniLM embedder. Ranking is a brute-force scan (no ANN index yet)
 - Conan 2 toolchain with ASan/UBSan debug builds and CI coverage gates
-
-## Target (in progress)
-
-Semantic search over `.log`, `.json`, and `.jsonl` files via a local ONNX MiniLM embedder and an in-memory embedding store.
 
 ## Non-goals
 
@@ -59,12 +55,22 @@ Search files by meaning. `-k` is optional (default 5):
 ./build/Debug/nesso grep "auth failure" app.log --model-dir models/
 ```
 
+Index the same files once, then search the corpus. `-o` and `-i` are required:
+
+```bash
+./build/Debug/nesso index -o corpus.nesso app.log events.jsonl
+./build/Debug/nesso search "payment timeout" -i corpus.nesso -k 5
+```
+
+Matches go to stdout. Skipped lines, the index summary, and errors go to stderr. Search exits 1 when nothing matches.
+
 ### File limits
 
 - Formats: `.log`, `.json`, `.jsonl` only (by extension). Directories and other files are rejected.
 - `.log`: one chunk per non-empty line; lines longer than 4096 characters are skipped.
 - `.json` / `.jsonl`: only objects with a string `message` field are indexed; malformed lines/documents are skipped.
-- The whole corpus is held in memory for that invocation (parse + embeddings). Very large files will be slow and RAM-heavy until embedding is batched (see later work).
+- `grep` holds the whole corpus in memory for that invocation. `index` writes it to the corpus file; `search` loads that file back into memory. Very large files will be slow and RAM-heavy.
+- Lines longer than 4096 characters, empty lines, and JSON values without a string `message` are skipped. A skip count is printed on stderr.
 
 ## Vector store
 

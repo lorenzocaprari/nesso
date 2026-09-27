@@ -15,15 +15,15 @@ static bool hasExtension(const std::filesystem::path &path, std::string_view ext
 }
 
 std::expected<std::vector<ParsedChunk>, ParseError> LogChunker::fromFile(const std::filesystem::path &path,
-                                                                         size_t maxLineLength)
+                                                                         size_t maxLineLength, ParseStats *stats)
 {
     if (hasExtension(path, ".log"))
     {
-        return fromLogFile(path, maxLineLength);
+        return fromLogFile(path, maxLineLength, stats);
     }
     if (hasExtension(path, ".json") || hasExtension(path, ".jsonl"))
     {
-        return fromJsonFile(path);
+        return fromJsonFile(path, stats);
     }
     return std::unexpected(ParseError::UnsupportedFormat);
 }

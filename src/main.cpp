@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 // Licensed under the MIT License. See LICENSE for details.
 
+#include "corpus_commands.hpp"
 #include "grep_command.hpp"
 #include "storage_commands.hpp"
 
@@ -69,6 +70,34 @@ int main(int argc, char *argv[]) noexcept
         grepCmd->add_option("--model-dir", modelDir, "Directory containing model.onnx and vocab.txt")
             ->default_val("models");
 
+        std::string corpusOutput;
+        std::vector<std::string> indexFiles;
+        std::string indexModelDir = "models";
+        auto *corpusIndexCmd =
+            app.add_subcommand("index", "Embed .log, .json, and .jsonl files into a corpus file. "
+                                        "Skips empty lines and log lines longer than 4096 characters.");
+        corpusIndexCmd->add_option("-o,--output", corpusOutput, "Corpus file to write")->required();
+        corpusIndexCmd->add_option("files", indexFiles, "One or more .log, .json, or .jsonl files")
+            ->required()
+            ->expected(1, -1)
+            ->check(CLI::ExistingFile);
+        corpusIndexCmd->add_option("--model-dir", indexModelDir, "Directory containing model.onnx and vocab.txt")
+            ->default_val("models");
+
+        std::string searchQuery;
+        std::string corpusInput;
+        size_t corpusTopK = 5;
+        std::string searchModelDir = "models";
+        auto *corpusSearchCmd = app.add_subcommand("search", "Semantic search of a corpus file. Prints matches only.");
+        corpusSearchCmd->add_option("query", searchQuery, "Natural-language query")->required();
+        corpusSearchCmd->add_option("-i,--index", corpusInput, "Corpus file to search")
+            ->required()
+            ->check(CLI::ExistingFile);
+        corpusSearchCmd->add_option("-k,--top-k", corpusTopK, "Maximum number of matches to return (default: 5)")
+            ->default_val(5);
+        corpusSearchCmd->add_option("--model-dir", searchModelDir, "Directory containing model.onnx and vocab.txt")
+            ->default_val("models");
+
         CLI11_PARSE(app, argc, argv);
 
         if (grepCmd->parsed())
@@ -80,6 +109,22 @@ int main(int argc, char *argv[]) noexcept
                 files.emplace_back(fileArg);
             }
             return nesso::commands::runGrep(queryText, files, grepTopK, modelDir);
+        }
+
+        if (corpusIndexCmd->parsed())
+        {
+            std::vector<std::filesystem::path> files;
+            files.reserve(indexFiles.size());
+            for (const std::string &fileArg : indexFiles)
+            {
+                files.emplace_back(fileArg);
+            }
+            return nesso::commands::runCorpusIndex(files, corpusOutput, indexModelDir);
+        }
+
+        if (corpusSearchCmd->parsed())
+        {
+            return nesso::commands::runCorpusSearch(searchQuery, corpusInput, corpusTopK, searchModelDir);
         }
 
         if (storeCmd->parsed())
