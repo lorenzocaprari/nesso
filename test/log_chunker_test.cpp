@@ -41,6 +41,13 @@ TEST_CASE("LogChunker routes fromFile by extension", "[LogChunker][parser][Unit]
     const auto jsonlChunks = parser::LogChunker::fromFile(std::filesystem::path(NESSO_TEST_FIXTURES) / "sample.jsonl");
     REQUIRE(jsonlChunks.has_value());
     REQUIRE(jsonlChunks->size() == 2);
+
+    parser::ParseStats stats{};
+    const auto skipped =
+        parser::LogChunker::fromFile(std::filesystem::path(NESSO_TEST_FIXTURES) / "sample.log", 64, &stats);
+    REQUIRE(skipped.has_value());
+    REQUIRE(skipped->size() == 2);
+    REQUIRE(stats.skippedLines >= 2);
 }
 
 TEST_CASE("LogChunker parses .json documents", "[LogChunker][parser][Unit]")

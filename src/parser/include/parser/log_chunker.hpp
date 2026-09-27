@@ -33,8 +33,8 @@ struct ParseStats
 class LogChunker
 {
   public:
-    [[nodiscard]] static std::expected<std::vector<ParsedChunk>, ParseError> fromFile(const std::filesystem::path &path,
-                                                                                      size_t maxLineLength = 4096);
+    [[nodiscard]] static std::expected<std::vector<ParsedChunk>, ParseError>
+    fromFile(const std::filesystem::path &path, size_t maxLineLength = 4096, ParseStats *stats = nullptr);
 
     [[nodiscard]] static std::expected<std::vector<ParsedChunk>, ParseError>
     fromLogFile(const std::filesystem::path &path, size_t maxLineLength = 4096, ParseStats *stats = nullptr);

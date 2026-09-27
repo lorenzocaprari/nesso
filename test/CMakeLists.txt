@@ -40,6 +40,10 @@ target_link_libraries(vector_search_test PRIVATE core Catch2::Catch2WithMain)
 target_include_directories(vector_search_test
                            PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/include")
 
+add_executable(corpus_index_test corpus_index_test.cpp)
+add_test(NAME corpus_index_test COMMAND corpus_index_test)
+target_link_libraries(corpus_index_test PRIVATE core Catch2::Catch2WithMain)
+
 add_executable(embedding_store_test embedding_store_test.cpp)
 add_test(NAME embedding_store_test COMMAND embedding_store_test)
 target_link_libraries(embedding_store_test PRIVATE core Catch2::Catch2WithMain)

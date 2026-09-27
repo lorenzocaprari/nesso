@@ -3,6 +3,8 @@
 
 #include "grep_command.hpp"
 
+#include "command_output.hpp"
+
 #include <core/embedding_store.hpp>
 #include <embed/onnx_embedder.hpp>
 #include <parser/log_chunker.hpp>
@@ -25,15 +27,17 @@ int runGrep(std::string_view query, std::span<const std::filesystem::path> files
         return 1;
     }
 
+    parser::ParseStats stats{};
     std::vector<parser::ParsedChunk> chunks;
     std::vector<std::string> sources;
     for (const std::filesystem::path &path : files)
     {
-        const auto parsed = parser::LogChunker::fromFile(path);
+        const auto parsed = parser::LogChunker::fromFile(path, 4096, &stats);
         if (!parsed)
         {
             std::println(std::cerr, "Error: Failed to parse '{}'. Code: {}", path.string(),
                          static_cast<int>(parsed.error()));
+            reportSkippedLines(stats.skippedLines);
             return 1;
         }
         const std::string source = path.string();
@@ -43,6 +47,7 @@ int runGrep(std::string_view query, std::span<const std::filesystem::path> files
             sources.push_back(source);
         }
     }
+    reportSkippedLines(stats.skippedLines);
 
     if (chunks.empty())
     {
@@ -93,19 +98,7 @@ int runGrep(std::string_view query, std::span<const std::filesystem::path> files
         return 1;
     }
 
-    const bool printSource = files.size() > 1;
-    for (const auto &result : *results)
-    {
-        if (printSource)
-        {
-            std::println("{}:line {}: {:.4f}: {}", result.chunk.source, result.chunk.lineNumber, result.score,
-                         result.chunk.text);
-        }
-        else
-        {
-            std::println("line {}: {:.4f}: {}", result.chunk.lineNumber, result.score, result.chunk.text);
-        }
-    }
+    printEmbeddingMatches(*results, files.size() > 1);
     return 0;
 }
 
