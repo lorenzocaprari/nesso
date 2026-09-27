@@ -9,7 +9,7 @@ Nesso is a Linux-native CLI for searching local text by meaning.
 ## Today
 
 - `nesso grep QUERY FILE...` — one-shot semantic search over `.log`, `.json`, and `.jsonl`
-- `nesso init` / `index` / `search` — raw float32 vector store (mmap, cosine top-k)
+- `nesso store init` / `index` / `search` — raw float32 vector store (mmap, cosine top-k)
 - Local ONNX MiniLM embedder and an in-memory embedding store (no persisted text index)
 - Brute-force linear scan (no ANN index yet)
 - Conan 2 toolchain with ASan/UBSan debug builds and CI coverage gates
@@ -71,9 +71,9 @@ Search files by meaning. `-k` is optional (default 5):
 Initialize a database container, ingest raw float32 vectors, and search by cosine similarity:
 
 ```bash
-./build/Debug/nesso -p vectors.nesso -d 128 init
-./build/Debug/nesso -p vectors.nesso -d 128 index -f vectors.bin
-./build/Debug/nesso -p vectors.nesso -d 128 search -q query.bin -k 10
+./build/Debug/nesso store -p vectors.nesso -d 128 init
+./build/Debug/nesso store -p vectors.nesso -d 128 index -f vectors.bin
+./build/Debug/nesso store -p vectors.nesso -d 128 search -q query.bin -k 10
 ```
 
 Each record in `vectors.bin` / `query.bin` is `dimensions * sizeof(float)` bytes.
