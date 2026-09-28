@@ -3,128 +3,63 @@
 
 #include "storage_commands.hpp"
 
-#include <core/vector_search.hpp>
+#include "command_output.hpp"
 
 #include <CLI/CLI.hpp>
 
-#include <filesystem>
-#include <fstream>
 #include <iostream>
 #include <memory>
 #include <print>
 #include <string>
-#include <vector>
 
 namespace nesso::commands
 {
 
-int runInit(core::StorageEngine<float> &engine, const std::string &dbPath, uint64_t dimensions)
+int runInit(const Nesso &nesso, const StoreInitRequest &request)
 {
-    std::println(std::cerr, "Initializing database container at '{}'...", dbPath);
+    std::println(std::cerr, "Initializing database container at '{}'...", request.db.string());
 
-    const auto result = engine.createOrOpen(dbPath, dimensions);
-    if (!result)
+    const auto summary = nesso.storeInit(request);
+    if (!summary)
     {
-        std::println(std::cerr, "Error: Failed to initialize. Code: {}", static_cast<int>(result.error()));
-        return 1;
+        return reportError(summary.error());
     }
-
-    std::println(std::cerr, "Database container created successfully. Target Dimensions: {}", engine.getDimensions());
+    std::println(std::cerr, "Database container created successfully. Target Dimensions: {}", summary->dimensions);
     return 0;
 }
 
-int runIndex(core::StorageEngine<float> &engine, const std::string &dbPath, uint64_t dimensions,
-             const std::string &inputFile)
+int runIndex(const Nesso &nesso, const StoreIngestRequest &request)
 {
-    std::println(std::cerr, "Opening database container at '{}' for ingestion (dimensions: {})...", dbPath, dimensions);
+    std::println(std::cerr, "Opening database container at '{}' for ingestion (dimensions: {})...", request.db.string(),
+                 request.dimensions);
+    std::println(std::cerr, "Streaming ingestion target identified: '{}'", request.input.string());
 
-    const auto result = engine.createOrOpen(dbPath, dimensions);
-    if (!result)
+    const auto summary = nesso.storeIngest(request);
+    if (!summary)
     {
-        std::println(std::cerr, "Error: Could not open database target file. Code: {}",
-                     static_cast<int>(result.error()));
-        return 1;
+        return reportError(summary.error());
     }
-
-    std::println(std::cerr, "Streaming ingestion target identified: '{}'", inputFile);
-    std::println(std::cerr, "Current vector count before ingest: {}", engine.getVectorCount());
-
-    std::ifstream infile(inputFile, std::ios::binary);
-    if (!infile)
+    std::println(std::cerr, "Current vector count before ingest: {}", summary->before);
+    if (summary->appendFailureCode)
     {
-        std::println(std::cerr, "Error: Failed to open input file stream.");
-        return 1;
+        std::println(std::cerr, "Fatal error appending vector at index {}. Code: {}", summary->added,
+                     *summary->appendFailureCode);
     }
-
-    std::vector<float> buffer(engine.getDimensions());
-    size_t ingestedCount = 0;
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-    char *bufferData = reinterpret_cast<char *>(buffer.data());
-    const auto readSize = static_cast<std::streamsize>(buffer.size() * sizeof(float));
-
-    while (infile.read(bufferData, readSize))
-    {
-        const auto appendRes = engine.appendVector(buffer);
-        if (!appendRes)
-        {
-            std::println(std::cerr, "Fatal error appending vector at index {}. Code: {}", ingestedCount,
-                         static_cast<int>(appendRes.error()));
-            break;
-        }
-        ingestedCount++;
-    }
-
-    std::println(std::cerr, "Ingestion complete. Added {} new vectors.", ingestedCount);
-    std::println(std::cerr, "New total vector count on disk: {}", engine.getVectorCount());
+    std::println(std::cerr, "Ingestion complete. Added {} new vectors.", summary->added);
+    std::println(std::cerr, "New total vector count on disk: {}", summary->total);
     return 0;
 }
 
-int runSearch(core::StorageEngine<float> &engine, const std::string &dbPath, uint64_t dimensions,
-              const std::string &queryFile, size_t topK)
+int runSearch(const Nesso &nesso, const StoreSearchRequest &request)
 {
-    if (!std::filesystem::exists(dbPath))
+    const auto matches = nesso.storeSearch(request);
+    if (!matches)
     {
-        std::println(std::cerr, "Error: Database container '{}' does not exist.", dbPath);
-        return 1;
+        return reportError(matches.error());
     }
-
-    const auto openResult = engine.createOrOpen(dbPath, dimensions);
-    if (!openResult)
+    for (const VectorMatch &match : *matches)
     {
-        std::println(std::cerr, "Error: Could not open database target file. Code: {}",
-                     static_cast<int>(openResult.error()));
-        return 1;
-    }
-
-    const auto expectedQuerySize = engine.getDimensions() * sizeof(float);
-    if (std::filesystem::file_size(queryFile) != expectedQuerySize)
-    {
-        std::println(std::cerr, "Error: Query file must contain exactly one {}-dimension float vector.",
-                     engine.getDimensions());
-        return 1;
-    }
-
-    std::vector<float> query(engine.getDimensions());
-    std::ifstream infile(queryFile, std::ios::binary);
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-    auto *queryData = reinterpret_cast<char *>(query.data());
-    infile.read(queryData, static_cast<std::streamsize>(expectedQuerySize));
-    if (!infile)
-    {
-        std::println(std::cerr, "Error: Failed to read query vector.");
-        return 1;
-    }
-
-    const auto results = core::searchTopKCosine<float>(engine, query, topK);
-    if (!results)
-    {
-        std::println(std::cerr, "Error: Search failed. Code: {}", static_cast<int>(results.error()));
-        return 1;
-    }
-
-    for (const auto &result : *results)
-    {
-        std::println("index: {}, score: {}", result.index, result.score);
+        std::println("index: {}, score: {}", match.index, match.score);
     }
     return 0;
 }
@@ -134,10 +69,10 @@ void addStoreCommand(CLI::App &app)
     struct Options
     {
         std::string dbPath = "vectors.nesso";
-        uint64_t dimensions = 128;
+        uint64_t dimensions = DEFAULT_STORE_DIMENSIONS;
         std::string inputFile;
         std::string queryFile;
-        size_t searchTopK = 10;
+        size_t searchTopK = DEFAULT_STORE_TOP_K;
     };
     auto opts = std::make_shared<Options>();
 
@@ -169,19 +104,22 @@ void addStoreCommand(CLI::App &app)
     storeCmd->callback(
         [opts, initCmd, indexCmd, searchCmd]()
         {
-            core::StorageEngine<float> engine;
+            const Nesso nesso{Config{}};
             int code = 1;
             if (initCmd->parsed())
             {
-                code = runInit(engine, opts->dbPath, opts->dimensions);
+                code = runInit(nesso, {.db = opts->dbPath, .dimensions = opts->dimensions});
             }
             else if (indexCmd->parsed())
             {
-                code = runIndex(engine, opts->dbPath, opts->dimensions, opts->inputFile);
+                code = runIndex(nesso, {.db = opts->dbPath, .dimensions = opts->dimensions, .input = opts->inputFile});
             }
             else if (searchCmd->parsed())
             {
-                code = runSearch(engine, opts->dbPath, opts->dimensions, opts->queryFile, opts->searchTopK);
+                code = runSearch(nesso, {.db = opts->dbPath,
+                                         .dimensions = opts->dimensions,
+                                         .query = opts->queryFile,
+                                         .topK = opts->searchTopK});
             }
             if (code != 0)
             {
