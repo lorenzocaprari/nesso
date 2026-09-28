@@ -1,19 +1,15 @@
 // Copyright (c) 2026 Lorenzo Caprari
 // SPDX-License-Identifier: MIT
 
-#ifndef NESSO_COMMAND_OUTPUT_HPP
-#define NESSO_COMMAND_OUTPUT_HPP
-
-#include <nesso/error.hpp>
-#include <nesso/types.hpp>
+#include "output.hpp"
 
 #include <iostream>
 #include <print>
 
-namespace nesso::commands
+namespace nesso::cli
 {
 
-inline void reportSkippedLines(size_t skippedLines)
+static void renderSkippedLines(size_t skippedLines)
 {
     if (skippedLines > 0)
     {
@@ -21,8 +17,21 @@ inline void reportSkippedLines(size_t skippedLines)
     }
 }
 
-inline void printTextMatches(const TextResults &results)
+void announce(const StoreInitRequest &request)
 {
+    std::println(std::cerr, "Initializing database container at '{}'...", request.db.string());
+}
+
+void announce(const StoreIngestRequest &request)
+{
+    std::println(std::cerr, "Opening database container at '{}' for ingestion (dimensions: {})...", request.db.string(),
+                 request.dimensions);
+    std::println(std::cerr, "Streaming ingestion target identified: '{}'", request.input.string());
+}
+
+int render(const TextResults &results)
+{
+    renderSkippedLines(results.skippedLines);
     for (const TextMatch &match : results.matches)
     {
         if (results.multipleSources)
@@ -34,18 +43,54 @@ inline void printTextMatches(const TextResults &results)
             std::println("line {}: {:.4f}: {}", match.line, match.score, match.text);
         }
     }
+    return 0;
 }
 
-inline int reportError(const Error &error)
+int render(const IndexSummary &summary, const IndexRequest &request)
+{
+    renderSkippedLines(summary.skippedLines);
+    std::println(std::cerr, "Indexed {} chunks into '{}'.", summary.chunks, request.output.string());
+    return 0;
+}
+
+int render(const StoreInitSummary &summary)
+{
+    std::println(std::cerr, "Database container created successfully. Target Dimensions: {}", summary.dimensions);
+    return 0;
+}
+
+int render(const StoreIngestSummary &summary)
+{
+    std::println(std::cerr, "Current vector count before ingest: {}", summary.before);
+    if (summary.appendFailureCode)
+    {
+        std::println(std::cerr, "Fatal error appending vector at index {}. Code: {}", summary.added,
+                     *summary.appendFailureCode);
+    }
+    std::println(std::cerr, "Ingestion complete. Added {} new vectors.", summary.added);
+    std::println(std::cerr, "New total vector count on disk: {}", summary.total);
+    return 0;
+}
+
+int render(const std::vector<VectorMatch> &matches)
+{
+    for (const VectorMatch &match : matches)
+    {
+        std::println("index: {}, score: {}", match.index, match.score);
+    }
+    return 0;
+}
+
+int renderError(const Error &error)
 {
     if (error.kind == ErrorKind::Parse)
     {
         std::println(std::cerr, "Error: Failed to parse '{}'. Code: {}", error.path.string(), error.code);
-        reportSkippedLines(error.skippedLines);
+        renderSkippedLines(error.skippedLines);
         return 1;
     }
 
-    reportSkippedLines(error.skippedLines);
+    renderSkippedLines(error.skippedLines);
     switch (error.kind)
     {
     case ErrorKind::EmbedderLoad:
@@ -102,6 +147,4 @@ inline int reportError(const Error &error)
     return 1;
 }
 
-} // namespace nesso::commands
-
-#endif // NESSO_COMMAND_OUTPUT_HPP
+} // namespace nesso::cli

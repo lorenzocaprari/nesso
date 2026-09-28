@@ -2,18 +2,15 @@
 // SPDX-License-Identifier: MIT
 // Licensed under the MIT License. See LICENSE for details.
 
-#include "corpus_commands.hpp"
-#include "grep_command.hpp"
-#include "storage_commands.hpp"
+#include "cli/cli_parser.hpp"
+#include "cli/execute.hpp"
 
-#include <CLI/CLI.hpp>
+#include <nesso/nesso.hpp>
 
 #include <exception>
+#include <format>
 #include <iostream>
-
-#ifndef NESSO_VERSION
-#define NESSO_VERSION "0.0.0"
-#endif
+#include <variant>
 
 int main(int argc, char *argv[]) noexcept
 {
@@ -21,17 +18,15 @@ int main(int argc, char *argv[]) noexcept
     {
         std::ios_base::sync_with_stdio(false);
 
-        CLI::App app{"Nesso - local semantic search for unstructured text"};
-        app.set_version_flag("-V,--version", NESSO_VERSION);
-        app.require_subcommand(1);
+        const auto parsed = nesso::cli::parseCommandLine(argc, argv);
+        if (!parsed)
+        {
+            return parsed.error();
+        }
 
-        nesso::commands::addStoreCommand(app);
-        nesso::commands::addGrepCommand(app);
-        nesso::commands::addCorpusIndexCommand(app);
-        nesso::commands::addCorpusSearchCommand(app);
-
-        CLI11_PARSE(app, argc, argv);
-        return 0;
+        const nesso::Nesso nesso{parsed->config};
+        return std::visit([&nesso](const auto &request) { return nesso::cli::execute(nesso, request); },
+                          parsed->request);
     }
     catch (const std::format_error &e)
     {

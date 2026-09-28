@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Line floor includes the CLI sources (main, storage, grep, corpus commands).
+# Line floor includes the CLI sources (main and src/cli) and libnesso.
 # Remaining misses are not reachable from the CLI: main's catch-alls, and
 # failure returns the open path already rejects. CI lcov is 0.1 under a local
 # run, and the chmod-000 open path is skipped when the job runs as root.
@@ -21,7 +21,7 @@ if [[ "${CI:-}" == "true" ]]; then
   remote_args+=(--no-remote)
 fi
 conan build . -of build/coverage -pr:h "${1:-conan/profiles/code-coverage}" -pr:b default --lockfile=conan.lock --build=missing "${remote_args[@]}"
-# grep_command.cpp runs only after the ONNX model loads. CI has no models/ checkout.
+# Text commands in libnesso run past the embedder only after the ONNX model loads. CI has no models/ checkout.
 if [[ ! -s "${ROOT}/models/model.onnx" || ! -s "${ROOT}/models/vocab.txt" ]]; then
   "${ROOT}/scripts/fetch-model" "${ROOT}/models"
 fi
@@ -35,7 +35,7 @@ lcov() {
 }
 lcov --directory build/coverage/build/Debug --capture --output-file build/coverage/coverage.info
 # cli_store_test forks and execs nesso, so gcov never flushes that TU.
-# CLI sources, including corpus_commands.cpp, stay in the floor.
+# The nesso binary it runs is instrumented, so CLI and libnesso sources stay in the floor.
 lcov --remove build/coverage/coverage.info \
   '/usr/*' \
   "${conan_cache}/*" \
