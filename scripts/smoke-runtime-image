@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+IMAGE="${1:?usage: smoke-runtime-image IMAGE}"
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+docker run --rm "${IMAGE}" -V
+docker run --rm \
+  -v "${ROOT}/test/fixtures:/data:ro" \
+  -w /data \
+  "${IMAGE}" grep "connection refused" grep_sample.log -k 3

@@ -11,6 +11,10 @@
 #include <exception>
 #include <iostream>
 
+#ifndef NESSO_VERSION
+#define NESSO_VERSION "0.0.0"
+#endif
+
 int main(int argc, char *argv[]) noexcept
 {
     try
@@ -18,6 +22,7 @@ int main(int argc, char *argv[]) noexcept
         std::ios_base::sync_with_stdio(false);
 
         CLI::App app{"Nesso - local semantic search for unstructured text"};
+        app.set_version_flag("-V,--version", NESSO_VERSION);
         app.require_subcommand(1);
 
         nesso::commands::addStoreCommand(app);
