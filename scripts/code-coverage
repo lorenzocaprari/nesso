@@ -1,7 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-REQUIRED_LINES=95.9
+# Line floor includes main.cpp, storage_commands.cpp, and grep_command.cpp.
+# Remaining misses are not reachable from the CLI: main's catch-alls, and
+# failure returns the open path already rejects. CI lcov is 0.1 under a local
+# run, and the chmod-000 open path is skipped when the job runs as root.
+REQUIRED_LINES=94.2
 REQUIRED_FUNCTIONS=97.1
 REQUIRED_BRANCHES=44.3
 
@@ -17,6 +21,10 @@ if [[ "${CI:-}" == "true" ]]; then
   remote_args+=(--no-remote)
 fi
 conan build . -of build/coverage -pr:h "${1:-conan/profiles/code-coverage}" -pr:b default --lockfile=conan.lock --build=missing "${remote_args[@]}"
+# grep_command.cpp runs only after the ONNX model loads. CI has no models/ checkout.
+if [[ ! -s "${ROOT}/models/model.onnx" || ! -s "${ROOT}/models/vocab.txt" ]]; then
+  "${ROOT}/scripts/fetch-model" "${ROOT}/models"
+fi
 ctest --test-dir build/coverage/build/Debug --output-on-failure
 
 # Local default: ~/.conan2. CI: CONAN_HOME=/opt/conan2 (GHA overrides HOME).
@@ -26,8 +34,8 @@ lcov() {
   command lcov --rc branch_coverage=1 --ignore-errors inconsistent,mismatch,unused "$@" >/dev/null
 }
 lcov --directory build/coverage/build/Debug --capture --output-file build/coverage/coverage.info
-# cli_store_test executes nesso. The CLI translation units and that driver are
-# outside the library floor; a partial slice would fail the gate.
+# cli_store_test forks and execs nesso, so gcov never flushes that TU.
+# main.cpp, storage_commands.cpp, and grep_command.cpp stay in the floor.
 lcov --remove build/coverage/coverage.info \
   '/usr/*' \
   "${conan_cache}/*" \
@@ -36,9 +44,6 @@ lcov --remove build/coverage/coverage.info \
   '*/test/log_chunker_test.cpp' \
   '*/test/grep_integration_test.cpp' \
   '*/test/cli_store_test.cpp' \
-  '*/src/main.cpp' \
-  '*/src/storage_commands.cpp' \
-  '*/src/grep_command.cpp' \
   --output-file build/coverage/coverage.cleaned
 genhtml --branch-coverage --rc branch_coverage=1 --ignore-errors inconsistent \
   build/coverage/coverage.cleaned \
