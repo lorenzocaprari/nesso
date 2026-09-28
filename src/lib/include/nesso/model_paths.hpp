@@ -11,8 +11,6 @@ namespace nesso
 
 inline constexpr const char *VOCAB_FILENAME = "vocab.txt";
 inline constexpr const char *MODEL_FILENAME = "model.onnx";
-inline constexpr const char *MODEL_DIR_HELP = "Directory containing model.onnx and vocab.txt. "
-                                              "Default: NESSO_MODEL_DIR, ./models, XDG data, /usr/share/nesso";
 
 /// True when dir contains both vocab.txt and model.onnx.
 [[nodiscard]] bool containsModelFiles(const std::filesystem::path &dir);
