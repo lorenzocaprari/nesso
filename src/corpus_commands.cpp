@@ -3,12 +3,9 @@
 
 #include "corpus_commands.hpp"
 
-#include "model_paths.hpp"
-#include "text_search.hpp"
+#include "command_output.hpp"
 
-#include <core/corpus_index.hpp>
-#include <core/embedding_store.hpp>
-#include <embed/onnx_embedder.hpp>
+#include <nesso/model_paths.hpp>
 
 #include <CLI/CLI.hpp>
 
@@ -21,65 +18,37 @@
 namespace nesso::commands
 {
 
-int runCorpusIndex(std::span<const std::filesystem::path> files, const std::filesystem::path &output,
-                   const std::filesystem::path &modelDir)
+int runCorpusIndex(const Nesso &nesso, const IndexRequest &request)
 {
-    const auto embedder = embed::OnnxEmbedder::create(modelDir);
-    if (!embedder)
+    const auto summary = nesso.index(request);
+    if (!summary)
     {
-        std::println(std::cerr, "Error: Failed to load embedder. Code: {}", static_cast<int>(embedder.error()));
-        return 1;
+        return reportError(summary.error());
     }
-
-    const auto chunks = parseAndEmbed(files, **embedder);
-    if (!chunks)
-    {
-        return chunks.error();
-    }
-
-    const auto written = core::writeCorpusFile(output, *chunks);
-    if (!written)
-    {
-        std::println(std::cerr, "Error: Failed to write corpus. Code: {}", static_cast<int>(written.error()));
-        return 1;
-    }
-    std::println(std::cerr, "Indexed {} chunks into '{}'.", chunks->size(), output.string());
+    reportSkippedLines(summary->skippedLines);
+    std::println(std::cerr, "Indexed {} chunks into '{}'.", summary->chunks, request.output.string());
     return 0;
 }
 
-int runCorpusSearch(std::string_view query, const std::filesystem::path &indexPath, size_t topK,
-                    const std::filesystem::path &modelDir)
+int runCorpusSearch(const Nesso &nesso, const SearchRequest &request)
 {
-    const auto chunks = core::readCorpusFile(indexPath);
-    if (!chunks)
+    const auto results = nesso.search(request);
+    if (!results)
     {
-        std::println(std::cerr, "Error: Failed to read corpus. Code: {}", static_cast<int>(chunks.error()));
-        return 1;
+        return reportError(results.error());
     }
-    if (chunks->empty() || topK == 0)
-    {
-        return 1;
-    }
+    printTextMatches(*results);
+    return 0;
+}
 
-    const auto embedder = embed::OnnxEmbedder::create(modelDir);
-    if (!embedder)
+static Config configFrom(const CLI::Option *modelDirOpt, const std::string &modelDir)
+{
+    Config config;
+    if (!modelDirOpt->empty())
     {
-        std::println(std::cerr, "Error: Failed to load embedder. Code: {}", static_cast<int>(embedder.error()));
-        return 1;
+        config.modelDir = modelDir;
     }
-
-    core::EmbeddingStore<float> store;
-    for (const core::CorpusChunk &chunk : *chunks)
-    {
-        const auto inserted = store.insert(chunk.embedding, chunk.chunk);
-        if (!inserted)
-        {
-            std::println(std::cerr, "Error: Failed to load corpus. Code: {}", static_cast<int>(inserted.error()));
-            return 1;
-        }
-    }
-
-    return embedQueryAndPrint(store, **embedder, query, topK, multipleSources(*chunks));
+    return config;
 }
 
 void addCorpusIndexCommand(CLI::App &app)
@@ -105,15 +74,9 @@ void addCorpusIndexCommand(CLI::App &app)
     corpusIndexCmd->callback(
         [opts, modelDirOpt]()
         {
-            std::vector<std::filesystem::path> files;
-            files.reserve(opts->files.size());
-            for (const std::string &fileArg : opts->files)
-            {
-                files.emplace_back(fileArg);
-            }
-            const std::filesystem::path modelDir =
-                modelDirOpt->empty() ? nesso::resolveDefaultModelDir() : std::filesystem::path(opts->modelDir);
-            const int code = runCorpusIndex(files, opts->output, modelDir);
+            const Nesso nesso{configFrom(modelDirOpt, opts->modelDir)};
+            const int code =
+                runCorpusIndex(nesso, {.files = {opts->files.begin(), opts->files.end()}, .output = opts->output});
             if (code != 0)
             {
                 throw CLI::RuntimeError(code);
@@ -127,7 +90,7 @@ void addCorpusSearchCommand(CLI::App &app)
     {
         std::string query;
         std::string indexPath;
-        size_t topK = 5;
+        size_t topK = DEFAULT_TEXT_TOP_K;
         std::string modelDir;
     };
     auto opts = std::make_shared<Options>();
@@ -145,9 +108,9 @@ void addCorpusSearchCommand(CLI::App &app)
     corpusSearchCmd->callback(
         [opts, modelDirOpt]()
         {
-            const std::filesystem::path modelDir =
-                modelDirOpt->empty() ? nesso::resolveDefaultModelDir() : std::filesystem::path(opts->modelDir);
-            const int code = runCorpusSearch(opts->query, opts->indexPath, opts->topK, modelDir);
+            const Nesso nesso{configFrom(modelDirOpt, opts->modelDir)};
+            const int code =
+                runCorpusSearch(nesso, {.query = opts->query, .index = opts->indexPath, .topK = opts->topK});
             if (code != 0)
             {
                 throw CLI::RuntimeError(code);

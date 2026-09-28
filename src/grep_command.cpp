@@ -3,55 +3,29 @@
 
 #include "grep_command.hpp"
 
-#include "model_paths.hpp"
-#include "text_search.hpp"
+#include "command_output.hpp"
 
-#include <core/embedding_store.hpp>
-#include <embed/onnx_embedder.hpp>
+#include <nesso/model_paths.hpp>
 
 #include <CLI/CLI.hpp>
 
-#include <iostream>
 #include <memory>
-#include <print>
 #include <string>
 #include <vector>
 
 namespace nesso::commands
 {
 
-int runGrep(std::string_view query, std::span<const std::filesystem::path> files, size_t topK,
-            const std::filesystem::path &modelDir)
+int runGrep(const Nesso &nesso, const GrepRequest &request)
 {
-    const auto embedder = embed::OnnxEmbedder::create(modelDir);
-    if (!embedder)
+    const auto results = nesso.grep(request);
+    if (!results)
     {
-        std::println(std::cerr, "Error: Failed to load embedder. Code: {}", static_cast<int>(embedder.error()));
-        return 1;
+        return reportError(results.error());
     }
-
-    const auto chunks = parseAndEmbed(files, **embedder);
-    if (!chunks)
-    {
-        return chunks.error();
-    }
-    if (chunks->empty())
-    {
-        return 1;
-    }
-
-    core::EmbeddingStore<float> store;
-    for (const core::CorpusChunk &chunk : *chunks)
-    {
-        const auto insertResult = store.insert(chunk.embedding, chunk.chunk);
-        if (!insertResult)
-        {
-            std::println(std::cerr, "Error: Failed to build index. Code: {}", static_cast<int>(insertResult.error()));
-            return 1;
-        }
-    }
-
-    return embedQueryAndPrint(store, **embedder, query, topK, multipleSources(*chunks));
+    reportSkippedLines(results->skippedLines);
+    printTextMatches(*results);
+    return 0;
 }
 
 void addGrepCommand(CLI::App &app)
@@ -60,7 +34,7 @@ void addGrepCommand(CLI::App &app)
     {
         std::string query;
         std::vector<std::string> files;
-        size_t topK = 5;
+        size_t topK = DEFAULT_TEXT_TOP_K;
         std::string modelDir;
     };
     auto opts = std::make_shared<Options>();
@@ -81,15 +55,14 @@ void addGrepCommand(CLI::App &app)
     grepCmd->callback(
         [opts, modelDirOpt]()
         {
-            std::vector<std::filesystem::path> files;
-            files.reserve(opts->files.size());
-            for (const std::string &fileArg : opts->files)
+            Config config;
+            if (!modelDirOpt->empty())
             {
-                files.emplace_back(fileArg);
+                config.modelDir = opts->modelDir;
             }
-            const std::filesystem::path modelDir =
-                modelDirOpt->empty() ? nesso::resolveDefaultModelDir() : std::filesystem::path(opts->modelDir);
-            const int code = runGrep(opts->query, files, opts->topK, modelDir);
+            const Nesso nesso{std::move(config)};
+            const int code = runGrep(
+                nesso, {.query = opts->query, .files = {opts->files.begin(), opts->files.end()}, .topK = opts->topK});
             if (code != 0)
             {
                 throw CLI::RuntimeError(code);

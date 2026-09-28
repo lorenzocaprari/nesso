@@ -4,11 +4,7 @@
 #ifndef NESSO_STORAGE_COMMANDS_HPP
 #define NESSO_STORAGE_COMMANDS_HPP
 
-#include <core/storage_engine.hpp>
-
-#include <cstddef>
-#include <cstdint>
-#include <string>
+#include <nesso/nesso.hpp>
 
 namespace CLI
 {
@@ -18,13 +14,11 @@ class App;
 namespace nesso::commands
 {
 
-int runInit(core::StorageEngine<float> &engine, const std::string &dbPath, uint64_t dimensions);
+int runInit(const Nesso &nesso, const StoreInitRequest &request);
 
-int runIndex(core::StorageEngine<float> &engine, const std::string &dbPath, uint64_t dimensions,
-             const std::string &inputFile);
+int runIndex(const Nesso &nesso, const StoreIngestRequest &request);
 
-int runSearch(core::StorageEngine<float> &engine, const std::string &dbPath, uint64_t dimensions,
-              const std::string &queryFile, size_t topK);
+int runSearch(const Nesso &nesso, const StoreSearchRequest &request);
 
 void addStoreCommand(CLI::App &app);
 

@@ -4,11 +4,7 @@
 #ifndef NESSO_GREP_COMMAND_HPP
 #define NESSO_GREP_COMMAND_HPP
 
-#include <cstddef>
-#include <filesystem>
-#include <span>
-#include <string>
-#include <string_view>
+#include <nesso/nesso.hpp>
 
 namespace CLI
 {
@@ -18,8 +14,7 @@ class App;
 namespace nesso::commands
 {
 
-int runGrep(std::string_view query, std::span<const std::filesystem::path> files, size_t topK,
-            const std::filesystem::path &modelDir);
+int runGrep(const Nesso &nesso, const GrepRequest &request);
 
 void addGrepCommand(CLI::App &app);
 
