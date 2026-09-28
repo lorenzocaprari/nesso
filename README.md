@@ -105,6 +105,25 @@ Initialize a database container, ingest raw float32 vectors, and search by cosin
 
 Each record in `vectors.bin` / `query.bin` is `dimensions * sizeof(float)` bytes.
 
+## Architecture
+
+```mermaid
+flowchart LR
+  argv[argv] --> parser["cli::parseCommandLine"]
+  parser -->|"Request variant"| main[main]
+  main -->|"std::visit"| facade["nesso::Nesso"]
+  facade -->|"expected Result or Error"| output["cli::render"]
+  facade --> core[core]
+  facade --> embed[embed]
+  facade --> textParser[parser]
+```
+
+- `src/cli/` owns the command line. `cli_parser.cpp` turns argv into one typed request, `execute.cpp` calls the matching `nesso::Nesso` method, and `output.cpp` writes every stdout and stderr line.
+- `src/lib/` builds `libnesso`. `nesso/nesso.hpp` is its public API: plain request and result types, a structured `nesso::Error`, and no I/O to the terminal. Its dependencies stay private, so a consumer never sees ONNX or mmap headers.
+- `src/core`, `src/embed`, and `src/parser` hold storage and search, the MiniLM embedder, and the log and JSON chunker.
+
+A new command is one request type, one `Nesso` method, and one `render` overload. Once the request is in the `cli::Request` variant, the `std::visit` in `main.cpp` does not compile until an `execute` overload handles it.
+
 ## Development
 
 Local CI gate (run before pushing):
