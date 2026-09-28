@@ -8,8 +8,13 @@
 #include <core/embedding_store.hpp>
 #include <embed/onnx_embedder.hpp>
 
+#include <CLI/CLI.hpp>
+
 #include <iostream>
+#include <memory>
 #include <print>
+#include <string>
+#include <vector>
 
 namespace nesso::commands
 {
@@ -46,6 +51,48 @@ int runGrep(std::string_view query, std::span<const std::filesystem::path> files
     }
 
     return embedQueryAndPrint(store, **embedder, query, topK, multipleSources(*chunks));
+}
+
+void addGrepCommand(CLI::App &app)
+{
+    struct Options
+    {
+        std::string query;
+        std::vector<std::string> files;
+        size_t topK = 5;
+        std::string modelDir = "models";
+    };
+    auto opts = std::make_shared<Options>();
+
+    auto *grepCmd = app.add_subcommand("grep", "Semantic search over .log, .json, and .jsonl files. "
+                                               "Skips empty lines and log lines longer than 4096 characters. "
+                                               "JSON objects must have a string 'message' field. "
+                                               "Directories are not searched.");
+    grepCmd->add_option("query", opts->query, "Natural-language query")->required();
+    grepCmd->add_option("files", opts->files, "One or more .log, .json, or .jsonl files")
+        ->required()
+        ->expected(1, -1)
+        ->check(CLI::ExistingFile);
+    grepCmd->add_option("-k,--top-k", opts->topK, "Maximum number of matches to return (default: 5)")->default_val(5);
+    grepCmd->add_option("--model-dir", opts->modelDir, "Directory containing model.onnx and vocab.txt")
+        ->default_val("models");
+
+    // RuntimeError is how CLI11_PARSE returns a command status without an extra diagnostic.
+    grepCmd->callback(
+        [opts]()
+        {
+            std::vector<std::filesystem::path> files;
+            files.reserve(opts->files.size());
+            for (const std::string &fileArg : opts->files)
+            {
+                files.emplace_back(fileArg);
+            }
+            const int code = runGrep(opts->query, files, opts->topK, opts->modelDir);
+            if (code != 0)
+            {
+                throw CLI::RuntimeError(code);
+            }
+        });
 }
 
 } // namespace nesso::commands
