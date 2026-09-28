@@ -16,6 +16,10 @@
 #error "NESSO_TEST_FIXTURES must be defined"
 #endif
 
+#ifndef NESSO_MODELS_DIR
+#error "NESSO_MODELS_DIR must be defined"
+#endif
+
 namespace
 {
 
@@ -154,6 +158,145 @@ TEST_CASE("store index and search round-trip one raw vector", "[cli][store]")
         runNesso({"store", "-p", dbPath.string(), "-d", "4", "search", "-q", queryPath.string(), "-k", "1"});
     REQUIRE(searched.exitCode == 0);
     REQUIRE(searched.stdoutText.find("index: 0, score: 1") != std::string::npos);
+
+    std::filesystem::remove_all(directory);
+}
+
+TEST_CASE("store reports init, index, and search failures", "[cli][store]")
+{
+    const auto directory =
+        std::filesystem::temp_directory_path() / ("nesso_cli_store_errors_" + std::to_string(getpid()));
+    std::filesystem::remove_all(directory);
+    std::filesystem::create_directory(directory);
+    const auto dbPath = directory / "vectors.nesso";
+    const auto vectorPath = directory / "vectors.bin";
+    const auto queryPath = directory / "query.bin";
+    const auto shortQueryPath = directory / "short-query.bin";
+    const auto corruptPath = directory / "corrupt.nesso";
+    const auto unreadablePath = directory / "unreadable.bin";
+    writeFloats(vectorPath, {1.0F, 0.0F, 0.0F, 0.0F});
+    writeFloats(queryPath, {1.0F, 0.0F, 0.0F, 0.0F});
+    {
+        std::ofstream shortQuery(shortQueryPath, std::ios::binary);
+        REQUIRE(shortQuery);
+        const std::array<char, 4> bytes{};
+        shortQuery.write(bytes.data(), static_cast<std::streamsize>(bytes.size()));
+    }
+    {
+        std::ofstream corrupt(corruptPath, std::ios::binary);
+        REQUIRE(corrupt);
+        const std::array<char, 4> bytes{'b', 'a', 'd', '!'};
+        corrupt.write(bytes.data(), static_cast<std::streamsize>(bytes.size()));
+    }
+    {
+        std::ofstream unreadable(unreadablePath, std::ios::binary);
+        REQUIRE(unreadable);
+        unreadable << "x";
+    }
+    std::filesystem::permissions(unreadablePath, std::filesystem::perms::none);
+
+    const auto zeroDims = runNesso({"store", "-p", dbPath.string(), "-d", "0", "init"});
+    REQUIRE(zeroDims.exitCode != 0);
+    REQUIRE(zeroDims.stderrText.find("Failed to initialize") != std::string::npos);
+
+    const auto corruptInit = runNesso({"store", "-p", corruptPath.string(), "-d", "4", "init"});
+    REQUIRE(corruptInit.exitCode != 0);
+    REQUIRE(corruptInit.stderrText.find("Failed to initialize") != std::string::npos);
+
+    REQUIRE(runNesso({"store", "-p", dbPath.string(), "-d", "4", "init"}).exitCode == 0);
+
+    const auto mismatch = runNesso({"store", "-p", dbPath.string(), "-d", "8", "index", "-f", vectorPath.string()});
+    REQUIRE(mismatch.exitCode != 0);
+    REQUIRE(mismatch.stderrText.find("Could not open database") != std::string::npos);
+
+    // CI containers run as root, and root keeps CAP_DAC_OVERRIDE by default, so
+    // chmod 000 does not block root's own reads. Only assert this path when the
+    // test itself cannot read past the permission bits it just set.
+    if (geteuid() != 0)
+    {
+        const auto unreadable =
+            runNesso({"store", "-p", dbPath.string(), "-d", "4", "index", "-f", unreadablePath.string()});
+        REQUIRE(unreadable.exitCode != 0);
+        REQUIRE(unreadable.stderrText.find("Failed to open input file") != std::string::npos);
+    }
+
+    const auto missingDb = directory / "missing.nesso";
+    const auto missing = runNesso({"store", "-p", missingDb.string(), "-d", "4", "search", "-q", queryPath.string()});
+    REQUIRE(missing.exitCode != 0);
+    REQUIRE(missing.stderrText.find("does not exist") != std::string::npos);
+
+    const auto corruptSearch =
+        runNesso({"store", "-p", corruptPath.string(), "-d", "4", "search", "-q", queryPath.string()});
+    REQUIRE(corruptSearch.exitCode != 0);
+    REQUIRE(corruptSearch.stderrText.find("Could not open database") != std::string::npos);
+
+    const auto shortQuery =
+        runNesso({"store", "-p", dbPath.string(), "-d", "4", "search", "-q", shortQueryPath.string()});
+    REQUIRE(shortQuery.exitCode != 0);
+    REQUIRE(shortQuery.stderrText.find("exactly one") != std::string::npos);
+
+    std::filesystem::permissions(unreadablePath, std::filesystem::perms::owner_all);
+    std::filesystem::remove_all(directory);
+}
+
+TEST_CASE("grep reports a missing model, empty input, and ranked lines", "[cli][grep]")
+{
+    const auto logPath = std::filesystem::path(NESSO_TEST_FIXTURES) / "grep_sample.log";
+    const auto directory = std::filesystem::temp_directory_path() / ("nesso_cli_grep_" + std::to_string(getpid()));
+    std::filesystem::remove_all(directory);
+    std::filesystem::create_directory(directory);
+    const auto emptyModels = directory / "empty-models";
+    std::filesystem::create_directory(emptyModels);
+    const auto emptyLog = directory / "empty.log";
+    const auto otherLog = directory / "other.log";
+    const auto notesPath = directory / "notes.txt";
+    {
+        std::ofstream empty(emptyLog);
+        REQUIRE(empty);
+        std::ofstream other(otherLog);
+        REQUIRE(other);
+        other << "unrelated noise\n";
+        std::ofstream notes(notesPath);
+        REQUIRE(notes);
+        notes << "not a log\n";
+    }
+
+    const auto missingModel =
+        runNesso({"grep", "--model-dir", emptyModels.string(), "database connection error", logPath.string()});
+    REQUIRE(missingModel.exitCode != 0);
+    REQUIRE(missingModel.stderrText.find("Failed to load embedder") != std::string::npos);
+
+    const auto modelOnnx = std::filesystem::path(NESSO_MODELS_DIR) / "model.onnx";
+    const auto vocab = std::filesystem::path(NESSO_MODELS_DIR) / "vocab.txt";
+    if (!std::filesystem::is_regular_file(modelOnnx) || !std::filesystem::is_regular_file(vocab))
+    {
+        std::filesystem::remove_all(directory);
+        SKIP("models/ not present; coverage runs scripts/fetch-model");
+    }
+
+    const auto rejectedFormat =
+        runNesso({"grep", "--model-dir", NESSO_MODELS_DIR, "database connection error", notesPath.string()});
+    REQUIRE(rejectedFormat.exitCode != 0);
+    REQUIRE(rejectedFormat.stderrText.find("Failed to parse") != std::string::npos);
+
+    const auto empty =
+        runNesso({"grep", "--model-dir", NESSO_MODELS_DIR, "database connection error", emptyLog.string()});
+    REQUIRE(empty.exitCode != 0);
+
+    const auto ranked =
+        runNesso({"grep", "--model-dir", NESSO_MODELS_DIR, "database connection error", logPath.string()});
+    REQUIRE(ranked.exitCode == 0);
+    REQUIRE(ranked.stdoutText.find("database connection refused") != std::string::npos);
+    REQUIRE(ranked.stdoutText.find("line ") != std::string::npos);
+
+    const auto noMatches =
+        runNesso({"grep", "--model-dir", NESSO_MODELS_DIR, "database connection error", logPath.string(), "-k", "0"});
+    REQUIRE(noMatches.exitCode != 0);
+
+    const auto withSource = runNesso(
+        {"grep", "--model-dir", NESSO_MODELS_DIR, "database connection error", logPath.string(), otherLog.string()});
+    REQUIRE(withSource.exitCode == 0);
+    REQUIRE(withSource.stdoutText.find(logPath.string()) != std::string::npos);
 
     std::filesystem::remove_all(directory);
 }

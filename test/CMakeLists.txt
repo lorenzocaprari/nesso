@@ -92,8 +92,10 @@ add_executable(cli_store_test cli_store_test.cpp)
 add_test(NAME cli_store_test COMMAND cli_store_test)
 target_link_libraries(cli_store_test PRIVATE Catch2::Catch2WithMain)
 target_compile_definitions(
-  cli_store_test PRIVATE "NESSO_BINARY=\"$<TARGET_FILE:nesso>\""
-                         "NESSO_TEST_FIXTURES=\"${NESSO_TEST_FIXTURES}\"")
+  cli_store_test
+  PRIVATE "NESSO_BINARY=\"$<TARGET_FILE:nesso>\""
+          "NESSO_TEST_FIXTURES=\"${NESSO_TEST_FIXTURES}\""
+          "NESSO_MODELS_DIR=\"${CMAKE_SOURCE_DIR}/models\"")
 # This test forks and execs nesso. The child never flushes gcov, so
 # instrumenting this TU records only the parent and pulls the library coverage
 # floor down.
