@@ -1,0 +1,52 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [[ $# -lt 3 || $# -gt 4 ]]; then
+  echo "usage: package-deb VERSION BINARY MODEL_DIR [OUT_DIR]" >&2
+  exit 2
+fi
+
+VERSION="$1"
+BINARY="$2"
+MODEL_DIR="$3"
+OUT_DIR="${4:-.}"
+
+if [[ ! "${VERSION}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+  echo "error: VERSION must be X.Y.Z, got ${VERSION}" >&2
+  exit 2
+fi
+if [[ ! -f "${BINARY}" ]]; then
+  echo "error: binary not found: ${BINARY}" >&2
+  exit 2
+fi
+if [[ ! -f "${MODEL_DIR}/vocab.txt" || ! -f "${MODEL_DIR}/model.onnx" ]]; then
+  echo "error: ${MODEL_DIR} must contain vocab.txt and model.onnx" >&2
+  exit 2
+fi
+
+WORKDIR="$(mktemp -d)"
+trap 'rm -rf "${WORKDIR}"' EXIT
+
+PKG="${WORKDIR}/nesso"
+install -D -m 0755 "${BINARY}" "${PKG}/usr/bin/nesso"
+install -D -m 0644 "${MODEL_DIR}/vocab.txt" "${PKG}/usr/share/nesso/vocab.txt"
+install -D -m 0644 "${MODEL_DIR}/model.onnx" "${PKG}/usr/share/nesso/model.onnx"
+mkdir -p "${PKG}/DEBIAN"
+
+cat >"${PKG}/DEBIAN/control" <<EOF
+Package: nesso
+Version: ${VERSION}
+Section: utils
+Priority: optional
+Architecture: amd64
+Depends: libc6, libstdc++6, libgomp1
+Maintainer: Lorenzo Caprari <lorenzocaprari@users.noreply.github.com>
+Description: Local semantic search for unstructured text
+ Nesso is a Linux CLI that searches .log, .json, and .jsonl files by meaning
+ using a local ONNX MiniLM model.
+EOF
+
+mkdir -p "${OUT_DIR}"
+OUT_DEB="$(cd "${OUT_DIR}" && pwd)/nesso_${VERSION}_amd64.deb"
+dpkg-deb --root-owner-group --build "${PKG}" "${OUT_DEB}"
+echo "${OUT_DEB}"

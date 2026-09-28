@@ -28,6 +28,7 @@ class Nesso(ConanFile):
         tc = CMakeToolchain(self)
         tc.generator = "Ninja"
         tc.cache_variables["CMAKE_EXPORT_COMPILE_COMMANDS"] = "ON"
+        tc.cache_variables["NESSO_VERSION"] = str(self.version)
         # Profile consumer flags (user.nesso:*) — not tools.build:*, so deps keep
         # stable package IDs and are not rebuilt with ASan/coverage/LTO.
         tc.extra_cxxflags = list(self.conf.get("user.nesso:cxxflags", check_type=list, default=[]))

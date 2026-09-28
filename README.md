@@ -20,6 +20,27 @@ Nesso is a Linux-native CLI for searching local text by meaning.
 - No approximate nearest-neighbor index yet
 - Linux only (POSIX `mmap`)
 
+## Install
+
+Ubuntu 26.04+, from a GitHub Release `.deb`:
+
+```bash
+sudo apt install ./nesso_*_amd64.deb
+nesso grep "database connection error" app.log
+```
+
+The package ships the MiniLM files in `/usr/share/nesso`. An omitted `--model-dir` uses `NESSO_MODEL_DIR`, then `./models` when both files are present, then `$XDG_DATA_HOME/nesso` (or `~/.local/share/nesso`), then `/usr/share/nesso`.
+
+Anywhere with Docker:
+
+```bash
+docker pull ghcr.io/lorenzocaprari/nesso:latest
+docker run --rm -v "$PWD:/data" -w /data ghcr.io/lorenzocaprari/nesso:latest \
+  grep "database connection error" app.log
+```
+
+Push a `vX.Y.Z` tag that matches `version` in `conanfile.py` to publish the image, the `.deb`, and the GitHub Release. CI must already have published `nesso-build-env`.
+
 ## Prerequisites
 
 - **Compiler:** GCC 15+ with C++26 support
@@ -93,7 +114,7 @@ bash scripts/lint
 ./scripts/code-coverage conan/profiles/code-coverage
 ```
 
-See [.github/workflows/ci.yml](.github/workflows/ci.yml) for the full pipeline (lint, clang-tidy, Release/Debug builds, unit tests, fuzz, coverage).
+See [.github/workflows/ci.yml](.github/workflows/ci.yml) for lint, clang-tidy, Release/Debug builds, unit tests, fuzz, and coverage. Tag `v*` publishes via [.github/workflows/release.yml](.github/workflows/release.yml).
 
 ## License
 

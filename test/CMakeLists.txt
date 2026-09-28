@@ -107,6 +107,12 @@ target_compile_options(cli_store_test PRIVATE -fno-profile-arcs
                                               -fno-test-coverage)
 add_dependencies(cli_store_test nesso)
 
+add_executable(model_paths_test model_paths_test.cpp
+                                ${CMAKE_SOURCE_DIR}/src/model_paths.cpp)
+add_test(NAME model_paths_test COMMAND model_paths_test)
+target_link_libraries(model_paths_test PRIVATE Catch2::Catch2WithMain)
+target_include_directories(model_paths_test PRIVATE "${CMAKE_SOURCE_DIR}/src")
+
 add_executable(double_search_test double_search_test.cpp)
 add_test(NAME double_search_test COMMAND double_search_test)
 target_link_libraries(double_search_test PRIVATE core)

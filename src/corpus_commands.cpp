@@ -3,6 +3,7 @@
 
 #include "corpus_commands.hpp"
 
+#include "model_paths.hpp"
 #include "text_search.hpp"
 
 #include <core/corpus_index.hpp>
@@ -87,7 +88,7 @@ void addCorpusIndexCommand(CLI::App &app)
     {
         std::string output;
         std::vector<std::string> files;
-        std::string modelDir = "models";
+        std::string modelDir;
     };
     auto opts = std::make_shared<Options>();
 
@@ -98,12 +99,11 @@ void addCorpusIndexCommand(CLI::App &app)
         ->required()
         ->expected(1, -1)
         ->check(CLI::ExistingFile);
-    corpusIndexCmd->add_option("--model-dir", opts->modelDir, "Directory containing model.onnx and vocab.txt")
-        ->default_val("models");
+    auto *modelDirOpt = corpusIndexCmd->add_option("--model-dir", opts->modelDir, nesso::MODEL_DIR_HELP);
 
     // RuntimeError is how CLI11_PARSE returns a command status without an extra diagnostic.
     corpusIndexCmd->callback(
-        [opts]()
+        [opts, modelDirOpt]()
         {
             std::vector<std::filesystem::path> files;
             files.reserve(opts->files.size());
@@ -111,7 +111,9 @@ void addCorpusIndexCommand(CLI::App &app)
             {
                 files.emplace_back(fileArg);
             }
-            const int code = runCorpusIndex(files, opts->output, opts->modelDir);
+            const std::filesystem::path modelDir =
+                modelDirOpt->empty() ? nesso::resolveDefaultModelDir() : std::filesystem::path(opts->modelDir);
+            const int code = runCorpusIndex(files, opts->output, modelDir);
             if (code != 0)
             {
                 throw CLI::RuntimeError(code);
@@ -126,7 +128,7 @@ void addCorpusSearchCommand(CLI::App &app)
         std::string query;
         std::string indexPath;
         size_t topK = 5;
-        std::string modelDir = "models";
+        std::string modelDir;
     };
     auto opts = std::make_shared<Options>();
 
@@ -137,14 +139,15 @@ void addCorpusSearchCommand(CLI::App &app)
         ->check(CLI::ExistingFile);
     corpusSearchCmd->add_option("-k,--top-k", opts->topK, "Maximum number of matches to return (default: 5)")
         ->default_val(5);
-    corpusSearchCmd->add_option("--model-dir", opts->modelDir, "Directory containing model.onnx and vocab.txt")
-        ->default_val("models");
+    auto *modelDirOpt = corpusSearchCmd->add_option("--model-dir", opts->modelDir, nesso::MODEL_DIR_HELP);
 
     // RuntimeError is how CLI11_PARSE returns a command status without an extra diagnostic.
     corpusSearchCmd->callback(
-        [opts]()
+        [opts, modelDirOpt]()
         {
-            const int code = runCorpusSearch(opts->query, opts->indexPath, opts->topK, opts->modelDir);
+            const std::filesystem::path modelDir =
+                modelDirOpt->empty() ? nesso::resolveDefaultModelDir() : std::filesystem::path(opts->modelDir);
+            const int code = runCorpusSearch(opts->query, opts->indexPath, opts->topK, modelDir);
             if (code != 0)
             {
                 throw CLI::RuntimeError(code);
