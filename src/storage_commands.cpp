@@ -16,7 +16,7 @@ namespace nesso::commands
 
 int runInit(core::StorageEngine<float> &engine, const std::string &dbPath, uint64_t dimensions)
 {
-    std::println("Initializing database container at '{}'...", dbPath);
+    std::println(std::cerr, "Initializing database container at '{}'...", dbPath);
 
     const auto result = engine.createOrOpen(dbPath, dimensions);
     if (!result)
@@ -25,14 +25,14 @@ int runInit(core::StorageEngine<float> &engine, const std::string &dbPath, uint6
         return 1;
     }
 
-    std::println("Database container created successfully. Target Dimensions: {}", engine.getDimensions());
+    std::println(std::cerr, "Database container created successfully. Target Dimensions: {}", engine.getDimensions());
     return 0;
 }
 
 int runIndex(core::StorageEngine<float> &engine, const std::string &dbPath, uint64_t dimensions,
              const std::string &inputFile)
 {
-    std::println("Opening database container at '{}' for ingestion (dimensions: {})...", dbPath, dimensions);
+    std::println(std::cerr, "Opening database container at '{}' for ingestion (dimensions: {})...", dbPath, dimensions);
 
     const auto result = engine.createOrOpen(dbPath, dimensions);
     if (!result)
@@ -42,13 +42,13 @@ int runIndex(core::StorageEngine<float> &engine, const std::string &dbPath, uint
         return 1;
     }
 
-    std::println("Streaming ingestion target identified: '{}'", inputFile);
-    std::println("Current vector count before ingest: {}", engine.getVectorCount());
+    std::println(std::cerr, "Streaming ingestion target identified: '{}'", inputFile);
+    std::println(std::cerr, "Current vector count before ingest: {}", engine.getVectorCount());
 
     std::ifstream infile(inputFile, std::ios::binary);
     if (!infile)
     {
-        std::println(std::cerr, "Failed to open input file stream.");
+        std::println(std::cerr, "Error: Failed to open input file stream.");
         return 1;
     }
 
@@ -70,8 +70,8 @@ int runIndex(core::StorageEngine<float> &engine, const std::string &dbPath, uint
         ingestedCount++;
     }
 
-    std::println("Ingestion complete. Added {} new vectors.", ingestedCount);
-    std::println("New total vector count on disk: {}", engine.getVectorCount());
+    std::println(std::cerr, "Ingestion complete. Added {} new vectors.", ingestedCount);
+    std::println(std::cerr, "New total vector count on disk: {}", engine.getVectorCount());
     return 0;
 }
 
