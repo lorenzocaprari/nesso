@@ -10,6 +10,11 @@
 #include <cstdint>
 #include <string>
 
+namespace CLI
+{
+class App;
+} // namespace CLI
+
 namespace nesso::commands
 {
 
@@ -20,6 +25,8 @@ int runIndex(core::StorageEngine<float> &engine, const std::string &dbPath, uint
 
 int runSearch(core::StorageEngine<float> &engine, const std::string &dbPath, uint64_t dimensions,
               const std::string &queryFile, size_t topK);
+
+void addStoreCommand(CLI::App &app);
 
 } // namespace nesso::commands
 

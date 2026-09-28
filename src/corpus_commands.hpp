@@ -9,6 +9,11 @@
 #include <span>
 #include <string_view>
 
+namespace CLI
+{
+class App;
+} // namespace CLI
+
 namespace nesso::commands
 {
 
@@ -17,6 +22,10 @@ int runCorpusIndex(std::span<const std::filesystem::path> files, const std::file
 
 int runCorpusSearch(std::string_view query, const std::filesystem::path &indexPath, size_t topK,
                     const std::filesystem::path &modelDir);
+
+void addCorpusIndexCommand(CLI::App &app);
+
+void addCorpusSearchCommand(CLI::App &app);
 
 } // namespace nesso::commands
 

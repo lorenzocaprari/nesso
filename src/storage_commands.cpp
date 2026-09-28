@@ -5,10 +5,14 @@
 
 #include <core/vector_search.hpp>
 
+#include <CLI/CLI.hpp>
+
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <memory>
 #include <print>
+#include <string>
 #include <vector>
 
 namespace nesso::commands
@@ -123,6 +127,67 @@ int runSearch(core::StorageEngine<float> &engine, const std::string &dbPath, uin
         std::println("index: {}, score: {}", result.index, result.score);
     }
     return 0;
+}
+
+void addStoreCommand(CLI::App &app)
+{
+    struct Options
+    {
+        std::string dbPath = "vectors.nesso";
+        uint64_t dimensions = 128;
+        std::string inputFile;
+        std::string queryFile;
+        size_t searchTopK = 10;
+    };
+    auto opts = std::make_shared<Options>();
+
+    auto *storeCmd = app.add_subcommand("store", "Raw float32 vector store (mmap, cosine top-k)");
+    storeCmd->require_subcommand(1);
+    storeCmd->add_option("-p,--path", opts->dbPath, "Path to the vector database storage file");
+    storeCmd->add_option("-d,--dims", opts->dimensions, "Dimensionality of the vector space")->default_val(128);
+
+    auto *initCmd = storeCmd->add_subcommand("init", "Initialize an empty database index container");
+    initCmd->fallthrough();
+
+    auto *indexCmd = storeCmd->add_subcommand("index", "Ingest external raw vector binary data");
+    indexCmd->fallthrough();
+    indexCmd->add_option("-f,--file", opts->inputFile, "Path to the raw floating-point binary file")
+        ->required()
+        ->check(CLI::ExistingFile);
+
+    auto *searchCmd = storeCmd->add_subcommand("search", "Return the nearest vectors by cosine similarity");
+    searchCmd->fallthrough();
+    searchCmd->add_option("-q,--query-file", opts->queryFile, "Path to one raw floating-point query vector")
+        ->required()
+        ->check(CLI::ExistingFile);
+    searchCmd
+        ->add_option("-k,--top-k", opts->searchTopK,
+                     "Maximum number of nearest vectors to return (default: 10, differs from grep/search)")
+        ->default_val(10);
+
+    // RuntimeError is how CLI11_PARSE returns a command status without an extra diagnostic.
+    storeCmd->callback(
+        [opts, initCmd, indexCmd, searchCmd]()
+        {
+            core::StorageEngine<float> engine;
+            int code = 1;
+            if (initCmd->parsed())
+            {
+                code = runInit(engine, opts->dbPath, opts->dimensions);
+            }
+            else if (indexCmd->parsed())
+            {
+                code = runIndex(engine, opts->dbPath, opts->dimensions, opts->inputFile);
+            }
+            else if (searchCmd->parsed())
+            {
+                code = runSearch(engine, opts->dbPath, opts->dimensions, opts->queryFile, opts->searchTopK);
+            }
+            if (code != 0)
+            {
+                throw CLI::RuntimeError(code);
+            }
+        });
 }
 
 } // namespace nesso::commands
