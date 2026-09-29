@@ -1,10 +1,10 @@
 // Copyright (c) 2026 Lorenzo Caprari
 // SPDX-License-Identifier: MIT
 
-#ifndef NESSO_CLI_EXECUTE_HPP
-#define NESSO_CLI_EXECUTE_HPP
+#ifndef NESSO_CLI_HPP
+#define NESSO_CLI_HPP
 
-#include <nesso/nesso.hpp>
+#include <nesso.hpp>
 
 namespace nesso::cli
 {
@@ -19,4 +19,4 @@ namespace nesso::cli
 
 } // namespace nesso::cli
 
-#endif // NESSO_CLI_EXECUTE_HPP
+#endif // NESSO_CLI_HPP

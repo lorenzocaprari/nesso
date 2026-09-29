@@ -2,10 +2,10 @@
 // SPDX-License-Identifier: MIT
 // Licensed under the MIT License. See LICENSE for details.
 
-#include "cli/cli_parser.hpp"
-#include "cli/execute.hpp"
+#include "cli.hpp"
+#include "cli_parser.hpp"
 
-#include <nesso/nesso.hpp>
+#include <nesso.hpp>
 
 #include <exception>
 #include <format>

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Line floor includes the CLI sources (main and src/cli) and libnesso.
+# Line floor includes the CLI sources under src/ and libnesso.
 # Remaining misses are not reachable from the CLI: main's catch-alls, and
 # failure returns the open path already rejects. CI lcov is 0.1 under a local
 # run, and the chmod-000 open path is skipped when the job runs as root.

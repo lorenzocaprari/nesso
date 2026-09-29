@@ -1,9 +1,9 @@
 // Copyright (c) 2026 Lorenzo Caprari
 // SPDX-License-Identifier: MIT
 
-#include "include/nesso/nesso.hpp"
+#include "nesso.hpp"
 
-#include "include/nesso/model_paths.hpp"
+#include "model_paths.hpp"
 
 #include <core/corpus_index.hpp>
 #include <core/embedding_store.hpp>

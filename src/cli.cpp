@@ -1,10 +1,12 @@
 // Copyright (c) 2026 Lorenzo Caprari
 // SPDX-License-Identifier: MIT
 
-#include "output.hpp"
+#include "cli.hpp"
 
+#include <expected>
 #include <iostream>
 #include <print>
+#include <vector>
 
 namespace nesso::cli
 {
@@ -17,19 +19,19 @@ static void renderSkippedLines(size_t skippedLines)
     }
 }
 
-void announce(const StoreInitRequest &request)
+static void announce(const StoreInitRequest &request)
 {
     std::println(std::cerr, "Initializing database container at '{}'...", request.db.string());
 }
 
-void announce(const StoreIngestRequest &request)
+static void announce(const StoreIngestRequest &request)
 {
     std::println(std::cerr, "Opening database container at '{}' for ingestion (dimensions: {})...", request.db.string(),
                  request.dimensions);
     std::println(std::cerr, "Streaming ingestion target identified: '{}'", request.input.string());
 }
 
-int render(const TextResults &results)
+static int render(const TextResults &results)
 {
     renderSkippedLines(results.skippedLines);
     for (const TextMatch &match : results.matches)
@@ -46,20 +48,20 @@ int render(const TextResults &results)
     return 0;
 }
 
-int render(const IndexSummary &summary, const IndexRequest &request)
+static int render(const IndexSummary &summary, const IndexRequest &request)
 {
     renderSkippedLines(summary.skippedLines);
     std::println(std::cerr, "Indexed {} chunks into '{}'.", summary.chunks, request.output.string());
     return 0;
 }
 
-int render(const StoreInitSummary &summary)
+static int render(const StoreInitSummary &summary)
 {
     std::println(std::cerr, "Database container created successfully. Target Dimensions: {}", summary.dimensions);
     return 0;
 }
 
-int render(const StoreIngestSummary &summary)
+static int render(const StoreIngestSummary &summary)
 {
     std::println(std::cerr, "Current vector count before ingest: {}", summary.before);
     if (summary.appendFailureCode)
@@ -72,7 +74,7 @@ int render(const StoreIngestSummary &summary)
     return 0;
 }
 
-int render(const std::vector<VectorMatch> &matches)
+static int render(const std::vector<VectorMatch> &matches)
 {
     for (const VectorMatch &match : matches)
     {
@@ -81,7 +83,7 @@ int render(const std::vector<VectorMatch> &matches)
     return 0;
 }
 
-int renderError(const Error &error)
+static int renderError(const Error &error)
 {
     if (error.kind == ErrorKind::Parse)
     {
@@ -146,5 +148,31 @@ int renderError(const Error &error)
     }
     return 1;
 }
+
+template <typename Result, typename... Context>
+static int report(const std::expected<Result, Error> &outcome, const Context &...context)
+{
+    return outcome ? render(*outcome, context...) : renderError(outcome.error());
+}
+
+int execute(const Nesso &nesso, const GrepRequest &request) { return report(nesso.grep(request)); }
+
+int execute(const Nesso &nesso, const IndexRequest &request) { return report(nesso.index(request), request); }
+
+int execute(const Nesso &nesso, const SearchRequest &request) { return report(nesso.search(request)); }
+
+int execute(const Nesso &nesso, const StoreInitRequest &request)
+{
+    announce(request);
+    return report(nesso.storeInit(request));
+}
+
+int execute(const Nesso &nesso, const StoreIngestRequest &request)
+{
+    announce(request);
+    return report(nesso.storeIngest(request));
+}
+
+int execute(const Nesso &nesso, const StoreSearchRequest &request) { return report(nesso.storeSearch(request)); }
 
 } // namespace nesso::cli

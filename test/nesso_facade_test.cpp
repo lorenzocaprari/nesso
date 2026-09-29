@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 #include <catch2/catch_all.hpp>
-#include <nesso/nesso.hpp>
+#include <nesso.hpp>
 
 #include <array>
 #include <filesystem>

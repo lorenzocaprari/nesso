@@ -1,7 +1,7 @@
 // Copyright (c) 2026 Lorenzo Caprari
 // SPDX-License-Identifier: MIT
 
-#include "include/nesso/model_paths.hpp"
+#include "model_paths.hpp"
 
 #include <cstdlib>
 
