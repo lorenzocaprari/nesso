@@ -18,6 +18,7 @@ env:
 permissions:
   contents: read
   packages: read
+  actions: write
 
 jobs:
   prepare-image:
@@ -154,6 +155,10 @@ jobs:
           conan install . -pr:h ./conan/profiles/gcc-26 -pr:b default --lockfile=conan.lock --build=missing --no-remote
 
       - name: Build
+        env:
+          # Baked into the test binaries. The test job restores models/ at this
+          # same workspace path, and a missing model then fails instead of skipping.
+          NESSO_REQUIRE_MODEL: "1"
         run: conan build . -pr:h ./conan/profiles/gcc-26 -pr:b default --lockfile=conan.lock --build=missing --no-remote
 
       - name: Archive Release build
@@ -185,6 +190,8 @@ jobs:
           conan install . -pr:h ./conan/profiles/gcc-26-debug -pr:b default --lockfile=conan.lock --build=missing --no-remote
 
       - name: Build
+        env:
+          NESSO_REQUIRE_MODEL: "1"
         run: conan build . -pr:h ./conan/profiles/gcc-26-debug -pr:b default --lockfile=conan.lock --build=missing --no-remote
 
       - name: Archive Debug build
@@ -207,6 +214,20 @@ jobs:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
     steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Restore MiniLM models
+        id: models
+        uses: actions/cache@v4
+        with:
+          path: models
+          key: minilm-${{ hashFiles('scripts/fetch-model') }}
+
+      - name: Fetch MiniLM models
+        if: steps.models.outputs.cache-hit != 'true'
+        run: ./scripts/fetch-model models
+
       - name: Download Release build
         uses: actions/download-artifact@v4
         with:
@@ -227,6 +248,20 @@ jobs:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
     steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Restore MiniLM models
+        id: models
+        uses: actions/cache@v4
+        with:
+          path: models
+          key: minilm-${{ hashFiles('scripts/fetch-model') }}
+
+      - name: Fetch MiniLM models
+        if: steps.models.outputs.cache-hit != 'true'
+        run: ./scripts/fetch-model models
+
       - name: Download Debug build
         uses: actions/download-artifact@v4
         with:
@@ -260,7 +295,7 @@ jobs:
           apt-get install -y --no-install-recommends \
             clang-21 libclang-rt-21-dev afl++
           rm -rf /var/lib/apt/lists/*
-          # Bridge Ubuntu linux/*-x86_64.a layout ↔ triple-dir names AFL/Clang may request.
+          # Bridge Ubuntu linux/*-x86_64.a layout ? triple-dir names AFL/Clang may request.
           rt_lib="/usr/lib/llvm-21/lib/clang/21/lib"
           if [ -d "${rt_lib}/linux" ] && [ ! -e "${rt_lib}/x86_64-pc-linux-gnu" ]; then
             mkdir -p "${rt_lib}/x86_64-pc-linux-gnu"
@@ -305,10 +340,23 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
+      - name: Restore MiniLM models
+        id: models
+        uses: actions/cache@v4
+        with:
+          path: models
+          key: minilm-${{ hashFiles('scripts/fetch-model') }}
+
+      - name: Fetch MiniLM models
+        if: steps.models.outputs.cache-hit != 'true'
+        run: ./scripts/fetch-model models
+
       - name: Create Conan Default Profile
         run: conan profile detect --force
 
       - name: Run Coverage Script
+        env:
+          NESSO_REQUIRE_MODEL: "1"
         run: |
           chmod +x scripts/code-coverage
           ./scripts/code-coverage conan/profiles/code-coverage

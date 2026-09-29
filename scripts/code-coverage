@@ -16,12 +16,14 @@ cd "${ROOT}"
 
 conan profile detect --force
 # In CI, stick to packages baked into nesso-build-env (no ConanCenter drift).
+# NESSO_REQUIRE_MODEL is read when CMake configures the test binaries.
 remote_args=()
 if [[ "${CI:-}" == "true" ]]; then
   remote_args+=(--no-remote)
+  export NESSO_REQUIRE_MODEL=1
 fi
 conan build . -of build/coverage -pr:h "${1:-conan/profiles/code-coverage}" -pr:b default --lockfile=conan.lock --build=missing "${remote_args[@]}"
-# Text commands in libnesso run past the embedder only after the ONNX model loads. CI has no models/ checkout.
+# Text commands run past the embedder only after the ONNX model loads.
 if [[ ! -s "${ROOT}/models/model.onnx" || ! -s "${ROOT}/models/vocab.txt" ]]; then
   "${ROOT}/scripts/fetch-model" "${ROOT}/models"
 fi
