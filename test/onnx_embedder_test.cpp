@@ -4,17 +4,29 @@
 #include <cmath>
 #include <filesystem>
 
-#ifndef NESSO_TEST_FIXTURES
-#error "NESSO_TEST_FIXTURES must be defined"
+#ifndef NESSO_MODELS_DIR
+#error "NESSO_MODELS_DIR must be defined"
 #endif
+
+static std::filesystem::path modelDirOrSkip()
+{
+    const std::filesystem::path modelDir{NESSO_MODELS_DIR};
+    if (std::filesystem::is_regular_file(modelDir / "model.onnx") &&
+        std::filesystem::is_regular_file(modelDir / "vocab.txt"))
+    {
+        return modelDir;
+    }
+#ifdef NESSO_REQUIRE_MODEL
+    FAIL("models/ not present; run scripts/fetch-model");
+#else
+    SKIP("models/ not present; run scripts/fetch-model");
+#endif
+    return {};
+}
 
 TEST_CASE("OnnxEmbedder produces unit-normal 384-d embeddings", "[OnnxEmbedder][embed][integration]")
 {
-    const std::filesystem::path modelDir = std::filesystem::path(NESSO_TEST_FIXTURES) / ".." / ".." / "models";
-    if (!std::filesystem::exists(modelDir / "model.onnx"))
-    {
-        SKIP("models/ not present; run scripts/fetch-model");
-    }
+    const std::filesystem::path modelDir = modelDirOrSkip();
 
     const auto embedder = embed::OnnxEmbedder::create(modelDir);
     REQUIRE(embedder.has_value());
@@ -33,11 +45,7 @@ TEST_CASE("OnnxEmbedder produces unit-normal 384-d embeddings", "[OnnxEmbedder][
 
 TEST_CASE("OnnxEmbedder ranks similar strings above dissimilar ones", "[OnnxEmbedder][embed][integration]")
 {
-    const std::filesystem::path modelDir = std::filesystem::path(NESSO_TEST_FIXTURES) / ".." / ".." / "models";
-    if (!std::filesystem::exists(modelDir / "model.onnx"))
-    {
-        SKIP("models/ not present; run scripts/fetch-model");
-    }
+    const std::filesystem::path modelDir = modelDirOrSkip();
 
     const auto embedder = embed::OnnxEmbedder::create(modelDir);
     REQUIRE(embedder.has_value());
@@ -64,11 +72,7 @@ TEST_CASE("OnnxEmbedder ranks similar strings above dissimilar ones", "[OnnxEmbe
 
 TEST_CASE("OnnxEmbedder embedBatch matches per-string embed", "[OnnxEmbedder][embed][integration]")
 {
-    const std::filesystem::path modelDir = std::filesystem::path(NESSO_TEST_FIXTURES) / ".." / ".." / "models";
-    if (!std::filesystem::exists(modelDir / "model.onnx"))
-    {
-        SKIP("models/ not present; run scripts/fetch-model");
-    }
+    const std::filesystem::path modelDir = modelDirOrSkip();
 
     const auto embedder = embed::OnnxEmbedder::create(modelDir);
     REQUIRE(embedder.has_value());
