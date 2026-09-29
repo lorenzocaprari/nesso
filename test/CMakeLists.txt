@@ -5,6 +5,24 @@ find_package(onnxruntime CONFIG REQUIRED)
 file(COPY "${CMAKE_CURRENT_SOURCE_DIR}/fixtures"
      DESTINATION "${CMAKE_CURRENT_BINARY_DIR}")
 set(NESSO_TEST_FIXTURES "${CMAKE_CURRENT_BINARY_DIR}/fixtures")
+set(NESSO_MODELS_DIR "${CMAKE_SOURCE_DIR}/models")
+
+# NESSO_REQUIRE_MODEL=1 at configure time fails model-backed tests instead of
+# skipping them, and drops Catch2's --allow-running-no-tests escape hatch.
+if(NOT DEFINED NESSO_REQUIRE_MODEL)
+  if("$ENV{NESSO_REQUIRE_MODEL}" MATCHES "^(1|ON|on|TRUE|true)$")
+    set(NESSO_REQUIRE_MODEL ON)
+  else()
+    set(NESSO_REQUIRE_MODEL OFF)
+  endif()
+endif()
+set(NESSO_MODEL_TEST_DEFS "NESSO_MODELS_DIR=\"${NESSO_MODELS_DIR}\"")
+set(NESSO_MODEL_TEST_ARGS)
+if(NESSO_REQUIRE_MODEL)
+  list(APPEND NESSO_MODEL_TEST_DEFS NESSO_REQUIRE_MODEL=1)
+else()
+  set(NESSO_MODEL_TEST_ARGS --allow-running-no-tests)
+endif()
 
 add_subdirectory(fuzz)
 
@@ -71,26 +89,26 @@ target_compile_options(log_chunker_test PRIVATE -fno-profile-arcs
 
 add_executable(onnx_embedder_test onnx_embedder_test.cpp)
 target_link_libraries(onnx_embedder_test PRIVATE embed Catch2::Catch2WithMain)
-target_compile_definitions(onnx_embedder_test
-                           PRIVATE NESSO_TEST_FIXTURES="${NESSO_TEST_FIXTURES}")
+target_compile_definitions(onnx_embedder_test PRIVATE ${NESSO_MODEL_TEST_DEFS})
 # Skips when models/ is absent. An instrumented skip would record no hits and
 # fail the floor.
 target_compile_options(onnx_embedder_test PRIVATE -fno-profile-arcs
                                                   -fno-test-coverage)
 add_test(NAME onnx_embedder_test COMMAND $<TARGET_FILE:onnx_embedder_test>
-                                         --allow-running-no-tests)
+                                         ${NESSO_MODEL_TEST_ARGS})
 
 add_executable(grep_integration_test grep_integration_test.cpp)
 target_link_libraries(grep_integration_test PRIVATE core embed parser
                                                     Catch2::Catch2WithMain)
-target_compile_definitions(grep_integration_test
-                           PRIVATE NESSO_TEST_FIXTURES="${NESSO_TEST_FIXTURES}")
+target_compile_definitions(
+  grep_integration_test PRIVATE NESSO_TEST_FIXTURES="${NESSO_TEST_FIXTURES}"
+                                ${NESSO_MODEL_TEST_DEFS})
 # Skips when models/ is absent. An instrumented skip would record no hits and
 # fail the floor.
 target_compile_options(grep_integration_test PRIVATE -fno-profile-arcs
                                                      -fno-test-coverage)
 add_test(NAME grep_integration_test COMMAND $<TARGET_FILE:grep_integration_test>
-                                            --allow-running-no-tests)
+                                            ${NESSO_MODEL_TEST_ARGS})
 
 add_executable(cli_store_test cli_store_test.cpp)
 add_test(NAME cli_store_test COMMAND cli_store_test)
@@ -99,7 +117,7 @@ target_compile_definitions(
   cli_store_test
   PRIVATE "NESSO_BINARY=\"$<TARGET_FILE:nesso>\""
           "NESSO_TEST_FIXTURES=\"${NESSO_TEST_FIXTURES}\""
-          "NESSO_MODELS_DIR=\"${CMAKE_SOURCE_DIR}/models\"")
+          "NESSO_MODELS_DIR=\"${NESSO_MODELS_DIR}\"")
 # This test forks and execs nesso. The child never flushes gcov, so
 # instrumenting this TU records only the parent and pulls the library coverage
 # floor down.
