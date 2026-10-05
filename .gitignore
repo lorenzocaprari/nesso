@@ -1,4 +1,6 @@
 build/
+bench/results/
+__pycache__/
 coverage-report/
 coverage.info
 coverage.cleaned
