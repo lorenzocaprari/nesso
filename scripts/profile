@@ -52,7 +52,8 @@ fi
 [[ -f "${COLLAPSE}" && -f "${GRAPH}" ]] || die "FlameGraph scripts not found: ${COLLAPSE} ${GRAPH}"
 
 mkdir -p "${OUT}"
-rm -f "${OUT}/perf.data" "${OUT}/flamegraph.svg" "${OUT}/heaptrack.nesso.gz" "${OUT}/heaptrack-summary.txt"
+rm -f "${OUT}/perf.data" "${OUT}/flamegraph.svg" "${OUT}/heaptrack.nesso.gz" "${OUT}/heaptrack.nesso.zst" \
+  "${OUT}/heaptrack-summary.txt"
 
 echo "profile: perf ${BIN} $*"
 set +e
@@ -64,11 +65,18 @@ perf script -i "${OUT}/perf.data" | perl "${COLLAPSE}" | perl "${GRAPH}" --title
 
 echo "profile: heaptrack ${BIN} $*"
 set +e
-heaptrack -o "${OUT}/heaptrack.nesso.gz" "${BIN}" "$@"
+heaptrack -o "${OUT}/heaptrack.nesso" "${BIN}" "$@"
 heap_status=$?
 set -e
-[[ -s "${OUT}/heaptrack.nesso.gz" ]] || die "heaptrack produced no data (status ${heap_status})"
-heaptrack_print -f "${OUT}/heaptrack.nesso.gz" >"${OUT}/heaptrack-summary.txt"
+heap_data=""
+for candidate in "${OUT}/heaptrack.nesso.zst" "${OUT}/heaptrack.nesso.gz"; do
+  if [[ -s "${candidate}" ]]; then
+    heap_data="${candidate}"
+    break
+  fi
+done
+[[ -n "${heap_data}" ]] || die "heaptrack produced no data (status ${heap_status})"
+heaptrack_print -f "${heap_data}" >"${OUT}/heaptrack-summary.txt"
 [[ -s "${OUT}/heaptrack-summary.txt" ]] || die "heaptrack summary is empty"
 
 echo "profile: ${OUT}/flamegraph.svg"
