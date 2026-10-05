@@ -165,6 +165,37 @@ TEST_CASE("text operations report model and corpus failures", "[nesso][text]")
     REQUIRE(nothing.error().kind == nesso::ErrorKind::NoMatches);
 }
 
+TEST_CASE("grep, index, and search run the text stages", "[nesso][text]")
+{
+    const std::filesystem::path modelDir{NESSO_MODELS_DIR};
+    if (!std::filesystem::is_regular_file(modelDir / "model.onnx") ||
+        !std::filesystem::is_regular_file(modelDir / "vocab.txt"))
+    {
+#ifdef NESSO_REQUIRE_MODEL
+        FAIL("models/ not present; run scripts/fetch-model");
+#else
+        SKIP("models/ not present; run scripts/fetch-model");
+#endif
+    }
+
+    const TempDir dir{"nesso_facade_text_stages"};
+    const auto log = std::filesystem::path(NESSO_TEST_FIXTURES) / "grep_sample.log";
+    const nesso::Nesso app{nesso::Config{.modelDir = modelDir}};
+
+    const auto grepped = app.grep({.query = "database connection error", .files = {log}});
+    REQUIRE(grepped.has_value());
+    REQUIRE_FALSE(grepped->matches.empty());
+
+    const auto corpus = dir.path() / "corpus.nesso";
+    const auto indexed = app.index({.files = {log}, .output = corpus});
+    REQUIRE(indexed.has_value());
+    REQUIRE(indexed->chunks >= 1);
+
+    const auto found = app.search({.query = "database connection error", .index = corpus});
+    REQUIRE(found.has_value());
+    REQUIRE_FALSE(found->matches.empty());
+}
+
 TEST_CASE("Nesso is movable", "[nesso]")
 {
     const TempDir dir{"nesso_facade_move"};
