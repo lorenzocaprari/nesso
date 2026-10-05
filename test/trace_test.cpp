@@ -35,8 +35,8 @@ TEST_CASE("NESSO_TRACE=1 emits one json line per session", "[trace]")
         const RestoreCerr restore;
         std::cerr.rdbuf(sink.rdbuf());
         {
-            nesso::TraceSession session;
-            nesso::ScopedStage stage{"parse"};
+            const nesso::TraceSession session;
+            const nesso::ScopedStage stage{"parse"};
         }
         REQUIRE(sink.str().empty());
     }
@@ -48,20 +48,20 @@ TEST_CASE("NESSO_TRACE=1 emits one json line per session", "[trace]")
         const RestoreCerr restore;
         std::cerr.rdbuf(sink.rdbuf());
         {
-            nesso::TraceSession session;
+            const nesso::TraceSession session;
         }
         {
-            nesso::TraceSession session;
+            const nesso::TraceSession session;
             {
-                nesso::ScopedStage stage{"parse"};
+                const nesso::ScopedStage stage{"parse"};
             }
             {
-                nesso::ScopedStage stage{"embed"};
+                const nesso::ScopedStage stage{"embed"};
             }
         }
         {
-            nesso::TraceSession session;
-            nesso::ScopedStage stage{"corpus-read"};
+            const nesso::TraceSession session;
+            const nesso::ScopedStage stage{"corpus-read"};
         }
     }
 
