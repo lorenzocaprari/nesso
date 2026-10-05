@@ -19,6 +19,8 @@ class TraceSession
     ~TraceSession();
     TraceSession(const TraceSession &) = delete;
     TraceSession &operator=(const TraceSession &) = delete;
+    TraceSession(TraceSession &&) = delete;
+    TraceSession &operator=(TraceSession &&) = delete;
 
   private:
     bool active_ = false;
@@ -32,11 +34,13 @@ class ScopedStage
     ~ScopedStage();
     ScopedStage(const ScopedStage &) = delete;
     ScopedStage &operator=(const ScopedStage &) = delete;
+    ScopedStage(ScopedStage &&) = delete;
+    ScopedStage &operator=(ScopedStage &&) = delete;
 
   private:
     bool active_ = false;
     std::string name_;
-    std::chrono::steady_clock::time_point start_{};
+    std::chrono::steady_clock::time_point start_;
 };
 
 } // namespace nesso

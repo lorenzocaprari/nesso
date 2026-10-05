@@ -36,7 +36,7 @@ struct ParsedFiles
 
 static std::expected<ParsedFiles, Error> parseFiles(std::span<const std::filesystem::path> files)
 {
-    ScopedStage stage{"parse"};
+    const ScopedStage stage{"parse"};
     parser::ParseStats stats{};
     ParsedFiles parsed;
     for (const std::filesystem::path &path : files)
@@ -63,7 +63,7 @@ static std::expected<ParsedFiles, Error> parseFiles(std::span<const std::filesys
 static std::expected<std::vector<core::CorpusChunk>, Error> embedFiles(const ParsedFiles &parsed,
                                                                        const embed::OnnxEmbedder &embedder)
 {
-    ScopedStage stage{"embed"};
+    const ScopedStage stage{"embed"};
     if (parsed.chunks.empty())
     {
         return std::vector<core::CorpusChunk>{};
@@ -117,7 +117,7 @@ static std::expected<TextResults, Error> rankChunks(std::span<const core::Corpus
                                                     const embed::OnnxEmbedder &embedder, std::string_view query,
                                                     size_t topK, size_t skippedLines, ErrorKind insertFailure)
 {
-    ScopedStage stage{"rank"};
+    const ScopedStage stage{"rank"};
     core::EmbeddingStore<float> store;
     for (const core::CorpusChunk &chunk : chunks)
     {
@@ -205,7 +205,7 @@ Nesso &Nesso::operator=(Nesso &&) noexcept = default;
 
 std::expected<TextResults, Error> Nesso::grep(const GrepRequest &request) const
 {
-    TraceSession session;
+    const TraceSession session;
     const auto embedder = impl_->embedder();
     if (!embedder)
     {
@@ -233,7 +233,7 @@ std::expected<TextResults, Error> Nesso::grep(const GrepRequest &request) const
 
 std::expected<IndexSummary, Error> Nesso::index(const IndexRequest &request) const
 {
-    TraceSession session;
+    const TraceSession session;
     const auto embedder = impl_->embedder();
     if (!embedder)
     {
@@ -254,7 +254,7 @@ std::expected<IndexSummary, Error> Nesso::index(const IndexRequest &request) con
 
     const auto written = [&request, &chunks]
     {
-        ScopedStage stage{"corpus-write"};
+        const ScopedStage stage{"corpus-write"};
         return core::writeCorpusFile(request.output, *chunks);
     }();
     if (!written)
@@ -269,10 +269,10 @@ std::expected<IndexSummary, Error> Nesso::index(const IndexRequest &request) con
 
 std::expected<TextResults, Error> Nesso::search(const SearchRequest &request) const
 {
-    TraceSession session;
+    const TraceSession session;
     const auto chunks = [&request]
     {
-        ScopedStage stage{"corpus-read"};
+        const ScopedStage stage{"corpus-read"};
         return core::readCorpusFile(request.index);
     }();
     if (!chunks)
