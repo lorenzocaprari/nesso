@@ -1,0 +1,236 @@
+#!/usr/bin/env python3
+"""Run deterministic grep benchmarks and write bench/results/<sha>.json."""
+
+import argparse
+import json
+import os
+import random
+import signal
+import subprocess
+import tempfile
+import time
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+DEFAULT_SIZES = (1000, 10_000, 100_000)
+QUERY = "database connection refused"
+SEED = 0x4E455353
+TEMPLATES = (
+    "database connection refused",
+    "database connection refused to primary",
+    "payment timeout waiting for gateway",
+    "auth failure for user",
+    "cache miss while loading session",
+    "disk full while writing checkpoint",
+    "tls handshake failed with upstream",
+    "query cancelled after deadline",
+)
+TRACE_STAGES = ("parse", "embed", "rank")
+
+
+def git_sha() -> str:
+    return subprocess.check_output(["git", "-C", str(ROOT), "rev-parse", "HEAD"], text=True).strip()
+
+
+def resolve_binary(explicit: str | None) -> Path:
+    if explicit:
+        return Path(explicit)
+    env = os.environ.get("NESSO_BINARY")
+    if env:
+        return Path(env)
+    for relative in ("build/Release/nesso", "build/Debug/nesso"):
+        candidate = ROOT / relative
+        if candidate.is_file():
+            return candidate
+    raise SystemExit("error: nesso binary not found; pass --binary or set NESSO_BINARY")
+
+
+def resolve_model_dir(explicit: str | None) -> Path:
+    if explicit:
+        return Path(explicit)
+    env = os.environ.get("NESSO_MODEL_DIR")
+    if env:
+        return Path(env)
+    return ROOT / "models"
+
+
+def write_log(path: Path, lines: int) -> None:
+    rng = random.Random(SEED)
+    with path.open("w", encoding="utf-8") as handle:
+        for _ in range(lines):
+            choice = rng.randrange(len(TEMPLATES))
+            force_query = rng.randrange(10) == 0
+            identifier = rng.randrange(1_000_000)
+            text = QUERY if force_query else f"{TEMPLATES[choice]} id={identifier}"
+            handle.write(text + "\n")
+
+
+def parse_trace(stderr: str) -> dict | None:
+    found = None
+    for line in stderr.splitlines():
+        stripped = line.strip()
+        if not stripped.startswith("{"):
+            continue
+        try:
+            obj = json.loads(stripped)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(obj, dict) and "peakRssBytes" in obj and "stages" in obj:
+            found = obj
+    return found
+
+
+def trace_ok(trace: dict | None) -> bool:
+    if trace is None:
+        return False
+    names = [stage.get("name") for stage in trace.get("stages", [])]
+    return names == list(TRACE_STAGES)
+
+
+def address_limit_bytes() -> int | None:
+    raw = os.environ.get("NESSO_BENCH_AS_LIMIT_KB")
+    if not raw:
+        return None
+    return int(raw) * 1024
+
+
+def run_case(binary: Path, model_dir: Path, lines: int, timeout: float | None) -> dict:
+    with tempfile.TemporaryDirectory(prefix="nesso-bench-") as tmp:
+        log_path = Path(tmp) / "corpus.log"
+        write_log(log_path, lines)
+        time_path = Path(tmp) / "time.txt"
+        env = os.environ.copy()
+        env["NESSO_TRACE"] = "1"
+        command = [
+            "/usr/bin/time",
+            "-f",
+            "%e %M",
+            "-o",
+            str(time_path),
+            str(binary),
+            "grep",
+            QUERY,
+            str(log_path),
+            "--model-dir",
+            str(model_dir),
+            "-k",
+            "5",
+        ]
+        limit = address_limit_bytes()
+        if limit is not None:
+            if not Path("/usr/bin/prlimit").is_file():
+                raise SystemExit("error: /usr/bin/prlimit is required when NESSO_BENCH_AS_LIMIT_KB is set")
+            command = ["prlimit", f"--as={limit}", *command]
+        started = time.perf_counter()
+        process = subprocess.Popen(
+            command,
+            env=env,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            start_new_session=True,
+        )
+        try:
+            stdout, stderr_bytes = process.communicate(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            os.killpg(process.pid, signal.SIGKILL)
+            process.communicate()
+            return {
+                "lines": lines,
+                "ok": False,
+                "exitCode": None,
+                "wallSeconds": round(time.perf_counter() - started, 6),
+                "peakRssBytes": None,
+                "error": f"timed out after {timeout}s",
+            }
+        wall_seconds = time.perf_counter() - started
+        stderr = stderr_bytes.decode("utf-8", "replace")
+        peak_rss_bytes = None
+        if time_path.is_file():
+            for line in reversed(time_path.read_text(encoding="utf-8", errors="replace").splitlines()):
+                parts = line.split()
+                if len(parts) < 2:
+                    continue
+                try:
+                    wall_seconds = float(parts[0])
+                    peak_rss_bytes = int(parts[1]) * 1024
+                except ValueError:
+                    continue
+                break
+        trace = parse_trace(stderr)
+        return_code = process.returncode
+        ok = return_code == 0 and trace_ok(trace) and peak_rss_bytes is not None and bool(stdout)
+        case = {
+            "lines": lines,
+            "ok": ok,
+            "exitCode": return_code,
+            "wallSeconds": round(wall_seconds, 6),
+            "peakRssBytes": peak_rss_bytes,
+            "trace": trace,
+        }
+        if not ok:
+            if "Failed to allocate memory" in stderr:
+                case["error"] = "embedder failed to allocate"
+            elif return_code is not None and return_code < 0:
+                case["error"] = f"killed by signal {-return_code}"
+            elif return_code is not None and return_code > 128:
+                case["error"] = f"killed by signal {return_code - 128}"
+            elif return_code not in (0, None):
+                case["error"] = f"nesso exited {return_code}"
+            elif not trace_ok(trace):
+                case["error"] = "missing parse/embed/rank trace"
+            elif not stdout:
+                case["error"] = "no matches on stdout"
+            else:
+                case["error"] = "missing peak RSS"
+        return case
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--binary", help="Path to the nesso executable")
+    parser.add_argument("--model-dir", help="Directory with model.onnx and vocab.txt")
+    parser.add_argument(
+        "--sizes",
+        default=",".join(str(size) for size in DEFAULT_SIZES),
+        help="Comma-separated log line counts (default: 1000,10000,100000)",
+    )
+    parser.add_argument("--output", type=Path, help="Result JSON path (default: bench/results/<sha>.json)")
+    parser.add_argument("--timeout", type=float, help="Per-size timeout in seconds")
+    args = parser.parse_args()
+
+    binary = resolve_binary(args.binary)
+    if not binary.is_file():
+        raise SystemExit(f"error: binary not found: {binary}")
+    model_dir = resolve_model_dir(args.model_dir)
+    if not (model_dir / "model.onnx").is_file() or not (model_dir / "vocab.txt").is_file():
+        raise SystemExit(f"error: {model_dir} must contain model.onnx and vocab.txt")
+    if not Path("/usr/bin/time").is_file():
+        raise SystemExit("error: /usr/bin/time is required")
+
+    sizes = tuple(int(part) for part in args.sizes.split(",") if part)
+    if not sizes or any(size <= 0 for size in sizes):
+        raise SystemExit("error: --sizes must be positive integers")
+
+    sha = git_sha()
+    cases = []
+    for size in sizes:
+        print(f"bench: grep {size} lines", flush=True)
+        case = run_case(binary, model_dir, size, args.timeout)
+        status = "ok" if case["ok"] else case.get("error", "failed")
+        print(f"bench: {size} lines {status} wall={case['wallSeconds']}s peak={case['peakRssBytes']}", flush=True)
+        cases.append(case)
+
+    payload = {
+        "sha": sha,
+        "binary": str(binary),
+        "query": QUERY,
+        "cases": cases,
+    }
+    output = args.output or (ROOT / "bench" / "results" / f"{sha}.json")
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+    print(f"bench: wrote {output}")
+
+
+if __name__ == "__main__":
+    main()

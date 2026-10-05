@@ -1,0 +1,99 @@
+#!/usr/bin/env python3
+"""Compare a bench result against bench/baseline.json.
+
+A completed case regresses when wall time or peak RSS exceeds the baseline by
+more than the tolerance. A baseline case that did not complete still passes
+when the new run also fails, and passes when the new run completes.
+"""
+
+import argparse
+import json
+import os
+import subprocess
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+
+
+def git_sha() -> str:
+    return subprocess.check_output(["git", "-C", str(ROOT), "rev-parse", "HEAD"], text=True).strip()
+
+
+def load_json(path: Path) -> dict:
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise SystemExit(f"error: cannot read {path}: {exc}") from exc
+
+
+def cases_by_lines(payload: dict) -> dict[int, dict]:
+    found = {}
+    for case in payload.get("cases", []):
+        found[int(case["lines"])] = case
+    return found
+
+
+def percent(actual: float, baseline: float) -> float:
+    return (actual - baseline) / baseline * 100.0
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--baseline", type=Path, default=ROOT / "bench" / "baseline.json")
+    parser.add_argument("--result", type=Path, help="Result JSON (default: bench/results/<sha>.json)")
+    parser.add_argument(
+        "--tolerance",
+        type=float,
+        default=float(os.environ.get("NESSO_BENCH_TOLERANCE", "0.15")),
+        help="Allowed fractional increase in wall time and peak RSS (default: 0.15)",
+    )
+    args = parser.parse_args()
+
+    result_path = args.result or (ROOT / "bench" / "results" / f"{git_sha()}.json")
+    baseline = load_json(args.baseline)
+    result = load_json(result_path)
+    baseline_cases = cases_by_lines(baseline)
+    result_cases = cases_by_lines(result)
+    if not baseline_cases:
+        raise SystemExit(f"error: no cases in {args.baseline}")
+
+    failed = False
+    for lines in sorted(baseline_cases):
+        expected = baseline_cases[lines]
+        actual = result_cases.get(lines)
+        if actual is None:
+            print(f"{lines} lines: missing from {result_path}")
+            failed = True
+            continue
+        if not expected.get("ok"):
+            if actual.get("ok"):
+                print(f"{lines} lines: now completes (baseline failed: {expected.get('error', 'failed')})")
+            else:
+                print(f"{lines} lines: still failed ({actual.get('error', 'failed')})")
+            continue
+        if not actual.get("ok"):
+            print(f"{lines} lines: FAILED ({actual.get('error', 'failed')}); baseline completed")
+            failed = True
+            continue
+        for field in ("wallSeconds", "peakRssBytes"):
+            base = expected[field]
+            got = actual[field]
+            if base is None or base <= 0 or got is None:
+                print(f"{lines} lines: invalid {field}")
+                failed = True
+                continue
+            delta = percent(got, base)
+            limit = base * (1.0 + args.tolerance)
+            status = "ok" if got <= limit else "REGRESSION"
+            if got > limit:
+                failed = True
+            print(f"{lines} lines: {field} {got} vs {base} ({delta:+.1f}%) {status}")
+
+    if failed:
+        sys.exit(1)
+    print("bench-compare: ok")
+
+
+if __name__ == "__main__":
+    main()
