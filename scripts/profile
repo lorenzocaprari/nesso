@@ -1,0 +1,80 @@
+#!/usr/bin/env bash
+# Profile one nesso command with perf and heaptrack. The command runs twice.
+#
+#   NESSO_BINARY=build/Release/src/nesso ./scripts/profile grep "query" app.log
+#
+# Writes build/profile/flamegraph.svg and build/profile/heaptrack-summary.txt.
+# Requires perf, heaptrack, heaptrack_print, and FlameGraph's stackcollapse-perf.pl
+# and flamegraph.pl. Set NESSO_FLAMEGRAPH_DIR to a checkout of
+# https://github.com/brendangregg/FlameGraph when those scripts are not on PATH.
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+OUT="${NESSO_PROFILE_DIR:-${ROOT}/build/profile}"
+
+die() {
+  echo "error: $*" >&2
+  exit 2
+}
+
+if [[ $# -lt 1 ]]; then
+  die "usage: scripts/profile <nesso args>"
+fi
+
+if [[ -n "${NESSO_BINARY:-}" ]]; then
+  BIN="${NESSO_BINARY}"
+elif [[ -x "${ROOT}/build/Release/src/nesso" ]]; then
+  BIN="${ROOT}/build/Release/src/nesso"
+elif [[ -x "${ROOT}/build/Release/nesso" ]]; then
+  BIN="${ROOT}/build/Release/nesso"
+elif [[ -x "${ROOT}/build/Debug/src/nesso" ]]; then
+  BIN="${ROOT}/build/Debug/src/nesso"
+elif [[ -x "${ROOT}/build/Debug/nesso" ]]; then
+  BIN="${ROOT}/build/Debug/nesso"
+else
+  die "nesso binary not found; set NESSO_BINARY"
+fi
+[[ -x "${BIN}" ]] || die "binary is not executable: ${BIN}"
+
+command -v perf >/dev/null 2>&1 || die "perf not found. Install linux-tools-generic."
+command -v heaptrack >/dev/null 2>&1 || die "heaptrack not found. Install the heaptrack package."
+command -v heaptrack_print >/dev/null 2>&1 || die "heaptrack_print not found. Install the heaptrack package."
+
+if [[ -n "${NESSO_FLAMEGRAPH_DIR:-}" ]]; then
+  COLLAPSE="${NESSO_FLAMEGRAPH_DIR}/stackcollapse-perf.pl"
+  GRAPH="${NESSO_FLAMEGRAPH_DIR}/flamegraph.pl"
+elif command -v stackcollapse-perf.pl >/dev/null 2>&1 && command -v flamegraph.pl >/dev/null 2>&1; then
+  COLLAPSE="$(command -v stackcollapse-perf.pl)"
+  GRAPH="$(command -v flamegraph.pl)"
+else
+  die "stackcollapse-perf.pl and flamegraph.pl not found. Set NESSO_FLAMEGRAPH_DIR to a FlameGraph checkout."
+fi
+[[ -f "${COLLAPSE}" && -f "${GRAPH}" ]] || die "FlameGraph scripts not found: ${COLLAPSE} ${GRAPH}"
+
+mkdir -p "${OUT}"
+rm -f "${OUT}/perf.data" "${OUT}/flamegraph.svg" "${OUT}/heaptrack.nesso.gz" "${OUT}/heaptrack-summary.txt"
+
+echo "profile: perf ${BIN} $*"
+set +e
+perf record -F 99 --call-graph dwarf -o "${OUT}/perf.data" -- "${BIN}" "$@"
+perf_status=$?
+set -e
+perf script -i "${OUT}/perf.data" | perl "${COLLAPSE}" | perl "${GRAPH}" --title "nesso" >"${OUT}/flamegraph.svg"
+[[ -s "${OUT}/flamegraph.svg" ]] || die "flamegraph.svg is empty (perf record status ${perf_status})"
+
+echo "profile: heaptrack ${BIN} $*"
+set +e
+heaptrack -o "${OUT}/heaptrack.nesso.gz" "${BIN}" "$@"
+heap_status=$?
+set -e
+[[ -s "${OUT}/heaptrack.nesso.gz" ]] || die "heaptrack produced no data (status ${heap_status})"
+heaptrack_print -f "${OUT}/heaptrack.nesso.gz" >"${OUT}/heaptrack-summary.txt"
+[[ -s "${OUT}/heaptrack-summary.txt" ]] || die "heaptrack summary is empty"
+
+echo "profile: ${OUT}/flamegraph.svg"
+echo "profile: ${OUT}/heaptrack-summary.txt"
+
+if [[ "${perf_status}" -ne 0 || "${heap_status}" -ne 0 ]]; then
+  echo "profile: nesso exited perf=${perf_status} heaptrack=${heap_status}" >&2
+  exit 1
+fi
