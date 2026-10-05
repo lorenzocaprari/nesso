@@ -137,6 +137,33 @@ jobs:
       - name: Run Clang-Tidy
         run: bash scripts/clang-tidy
 
+  cppcheck:
+    needs: prepare-image
+    runs-on: ubuntu-latest
+    container:
+      image: ${{ needs.prepare-image.outputs.image }}
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Install Dependencies (Conan)
+        run: |
+          conan profile detect --force
+          conan install . -pr:h ./conan/profiles/gcc-26 -pr:b default --lockfile=conan.lock --build=missing --no-remote
+
+      - name: Configure
+        run: |
+          cmake -S . -B build/Release -G Ninja \
+            -DCMAKE_TOOLCHAIN_FILE=build/Release/generators/conan_toolchain.cmake \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+
+      - name: Run Cppcheck
+        run: bash scripts/cppcheck
+
   build-gcc-26:
     needs: prepare-image
     runs-on: ubuntu-latest

@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "${ROOT}"
+
+if [[ -n "${1:-}" ]]; then
+  DB="$1"
+elif [[ -f "${ROOT}/build/Release/compile_commands.json" ]]; then
+  DB="${ROOT}/build/Release/compile_commands.json"
+elif [[ -f "${ROOT}/build/Debug/compile_commands.json" ]]; then
+  DB="${ROOT}/build/Debug/compile_commands.json"
+else
+  echo "cppcheck: compile_commands.json not found. Configure a Release build first." >&2
+  exit 1
+fi
+
+if ! command -v cppcheck >/dev/null 2>&1; then
+  echo "cppcheck: cppcheck is not installed." >&2
+  exit 1
+fi
+
+# unusedFunction is silently disabled when -j is greater than 1.
+common=(
+  --project="${DB}"
+  --enable=warning,performance,portability,unusedFunction
+  --library=std
+  --inline-suppr
+  --suppressions-list="${ROOT}/.cppcheck-suppressions"
+  --std=c++26
+  -j 1
+)
+
+echo "cppcheck: pass A (src and test) using ${DB}"
+cppcheck "${common[@]}" --error-exitcode=1
+
+echo "cppcheck: pass B (src only; API that only tests call is reported, not gated)"
+cppcheck "${common[@]}" -i "${ROOT}/test"

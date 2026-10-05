@@ -114,7 +114,7 @@ bash scripts/lint
 ./scripts/code-coverage conan/profiles/code-coverage
 ```
 
-See [.github/workflows/ci.yml](.github/workflows/ci.yml) for lint, clang-tidy, Release/Debug builds, unit tests, fuzz, and coverage. Tag `v*` publishes via [.github/workflows/release.yml](.github/workflows/release.yml).
+See [.github/workflows/ci.yml](.github/workflows/ci.yml) for lint, clang-tidy, cppcheck, Release/Debug builds, unit tests, fuzz, and coverage. Tag `v*` publishes via [.github/workflows/release.yml](.github/workflows/release.yml).
 
 ## License
 
