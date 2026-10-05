@@ -1,0 +1,73 @@
+{
+  "sha": "79e543af9f350d16bafb0e4f3aaaffbea67b6b61",
+  "binary": "build/bench-rel/build/Release/src/nesso",
+  "query": "database connection refused",
+  "cases": [
+    {
+      "lines": 1000,
+      "ok": true,
+      "exitCode": 0,
+      "wallSeconds": 13.23,
+      "peakRssBytes": 8382050304,
+      "trace": {
+        "peakRssBytes": 8381919232,
+        "stages": [
+          {
+            "name": "parse",
+            "us": 217
+          },
+          {
+            "name": "embed",
+            "us": 12841343
+          },
+          {
+            "name": "rank",
+            "us": 15406
+          }
+        ]
+      }
+    },
+    {
+      "lines": 10000,
+      "ok": false,
+      "exitCode": 1,
+      "wallSeconds": 14.85,
+      "peakRssBytes": 15527849984,
+      "trace": {
+        "peakRssBytes": 15527849984,
+        "stages": [
+          {
+            "name": "parse",
+            "us": 1166
+          },
+          {
+            "name": "embed",
+            "us": 14123959
+          }
+        ]
+      },
+      "error": "embedder failed to allocate"
+    },
+    {
+      "lines": 100000,
+      "ok": false,
+      "exitCode": 1,
+      "wallSeconds": 1.83,
+      "peakRssBytes": 11120058368,
+      "trace": {
+        "peakRssBytes": 11120058368,
+        "stages": [
+          {
+            "name": "parse",
+            "us": 12168
+          },
+          {
+            "name": "embed",
+            "us": 1447036
+          }
+        ]
+      },
+      "error": "embedder failed to allocate"
+    }
+  ]
+}
