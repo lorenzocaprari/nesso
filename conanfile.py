@@ -8,6 +8,8 @@ class Nesso(ConanFile):
     package_type = "application"
 
     settings = "os", "compiler", "build_type", "arch"
+    options = {"bench": [True, False]}
+    default_options = {"bench": False}
     exports_sources = "CMakeLists.txt", "src/*"
 
     def layout(self):
@@ -19,6 +21,10 @@ class Nesso(ConanFile):
         self.requires("nlohmann_json/3.11.3")
         self.requires("onnxruntime/1.18.1")
 
+    def build_requirements(self):
+        if self.options.bench:
+            self.test_requires("benchmark/1.9.1")
+
     def configure(self):
         # Static: shared ORT can hide OrtGetApiBase under -fvisibility=hidden,
         # and that package ID survives the consumer-only flag split.
@@ -29,6 +35,7 @@ class Nesso(ConanFile):
         tc.generator = "Ninja"
         tc.cache_variables["CMAKE_EXPORT_COMPILE_COMMANDS"] = "ON"
         tc.cache_variables["NESSO_VERSION"] = str(self.version)
+        tc.cache_variables["NESSO_BUILD_BENCH"] = bool(self.options.bench)
         # Profile consumer flags (user.nesso:*) — not tools.build:*, so deps keep
         # stable package IDs and are not rebuilt with ASan/coverage/LTO.
         tc.extra_cxxflags = list(self.conf.get("user.nesso:cxxflags", check_type=list, default=[]))
