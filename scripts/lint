@@ -3,3 +3,8 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 pre-commit run --all-files "$@"
 bash "${ROOT}/scripts/check-versions"
+if [[ -f "${ROOT}/build/Release/compile_commands.json" || -f "${ROOT}/build/Debug/compile_commands.json" ]]; then
+  bash "${ROOT}/scripts/cppcheck"
+else
+  echo "cppcheck: skipped (no compile_commands.json; CI configures a Release build first)"
+fi

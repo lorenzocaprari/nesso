@@ -3,11 +3,11 @@ FROM ubuntu:26.04
 # Avoid interactive prompts
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Install dependencies, GCC 15, Clang 21 (+ compiler-rt for ASan/AFL), tidy, lcov
+# Install dependencies, GCC 15, Clang 21 (+ compiler-rt for ASan/AFL), tidy, cppcheck, lcov
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     software-properties-common wget curl git jq ccache python3-pip \
-    cmake ninja-build lcov \
+    cmake ninja-build lcov cppcheck \
     && add-apt-repository ppa:ubuntu-toolchain-r/test -y \
     && apt-get update && apt-get install -y --no-install-recommends \
     gcc-15 g++-15 \
