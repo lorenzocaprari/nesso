@@ -61,7 +61,7 @@ Release profile: replace `gcc-26-debug` with `gcc-26`.
 
 The black-box specs in [test/functional/](test/functional/) run the `nesso` binary through [godog](https://github.com/cucumber/godog) as the `bdd` ctest case. Go 1.24+ is a test-only dependency. Without it CMake skips `bdd`, and `NESSO_REQUIRE_BDD=1` turns that into a configure error (CI sets it).
 
-Unit, integration, and functional tests are separate ctest labels, and CI runs each label on its own step:
+Unit, integration, and functional tests are separate ctest labels. CI runs each label as its own Release job and its own Debug job:
 
 ```bash
 ctest --test-dir build/Debug -L unit
@@ -111,7 +111,7 @@ bash scripts/lint
 ./scripts/code-coverage conan/profiles/code-coverage
 ```
 
-See [.github/workflows/ci.yml](.github/workflows/ci.yml) for lint, clang-tidy, cppcheck, Release/Debug builds, unit tests, fuzz, and coverage. Tag `v*` publishes via [.github/workflows/release.yml](.github/workflows/release.yml).
+See [.github/workflows/ci.yml](.github/workflows/ci.yml) for lint, clang-tidy, cppcheck, Release/Debug builds, unit, integration, and functional tests, fuzz, and coverage. Tag `v*` publishes via [.github/workflows/release.yml](.github/workflows/release.yml).
 
 ### Measuring performance
 

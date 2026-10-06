@@ -235,8 +235,13 @@ jobs:
           if-no-files-found: error
 
   unit-tests-release:
+    name: ${{ matrix.label }}-tests-release
     needs: [prepare-image, build-gcc-26]
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        label: [unit, integration, functional]
     container:
       image: ${{ needs.prepare-image.outputs.image }}
       credentials:
@@ -265,18 +270,17 @@ jobs:
       - name: Extract Release build
         run: tar -xzf release-build.tar.gz
 
-      - name: Run unit tests
-        run: ctest --test-dir build/Release -L unit -V
-
-      - name: Run integration tests
-        run: ctest --test-dir build/Release -L integration -V
-
-      - name: Run functional tests
-        run: ctest --test-dir build/Release -L functional -V
+      - name: Run ${{ matrix.label }} tests
+        run: ctest --test-dir build/Release -L ${{ matrix.label }} -V
 
   unit-tests-debug:
+    name: ${{ matrix.label }}-tests-debug
     needs: [prepare-image, build-gcc-26-debug]
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        label: [unit, integration, functional]
     container:
       image: ${{ needs.prepare-image.outputs.image }}
       credentials:
@@ -308,14 +312,8 @@ jobs:
       - name: Extract Debug build
         run: tar -xzf debug-build.tar.gz
 
-      - name: Run unit tests
-        run: ctest --test-dir build/Debug -L unit -V
-
-      - name: Run integration tests
-        run: ctest --test-dir build/Debug -L integration -V
-
-      - name: Run functional tests
-        run: ctest --test-dir build/Debug -L functional -V
+      - name: Run ${{ matrix.label }} tests
+        run: ctest --test-dir build/Debug -L ${{ matrix.label }} -V
 
   fuzz-test:
     needs: prepare-image
