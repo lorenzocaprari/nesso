@@ -186,6 +186,7 @@ jobs:
           # Baked into the test binaries. The test job restores models/ at this
           # same workspace path, and a missing model then fails instead of skipping.
           NESSO_REQUIRE_MODEL: "1"
+          NESSO_REQUIRE_BDD: "1"
         run: conan build . -pr:h ./conan/profiles/gcc-26 -pr:b default --lockfile=conan.lock --build=missing --no-remote
 
       - name: Archive Release build
@@ -219,6 +220,7 @@ jobs:
       - name: Build
         env:
           NESSO_REQUIRE_MODEL: "1"
+          NESSO_REQUIRE_BDD: "1"
         run: conan build . -pr:h ./conan/profiles/gcc-26-debug -pr:b default --lockfile=conan.lock --build=missing --no-remote
 
       - name: Archive Debug build
@@ -384,6 +386,7 @@ jobs:
       - name: Run Coverage Script
         env:
           NESSO_REQUIRE_MODEL: "1"
+          NESSO_REQUIRE_BDD: "1"
         run: |
           chmod +x scripts/code-coverage
           ./scripts/code-coverage conan/profiles/code-coverage

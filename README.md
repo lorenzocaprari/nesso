@@ -59,6 +59,8 @@ ctest --test-dir build/Debug --output-on-failure
 
 Release profile: replace `gcc-26-debug` with `gcc-26`.
 
+The black-box specs in [features/](features/) run the `nesso` binary through [godog](https://github.com/cucumber/godog) as the `bdd` ctest case. Go 1.24+ is a test-only dependency. Without it CMake skips `bdd`, and `NESSO_REQUIRE_BDD=1` turns that into a configure error (CI sets it).
+
 ## Usage
 
 Download the embedding model once:

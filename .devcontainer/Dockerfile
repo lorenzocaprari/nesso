@@ -13,6 +13,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc-15 g++-15 \
     clang-21 clang-tidy-21 libclang-rt-21-dev \
     afl++ \
+    golang-go \
     && rm -rf /var/lib/apt/lists/*
 
 # Set GCC 15 and LLVM 21 as defaults
