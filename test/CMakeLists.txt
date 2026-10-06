@@ -42,9 +42,7 @@ target_link_libraries(distance_test PRIVATE core Catch2::Catch2WithMain)
 target_include_directories(distance_test
                            PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/include")
 target_compile_definitions(distance_test PRIVATE NESSO_DISTANCE_DETAIL_TEST=1)
-if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64")
-  target_compile_options(distance_test PRIVATE -mavx2)
-endif()
+target_include_directories(distance_test PRIVATE "${CMAKE_SOURCE_DIR}/src/core")
 
 add_executable(corpus_index_test corpus_index_test.cpp)
 add_test(NAME corpus_index_test COMMAND corpus_index_test)

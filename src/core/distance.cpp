@@ -3,11 +3,9 @@
 
 #include "include/core/distance.hpp"
 
-#include <cmath>
+#include "distance_kernels.hpp"
 
-#ifdef __AVX2__
-#include <immintrin.h>
-#endif
+#include <cmath>
 
 namespace core::math
 {
@@ -17,7 +15,6 @@ namespace detail
 template <SupportedScalar T> T dotProductScalar(std::span<const T> a, std::span<const T> b) noexcept
 {
     T sum = 0.0;
-#pragma GCC ivdep
     for (size_t i = 0; i < a.size(); ++i)
     {
         sum += a[i] * b[i];
@@ -28,7 +25,6 @@ template <SupportedScalar T> T dotProductScalar(std::span<const T> a, std::span<
 template <SupportedScalar T> T l2SquaredDistanceScalar(std::span<const T> a, std::span<const T> b) noexcept
 {
     T sum = 0.0;
-#pragma GCC ivdep
     for (size_t i = 0; i < a.size(); ++i)
     {
         const T delta = a[i] - b[i];
@@ -37,59 +33,51 @@ template <SupportedScalar T> T l2SquaredDistanceScalar(std::span<const T> a, std
     return sum;
 }
 
-#ifdef __AVX2__
-// NOLINTBEGIN(portability-simd-intrinsics)
-static float horizontalSum(__m256 value) noexcept
+DistanceKernel selectedKernel() noexcept
 {
-    const __m128 low = _mm256_castps256_ps128(value);
-    const __m128 high = _mm256_extractf128_ps(value, 1);
-    __m128 sum = _mm_add_ps(low, high);
-    sum = _mm_hadd_ps(sum, sum);
-    sum = _mm_hadd_ps(sum, sum);
-    return _mm_cvtss_f32(sum);
-}
-
-float dotProductAvx2(std::span<const float> a, std::span<const float> b) noexcept
-{
-    __m256 sum = _mm256_setzero_ps();
-    size_t index = 0;
-    for (; index + 8 <= a.size(); index += 8)
+    static const DistanceKernel kernel = []
     {
-        const __m256 left = _mm256_loadu_ps(a.data() + index);
-        const __m256 right = _mm256_loadu_ps(b.data() + index);
-        sum = _mm256_add_ps(sum, _mm256_mul_ps(left, right));
-    }
-
-    float result = horizontalSum(sum);
-    for (; index < a.size(); ++index)
-    {
-        result += a[index] * b[index];
-    }
-    return result;
-}
-
-float l2SquaredDistanceAvx2(std::span<const float> a, std::span<const float> b) noexcept
-{
-    __m256 sum = _mm256_setzero_ps();
-    size_t index = 0;
-    for (; index + 8 <= a.size(); index += 8)
-    {
-        const __m256 left = _mm256_loadu_ps(a.data() + index);
-        const __m256 right = _mm256_loadu_ps(b.data() + index);
-        const __m256 delta = _mm256_sub_ps(left, right);
-        sum = _mm256_add_ps(sum, _mm256_mul_ps(delta, delta));
-    }
-
-    float result = horizontalSum(sum);
-    for (; index < a.size(); ++index)
-    {
-        const float delta = a[index] - b[index];
-        result += delta * delta;
-    }
-    return result;
-}
-// NOLINTEND(portability-simd-intrinsics)
+#ifdef _MSC_VER
+        // Phase 6 selects AVX2 with __cpuidex and _xgetbv under /arch:AVX2.
+        return DistanceKernel::Scalar;
+#elifdef __x86_64__
+        if (__builtin_cpu_supports("avx2") && __builtin_cpu_supports("fma"))
+        {
+            return DistanceKernel::Avx2Fma;
+        }
+        return DistanceKernel::Scalar;
+#else
+        return DistanceKernel::Scalar;
 #endif
+    }();
+    return kernel;
+}
+
+float dotProductKernel(DistanceKernel kernel, std::span<const float> a, std::span<const float> b) noexcept
+{
+#ifdef __x86_64__
+    if (kernel == DistanceKernel::Avx2Fma)
+    {
+        return dotProductAvx2Fma(a, b);
+    }
+#else
+    (void)kernel;
+#endif
+    return dotProductScalar<float>(a, b);
+}
+
+float l2SquaredDistanceKernel(DistanceKernel kernel, std::span<const float> a, std::span<const float> b) noexcept
+{
+#ifdef __x86_64__
+    if (kernel == DistanceKernel::Avx2Fma)
+    {
+        return l2SquaredDistanceAvx2Fma(a, b);
+    }
+#else
+    (void)kernel;
+#endif
+    return l2SquaredDistanceScalar<float>(a, b);
+}
 
 template float dotProductScalar<float>(std::span<const float>, std::span<const float>) noexcept;
 template double dotProductScalar<double>(std::span<const double>, std::span<const double>) noexcept;
@@ -114,7 +102,6 @@ std::expected<T, EngineError> CosineSimilarity::calculate(std::span<const T> a, 
     T normA = 0.0;
     T normB = 0.0;
 
-#pragma GCC ivdep
     for (size_t i = 0; i < a.size(); ++i)
     {
         dotProduct += a[i] * b[i];
@@ -147,12 +134,10 @@ std::expected<T, EngineError> DistanceMetrics::dotProduct(std::span<const T> a, 
         return std::unexpected(EngineError::DatabaseNotInitialized);
     }
 
-#ifdef __AVX2__
     if constexpr (std::same_as<T, float>)
     {
-        return detail::dotProductAvx2(a, b);
+        return detail::dotProductKernel(detail::selectedKernel(), a, b);
     }
-#endif
     return detail::dotProductScalar(a, b);
 }
 
@@ -173,12 +158,10 @@ std::expected<T, EngineError> DistanceMetrics::l2SquaredDistance(std::span<const
         return std::unexpected(EngineError::DatabaseNotInitialized);
     }
 
-#ifdef __AVX2__
     if constexpr (std::same_as<T, float>)
     {
-        return detail::l2SquaredDistanceAvx2(a, b);
+        return detail::l2SquaredDistanceKernel(detail::selectedKernel(), a, b);
     }
-#endif
     return detail::l2SquaredDistanceScalar(a, b);
 }
 
