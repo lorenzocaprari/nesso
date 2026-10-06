@@ -4,7 +4,7 @@
 #include <benchmark/benchmark.h>
 #include <core/corpus_index.hpp>
 #include <core/distance.hpp>
-#include <core/vector_search.hpp>
+#include <core/embedding_store.hpp>
 #include <embed/wordpiece_tokenizer.hpp>
 
 #include <cstdint>
@@ -24,6 +24,12 @@ constexpr size_t EMBEDDING_DIMENSIONS = 384;
 constexpr size_t TOP_K = 10;
 constexpr size_t TOP_K_CANDIDATES = 10000;
 constexpr uint64_t CORPUS_CHUNKS = 256;
+
+struct Ranked
+{
+    uint64_t index = 0;
+    float score = 0.0F;
+};
 
 std::vector<float> randomVector(std::mt19937 &rng, size_t dimensions)
 {
@@ -74,18 +80,18 @@ void l2Squared384(benchmark::State &state)
 
 void selectTopK(benchmark::State &state)
 {
-    std::vector<core::SearchResult<float>> candidates;
+    std::vector<Ranked> candidates;
     candidates.reserve(TOP_K_CANDIDATES);
     for (uint64_t index = 0; index < TOP_K_CANDIDATES; ++index)
     {
         candidates.push_back({.index = index, .score = static_cast<float>(TOP_K_CANDIDATES - index)});
     }
-    const auto order = [](const core::SearchResult<float> &left, const core::SearchResult<float> &right)
+    const auto order = [](const Ranked &left, const Ranked &right)
     { return left.score != right.score ? left.score > right.score : left.index < right.index; };
 
     for (auto _ : state)
     {
-        std::vector<core::SearchResult<float>> working = candidates;
+        std::vector<Ranked> working = candidates;
         core::detail::selectTopKInPlace(working, TOP_K, order);
         benchmark::DoNotOptimize(working);
     }

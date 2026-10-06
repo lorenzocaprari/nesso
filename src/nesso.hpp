@@ -28,32 +28,22 @@ enum class ErrorKind : uint8_t
     NoMatches,
     CorpusRead,
     CorpusWrite,
-    CorpusLoad,
-    StoreInit,
-    StoreOpen,
-    StoreMissing,
-    StoreSearch,
-    InputOpen,
-    QuerySize,
-    QueryRead
+    CorpusLoad
 };
 
 /// Failure of a Nesso operation.
 ///
-/// `code` is the underlying layer's error enum value. `path`, `skippedLines`, and `dimensions` are set when the
-/// failure concerns a file, happens after parsing, or depends on a vector size.
+/// `code` is the underlying layer's error enum value. `path` and `skippedLines` are set when the failure concerns a
+/// file or happens after parsing.
 struct Error
 {
     ErrorKind kind{};
     int code = 0;
     std::filesystem::path path;
     size_t skippedLines = 0;
-    uint64_t dimensions = 0;
 };
 
 inline constexpr size_t DEFAULT_TEXT_TOP_K = 5;
-inline constexpr size_t DEFAULT_STORE_TOP_K = 10;
-inline constexpr uint64_t DEFAULT_STORE_DIMENSIONS = 128;
 
 struct GrepRequest
 {
@@ -73,27 +63,6 @@ struct SearchRequest
     std::string query;
     std::filesystem::path index;
     size_t topK = DEFAULT_TEXT_TOP_K;
-};
-
-struct StoreInitRequest
-{
-    std::filesystem::path db;
-    uint64_t dimensions = DEFAULT_STORE_DIMENSIONS;
-};
-
-struct StoreIngestRequest
-{
-    std::filesystem::path db;
-    uint64_t dimensions = DEFAULT_STORE_DIMENSIONS;
-    std::filesystem::path input;
-};
-
-struct StoreSearchRequest
-{
-    std::filesystem::path db;
-    uint64_t dimensions = DEFAULT_STORE_DIMENSIONS;
-    std::filesystem::path query;
-    size_t topK = DEFAULT_STORE_TOP_K;
 };
 
 struct TextMatch
@@ -117,25 +86,6 @@ struct IndexSummary
     size_t skippedLines = 0;
 };
 
-struct StoreInitSummary
-{
-    uint64_t dimensions = 0;
-};
-
-struct StoreIngestSummary
-{
-    uint64_t before = 0;
-    size_t added = 0;
-    uint64_t total = 0;
-    std::optional<int> appendFailureCode;
-};
-
-struct VectorMatch
-{
-    uint64_t index = 0;
-    float score = 0.0F;
-};
-
 struct Config
 {
     std::optional<std::filesystem::path> modelDir;
@@ -154,10 +104,6 @@ class Nesso
     [[nodiscard]] std::expected<TextResults, Error> grep(const GrepRequest &request) const;
     [[nodiscard]] std::expected<IndexSummary, Error> index(const IndexRequest &request) const;
     [[nodiscard]] std::expected<TextResults, Error> search(const SearchRequest &request) const;
-
-    [[nodiscard]] std::expected<StoreInitSummary, Error> storeInit(const StoreInitRequest &request) const;
-    [[nodiscard]] std::expected<StoreIngestSummary, Error> storeIngest(const StoreIngestRequest &request) const;
-    [[nodiscard]] std::expected<std::vector<VectorMatch>, Error> storeSearch(const StoreSearchRequest &request) const;
 
   private:
     class Impl;

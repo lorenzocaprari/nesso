@@ -2,7 +2,6 @@
 #include <catch2/catch_all.hpp>
 #include <core/core_types.hpp>
 #include <core/embedding_store.hpp>
-#include <core/vector_search.hpp>
 #include <span>
 #include <vector>
 

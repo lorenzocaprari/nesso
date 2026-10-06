@@ -4,7 +4,6 @@
 #include "include/core/embedding_store.hpp"
 
 #include "include/core/distance.hpp"
-#include "include/core/vector_search.hpp"
 
 #include <utility>
 

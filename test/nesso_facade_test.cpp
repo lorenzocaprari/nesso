@@ -49,11 +49,6 @@ void writeBytes(const std::filesystem::path &path, const void *data, size_t size
     REQUIRE(output);
 }
 
-void writeFloats(const std::filesystem::path &path, const std::array<float, 4> &values)
-{
-    writeBytes(path, values.data(), sizeof(values));
-}
-
 void writeEmptyCorpus(const std::filesystem::path &path)
 {
     std::array<unsigned char, 24> header{};
@@ -71,68 +66,6 @@ nesso::Nesso withMissingModel(const std::filesystem::path &root)
 }
 
 } // namespace
-
-TEST_CASE("store init, ingest, and search round-trip", "[nesso][store]")
-{
-    const TempDir dir{"nesso_facade_store"};
-    const auto db = dir.path() / "vectors.nesso";
-    const auto vectors = dir.path() / "vectors.bin";
-    writeFloats(vectors, {1.0F, 0.0F, 0.0F, 0.0F});
-
-    const nesso::Nesso app{nesso::Config{}};
-
-    const auto created = app.storeInit({.db = db, .dimensions = 4});
-    REQUIRE(created.has_value());
-    REQUIRE(created->dimensions == 4);
-
-    const auto ingested = app.storeIngest({.db = db, .dimensions = 4, .input = vectors});
-    REQUIRE(ingested.has_value());
-    REQUIRE(ingested->before == 0);
-    REQUIRE(ingested->added == 1);
-    REQUIRE(ingested->total == 1);
-    REQUIRE_FALSE(ingested->appendFailureCode.has_value());
-
-    const auto matches = app.storeSearch({.db = db, .dimensions = 4, .query = vectors, .topK = 1});
-    REQUIRE(matches.has_value());
-    REQUIRE(matches->size() == 1);
-    REQUIRE((*matches)[0].index == 0);
-    REQUIRE((*matches)[0].score == Catch::Approx(1.0F));
-}
-
-TEST_CASE("store failures map to error kinds", "[nesso][store]")
-{
-    const TempDir dir{"nesso_facade_store_errors"};
-    const auto db = dir.path() / "vectors.nesso";
-    const auto shortQuery = dir.path() / "short.bin";
-    const std::array<char, 4> shortBytes{};
-    writeBytes(shortQuery, shortBytes.data(), shortBytes.size());
-
-    const nesso::Nesso app{nesso::Config{}};
-
-    const auto zeroDims = app.storeInit({.db = db, .dimensions = 0});
-    REQUIRE_FALSE(zeroDims.has_value());
-    REQUIRE(zeroDims.error().kind == nesso::ErrorKind::StoreInit);
-
-    const auto missing = app.storeSearch({.db = db, .dimensions = 4, .query = shortQuery});
-    REQUIRE_FALSE(missing.has_value());
-    REQUIRE(missing.error().kind == nesso::ErrorKind::StoreMissing);
-    REQUIRE(missing.error().path == db);
-
-    REQUIRE(app.storeInit({.db = db, .dimensions = 4}).has_value());
-
-    const auto mismatch = app.storeIngest({.db = db, .dimensions = 8, .input = shortQuery});
-    REQUIRE_FALSE(mismatch.has_value());
-    REQUIRE(mismatch.error().kind == nesso::ErrorKind::StoreOpen);
-
-    const auto noInput = app.storeIngest({.db = db, .dimensions = 4, .input = dir.path() / "absent.bin"});
-    REQUIRE_FALSE(noInput.has_value());
-    REQUIRE(noInput.error().kind == nesso::ErrorKind::InputOpen);
-
-    const auto wrongSize = app.storeSearch({.db = db, .dimensions = 4, .query = shortQuery});
-    REQUIRE_FALSE(wrongSize.has_value());
-    REQUIRE(wrongSize.error().kind == nesso::ErrorKind::QuerySize);
-    REQUIRE(wrongSize.error().dimensions == 4);
-}
 
 TEST_CASE("text operations report model and corpus failures", "[nesso][text]")
 {
@@ -202,5 +135,7 @@ TEST_CASE("Nesso is movable", "[nesso]")
     nesso::Nesso first{nesso::Config{}};
     nesso::Nesso second = std::move(first);
     first = std::move(second);
-    REQUIRE(first.storeInit({.db = dir.path() / "moved.nesso", .dimensions = 4}).has_value());
+    const auto missing = first.search({.query = "database", .index = dir.path() / "missing.nesso"});
+    REQUIRE_FALSE(missing.has_value());
+    REQUIRE(missing.error().kind == nesso::ErrorKind::CorpusRead);
 }

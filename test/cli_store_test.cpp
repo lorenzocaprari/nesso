@@ -91,15 +91,6 @@ CommandResult runNesso(const std::vector<std::string> &args)
     return result;
 }
 
-void writeFloats(const std::filesystem::path &path, const std::array<float, 4> &values)
-{
-    std::ofstream output(path, std::ios::binary);
-    REQUIRE(output);
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-    output.write(reinterpret_cast<const char *>(values.data()), static_cast<std::streamsize>(sizeof(values)));
-    REQUIRE(output);
-}
-
 } // namespace
 
 TEST_CASE("grep rejects the raw store path flag", "[cli][store]")
@@ -124,120 +115,10 @@ TEST_CASE("root-level init is no longer a command", "[cli][store]")
     REQUIRE_FALSE(std::filesystem::exists(dbPath));
 }
 
-TEST_CASE("store init creates the database and store without a subcommand fails", "[cli][store]")
+TEST_CASE("store is not a command", "[cli][store]")
 {
     const auto missing = runNesso({"store"});
     REQUIRE(missing.exitCode != 0);
-
-    const auto dbPath =
-        std::filesystem::temp_directory_path() / ("nesso_cli_store_" + std::to_string(getpid()) + ".nesso");
-    std::filesystem::remove(dbPath);
-
-    const auto created = runNesso({"store", "-p", dbPath.string(), "-d", "4", "init"});
-    REQUIRE(created.exitCode == 0);
-    REQUIRE(std::filesystem::is_regular_file(dbPath));
-    std::filesystem::remove(dbPath);
-}
-
-TEST_CASE("store index and search round-trip one raw vector", "[cli][store]")
-{
-    const auto directory =
-        std::filesystem::temp_directory_path() / ("nesso_cli_store_roundtrip_" + std::to_string(getpid()));
-    std::filesystem::remove_all(directory);
-    std::filesystem::create_directory(directory);
-    const auto dbPath = directory / "vectors.nesso";
-    const auto vectorPath = directory / "vectors.bin";
-    const auto queryPath = directory / "query.bin";
-    const std::array<float, 4> record{1.0F, 0.0F, 0.0F, 0.0F};
-    writeFloats(vectorPath, record);
-    writeFloats(queryPath, record);
-
-    REQUIRE(runNesso({"store", "-p", dbPath.string(), "-d", "4", "init"}).exitCode == 0);
-    REQUIRE(runNesso({"store", "-p", dbPath.string(), "-d", "4", "index", "-f", vectorPath.string()}).exitCode == 0);
-
-    const auto searched =
-        runNesso({"store", "-p", dbPath.string(), "-d", "4", "search", "-q", queryPath.string(), "-k", "1"});
-    REQUIRE(searched.exitCode == 0);
-    REQUIRE(searched.stdoutText.find("index: 0, score: 1") != std::string::npos);
-
-    std::filesystem::remove_all(directory);
-}
-
-TEST_CASE("store reports init, index, and search failures", "[cli][store]")
-{
-    const auto directory =
-        std::filesystem::temp_directory_path() / ("nesso_cli_store_errors_" + std::to_string(getpid()));
-    std::filesystem::remove_all(directory);
-    std::filesystem::create_directory(directory);
-    const auto dbPath = directory / "vectors.nesso";
-    const auto vectorPath = directory / "vectors.bin";
-    const auto queryPath = directory / "query.bin";
-    const auto shortQueryPath = directory / "short-query.bin";
-    const auto corruptPath = directory / "corrupt.nesso";
-    const auto unreadablePath = directory / "unreadable.bin";
-    writeFloats(vectorPath, {1.0F, 0.0F, 0.0F, 0.0F});
-    writeFloats(queryPath, {1.0F, 0.0F, 0.0F, 0.0F});
-    {
-        std::ofstream shortQuery(shortQueryPath, std::ios::binary);
-        REQUIRE(shortQuery);
-        const std::array<char, 4> bytes{};
-        shortQuery.write(bytes.data(), static_cast<std::streamsize>(bytes.size()));
-    }
-    {
-        std::ofstream corrupt(corruptPath, std::ios::binary);
-        REQUIRE(corrupt);
-        const std::array<char, 4> bytes{'b', 'a', 'd', '!'};
-        corrupt.write(bytes.data(), static_cast<std::streamsize>(bytes.size()));
-    }
-    {
-        std::ofstream unreadable(unreadablePath, std::ios::binary);
-        REQUIRE(unreadable);
-        unreadable << "x";
-    }
-    std::filesystem::permissions(unreadablePath, std::filesystem::perms::none);
-
-    const auto zeroDims = runNesso({"store", "-p", dbPath.string(), "-d", "0", "init"});
-    REQUIRE(zeroDims.exitCode != 0);
-    REQUIRE(zeroDims.stderrText.find("Failed to initialize") != std::string::npos);
-
-    const auto corruptInit = runNesso({"store", "-p", corruptPath.string(), "-d", "4", "init"});
-    REQUIRE(corruptInit.exitCode != 0);
-    REQUIRE(corruptInit.stderrText.find("Failed to initialize") != std::string::npos);
-
-    REQUIRE(runNesso({"store", "-p", dbPath.string(), "-d", "4", "init"}).exitCode == 0);
-
-    const auto mismatch = runNesso({"store", "-p", dbPath.string(), "-d", "8", "index", "-f", vectorPath.string()});
-    REQUIRE(mismatch.exitCode != 0);
-    REQUIRE(mismatch.stderrText.find("Could not open database") != std::string::npos);
-
-    // CI containers run as root, and root keeps CAP_DAC_OVERRIDE by default, so
-    // chmod 000 does not block root's own reads. Only assert this path when the
-    // test itself cannot read past the permission bits it just set.
-    if (geteuid() != 0)
-    {
-        const auto unreadable =
-            runNesso({"store", "-p", dbPath.string(), "-d", "4", "index", "-f", unreadablePath.string()});
-        REQUIRE(unreadable.exitCode != 0);
-        REQUIRE(unreadable.stderrText.find("Failed to open input file") != std::string::npos);
-    }
-
-    const auto missingDb = directory / "missing.nesso";
-    const auto missing = runNesso({"store", "-p", missingDb.string(), "-d", "4", "search", "-q", queryPath.string()});
-    REQUIRE(missing.exitCode != 0);
-    REQUIRE(missing.stderrText.find("does not exist") != std::string::npos);
-
-    const auto corruptSearch =
-        runNesso({"store", "-p", corruptPath.string(), "-d", "4", "search", "-q", queryPath.string()});
-    REQUIRE(corruptSearch.exitCode != 0);
-    REQUIRE(corruptSearch.stderrText.find("Could not open database") != std::string::npos);
-
-    const auto shortQuery =
-        runNesso({"store", "-p", dbPath.string(), "-d", "4", "search", "-q", shortQueryPath.string()});
-    REQUIRE(shortQuery.exitCode != 0);
-    REQUIRE(shortQuery.stderrText.find("exactly one") != std::string::npos);
-
-    std::filesystem::permissions(unreadablePath, std::filesystem::perms::owner_all);
-    std::filesystem::remove_all(directory);
 }
 
 TEST_CASE("grep reports a missing model, empty input, and ranked lines", "[cli][grep]")

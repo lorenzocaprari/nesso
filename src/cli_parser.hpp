@@ -12,8 +12,7 @@
 namespace nesso::cli
 {
 
-using Request =
-    std::variant<GrepRequest, IndexRequest, SearchRequest, StoreInitRequest, StoreIngestRequest, StoreSearchRequest>;
+using Request = std::variant<GrepRequest, IndexRequest, SearchRequest>;
 
 struct ParsedCommand
 {

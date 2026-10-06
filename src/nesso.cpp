@@ -8,16 +8,12 @@
 
 #include <core/corpus_index.hpp>
 #include <core/embedding_store.hpp>
-#include <core/storage_engine.hpp>
-#include <core/vector_search.hpp>
 #include <embed/onnx_embedder.hpp>
 #include <parser/log_chunker.hpp>
 
 #include <algorithm>
-#include <fstream>
 #include <span>
 #include <string>
-#include <system_error>
 #include <utility>
 
 namespace nesso
@@ -156,23 +152,12 @@ static std::expected<TextResults, Error> rankChunks(std::span<const core::Corpus
     return results;
 }
 
-static std::expected<void, Error> openStore(core::StorageEngine<float> &engine, const std::filesystem::path &db,
-                                            uint64_t dimensions, ErrorKind failure)
-{
-    const auto opened = engine.createOrOpen(db, dimensions);
-    if (!opened)
-    {
-        return std::unexpected(Error{.kind = failure, .code = codeOf(opened.error()), .path = db});
-    }
-    return {};
-}
-
 class Nesso::Impl
 {
   public:
     explicit Impl(Config config) : config_(std::move(config)) {}
 
-    // The model is loaded on first use so store commands never pay for ONNX startup.
+    // The model is loaded on first use.
     std::expected<const embed::OnnxEmbedder *, Error> embedder()
     {
         if (!embedder_)
@@ -292,99 +277,6 @@ std::expected<TextResults, Error> Nesso::search(const SearchRequest &request) co
     }
 
     return rankChunks(*chunks, **embedder, request.query, request.topK, 0, ErrorKind::CorpusLoad);
-}
-
-std::expected<StoreInitSummary, Error> Nesso::storeInit(const StoreInitRequest &request) const
-{
-    core::StorageEngine<float> engine;
-    const auto opened = openStore(engine, request.db, request.dimensions, ErrorKind::StoreInit);
-    if (!opened)
-    {
-        return std::unexpected(opened.error());
-    }
-    return StoreInitSummary{.dimensions = engine.getDimensions()};
-}
-
-std::expected<StoreIngestSummary, Error> Nesso::storeIngest(const StoreIngestRequest &request) const
-{
-    core::StorageEngine<float> engine;
-    const auto opened = openStore(engine, request.db, request.dimensions, ErrorKind::StoreOpen);
-    if (!opened)
-    {
-        return std::unexpected(opened.error());
-    }
-
-    StoreIngestSummary summary;
-    summary.before = engine.getVectorCount();
-    std::ifstream input(request.input, std::ios::binary);
-    if (!input)
-    {
-        return std::unexpected(Error{.kind = ErrorKind::InputOpen, .path = request.input});
-    }
-
-    std::vector<float> buffer(engine.getDimensions());
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-    char *bufferData = reinterpret_cast<char *>(buffer.data());
-    const auto recordSize = static_cast<std::streamsize>(buffer.size() * sizeof(float));
-    while (input.read(bufferData, recordSize))
-    {
-        const auto appended = engine.appendVector(buffer);
-        if (!appended)
-        {
-            summary.appendFailureCode = codeOf(appended.error());
-            break;
-        }
-        ++summary.added;
-    }
-    summary.total = engine.getVectorCount();
-    return summary;
-}
-
-std::expected<std::vector<VectorMatch>, Error> Nesso::storeSearch(const StoreSearchRequest &request) const
-{
-    if (!std::filesystem::exists(request.db))
-    {
-        return std::unexpected(Error{.kind = ErrorKind::StoreMissing, .path = request.db});
-    }
-
-    core::StorageEngine<float> engine;
-    const auto opened = openStore(engine, request.db, request.dimensions, ErrorKind::StoreOpen);
-    if (!opened)
-    {
-        return std::unexpected(opened.error());
-    }
-
-    const uint64_t dimensions = engine.getDimensions();
-    const auto expectedQueryBytes = dimensions * sizeof(float);
-    std::error_code sizeError;
-    const auto queryBytes = std::filesystem::file_size(request.query, sizeError);
-    if (sizeError || queryBytes != expectedQueryBytes)
-    {
-        return std::unexpected(Error{.kind = ErrorKind::QuerySize, .path = request.query, .dimensions = dimensions});
-    }
-
-    std::vector<float> query(dimensions);
-    std::ifstream input(request.query, std::ios::binary);
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-    input.read(reinterpret_cast<char *>(query.data()), static_cast<std::streamsize>(expectedQueryBytes));
-    if (!input)
-    {
-        return std::unexpected(Error{.kind = ErrorKind::QueryRead, .path = request.query});
-    }
-
-    const auto ranked = core::searchTopKCosine<float>(engine, query, request.topK);
-    if (!ranked)
-    {
-        return std::unexpected(Error{.kind = ErrorKind::StoreSearch, .code = codeOf(ranked.error()), .path = {}});
-    }
-
-    std::vector<VectorMatch> matches;
-    matches.reserve(ranked->size());
-    for (const core::SearchResult<float> &match : *ranked)
-    {
-        matches.push_back({.index = match.index, .score = match.score});
-    }
-    return matches;
 }
 
 } // namespace nesso
