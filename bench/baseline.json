@@ -1,5 +1,5 @@
 {
-  "sha": "79e543af9f350d16bafb0e4f3aaaffbea67b6b61",
+  "sha": "8585740f52aded75f503b92a6e0844df8b5c42c0",
   "binary": "build/bench-rel/build/Release/src/nesso",
   "query": "database connection refused",
   "cases": [
@@ -7,67 +7,73 @@
       "lines": 1000,
       "ok": true,
       "exitCode": 0,
-      "wallSeconds": 13.23,
-      "peakRssBytes": 8382050304,
+      "wallSeconds": 0.69,
+      "peakRssBytes": 88068096,
       "trace": {
-        "peakRssBytes": 8381919232,
+        "peakRssBytes": 87937024,
         "stages": [
           {
             "name": "parse",
-            "us": 217
+            "us": 190
           },
           {
             "name": "embed",
-            "us": 12841343
+            "us": 537414
           },
           {
             "name": "rank",
-            "us": 15406
+            "us": 9041
           }
         ]
       }
     },
     {
       "lines": 10000,
-      "ok": false,
-      "exitCode": 1,
-      "wallSeconds": 14.85,
-      "peakRssBytes": 15527849984,
+      "ok": true,
+      "exitCode": 0,
+      "wallSeconds": 4.55,
+      "peakRssBytes": 120250368,
       "trace": {
-        "peakRssBytes": 15527849984,
+        "peakRssBytes": 120119296,
         "stages": [
           {
             "name": "parse",
-            "us": 1166
+            "us": 1509
           },
           {
             "name": "embed",
-            "us": 14123959
+            "us": 4443010
+          },
+          {
+            "name": "rank",
+            "us": 9306
           }
         ]
-      },
-      "error": "embedder failed to allocate"
+      }
     },
     {
       "lines": 100000,
-      "ok": false,
-      "exitCode": 1,
-      "wallSeconds": 1.83,
-      "peakRssBytes": 11120058368,
+      "ok": true,
+      "exitCode": 0,
+      "wallSeconds": 35.74,
+      "peakRssBytes": 469700608,
       "trace": {
-        "peakRssBytes": 11120058368,
+        "peakRssBytes": 469700608,
         "stages": [
           {
             "name": "parse",
-            "us": 12168
+            "us": 11628
           },
           {
             "name": "embed",
-            "us": 1447036
+            "us": 35535514
+          },
+          {
+            "name": "rank",
+            "us": 69212
           }
         ]
-      },
-      "error": "embedder failed to allocate"
+      }
     }
   ]
 }

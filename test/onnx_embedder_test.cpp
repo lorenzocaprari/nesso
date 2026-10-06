@@ -3,6 +3,8 @@
 
 #include <cmath>
 #include <filesystem>
+#include <string>
+#include <vector>
 
 #ifndef NESSO_MODELS_DIR
 #error "NESSO_MODELS_DIR must be defined"
@@ -94,4 +96,48 @@ TEST_CASE("OnnxEmbedder embedBatch matches per-string embed", "[OnnxEmbedder][em
         }
         REQUIRE(cosine > 0.99F);
     }
+}
+
+static float cosineSimilarity(const std::vector<float> &left, const std::vector<float> &right)
+{
+    float score = 0.0F;
+    for (size_t dim = 0; dim < left.size(); ++dim)
+    {
+        score += left[dim] * right[dim];
+    }
+    return score;
+}
+
+TEST_CASE("OnnxEmbedder mixed-length batch matches a single embed", "[OnnxEmbedder][embed][integration]")
+{
+    const std::filesystem::path modelDir = modelDirOrSkip();
+
+    const auto embedder = embed::OnnxEmbedder::create(modelDir);
+    REQUIRE(embedder.has_value());
+
+    const std::string shortText = "database connection refused";
+    std::string longText;
+    for (int repeat = 0; repeat < 30; ++repeat)
+    {
+        longText += "upstream database connection timeout while waiting for the replica ";
+    }
+
+    std::vector<std::string> texts;
+    texts.push_back(shortText);
+    texts.push_back(longText);
+    for (int index = 0; index < 31; ++index)
+    {
+        texts.push_back("cache miss " + std::to_string(index));
+    }
+
+    const auto batch = (*embedder)->embedBatch(texts);
+    REQUIRE(batch.has_value());
+    REQUIRE(batch->size() == texts.size());
+
+    const auto shortAlone = (*embedder)->embed(shortText);
+    const auto longAlone = (*embedder)->embed(longText);
+    REQUIRE(shortAlone.has_value());
+    REQUIRE(longAlone.has_value());
+    REQUIRE(cosineSimilarity((*batch)[0], *shortAlone) > 0.99F);
+    REQUIRE(cosineSimilarity((*batch)[1], *longAlone) > 0.99F);
 }

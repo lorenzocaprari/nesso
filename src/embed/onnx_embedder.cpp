@@ -3,9 +3,13 @@
 
 #include "include/embed/onnx_embedder.hpp"
 
+#include <algorithm>
 #include <cmath>
 #include <memory>
 #include <onnxruntime_cxx_api.h>
+#include <stdexcept>
+#include <thread>
+#include <utility>
 
 namespace embed
 {
@@ -55,22 +59,168 @@ static std::vector<float> meanPoolAndNormalize(const float *hiddenStates, const 
     return pooled;
 }
 
+// One ONNX Run of the whole corpus, padded to 256, asks for tens of gigabytes.
+// A batch of 32 padded to its own longest sequence stays under a few hundred
+// MB.
+static constexpr size_t EMBED_BATCH_SIZE = 32;
+
+struct ModelIo
+{
+    std::string inputIds;
+    std::string attentionMask;
+    std::string tokenTypeIds;
+    std::string output;
+};
+
+static Ort::SessionOptions makeSessionOptions()
+{
+    Ort::SessionOptions options;
+    const unsigned int threads = std::thread::hardware_concurrency();
+    options.SetIntraOpNumThreads(threads == 0 ? 1 : static_cast<int>(threads));
+    options.SetGraphOptimizationLevel(ORT_ENABLE_ALL);
+    return options;
+}
+
+static ModelIo readModelIo(Ort::Session &session)
+{
+    const Ort::AllocatorWithDefaultOptions allocator;
+    ModelIo io;
+    for (size_t index = 0; index < session.GetInputCount(); ++index)
+    {
+        const auto allocated = session.GetInputNameAllocated(index, allocator);
+        const std::string name = allocated.get();
+        if (name == "input_ids")
+        {
+            io.inputIds = name;
+        }
+        else if (name == "attention_mask")
+        {
+            io.attentionMask = name;
+        }
+        else if (name == "token_type_ids")
+        {
+            io.tokenTypeIds = name;
+        }
+    }
+    if (io.inputIds.empty() || io.attentionMask.empty() || io.tokenTypeIds.empty() || session.GetOutputCount() < 1)
+    {
+        throw std::runtime_error("model is missing input_ids, attention_mask, "
+                                 "token_type_ids, or an output");
+    }
+
+    const auto outputName = session.GetOutputNameAllocated(0, allocator);
+    io.output = outputName.get();
+
+    const auto shape = session.GetOutputTypeInfo(0).GetTensorTypeAndShapeInfo().GetShape();
+    if (shape.size() != 3 || std::cmp_not_equal(shape[2], MINILM_EMBEDDING_DIMENSIONS))
+    {
+        throw std::runtime_error("model hidden size is not 384");
+    }
+    return io;
+}
+
 class OnnxEmbedder::SessionImpl
 {
   public:
     explicit SessionImpl(const std::filesystem::path &modelPath);
 
-    [[nodiscard]] Ort::Session &session() noexcept { return session_; }
+    [[nodiscard]] std::expected<std::vector<std::vector<float>>, EmbedError>
+    infer(std::span<const TokenizedInput> encoded);
 
   private:
     Ort::Env env_{ORT_LOGGING_LEVEL_WARNING, "nesso-embed"};
     Ort::SessionOptions sessionOptions_;
     Ort::Session session_;
+    ModelIo io_;
 };
 
 OnnxEmbedder::SessionImpl::SessionImpl(const std::filesystem::path &modelPath)
-    : session_(env_, modelPath.string().c_str(), sessionOptions_)
+    : sessionOptions_(makeSessionOptions()), session_(env_, modelPath.string().c_str(), sessionOptions_),
+      io_(readModelIo(session_))
 {
+}
+
+std::expected<std::vector<std::vector<float>>, EmbedError>
+OnnxEmbedder::SessionImpl::infer(std::span<const TokenizedInput> encoded)
+{
+    if (encoded.empty())
+    {
+        return std::unexpected(EmbedError::InvalidInput);
+    }
+
+    size_t paddedLength = 0;
+    for (const TokenizedInput &item : encoded)
+    {
+        paddedLength = std::max(paddedLength, item.inputIds.size());
+    }
+    if (paddedLength == 0)
+    {
+        return std::unexpected(EmbedError::InferenceFailure);
+    }
+
+    const size_t batchSize = encoded.size();
+    std::vector<int64_t> flatInputIds(batchSize * paddedLength, 0);
+    std::vector<int64_t> flatAttentionMask(batchSize * paddedLength, 0);
+    std::vector<int64_t> flatTokenTypeIds(batchSize * paddedLength, 0);
+    for (size_t batchIndex = 0; batchIndex < batchSize; ++batchIndex)
+    {
+        const TokenizedInput &item = encoded[batchIndex];
+        for (size_t token = 0; token < item.inputIds.size(); ++token)
+        {
+            const size_t offset = (batchIndex * paddedLength) + token;
+            flatInputIds[offset] = item.inputIds[token];
+            flatAttentionMask[offset] = item.attentionMask[token];
+            flatTokenTypeIds[offset] = item.tokenTypeIds[token];
+        }
+    }
+
+    try
+    {
+        const Ort::MemoryInfo memoryInfo = Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault);
+        const std::array<int64_t, 2> inputShape{static_cast<int64_t>(batchSize), static_cast<int64_t>(paddedLength)};
+        auto inputIdsTensor = Ort::Value::CreateTensor<int64_t>(memoryInfo, flatInputIds.data(), flatInputIds.size(),
+                                                                inputShape.data(), inputShape.size());
+        auto attentionMaskTensor = Ort::Value::CreateTensor<int64_t>(
+            memoryInfo, flatAttentionMask.data(), flatAttentionMask.size(), inputShape.data(), inputShape.size());
+        auto tokenTypeIdsTensor = Ort::Value::CreateTensor<int64_t>(
+            memoryInfo, flatTokenTypeIds.data(), flatTokenTypeIds.size(), inputShape.data(), inputShape.size());
+
+        const std::array<const char *, 3> inputNames{io_.inputIds.c_str(), io_.attentionMask.c_str(),
+                                                     io_.tokenTypeIds.c_str()};
+        const std::array<const char *, 1> outputNames{io_.output.c_str()};
+        std::array<Ort::Value, 3> inputs{std::move(inputIdsTensor), std::move(attentionMaskTensor),
+                                         std::move(tokenTypeIdsTensor)};
+
+        auto outputs = session_.Run(Ort::RunOptions{nullptr}, inputNames.data(), inputs.data(), inputs.size(),
+                                    outputNames.data(), outputNames.size());
+        if (outputs.empty())
+        {
+            return std::unexpected(EmbedError::InferenceFailure);
+        }
+
+        const auto &output = outputs.front();
+        const auto *hiddenStates = output.GetTensorData<float>();
+        const auto outputShape = output.GetTensorTypeAndShapeInfo().GetShape();
+        if (outputShape.size() != 3 || std::cmp_not_equal(outputShape[2], MINILM_EMBEDDING_DIMENSIONS))
+        {
+            return std::unexpected(EmbedError::InferenceFailure);
+        }
+
+        std::vector<std::vector<float>> embeddings;
+        embeddings.reserve(batchSize);
+        for (size_t batchIndex = 0; batchIndex < batchSize; ++batchIndex)
+        {
+            const float *batchHidden = hiddenStates + (batchIndex * paddedLength * MINILM_EMBEDDING_DIMENSIONS);
+            embeddings.push_back(meanPoolAndNormalize(batchHidden,
+                                                      flatAttentionMask.data() + (batchIndex * paddedLength),
+                                                      paddedLength, MINILM_EMBEDDING_DIMENSIONS));
+        }
+        return embeddings;
+    }
+    catch (...)
+    {
+        return std::unexpected(EmbedError::InferenceFailure);
+    }
 }
 
 OnnxEmbedder::OnnxEmbedder(WordPieceTokenizer tokenizer, const std::filesystem::path &modelPath)
@@ -141,74 +291,21 @@ OnnxEmbedder::embedBatch(std::span<const std::string> texts) const
         encodedBatch.push_back(std::move(*encoded));
     }
 
-    const size_t batchSize = encodedBatch.size();
-    const size_t maxSequenceLength = tokenizer_.maxSequenceLength();
-    std::vector<int64_t> flatInputIds(batchSize * maxSequenceLength, 0);
-    std::vector<int64_t> flatAttentionMask(batchSize * maxSequenceLength, 0);
-    std::vector<int64_t> flatTokenTypeIds(batchSize * maxSequenceLength, 0);
-
-    for (size_t batchIndex = 0; batchIndex < batchSize; ++batchIndex)
+    std::vector<std::vector<float>> embeddings;
+    embeddings.reserve(encodedBatch.size());
+    for (size_t offset = 0; offset < encodedBatch.size(); offset += EMBED_BATCH_SIZE)
     {
-        const TokenizedInput &encoded = encodedBatch[batchIndex];
-        for (size_t token = 0; token < encoded.inputIds.size(); ++token)
+        const size_t count = std::min(EMBED_BATCH_SIZE, encodedBatch.size() - offset);
+        const std::span<const TokenizedInput> chunk{encodedBatch.data() + offset, count};
+        auto part = session_->infer(chunk);
+        if (!part)
         {
-            const size_t offset = (batchIndex * maxSequenceLength) + token;
-            flatInputIds[offset] = encoded.inputIds[token];
-            flatAttentionMask[offset] = encoded.attentionMask[token];
-            flatTokenTypeIds[offset] = encoded.tokenTypeIds[token];
+            return std::unexpected(part.error());
         }
+        embeddings.insert(embeddings.end(), std::make_move_iterator(part->begin()),
+                          std::make_move_iterator(part->end()));
     }
-
-    try
-    {
-        const Ort::MemoryInfo memoryInfo = Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault);
-        const std::array<int64_t, 2> inputShape{static_cast<int64_t>(batchSize),
-                                                static_cast<int64_t>(maxSequenceLength)};
-
-        auto inputIdsTensor = Ort::Value::CreateTensor<int64_t>(memoryInfo, flatInputIds.data(), flatInputIds.size(),
-                                                                inputShape.data(), inputShape.size());
-        auto attentionMaskTensor = Ort::Value::CreateTensor<int64_t>(
-            memoryInfo, flatAttentionMask.data(), flatAttentionMask.size(), inputShape.data(), inputShape.size());
-        auto tokenTypeIdsTensor = Ort::Value::CreateTensor<int64_t>(
-            memoryInfo, flatTokenTypeIds.data(), flatTokenTypeIds.size(), inputShape.data(), inputShape.size());
-
-        const std::array<const char *, 3> inputNames{"input_ids", "attention_mask", "token_type_ids"};
-        const std::array<const char *, 1> outputNames{"last_hidden_state"};
-        std::array<Ort::Value, 3> inputs{std::move(inputIdsTensor), std::move(attentionMaskTensor),
-                                         std::move(tokenTypeIdsTensor)};
-
-        auto outputs = session_->session().Run(Ort::RunOptions{nullptr}, inputNames.data(), inputs.data(),
-                                               inputs.size(), outputNames.data(), outputNames.size());
-        if (outputs.empty())
-        {
-            return std::unexpected(EmbedError::InferenceFailure);
-        }
-
-        const auto &output = outputs.front();
-        const auto *hiddenStates = output.GetTensorData<float>();
-        const auto outputInfo = output.GetTensorTypeAndShapeInfo();
-        const auto outputShape = outputInfo.GetShape();
-        if (outputShape.size() != 3)
-        {
-            return std::unexpected(EmbedError::InferenceFailure);
-        }
-
-        const auto hiddenSize = static_cast<size_t>(outputShape[2]);
-        std::vector<std::vector<float>> embeddings;
-        embeddings.reserve(batchSize);
-        for (size_t batchIndex = 0; batchIndex < batchSize; ++batchIndex)
-        {
-            const float *batchHidden = hiddenStates + (batchIndex * maxSequenceLength * hiddenSize);
-            embeddings.push_back(meanPoolAndNormalize(batchHidden,
-                                                      flatAttentionMask.data() + (batchIndex * maxSequenceLength),
-                                                      maxSequenceLength, hiddenSize));
-        }
-        return embeddings;
-    }
-    catch (...)
-    {
-        return std::unexpected(EmbedError::InferenceFailure);
-    }
+    return embeddings;
 }
 
 } // namespace embed
