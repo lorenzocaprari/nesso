@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# AFL++ library harnesses: StorageEngine, LogChunker, WordPieceTokenizer.
+# AFL++ library harnesses: LogChunker, WordPieceTokenizer.
 # Builds AFL-instrumented + ASan binaries via Conan + CMake.
 # Requires: afl++ (afl-fuzz, afl-clang-fast++), Conan deps in cache.
 #
@@ -24,7 +24,7 @@ CMAKE_B="${OUT_DIR}/build/Release"
 TOOLCHAIN="${CMAKE_B}/generators/conan_toolchain.cmake"
 BIN_DIR="${CMAKE_B}/test/fuzz"
 
-TARGETS=(nesso_fuzz_storage nesso_fuzz_parser nesso_fuzz_tokenizer)
+TARGETS=(nesso_fuzz_parser nesso_fuzz_tokenizer)
 
 mkdir -p "${OUT_DIR}"
 
@@ -82,7 +82,6 @@ run_campaign() {
   fi
 }
 
-run_campaign storage test/fuzz/seeds/storage
 run_campaign parser test/fuzz/seeds/parser
 run_campaign tokenizer test/fuzz/seeds/tokenizer
 

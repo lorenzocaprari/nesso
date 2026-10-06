@@ -36,12 +36,6 @@ target_link_libraries(
 target_compile_options(dependency_link_test PRIVATE -fno-profile-arcs
                                                     -fno-test-coverage)
 
-add_executable(storage_engine_test storage_engine_test.cpp)
-add_test(NAME storage_engine_test COMMAND storage_engine_test)
-target_link_libraries(storage_engine_test PRIVATE core Catch2::Catch2WithMain)
-target_include_directories(storage_engine_test
-                           PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/include")
-
 add_executable(distance_test distance_test.cpp)
 add_test(NAME distance_test COMMAND distance_test)
 target_link_libraries(distance_test PRIVATE core Catch2::Catch2WithMain)
@@ -51,12 +45,6 @@ target_compile_definitions(distance_test PRIVATE NESSO_DISTANCE_DETAIL_TEST=1)
 if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64")
   target_compile_options(distance_test PRIVATE -mavx2)
 endif()
-
-add_executable(vector_search_test vector_search_test.cpp)
-add_test(NAME vector_search_test COMMAND vector_search_test)
-target_link_libraries(vector_search_test PRIVATE core Catch2::Catch2WithMain)
-target_include_directories(vector_search_test
-                           PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/include")
 
 add_executable(corpus_index_test corpus_index_test.cpp)
 add_test(NAME corpus_index_test COMMAND corpus_index_test)
@@ -142,11 +130,3 @@ add_test(NAME trace_test COMMAND trace_test)
 target_link_libraries(trace_test PRIVATE nesso_lib Catch2::Catch2WithMain)
 # The harness only redirects stderr. trace.cpp stays in the coverage floor.
 target_compile_options(trace_test PRIVATE -fno-profile-arcs -fno-test-coverage)
-
-add_executable(double_search_test double_search_test.cpp)
-add_test(NAME double_search_test COMMAND double_search_test)
-target_link_libraries(double_search_test PRIVATE core)
-# Exercise the double instantiations without adding test-harness branches to the
-# coverage gate.
-target_compile_options(double_search_test PRIVATE -fno-profile-arcs
-                                                  -fno-test-coverage)

@@ -30,15 +30,6 @@ struct TextOptions
     std::string modelDir;
 };
 
-struct StoreOptions
-{
-    std::string db = "vectors.nesso";
-    uint64_t dimensions = DEFAULT_STORE_DIMENSIONS;
-    std::string input;
-    std::string query;
-    size_t topK = DEFAULT_STORE_TOP_K;
-};
-
 static std::vector<std::filesystem::path> toPaths(const std::vector<std::string> &args)
 {
     return {args.begin(), args.end()};
@@ -57,35 +48,10 @@ static Config configFrom(const CLI::Option &modelDirOpt, const TextOptions &text
 std::expected<ParsedCommand, int> parseCommandLine(int argc, char **argv)
 {
     TextOptions text;
-    StoreOptions store;
 
     CLI::App app{"Nesso - local semantic search for unstructured text"};
     app.set_version_flag("-V,--version", NESSO_VERSION);
     app.require_subcommand(1);
-
-    auto *storeCmd = app.add_subcommand("store", "Raw float32 vector store (mmap, cosine top-k)");
-    storeCmd->require_subcommand(1);
-    storeCmd->add_option("-p,--path", store.db, "Path to the vector database storage file");
-    storeCmd->add_option("-d,--dims", store.dimensions, "Dimensionality of the vector space")->default_val(128);
-
-    auto *storeInitCmd = storeCmd->add_subcommand("init", "Initialize an empty database index container");
-    storeInitCmd->fallthrough();
-
-    auto *storeIndexCmd = storeCmd->add_subcommand("index", "Ingest external raw vector binary data");
-    storeIndexCmd->fallthrough();
-    storeIndexCmd->add_option("-f,--file", store.input, "Path to the raw floating-point binary file")
-        ->required()
-        ->check(CLI::ExistingFile);
-
-    auto *storeSearchCmd = storeCmd->add_subcommand("search", "Return the nearest vectors by cosine similarity");
-    storeSearchCmd->fallthrough();
-    storeSearchCmd->add_option("-q,--query-file", store.query, "Path to one raw floating-point query vector")
-        ->required()
-        ->check(CLI::ExistingFile);
-    storeSearchCmd
-        ->add_option("-k,--top-k", store.topK,
-                     "Maximum number of nearest vectors to return (default: 10, differs from grep/search)")
-        ->default_val(10);
 
     auto *grepCmd = app.add_subcommand("grep", "Semantic search over .log, .json, and .jsonl files. "
                                                "Skips empty lines and log lines longer than 4096 characters. "
@@ -128,24 +94,8 @@ std::expected<ParsedCommand, int> parseCommandLine(int argc, char **argv)
         return ParsedCommand{.config = configFrom(*indexModelDir, text),
                              .request = IndexRequest{.files = toPaths(text.files), .output = text.output}};
     }
-    if (searchCmd->parsed())
-    {
-        return ParsedCommand{.config = configFrom(*searchModelDir, text),
-                             .request = SearchRequest{.query = text.query, .index = text.index, .topK = text.topK}};
-    }
-    if (storeInitCmd->parsed())
-    {
-        return ParsedCommand{.config = {}, .request = StoreInitRequest{.db = store.db, .dimensions = store.dimensions}};
-    }
-    if (storeIndexCmd->parsed())
-    {
-        return ParsedCommand{
-            .config = {},
-            .request = StoreIngestRequest{.db = store.db, .dimensions = store.dimensions, .input = store.input}};
-    }
-    return ParsedCommand{.config = {},
-                         .request = StoreSearchRequest{
-                             .db = store.db, .dimensions = store.dimensions, .query = store.query, .topK = store.topK}};
+    return ParsedCommand{.config = configFrom(*searchModelDir, text),
+                         .request = SearchRequest{.query = text.query, .index = text.index, .topK = text.topK}};
 }
 
 } // namespace nesso::cli

@@ -1,9 +1,2 @@
 # Branch-limit notice, not a defect. Exhaustive analysis is too slow for CI.
 normalCheckLevelMaxBranches
-
-# mmap overlays the vector pool on the file mapping. The cast is intentional.
-invalidPointerCast:src/core/storage_engine.cpp
-
-# Catch2 re-enters GIVEN for each WHEN, so the second move is a fresh engine.
-# Cppcheck treats the two WHEN blocks as one straight-line path.
-accessMoved:test/storage_engine_test.cpp
