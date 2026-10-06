@@ -1,4 +1,4 @@
-module github.com/lorenzocaprari/nesso/features
+module github.com/lorenzocaprari/nesso/test/functional
 
 go 1.24
 

@@ -41,11 +41,11 @@ lcov --directory build/coverage/build/Debug --capture --output-file build/covera
 lcov --remove build/coverage/coverage.info \
   '/usr/*' \
   "${conan_cache}/*" \
-  '*/test/onnx_embedder_test.cpp' \
+  '*/test/unit/embed/onnx_embedder_test.cpp' \
   '*/src/embed/onnx_embedder.cpp' \
-  '*/test/log_chunker_test.cpp' \
-  '*/test/grep_integration_test.cpp' \
-  '*/test/cli_store_test.cpp' \
+  '*/test/unit/parser/log_chunker_test.cpp' \
+  '*/test/integration/grep_integration_test.cpp' \
+  '*/test/integration/cli_store_test.cpp' \
   --output-file build/coverage/coverage.cleaned
 genhtml --branch-coverage --rc branch_coverage=1 --ignore-errors inconsistent \
   build/coverage/coverage.cleaned \

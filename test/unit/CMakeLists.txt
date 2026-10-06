@@ -1,0 +1,5 @@
+add_subdirectory(core)
+add_subdirectory(tokenizer)
+add_subdirectory(parser)
+add_subdirectory(embed)
+add_subdirectory(nesso)
