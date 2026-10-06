@@ -116,6 +116,31 @@ bash scripts/lint
 
 See [.github/workflows/ci.yml](.github/workflows/ci.yml) for lint, clang-tidy, cppcheck, Release/Debug builds, unit tests, fuzz, and coverage. Tag `v*` publishes via [.github/workflows/release.yml](.github/workflows/release.yml).
 
+### Measuring performance
+
+Use a Release build. `NESSO_TRACE=1` prints one JSON line on stderr per command, with per-stage microseconds and peak RSS:
+
+```bash
+NESSO_TRACE=1 ./build/Release/src/nesso grep "connection refused" /var/log/app.log --model-dir models/
+```
+
+`scripts/profile` runs the same command under `perf` and `heaptrack` and writes `build/profile/flamegraph.svg` and `build/profile/heaptrack-summary.txt`. It needs `perf`, `heaptrack`, and FlameGraph's `stackcollapse-perf.pl` and `flamegraph.pl` on `PATH`, or `NESSO_FLAMEGRAPH_DIR` set to a FlameGraph checkout:
+
+```bash
+./scripts/profile grep "connection refused" /var/log/app.log --model-dir models/
+```
+
+`scripts/bench` times `grep` on fixed-seed synthetic logs of 1k, 10k, and 100k lines and writes `bench/results/<sha>.json`. `scripts/bench-compare` fails when wall time or peak RSS is more than 15% above [bench/baseline.json](bench/baseline.json):
+
+```bash
+python3 scripts/bench
+python3 scripts/bench-compare
+```
+
+The `bench` CI job runs both on every pull request and uploads the results. It is report-only and never blocks a merge.
+
+Google Benchmark microbenchmarks build with `-o "&:bench=True"` on the Release profile and produce `build/Release/bench/nesso_bench`.
+
 ## License
 
 MIT — see LICENSE.
