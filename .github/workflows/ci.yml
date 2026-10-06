@@ -394,3 +394,74 @@ jobs:
           name: coverage-report
           path: build/coverage/report
           if-no-files-found: warn
+
+  # Report-only: shared-runner timings are noisy, so this job never gates a merge.
+  bench:
+    needs: [prepare-image, build-gcc-26]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    continue-on-error: true
+    container:
+      image: ${{ needs.prepare-image.outputs.image }}
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Install GNU time
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends time
+          rm -rf /var/lib/apt/lists/*
+
+      - name: Restore MiniLM models
+        id: models
+        uses: actions/cache@v4
+        with:
+          path: models
+          key: minilm-${{ hashFiles('scripts/fetch-model') }}
+
+      - name: Fetch MiniLM models
+        if: steps.models.outputs.cache-hit != 'true'
+        run: ./scripts/fetch-model models
+
+      - name: Download Release build
+        uses: actions/download-artifact@v4
+        with:
+          name: release-build
+
+      - name: Extract Release build
+        run: tar -xzf release-build.tar.gz
+
+      - name: Run end-to-end benchmark
+        run: |
+          # Cap address space at 3/4 of RAM so an oversized embed batch fails
+          # inside nesso instead of triggering the runner's OOM killer.
+          mem_kb=$(awk '/^MemTotal:/ {print $2}' /proc/meminfo)
+          export NESSO_BENCH_AS_LIMIT_KB=$((mem_kb * 3 / 4))
+          python3 scripts/bench --binary build/Release/src/nesso --timeout 300 \
+            --output bench/results/ci.json
+
+      - name: Compare against baseline
+        continue-on-error: true
+        shell: bash
+        run: |
+          status=0
+          python3 scripts/bench-compare --result bench/results/ci.json >bench/results/compare.txt || status=$?
+          cat bench/results/compare.txt
+          {
+            echo '```'
+            cat bench/results/compare.txt
+            echo '```'
+          } >>"${GITHUB_STEP_SUMMARY}"
+          exit "${status}"
+
+      - name: Upload benchmark results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bench-results
+          path: bench/results/
+          if-no-files-found: warn

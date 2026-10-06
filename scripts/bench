@@ -29,7 +29,15 @@ TRACE_STAGES = ("parse", "embed", "rank")
 
 
 def git_sha() -> str:
-    return subprocess.check_output(["git", "-C", str(ROOT), "rev-parse", "HEAD"], text=True).strip()
+    # Actions deletes checkout's temporary safe.directory before later steps, so
+    # git rev-parse exits 128 in the container and this script never writes results.
+    sha = os.environ.get("GITHUB_SHA", "").strip()
+    if sha:
+        return sha
+    return subprocess.check_output(
+        ["git", "-c", "safe.directory=*", "-C", str(ROOT), "rev-parse", "HEAD"],
+        text=True,
+    ).strip()
 
 
 def resolve_binary(explicit: str | None) -> Path:
@@ -38,7 +46,7 @@ def resolve_binary(explicit: str | None) -> Path:
     env = os.environ.get("NESSO_BINARY")
     if env:
         return Path(env)
-    for relative in ("build/Release/nesso", "build/Debug/nesso"):
+    for relative in ("build/Release/src/nesso", "build/Release/nesso", "build/Debug/src/nesso", "build/Debug/nesso"):
         candidate = ROOT / relative
         if candidate.is_file():
             return candidate
