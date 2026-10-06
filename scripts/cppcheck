@@ -31,6 +31,12 @@ common=(
   -j 1
 )
 
+# compile_commands.json does not record predefined macros. Without this,
+# the x86_64-only calls of the AVX2 kernels look unused.
+if [[ "$(uname -m)" == "x86_64" ]]; then
+  common+=(-D__x86_64__)
+fi
+
 echo "cppcheck: pass A (src and test) using ${DB}"
 cppcheck "${common[@]}" --error-exitcode=1
 

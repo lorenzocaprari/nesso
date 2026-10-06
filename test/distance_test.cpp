@@ -3,6 +3,7 @@
 #include <core/core_types.hpp>
 #include <core/distance.hpp>
 #include <random>
+#include <span>
 #include <vector>
 
 using namespace core;
@@ -221,50 +222,59 @@ TEMPLATE_TEST_CASE("DistanceMetrics::l2SquaredDistance rejects invalid inputs", 
     }
 }
 
-#ifdef __AVX2__
-TEST_CASE("DistanceMetrics AVX2 dotProduct matches scalar oracle", "[DistanceMetrics][core][Unit][avx2]")
+#if defined(__x86_64__)
+#include "distance_kernels.hpp"
+
+namespace
 {
-    std::mt19937 rng{0xC0FFEEU};
+
+void fillPair(std::mt19937 &rng, std::vector<float> &left, std::vector<float> &right)
+{
     std::uniform_real_distribution<float> dist(-10.0F, 10.0F);
-
-    for (const size_t size : {1U, 7U, 8U, 9U, 16U, 31U, 64U})
+    for (size_t index = 0; index < left.size(); ++index)
     {
-        std::vector<float> a(size);
-        std::vector<float> b(size);
-        for (size_t i = 0; i < size; ++i)
-        {
-            a[i] = dist(rng);
-            b[i] = dist(rng);
-        }
-
-        const std::span<const float> aSpan{a.data(), a.size()};
-        const std::span<const float> bSpan{b.data(), b.size()};
-        const float scalar = core::math::detail::dotProductScalar(aSpan, bSpan);
-        const float avx2 = core::math::detail::dotProductAvx2(aSpan, bSpan);
-        REQUIRE(avx2 == Catch::Approx(scalar).margin(1e-4F));
+        left[index] = dist(rng);
+        right[index] = dist(rng);
     }
 }
 
-TEST_CASE("DistanceMetrics AVX2 l2SquaredDistance matches scalar oracle", "[DistanceMetrics][core][Unit][avx2]")
+} // namespace
+
+TEST_CASE("float kernels match the scalar oracle", "[DistanceMetrics][core][Unit][avx2]")
 {
-    std::mt19937 rng{0xBEEFU};
-    std::uniform_real_distribution<float> dist(-10.0F, 10.0F);
-
-    for (const size_t size : {1U, 7U, 8U, 9U, 16U, 31U, 64U})
+    if (!__builtin_cpu_supports("avx2") || !__builtin_cpu_supports("fma"))
     {
-        std::vector<float> a(size);
-        std::vector<float> b(size);
-        for (size_t i = 0; i < size; ++i)
-        {
-            a[i] = dist(rng);
-            b[i] = dist(rng);
-        }
+        SKIP("CPU lacks AVX2+FMA");
+    }
 
-        const std::span<const float> aSpan{a.data(), a.size()};
-        const std::span<const float> bSpan{b.data(), b.size()};
-        const float scalar = core::math::detail::l2SquaredDistanceScalar(aSpan, bSpan);
-        const float avx2 = core::math::detail::l2SquaredDistanceAvx2(aSpan, bSpan);
-        REQUIRE(avx2 == Catch::Approx(scalar).margin(1e-4F));
+    std::mt19937 rng{0xC0FFEEU};
+    for (const size_t size : {1U, 7U, 8U, 9U, 16U, 31U, 32U, 33U, 64U, 384U})
+    {
+        std::vector<float> left(size);
+        std::vector<float> right(size);
+        fillPair(rng, left, right);
+        const std::span<const float> leftSpan{left};
+        const std::span<const float> rightSpan{right};
+
+        const float scalarDot = core::math::detail::dotProductScalar<float>(leftSpan, rightSpan);
+        const float fmaDot =
+            core::math::detail::dotProductKernel(core::math::detail::DistanceKernel::Avx2Fma, leftSpan, rightSpan);
+        const float forcedScalarDot =
+            core::math::detail::dotProductKernel(core::math::detail::DistanceKernel::Scalar, leftSpan, rightSpan);
+        REQUIRE(fmaDot == Catch::Approx(scalarDot).margin(1e-3F));
+        REQUIRE(forcedScalarDot == Catch::Approx(scalarDot).margin(1e-3F));
+
+        const float scalarL2 = core::math::detail::l2SquaredDistanceScalar<float>(leftSpan, rightSpan);
+        const float fmaL2 = core::math::detail::l2SquaredDistanceKernel(core::math::detail::DistanceKernel::Avx2Fma,
+                                                                        leftSpan, rightSpan);
+        const float forcedScalarL2 = core::math::detail::l2SquaredDistanceKernel(
+            core::math::detail::DistanceKernel::Scalar, leftSpan, rightSpan);
+        REQUIRE(fmaL2 == Catch::Approx(scalarL2).margin(1e-3F));
+        REQUIRE(forcedScalarL2 == Catch::Approx(scalarL2).margin(1e-3F));
+
+        const auto dispatched = DistanceMetrics::dotProduct<float>(leftSpan, rightSpan);
+        REQUIRE(dispatched.has_value());
+        REQUIRE(dispatched.value() == Catch::Approx(scalarDot).margin(1e-3F));
     }
 }
 #endif
