@@ -5,7 +5,6 @@
 #define CORE_CORPUS_INDEX_HPP
 
 #include "core_types.hpp"
-#include "embedding_store.hpp"
 
 #include <array>
 #include <cstdint>
@@ -20,6 +19,13 @@ namespace core
 
 inline constexpr std::array<uint8_t, 4> CORPUS_MAGIC = {'N', 'E', 'S', 'C'};
 inline constexpr uint32_t CORPUS_VERSION = 1;
+
+struct LogChunk
+{
+    std::string text;
+    uint64_t lineNumber = 0;
+    std::string source;
+};
 
 struct CorpusChunk
 {

@@ -7,7 +7,7 @@
 #include "trace.hpp"
 
 #include <core/corpus_index.hpp>
-#include <core/embedding_store.hpp>
+#include <core/top_k.hpp>
 #include <embed/onnx_embedder.hpp>
 #include <parser/log_chunker.hpp>
 
@@ -56,8 +56,13 @@ static std::expected<ParsedFiles, Error> parseFiles(std::span<const std::filesys
     return parsed;
 }
 
-static std::expected<std::vector<core::CorpusChunk>, Error> embedFiles(const ParsedFiles &parsed,
-                                                                       const embed::OnnxEmbedder &embedder)
+static std::unexpected<Error> textFailure(ErrorKind kind, int code, size_t skippedLines)
+{
+    return std::unexpected(Error{.kind = kind, .code = code, .path = {}, .skippedLines = skippedLines});
+}
+
+static std::expected<std::vector<core::CorpusChunk>, Error>
+embedFiles(const ParsedFiles &parsed, const embed::OnnxEmbedder &embedder, std::vector<float> *matrix)
 {
     const ScopedStage stage{"embed"};
     if (parsed.chunks.empty())
@@ -81,14 +86,41 @@ static std::expected<std::vector<core::CorpusChunk>, Error> embedFiles(const Par
                                      .skippedLines = parsed.skippedLines});
     }
 
+    size_t dims = 0;
+    if (matrix != nullptr)
+    {
+        dims = embeddings->front().size();
+        if (dims == 0)
+        {
+            return textFailure(ErrorKind::Embed, codeOf(core::EngineError::DatabaseNotInitialized),
+                               parsed.skippedLines);
+        }
+        matrix->reserve(embeddings->size() * dims);
+    }
+
     std::vector<core::CorpusChunk> chunks;
     chunks.reserve(embeddings->size());
     for (size_t index = 0; index < embeddings->size(); ++index)
     {
-        chunks.push_back({.chunk = {.text = parsed.chunks[index].text,
-                                    .lineNumber = parsed.chunks[index].lineNumber,
-                                    .source = parsed.sources[index]},
-                          .embedding = (*embeddings)[index]});
+        core::CorpusChunk chunk{.chunk = {.text = parsed.chunks[index].text,
+                                          .lineNumber = parsed.chunks[index].lineNumber,
+                                          .source = parsed.sources[index]},
+                                .embedding = {}};
+        if (matrix != nullptr)
+        {
+            const std::vector<float> &embedding = (*embeddings)[index];
+            if (embedding.size() != dims)
+            {
+                return textFailure(ErrorKind::Embed, codeOf(core::EngineError::MismatchedDimensions),
+                                   parsed.skippedLines);
+            }
+            matrix->insert(matrix->end(), embedding.begin(), embedding.end());
+        }
+        else
+        {
+            chunk.embedding = (*embeddings)[index];
+        }
+        chunks.push_back(std::move(chunk));
     }
     return chunks;
 }
@@ -104,24 +136,51 @@ static bool multipleSources(std::span<const core::CorpusChunk> chunks)
                                [&first](const core::CorpusChunk &chunk) { return chunk.chunk.source != first; });
 }
 
-static std::unexpected<Error> textFailure(ErrorKind kind, int code, size_t skippedLines)
+static std::expected<std::vector<float>, Error> packMatrix(std::span<const core::CorpusChunk> chunks,
+                                                           size_t skippedLines, ErrorKind failure)
 {
-    return std::unexpected(Error{.kind = kind, .code = code, .path = {}, .skippedLines = skippedLines});
+    const size_t dims = chunks.front().embedding.size();
+    if (dims == 0)
+    {
+        return textFailure(failure, codeOf(core::EngineError::DatabaseNotInitialized), skippedLines);
+    }
+
+    std::vector<float> matrix;
+    matrix.reserve(chunks.size() * dims);
+    for (const core::CorpusChunk &chunk : chunks)
+    {
+        if (chunk.embedding.size() != dims)
+        {
+            return textFailure(failure, codeOf(core::EngineError::MismatchedDimensions), skippedLines);
+        }
+        matrix.insert(matrix.end(), chunk.embedding.begin(), chunk.embedding.end());
+    }
+    return matrix;
 }
 
 static std::expected<TextResults, Error> rankChunks(std::span<const core::CorpusChunk> chunks,
                                                     const embed::OnnxEmbedder &embedder, std::string_view query,
-                                                    size_t topK, size_t skippedLines, ErrorKind insertFailure)
+                                                    size_t topK, size_t skippedLines, ErrorKind packFailure,
+                                                    std::span<const float> packed)
 {
     const ScopedStage stage{"rank"};
-    core::EmbeddingStore<float> store;
-    for (const core::CorpusChunk &chunk : chunks)
+    std::vector<float> owned;
+    std::span<const float> matrix = packed;
+    size_t dims = 0;
+    if (matrix.empty())
     {
-        const auto inserted = store.insert(chunk.embedding, chunk.chunk);
-        if (!inserted)
+        auto built = packMatrix(chunks, skippedLines, packFailure);
+        if (!built)
         {
-            return textFailure(insertFailure, codeOf(inserted.error()), skippedLines);
+            return std::unexpected(built.error());
         }
+        owned = std::move(*built);
+        matrix = owned;
+        dims = chunks.front().embedding.size();
+    }
+    else
+    {
+        dims = matrix.size() / chunks.size();
     }
 
     const auto queryEmbedding = embedder.embed(query);
@@ -130,7 +189,7 @@ static std::expected<TextResults, Error> rankChunks(std::span<const core::Corpus
         return textFailure(ErrorKind::QueryEmbed, codeOf(queryEmbedding.error()), skippedLines);
     }
 
-    const auto ranked = store.searchTopK(*queryEmbedding, topK);
+    const auto ranked = core::topK(*queryEmbedding, matrix, dims, topK);
     if (!ranked)
     {
         return textFailure(ErrorKind::Search, codeOf(ranked.error()), skippedLines);
@@ -142,12 +201,11 @@ static std::expected<TextResults, Error> rankChunks(std::span<const core::Corpus
 
     TextResults results{.matches = {}, .skippedLines = skippedLines, .multipleSources = multipleSources(chunks)};
     results.matches.reserve(ranked->size());
-    for (const core::EmbeddingSearchResult<float> &match : *ranked)
+    for (const core::Hit &hit : *ranked)
     {
-        results.matches.push_back({.source = match.chunk.source,
-                                   .line = match.chunk.lineNumber,
-                                   .score = match.score,
-                                   .text = match.chunk.text});
+        const core::LogChunk &chunk = chunks[static_cast<size_t>(hit.index)].chunk;
+        results.matches.push_back(
+            {.source = chunk.source, .line = chunk.lineNumber, .score = hit.score, .text = chunk.text});
     }
     return results;
 }
@@ -203,7 +261,8 @@ std::expected<TextResults, Error> Nesso::grep(const GrepRequest &request) const
         return std::unexpected(parsed.error());
     }
 
-    const auto chunks = embedFiles(*parsed, **embedder);
+    std::vector<float> matrix;
+    const auto chunks = embedFiles(*parsed, **embedder, &matrix);
     if (!chunks)
     {
         return std::unexpected(chunks.error());
@@ -213,7 +272,8 @@ std::expected<TextResults, Error> Nesso::grep(const GrepRequest &request) const
         return textFailure(ErrorKind::EmptyInput, 0, parsed->skippedLines);
     }
 
-    return rankChunks(*chunks, **embedder, request.query, request.topK, parsed->skippedLines, ErrorKind::IndexBuild);
+    return rankChunks(*chunks, **embedder, request.query, request.topK, parsed->skippedLines, ErrorKind::IndexBuild,
+                      matrix);
 }
 
 std::expected<IndexSummary, Error> Nesso::index(const IndexRequest &request) const
@@ -231,7 +291,7 @@ std::expected<IndexSummary, Error> Nesso::index(const IndexRequest &request) con
         return std::unexpected(parsed.error());
     }
 
-    const auto chunks = embedFiles(*parsed, **embedder);
+    const auto chunks = embedFiles(*parsed, **embedder, nullptr);
     if (!chunks)
     {
         return std::unexpected(chunks.error());
@@ -276,7 +336,7 @@ std::expected<TextResults, Error> Nesso::search(const SearchRequest &request) co
         return std::unexpected(embedder.error());
     }
 
-    return rankChunks(*chunks, **embedder, request.query, request.topK, 0, ErrorKind::CorpusLoad);
+    return rankChunks(*chunks, **embedder, request.query, request.topK, 0, ErrorKind::CorpusLoad, {});
 }
 
 } // namespace nesso

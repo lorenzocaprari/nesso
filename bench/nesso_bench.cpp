@@ -4,7 +4,7 @@
 #include <benchmark/benchmark.h>
 #include <core/corpus_index.hpp>
 #include <core/distance.hpp>
-#include <core/embedding_store.hpp>
+#include <core/top_k.hpp>
 #include <embed/wordpiece_tokenizer.hpp>
 
 #include <cstdint>
@@ -97,6 +97,26 @@ void selectTopK(benchmark::State &state)
     }
 }
 
+void topKFlatMatrix(benchmark::State &state)
+{
+    constexpr size_t rows = 100000;
+    std::mt19937 rng{1};
+    std::uniform_real_distribution<float> dist(-1.0F, 1.0F);
+    std::vector<float> matrix(rows * EMBEDDING_DIMENSIONS);
+    for (float &value : matrix)
+    {
+        value = dist(rng);
+    }
+    const std::vector<float> query = randomVector(rng, EMBEDDING_DIMENSIONS);
+
+    for (auto _ : state)
+    {
+        auto hits = core::topK(query, matrix, EMBEDDING_DIMENSIONS, TOP_K);
+        benchmark::DoNotOptimize(hits);
+    }
+    state.SetItemsProcessed(static_cast<int64_t>(state.iterations() * rows));
+}
+
 void encodeWordPiece(benchmark::State &state)
 {
     const auto tokenizer = embed::WordPieceTokenizer::fromVocabFile(NESSO_BENCH_VOCAB);
@@ -145,6 +165,7 @@ BENCHMARK(dotProduct384);
 BENCHMARK(cosine384);
 BENCHMARK(l2Squared384);
 BENCHMARK(selectTopK);
+BENCHMARK(topKFlatMatrix);
 BENCHMARK(encodeWordPiece);
 BENCHMARK(readCorpus);
 

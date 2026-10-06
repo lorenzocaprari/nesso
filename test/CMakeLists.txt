@@ -50,9 +50,9 @@ add_executable(corpus_index_test corpus_index_test.cpp)
 add_test(NAME corpus_index_test COMMAND corpus_index_test)
 target_link_libraries(corpus_index_test PRIVATE core Catch2::Catch2WithMain)
 
-add_executable(embedding_store_test embedding_store_test.cpp)
-add_test(NAME embedding_store_test COMMAND embedding_store_test)
-target_link_libraries(embedding_store_test PRIVATE core Catch2::Catch2WithMain)
+add_executable(top_k_test top_k_test.cpp)
+add_test(NAME top_k_test COMMAND top_k_test)
+target_link_libraries(top_k_test PRIVATE core Catch2::Catch2WithMain)
 
 add_executable(search_oracle_test search_oracle_test.cpp)
 add_test(NAME search_oracle_test COMMAND search_oracle_test)

@@ -1,9 +1,10 @@
 #include <catch2/catch_all.hpp>
-#include <core/embedding_store.hpp>
+#include <core/top_k.hpp>
 #include <embed/onnx_embedder.hpp>
 #include <parser/log_chunker.hpp>
 
 #include <filesystem>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -47,18 +48,13 @@ TEST_CASE("Semantic grep ranks the expected log line", "[grep][integration]")
     const auto embeddings = (*embedder)->embedBatch(texts);
     REQUIRE(embeddings.has_value());
 
-    core::EmbeddingStore<float> store;
-    REQUIRE(store
-                .insert((*embeddings)[0],
-                        {.text = (*chunks)[0].text, .lineNumber = (*chunks)[0].lineNumber, .source = logPath.string()})
-                .has_value());
-
     const auto queryEmbedding = (*embedder)->embed("database connection error");
     REQUIRE(queryEmbedding.has_value());
 
-    const auto results = store.searchTopK(*queryEmbedding, 1);
+    const std::span<const float> matrix{(*embeddings)[0]};
+    const auto results = core::topK(*queryEmbedding, matrix, matrix.size(), 1);
     REQUIRE(results.has_value());
     REQUIRE(results->size() == 1);
-    REQUIRE((*results)[0].chunk.text == "database connection refused");
-    REQUIRE((*results)[0].chunk.source == logPath.string());
+    REQUIRE((*results)[0].index == 0);
+    REQUIRE((*chunks)[0].text == "database connection refused");
 }
