@@ -25,6 +25,8 @@ add_test(
 set_tests_properties(
   bdd
   PROPERTIES
+    LABELS
+    functional
     ENVIRONMENT
     "NESSO_BINARY=$<TARGET_FILE:nesso>;NESSO_MODEL_DIR=${CMAKE_SOURCE_DIR}/models"
 )

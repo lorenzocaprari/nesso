@@ -1,14 +1,14 @@
 // Copyright (c) 2026 Lorenzo Caprari
 // SPDX-License-Identifier: MIT
 
-package features_test
+package functional_test
 
 import (
 	"testing"
 
 	"github.com/cucumber/godog"
 
-	"github.com/lorenzocaprari/nesso/features/steps"
+	"github.com/lorenzocaprari/nesso/test/functional/internal/steps"
 )
 
 func TestFeatures(t *testing.T) {
@@ -17,7 +17,7 @@ func TestFeatures(t *testing.T) {
 		Options: &godog.Options{
 			Format:   "pretty",
 			NoColors: true,
-			Paths:    []string{"."},
+			Paths:    []string{"features"},
 			Strict:   true,
 			TestingT: t,
 		},

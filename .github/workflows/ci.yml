@@ -265,8 +265,14 @@ jobs:
       - name: Extract Release build
         run: tar -xzf release-build.tar.gz
 
-      - name: Run Catch2 unit tests (includes search_oracle_test)
-        run: ctest --test-dir build/Release -V
+      - name: Run unit tests
+        run: ctest --test-dir build/Release -L unit -V
+
+      - name: Run integration tests
+        run: ctest --test-dir build/Release -L integration -V
+
+      - name: Run functional tests
+        run: ctest --test-dir build/Release -L functional -V
 
   unit-tests-debug:
     needs: [prepare-image, build-gcc-26-debug]
@@ -276,6 +282,9 @@ jobs:
       credentials:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
+    env:
+      ASAN_OPTIONS: halt_on_error=1:detect_leaks=1:abort_on_error=1
+      UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -299,11 +308,14 @@ jobs:
       - name: Extract Debug build
         run: tar -xzf debug-build.tar.gz
 
-      - name: Run Catch2 unit tests (ASan/UBSan, includes search_oracle_test)
-        run: |
-          export ASAN_OPTIONS=halt_on_error=1:detect_leaks=1:abort_on_error=1
-          export UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1
-          ctest --test-dir build/Debug -V
+      - name: Run unit tests
+        run: ctest --test-dir build/Debug -L unit -V
+
+      - name: Run integration tests
+        run: ctest --test-dir build/Debug -L integration -V
+
+      - name: Run functional tests
+        run: ctest --test-dir build/Debug -L functional -V
 
   fuzz-test:
     needs: prepare-image
