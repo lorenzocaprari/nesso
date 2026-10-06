@@ -32,8 +32,6 @@ class WordPieceTokenizer
 
     [[nodiscard]] std::expected<TokenizedInput, EmbedError> encode(std::string_view text) const;
 
-    [[nodiscard]] size_t maxSequenceLength() const noexcept { return maxSequenceLength_; }
-
   private:
     WordPieceTokenizer(std::unordered_map<std::string, int64_t> vocab, int64_t clsId, int64_t sepId, int64_t unkId,
                        size_t maxSequenceLength);
