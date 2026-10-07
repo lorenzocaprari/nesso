@@ -8,22 +8,21 @@ if [ -f "$PROJECT_ROOT/build/Release/compile_commands.json" ]; then
 elif [ -f "$PROJECT_ROOT/build/Debug/compile_commands.json" ]; then
     BUILD_DIR="$PROJECT_ROOT/build/Debug"
 else
-    echo "❌ Error: compile_commands.json not found."
+    echo "clang-tidy: compile_commands.json not found. Configure a Release build first." >&2
     exit 1
 fi
 
-echo "🔍 Using build directory: $BUILD_DIR"
+echo "clang-tidy: using build directory $BUILD_DIR"
 
 # Clean compilation database: remove GCC module-specific flags that clang-tidy doesn't understand
 sed -i 's/ -fmodules-ts//g; s/ -fmodule-mapper=[^ ]*//g; s/ -fdeps-format=[^ ]*//g' "$BUILD_DIR/compile_commands.json"
 
 if command -v run-clang-tidy &> /dev/null; then
-    echo "🚀 Running parallel analysis with run-clang-tidy..."
     run-clang-tidy -p "$BUILD_DIR" -j"$(nproc)" "src/.*"
 else
-    echo "⚠️  run-clang-tidy not found. Falling back to xargs..."
+    echo "clang-tidy: run-clang-tidy not found, falling back to xargs" >&2
     find "$PROJECT_ROOT/src" -type f \( -name "*.cpp" -o -name "*.cc" -o -name "*.cxx" \) -print0 | \
     xargs -0 -P "$(nproc)" -I {} clang-tidy -p "$BUILD_DIR" --quiet {}
 fi
 
-echo "✅ clang-tidy check completed."
+echo "clang-tidy: OK"

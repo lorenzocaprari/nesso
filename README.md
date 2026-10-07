@@ -16,8 +16,9 @@ Nesso is a Linux-native CLI for searching local text by meaning.
 ## Non-goals
 
 - Not a hosted vector database (Qdrant, pgvector, etc.)
-- No approximate nearest-neighbor index yet
-- Linux only
+- No approximate nearest-neighbor index: ranking is an exact brute-force scan by design, see [docs/adr/0001-exact-search-no-ann.md](docs/adr/0001-exact-search-no-ann.md)
+- Linux only until the MSVC build lands
+- The corpus file format is unstable until 1.0; `search` rejects files written by another version
 
 ## Install
 
@@ -43,7 +44,7 @@ Push a `vX.Y.Z` tag that matches `version` in `conanfile.py` to publish the imag
 ## Prerequisites
 
 - **Compiler:** GCC 15+ with C++26 support
-- **Build system:** CMake 3.28+
+- **Build system:** CMake 4.2+ and Ninja
 - **Package manager:** Conan 2.x
 - **OS:** Linux
 

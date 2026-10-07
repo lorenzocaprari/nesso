@@ -1,3 +1,0 @@
-#!/usr/bin/env bash
-set -euo pipefail
-exec conan install .. -of . --build=missing -pr:h="../conan/profiles/$1" -pr:b="../conan/profiles/$1"

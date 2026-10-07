@@ -40,7 +40,7 @@ Checks: >
 
 WarningsAsErrors: '*'
 
-HeaderFilterRegex: '(src|include|tests)/.*'
+HeaderFilterRegex: '(src|include|test)/.*'
 
 CheckOptions:
   modernize-use-auto.MinTypeNameLength: '5'

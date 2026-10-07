@@ -11,5 +11,3 @@ option(NESSO_BUILD_BENCH "Build Google Benchmark microbenchmarks" OFF)
 if(NESSO_BUILD_BENCH)
   add_subdirectory(bench)
 endif()
-
-install(TARGETS nesso RUNTIME DESTINATION bin)

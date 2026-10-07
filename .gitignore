@@ -1,4 +1,5 @@
 build/
+CMakeUserPresets.json
 bench/results/
 __pycache__/
 coverage-report/
