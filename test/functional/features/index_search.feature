@@ -39,6 +39,12 @@ Feature: index and search
     Then the exit code is 1
     And stdout is empty
 
+  Scenario: search reads a checked-in corpus
+    When I run nesso with arguments search "database connection error" -i {fixture}/one-chunk.nesso
+    Then the exit code is 0
+    And stdout contains "checked in line"
+    And stdout contains "line 1:"
+
   Scenario: indexing reports skipped lines
     Given a file "long.log" with:
       """

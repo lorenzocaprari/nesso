@@ -104,7 +104,8 @@ embedFiles(const ParsedFiles &parsed, const embed::OnnxEmbedder &embedder, std::
     {
         core::CorpusChunk chunk{.chunk = {.text = parsed.chunks[index].text,
                                           .lineNumber = parsed.chunks[index].lineNumber,
-                                          .source = parsed.sources[index]},
+                                          .source = parsed.sources[index],
+                                          .byteOffset = parsed.chunks[index].byteOffset},
                                 .embedding = {}};
         if (matrix != nullptr)
         {
@@ -300,7 +301,7 @@ std::expected<IndexSummary, Error> Nesso::index(const IndexRequest &request) con
     const auto written = [&request, &chunks]
     {
         const ScopedStage stage{"corpus-write"};
-        return core::writeCorpusFile(request.output, *chunks);
+        return core::writeCorpusFile(request.output, *chunks, embed::MINILM_MODEL_ID);
     }();
     if (!written)
     {
@@ -318,14 +319,14 @@ std::expected<TextResults, Error> Nesso::search(const SearchRequest &request) co
     const auto chunks = [&request]
     {
         const ScopedStage stage{"corpus-read"};
-        return core::readCorpusFile(request.index);
+        return core::mapCorpusFile(request.index);
     }();
     if (!chunks)
     {
         return std::unexpected(
             Error{.kind = ErrorKind::CorpusRead, .code = codeOf(chunks.error()), .path = request.index});
     }
-    if (chunks->empty() || request.topK == 0)
+    if (chunks->chunks().empty() || request.topK == 0)
     {
         return textFailure(ErrorKind::NoMatches, 0, 0);
     }
@@ -336,7 +337,8 @@ std::expected<TextResults, Error> Nesso::search(const SearchRequest &request) co
         return std::unexpected(embedder.error());
     }
 
-    return rankChunks(*chunks, **embedder, request.query, request.topK, 0, ErrorKind::CorpusLoad, {});
+    return rankChunks(chunks->chunks(), **embedder, request.query, request.topK, 0, ErrorKind::CorpusLoad,
+                      chunks->matrix());
 }
 
 } // namespace nesso

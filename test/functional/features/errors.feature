@@ -89,12 +89,6 @@ Feature: command errors
     And stderr contains "Failed to write corpus"
 
   Scenario: a corpus with the wrong dimensions cannot be searched
-    Given a file "short.nesso" with hex:
-      """
-      4e4553430100000002000000000000000100000000000000
-      010000000000000001000000000000000100000000000000
-      73740000803f00000000
-      """
-    When I run nesso with arguments search "database connection error" -i {dir}/short.nesso
+    When I run nesso with arguments search "database connection error" -i {fixture}/mismatch.nesso
     Then the exit code is 1
     And stderr contains "Semantic search failed"

@@ -145,7 +145,7 @@ void readCorpus(benchmark::State &state)
             {.chunk = {.text = "database connection refused", .lineNumber = index + 1, .source = "bench.log"},
              .embedding = randomVector(rng, EMBEDDING_DIMENSIONS)});
     }
-    if (!core::writeCorpusFile(path, chunks))
+    if (!core::writeCorpusFile(path, chunks, "bench"))
     {
         state.SkipWithError("failed to write bench corpus");
         return;
