@@ -12,6 +12,16 @@ Feature: grep
     And stdout contains "database connection refused"
     And stderr is empty
 
+  Scenario: the same grep prints the same scores
+    Given a file "app.log" with:
+      """
+      database connection refused
+      payment timeout after 30s
+      """
+    When I run nesso with arguments grep "database connection error" {dir}/app.log
+    Then the exit code is 0
+    And running nesso again prints the same stdout
+
   Scenario: a JSON message is ranked
     Given a file "one.json" with:
       """

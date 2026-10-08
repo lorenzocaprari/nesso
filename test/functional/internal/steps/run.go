@@ -40,6 +40,21 @@ func (b *bindings) runNesso(commandLine string) error {
 	result.Stdout = normalize.Output(result.Stdout, dir, fixture)
 	result.Stderr = normalize.Output(result.Stderr, dir, fixture)
 	b.world.Result = result
+	b.world.CommandLine = commandLine
 	b.world.Ran = true
+	return nil
+}
+
+func (b *bindings) runAgainSameStdout() error {
+	if !b.world.Ran {
+		return fmt.Errorf("nesso has not been run")
+	}
+	previous := b.world.Result.Stdout
+	if err := b.runNesso(b.world.CommandLine); err != nil {
+		return err
+	}
+	if b.world.Result.Stdout != previous {
+		return fmt.Errorf("stdout changed\nfirst:\n%s\nsecond:\n%s", previous, b.world.Result.Stdout)
+	}
 	return nil
 }

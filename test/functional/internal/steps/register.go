@@ -42,6 +42,7 @@ func InitializeScenario(sc *godog.ScenarioContext) {
 	sc.Step(`^a file "([^"]+)" with hex:$`, b.writeHexFile)
 	sc.Step(`^I run nesso with arguments (.+)$`, b.runNesso)
 	sc.Step(`^I run nesso without arguments$`, func() error { return b.runNesso("") })
+	sc.Step(`^running nesso again prints the same stdout$`, b.runAgainSameStdout)
 	sc.Step(`^the exit code is (\d+)$`, b.exitCodeIs)
 	sc.Step(`^the exit code is not (\d+)$`, b.exitCodeIsNot)
 	sc.Step(`^(stdout|stderr) contains "([^"]*)"$`, b.streamContains)
