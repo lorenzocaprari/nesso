@@ -332,7 +332,7 @@ jobs:
         run: |
           apt-get update
           apt-get install -y --no-install-recommends \
-            clang-21 libclang-rt-21-dev afl++
+            clang-21 libclang-rt-21-dev lld-21 llvm-21 afl++
           rm -rf /var/lib/apt/lists/*
           # Bridge Ubuntu linux/*-x86_64.a layout ? triple-dir names AFL/Clang may request.
           rt_lib="/usr/lib/llvm-21/lib/clang/21/lib"
@@ -359,12 +359,23 @@ jobs:
           chmod +x scripts/fuzz-test
           NESSO_FUZZ_MAX_TOTAL_TIME=60 ./scripts/fuzz-test
 
+      # upload-artifact rejects ':' in paths, and every AFL finding is named id:NNNNNN,...
+      - name: Collect AFL crashes
+        if: failure()
+        run: |
+          mkdir -p build/fuzz/findings
+          for crash in build/fuzz/afl-out-*/default/crashes/id:*; do
+            [ -f "${crash}" ] || continue
+            target="$(basename "$(dirname "$(dirname "$(dirname "${crash}")")")")"
+            cp "${crash}" "build/fuzz/findings/${target}_$(basename "${crash}" | tr ':,' '__')"
+          done
+
       - name: Upload AFL findings on failure
         if: failure()
         uses: actions/upload-artifact@v4
         with:
           name: fuzz-test-findings
-          path: build/fuzz/afl-out-*
+          path: build/fuzz/findings
           if-no-files-found: warn
 
   coverage:

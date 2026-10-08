@@ -1,7 +1,11 @@
 #!/usr/bin/env bash
 # AFL++ library harnesses: LogChunker, WordPieceTokenizer.
 # Builds AFL-instrumented + ASan binaries via Conan + CMake.
-# Requires: afl++ (afl-fuzz, afl-clang-fast++), Conan deps in cache.
+# Requires: afl++ (afl-fuzz, afl-clang-lto++), lld-21, llvm-21, Conan deps in cache.
+#
+# LTO mode, not afl-clang-fast: PCGUARD emits guard loads past __stop___sancov_guards
+# for comdat nlohmann instantiations, so the edge index is whatever data follows
+# (asan_globals) and the harness intermittently reads before the coverage map.
 #
 # Local / CI:
 #   ./scripts/fuzz-test
@@ -10,12 +14,19 @@ set -euo pipefail
 
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
-for cmd in afl-fuzz afl-clang-fast++; do
+for cmd in afl-fuzz afl-clang-lto afl-clang-lto++; do
   if ! command -v "${cmd}" >/dev/null 2>&1; then
     echo "error: ${cmd} not found. Install AFL++ (e.g. sudo apt install afl++)" >&2
     exit 2
   fi
 done
+
+LLVM_AR="$(command -v llvm-ar-21 || command -v llvm-ar || true)"
+LLVM_RANLIB="$(command -v llvm-ranlib-21 || command -v llvm-ranlib || true)"
+if [[ -z "${LLVM_AR}" || -z "${LLVM_RANLIB}" ]]; then
+  echo "error: llvm-ar/llvm-ranlib not found. Install llvm-21 (LTO archives hold bitcode)" >&2
+  exit 2
+fi
 
 OUT_DIR="${NESSO_FUZZ_OUT:-build/fuzz}"
 MAX_TOTAL_TIME="${NESSO_FUZZ_MAX_TOTAL_TIME:-60}"
@@ -31,8 +42,8 @@ mkdir -p "${OUT_DIR}"
 echo "fuzz-test: Conan + CMake AFL+ASan build -> ${BIN_DIR}"
 export AFL_USE_ASAN=1
 unset ASAN_OPTIONS UBSAN_OPTIONS || true
-export CC=afl-clang-fast
-export CXX=afl-clang-fast++
+export CC=afl-clang-lto
+export CXX=afl-clang-lto++
 
 conan_install() {
   conan install . -of "${OUT_DIR}" \
@@ -47,10 +58,12 @@ if ! conan_install --no-remote; then
   conan_install
 fi
 
-cmake -S . -B "${CMAKE_B}" -G Ninja \
+cmake --fresh -S . -B "${CMAKE_B}" -G Ninja \
   -DCMAKE_BUILD_TYPE=Release \
-  -DCMAKE_CXX_COMPILER=afl-clang-fast++ \
-  -DCMAKE_C_COMPILER=afl-clang-fast \
+  -DCMAKE_CXX_COMPILER=afl-clang-lto++ \
+  -DCMAKE_C_COMPILER=afl-clang-lto \
+  -DCMAKE_AR="${LLVM_AR}" \
+  -DCMAKE_RANLIB="${LLVM_RANLIB}" \
   -DCMAKE_TOOLCHAIN_FILE="${TOOLCHAIN}"
 
 cmake --build "${CMAKE_B}" --target "${TARGETS[@]}"
@@ -78,6 +91,8 @@ run_campaign() {
   if ((${#crashes[@]} > 0)); then
     echo "error: fuzz-test ${name} found ${#crashes[@]} unique crash(es):" >&2
     printf '  %s\n' "${crashes[@]}" >&2
+    echo "fuzz-test: replaying ${crashes[0]}" >&2
+    ASAN_OPTIONS="${ASAN_OPTIONS/symbolize=0/symbolize=1}" "${bin}" "${crashes[0]}" || true
     return 1
   fi
 }

@@ -45,7 +45,7 @@ Feature: index and search
     And stdout contains "checked in line"
     And stdout contains "line 1:"
 
-  Scenario: indexing reports skipped lines
+  Scenario: indexing reports truncated lines
     Given a file "long.log" with:
       """
       keep this line
@@ -53,5 +53,6 @@ Feature: index and search
     And a line of 5000 "x" in "long.log"
     When I run nesso with arguments index -o {dir}/corpus.nesso {dir}/long.log
     Then the exit code is 0
-    And stderr contains "Skipped "
+    And stderr contains "Truncated "
     And stderr contains "Indexed "
+    And stderr does not contain "Skipped "

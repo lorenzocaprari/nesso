@@ -8,7 +8,7 @@ compiler.cppstd=26
 build_type=Release
 
 [conf]
-# AFL++ uses afl-clang-fast++; no LTO (ORT static libs are gcc-built) and no profile ASan (AFL_USE_ASAN).
+# AFL++ uses afl-clang-lto++ (fuzz targets link only parser/tokenizer, never the gcc-built ORT); no profile ASan (AFL_USE_ASAN).
 user.nesso:cxxflags=["-O1", "-g", "-fno-omit-frame-pointer", "-march=x86-64-v2"]
 user.nesso:cflags=["-O1", "-g", "-fno-omit-frame-pointer", "-march=x86-64-v2"]
 user.nesso:sharedlinkflags=[]

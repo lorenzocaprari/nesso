@@ -42,7 +42,7 @@ Feature: grep
     And stdout contains "database connection refused"
     And stderr contains "Skipped 1 lines."
 
-  Scenario: empty lines and overlong lines are skipped
+  Scenario: empty lines are skipped and overlong lines are truncated
     Given a file "app.log" with:
       """
       keep this line
@@ -52,8 +52,19 @@ Feature: grep
     When I run nesso with arguments grep keep {dir}/app.log
     Then the exit code is 0
     And stdout contains "keep this line"
-    And stdout does not contain "xxxxx"
+    And stdout contains "xxxxx"
     And stderr contains "Skipped "
+    And stderr contains "Truncated "
+
+  Scenario: json-field selects which string is ranked
+    Given a file "rows.jsonl" with:
+      """
+      {"message":"ignored text","msg":"database connection refused"}
+      """
+    When I run nesso with arguments grep "database connection error" --json-field msg {dir}/rows.jsonl
+    Then the exit code is 0
+    And stdout contains "database connection refused"
+    And stdout does not contain "ignored text"
 
   Scenario: several files prefix each match with its path
     Given a file "app.log" with:
