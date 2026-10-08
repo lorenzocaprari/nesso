@@ -11,6 +11,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace nesso
@@ -31,17 +32,39 @@ enum class ErrorKind : uint8_t
     CorpusLoad
 };
 
+/// Layer failure carried by `Error`. `None` is the no-match outcome.
+enum class ErrorCause : uint8_t
+{
+    None,
+    FileOpen,
+    UnsupportedFormat,
+    VocabLoad,
+    Tokenization,
+    ModelLoad,
+    Inference,
+    InvalidInput,
+    MismatchedDimensions,
+    EmptyEmbedding,
+    CorruptFile
+};
+
 /// Failure of a Nesso operation.
 ///
-/// `code` is the underlying layer's error enum value. `path` and `skippedLines` are set when the failure concerns a
-/// file or happens after parsing.
+/// `cause` names the layer failure. `path` and `skippedLines` are set when the failure concerns a file or happens
+/// after parsing.
 struct Error
 {
     ErrorKind kind{};
-    int code = 0;
+    ErrorCause cause = ErrorCause::None;
     std::filesystem::path path;
     size_t skippedLines = 0;
 };
+
+/// Phrase for `cause`, used after the operation sentence.
+[[nodiscard]] std::string_view describe(ErrorCause cause);
+
+/// One stderr line for `error`. Empty when the outcome is no match.
+[[nodiscard]] std::string message(const Error &error);
 
 inline constexpr size_t DEFAULT_TEXT_TOP_K = 5;
 

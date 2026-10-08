@@ -92,7 +92,7 @@ Index the same files once, then search the corpus. `-o` and `-i` are required:
 ./build/Debug/nesso search "payment timeout" -i corpus.nesso -k 5
 ```
 
-Matches go to stdout. Skipped lines, the index summary, and errors go to stderr. Search exits 1 when nothing matches.
+Matches go to stdout. Skipped lines, the index summary, and errors go to stderr. `grep` exits 0 when it prints a match, 1 when nothing matches, and 2 when the command fails. `index` and `search` exit 1 on failure, including a search that finds nothing.
 
 ### File limits
 
