@@ -2,6 +2,20 @@
 #include <parser/log_chunker.hpp>
 
 #include <filesystem>
+#include <fstream>
+#include <string_view>
+
+namespace
+{
+
+void writeBytes(const std::filesystem::path &path, std::string_view bytes)
+{
+    std::ofstream output(path, std::ios::binary);
+    REQUIRE(output);
+    output.write(bytes.data(), static_cast<std::streamsize>(bytes.size()));
+}
+
+} // namespace
 
 #ifndef NESSO_TEST_FIXTURES
 #error "NESSO_TEST_FIXTURES must be defined"
@@ -106,4 +120,81 @@ TEST_CASE("LogChunker rejects unsupported extensions", "[LogChunker][parser][Uni
     const auto chunks = parser::LogChunker::fromFile("README.md");
     REQUIRE_FALSE(chunks.has_value());
     REQUIRE(chunks.error() == parser::ParseError::UnsupportedFormat);
+}
+
+TEST_CASE("LogChunker keeps a final line that has no trailing newline", "[LogChunker][parser][Unit]")
+{
+    const auto directory = std::filesystem::temp_directory_path() / "nesso-chunker-eof";
+    std::filesystem::remove_all(directory);
+    std::filesystem::create_directories(directory);
+
+    const auto logPath = directory / "tail.log";
+    writeBytes(logPath, "alpha\nbeta");
+    const auto logChunks = parser::LogChunker::fromLogFile(logPath);
+    REQUIRE(logChunks.has_value());
+    REQUIRE(logChunks->size() == 2);
+    REQUIRE((*logChunks)[1].text == "beta");
+    REQUIRE((*logChunks)[1].byteOffset == 6);
+
+    const auto jsonlPath = directory / "tail.jsonl";
+    writeBytes(jsonlPath, "{\"message\":\"only\"}");
+    const auto jsonlChunks = parser::LogChunker::fromJsonFile(jsonlPath);
+    REQUIRE(jsonlChunks.has_value());
+    REQUIRE(jsonlChunks->size() == 1);
+    REQUIRE((*jsonlChunks)[0].text == "only");
+
+    std::filesystem::remove_all(directory);
+}
+
+TEST_CASE("LogChunker skips blank jsonl lines and non-string messages", "[LogChunker][parser][Unit]")
+{
+    const auto directory = std::filesystem::temp_directory_path() / "nesso-chunker-skip";
+    std::filesystem::remove_all(directory);
+    std::filesystem::create_directories(directory);
+
+    const auto blank = directory / "blank.jsonl";
+    writeBytes(blank, "{\"message\":\"one\"}\n\n{\"message\":\"two\"}\n");
+
+    parser::ParseStats stats{};
+    const auto counted = parser::LogChunker::fromJsonFile(blank, &stats);
+    REQUIRE(counted.has_value());
+    REQUIRE(counted->size() == 2);
+    REQUIRE(stats.skippedLines == 1);
+
+    const auto uncounted = parser::LogChunker::fromFile(blank);
+    REQUIRE(uncounted.has_value());
+    REQUIRE(uncounted->size() == 2);
+
+    const auto numeric = directory / "numeric.jsonl";
+    writeBytes(numeric, "{\"message\":1}\n{\"message\":\"kept\"}\n");
+    parser::ParseStats numericStats{};
+    const auto numericChunks = parser::LogChunker::fromJsonFile(numeric, &numericStats);
+    REQUIRE(numericChunks.has_value());
+    REQUIRE(numericChunks->size() == 1);
+    REQUIRE((*numericChunks)[0].text == "kept");
+    REQUIRE(numericStats.skippedLines == 1);
+
+    std::filesystem::remove_all(directory);
+}
+
+TEST_CASE("LogChunker skips invalid documents when stats are not collected", "[LogChunker][parser][Unit]")
+{
+    const auto directory = std::filesystem::temp_directory_path() / "nesso-chunker-invalid";
+    std::filesystem::remove_all(directory);
+    std::filesystem::create_directories(directory);
+
+    const auto jsonl = directory / "bad.jsonl";
+    writeBytes(jsonl, "{not valid\n{\"message\":\"kept\"}\n");
+    const auto jsonlChunks = parser::LogChunker::fromFile(jsonl);
+    REQUIRE(jsonlChunks.has_value());
+    REQUIRE(jsonlChunks->size() == 1);
+    REQUIRE((*jsonlChunks)[0].text == "kept");
+
+    const auto json = directory / "bad.json";
+    writeBytes(json, "{not valid");
+    const auto jsonChunks = parser::LogChunker::fromFile(json);
+    REQUIRE(jsonChunks.has_value());
+    REQUIRE(jsonChunks->empty());
+
+    std::filesystem::remove_all(directory);
 }
