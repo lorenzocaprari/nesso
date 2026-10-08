@@ -55,7 +55,7 @@ TEST_CASE("Semantic grep ranks the expected log line", "[grep][integration]")
     const auto embedder = embed::OnnxEmbedder::create(modelDir);
     REQUIRE(embedder.has_value());
 
-    const auto chunks = parser::LogChunker::fromFile(logPath);
+    const auto chunks = parser::Chunker::fromFile(logPath);
     REQUIRE(chunks.has_value());
     REQUIRE(chunks->size() == 1);
 

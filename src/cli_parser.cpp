@@ -28,6 +28,7 @@ struct TextOptions
     std::string index;
     size_t topK = DEFAULT_TEXT_TOP_K;
     std::string modelDir;
+    std::string jsonField = "message";
 };
 
 static std::vector<std::filesystem::path> toPaths(const std::vector<std::string> &args)
@@ -54,18 +55,23 @@ std::expected<ParsedCommand, int> parseCommandLine(int argc, char **argv)
     app.require_subcommand(1);
 
     auto *grepCmd = app.add_subcommand("grep", "Semantic search over .log, .json, and .jsonl files. "
-                                               "Skips empty lines and log lines longer than 4096 characters. "
-                                               "JSON objects must have a string 'message' field. "
-                                               "Directories are not searched.");
+                                               "Skips empty lines. Log lines and JSON string values longer than 4096 "
+                                               "characters are truncated. JSON objects must have a string field "
+                                               "(default: message). Directories are not searched.");
     grepCmd->add_option("query", text.query, "Natural-language query")->required();
     grepCmd->add_option("files", text.files, TEXT_FILES_HELP)->required()->expected(1, -1)->check(CLI::ExistingFile);
+    grepCmd->add_option("--json-field", text.jsonField, "JSON object field to read (default: message)")
+        ->default_val("message");
     grepCmd->add_option("-k,--top-k", text.topK, "Maximum number of matches to return (default: 5)")->default_val(5);
     const auto *grepModelDir = grepCmd->add_option("--model-dir", text.modelDir, MODEL_DIR_HELP);
 
     auto *indexCmd = app.add_subcommand("index", "Embed .log, .json, and .jsonl files into a corpus file. "
-                                                 "Skips empty lines and log lines longer than 4096 characters.");
+                                                 "Skips empty lines. Log lines and JSON string values longer than "
+                                                 "4096 characters are truncated.");
     indexCmd->add_option("-o,--output", text.output, "Corpus file to write")->required();
     indexCmd->add_option("files", text.files, TEXT_FILES_HELP)->required()->expected(1, -1)->check(CLI::ExistingFile);
+    indexCmd->add_option("--json-field", text.jsonField, "JSON object field to read (default: message)")
+        ->default_val("message");
     const auto *indexModelDir = indexCmd->add_option("--model-dir", text.modelDir, MODEL_DIR_HELP);
 
     auto *searchCmd = app.add_subcommand("search", "Semantic search of a corpus file. Prints matches only.");
@@ -85,14 +91,16 @@ std::expected<ParsedCommand, int> parseCommandLine(int argc, char **argv)
 
     if (grepCmd->parsed())
     {
-        return ParsedCommand{.config = configFrom(*grepModelDir, text),
-                             .request =
-                                 GrepRequest{.query = text.query, .files = toPaths(text.files), .topK = text.topK}};
+        return ParsedCommand{
+            .config = configFrom(*grepModelDir, text),
+            .request = GrepRequest{
+                .query = text.query, .files = toPaths(text.files), .topK = text.topK, .jsonField = text.jsonField}};
     }
     if (indexCmd->parsed())
     {
-        return ParsedCommand{.config = configFrom(*indexModelDir, text),
-                             .request = IndexRequest{.files = toPaths(text.files), .output = text.output}};
+        return ParsedCommand{
+            .config = configFrom(*indexModelDir, text),
+            .request = IndexRequest{.files = toPaths(text.files), .output = text.output, .jsonField = text.jsonField}};
     }
     return ParsedCommand{.config = configFrom(*searchModelDir, text),
                          .request = SearchRequest{.query = text.query, .index = text.index, .topK = text.topK}};

@@ -50,14 +50,15 @@ enum class ErrorCause : uint8_t
 
 /// Failure of a Nesso operation.
 ///
-/// `cause` names the layer failure. `path` and `skippedLines` are set when the failure concerns a file or happens
-/// after parsing.
+/// `cause` names the layer failure. `path`, `skippedLines`, and `truncatedLines` are set when the failure concerns a
+/// file or happens after parsing.
 struct Error
 {
     ErrorKind kind{};
     ErrorCause cause = ErrorCause::None;
     std::filesystem::path path;
     size_t skippedLines = 0;
+    size_t truncatedLines = 0;
 };
 
 /// Phrase for `cause`, used after the operation sentence.
@@ -73,12 +74,14 @@ struct GrepRequest
     std::string query;
     std::vector<std::filesystem::path> files;
     size_t topK = DEFAULT_TEXT_TOP_K;
+    std::string jsonField = "message";
 };
 
 struct IndexRequest
 {
     std::vector<std::filesystem::path> files;
     std::filesystem::path output;
+    std::string jsonField = "message";
 };
 
 struct SearchRequest
@@ -100,6 +103,7 @@ struct TextResults
 {
     std::vector<TextMatch> matches;
     size_t skippedLines = 0;
+    size_t truncatedLines = 0;
     bool multipleSources = false;
 };
 
@@ -107,6 +111,7 @@ struct IndexSummary
 {
     size_t chunks = 0;
     size_t skippedLines = 0;
+    size_t truncatedLines = 0;
 };
 
 struct Config

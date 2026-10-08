@@ -33,7 +33,7 @@ int main(int argc, char *argv[])
         std::ofstream out(path, std::ios::binary | std::ios::trunc);
         out.write(bytes.data(), static_cast<std::streamsize>(bytes.size()));
         out.close();
-        (void)parser::LogChunker::fromFile(path);
+        (void)parser::Chunker::fromFile(path);
     }
 
     std::filesystem::remove_all(dir, ec);

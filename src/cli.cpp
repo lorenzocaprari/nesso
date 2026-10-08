@@ -10,17 +10,21 @@
 namespace nesso::cli
 {
 
-static void renderSkippedLines(size_t skippedLines)
+static void renderLineCounts(size_t skippedLines, size_t truncatedLines)
 {
     if (skippedLines > 0)
     {
         std::println(std::cerr, "Skipped {} lines.", skippedLines);
     }
+    if (truncatedLines > 0)
+    {
+        std::println(std::cerr, "Truncated {} lines.", truncatedLines);
+    }
 }
 
 static int render(const TextResults &results)
 {
-    renderSkippedLines(results.skippedLines);
+    renderLineCounts(results.skippedLines, results.truncatedLines);
     for (const TextMatch &match : results.matches)
     {
         if (results.multipleSources)
@@ -37,7 +41,7 @@ static int render(const TextResults &results)
 
 static int render(const IndexSummary &summary, const IndexRequest &request)
 {
-    renderSkippedLines(summary.skippedLines);
+    renderLineCounts(summary.skippedLines, summary.truncatedLines);
     std::println(std::cerr, "Indexed {} chunks into '{}'.", summary.chunks, request.output.string());
     return 0;
 }
@@ -47,10 +51,10 @@ static int renderError(const Error &error, int status)
     if (error.kind == ErrorKind::Parse)
     {
         std::println(std::cerr, "{}", message(error));
-        renderSkippedLines(error.skippedLines);
+        renderLineCounts(error.skippedLines, error.truncatedLines);
         return status;
     }
-    renderSkippedLines(error.skippedLines);
+    renderLineCounts(error.skippedLines, error.truncatedLines);
     if (error.kind != ErrorKind::EmptyInput && error.kind != ErrorKind::NoMatches)
     {
         std::println(std::cerr, "{}", message(error));

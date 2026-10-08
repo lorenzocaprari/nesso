@@ -135,22 +135,46 @@ struct ParsedFiles
     std::vector<parser::ParsedChunk> chunks;
     std::vector<std::string> sources;
     size_t skippedLines = 0;
+    size_t truncatedLines = 0;
 };
 
-static std::expected<ParsedFiles, Error> parseFiles(std::span<const std::filesystem::path> files)
+struct LineCounts
+{
+    size_t skipped = 0;
+    size_t truncated = 0;
+};
+
+static LineCounts lineCounts(const ParsedFiles &parsed)
+{
+    return {.skipped = parsed.skippedLines, .truncated = parsed.truncatedLines};
+}
+
+static LineCounts lineCounts(const parser::ParseStats &stats)
+{
+    return {.skipped = stats.skippedLines, .truncated = stats.truncatedLines};
+}
+
+static Error makeError(ErrorKind kind, ErrorCause cause, std::filesystem::path path, LineCounts counts)
+{
+    return Error{.kind = kind,
+                 .cause = cause,
+                 .path = std::move(path),
+                 .skippedLines = counts.skipped,
+                 .truncatedLines = counts.truncated};
+}
+
+static std::expected<ParsedFiles, Error> parseFiles(std::span<const std::filesystem::path> files,
+                                                    std::string_view jsonField)
 {
     const ScopedStage stage{"parse"};
     parser::ParseStats stats{};
     ParsedFiles parsed;
     for (const std::filesystem::path &path : files)
     {
-        auto fileChunks = parser::LogChunker::fromFile(path, MAX_LINE_LENGTH, &stats);
+        auto fileChunks = parser::Chunker::fromFile(path, MAX_LINE_LENGTH, &stats, jsonField);
         if (!fileChunks)
         {
-            return std::unexpected(Error{.kind = ErrorKind::Parse,
-                                         .cause = causeOf(fileChunks.error()),
-                                         .path = path,
-                                         .skippedLines = stats.skippedLines});
+            return std::unexpected(makeError(ErrorKind::Parse, causeOf(fileChunks.error()), path, lineCounts(stats)));
         }
         const std::string source = path.string();
         for (parser::ParsedChunk &chunk : *fileChunks)
@@ -160,17 +184,18 @@ static std::expected<ParsedFiles, Error> parseFiles(std::span<const std::filesys
         }
     }
     parsed.skippedLines = stats.skippedLines;
+    parsed.truncatedLines = stats.truncatedLines;
     return parsed;
 }
 
-template <typename E> static std::unexpected<Error> textFailure(ErrorKind kind, E cause, size_t skippedLines)
+template <typename E> static std::unexpected<Error> textFailure(ErrorKind kind, E cause, LineCounts counts)
 {
-    return std::unexpected(Error{.kind = kind, .cause = causeOf(cause), .path = {}, .skippedLines = skippedLines});
+    return std::unexpected(makeError(kind, causeOf(cause), {}, counts));
 }
 
-static std::unexpected<Error> noMatch(ErrorKind kind, size_t skippedLines)
+static std::unexpected<Error> noMatch(ErrorKind kind, LineCounts counts)
 {
-    return std::unexpected(Error{.kind = kind, .cause = ErrorCause::None, .path = {}, .skippedLines = skippedLines});
+    return std::unexpected(makeError(kind, ErrorCause::None, {}, counts));
 }
 
 static std::expected<std::vector<core::CorpusChunk>, Error>
@@ -192,10 +217,7 @@ embedFiles(const ParsedFiles &parsed, const embed::OnnxEmbedder &embedder, std::
     const auto embeddings = embedder.embedBatch(texts);
     if (!embeddings)
     {
-        return std::unexpected(Error{.kind = ErrorKind::Embed,
-                                     .cause = causeOf(embeddings.error()),
-                                     .path = {},
-                                     .skippedLines = parsed.skippedLines});
+        return std::unexpected(makeError(ErrorKind::Embed, causeOf(embeddings.error()), {}, lineCounts(parsed)));
     }
 
     size_t dims = 0;
@@ -204,7 +226,7 @@ embedFiles(const ParsedFiles &parsed, const embed::OnnxEmbedder &embedder, std::
         dims = embeddings->front().size();
         if (dims == 0)
         {
-            return textFailure(ErrorKind::Embed, core::EngineError::DatabaseNotInitialized, parsed.skippedLines);
+            return textFailure(ErrorKind::Embed, core::EngineError::DatabaseNotInitialized, lineCounts(parsed));
         }
         matrix->reserve(embeddings->size() * dims);
     }
@@ -223,7 +245,7 @@ embedFiles(const ParsedFiles &parsed, const embed::OnnxEmbedder &embedder, std::
             const std::vector<float> &embedding = (*embeddings)[index];
             if (embedding.size() != dims)
             {
-                return textFailure(ErrorKind::Embed, core::EngineError::MismatchedDimensions, parsed.skippedLines);
+                return textFailure(ErrorKind::Embed, core::EngineError::MismatchedDimensions, lineCounts(parsed));
             }
             matrix->insert(matrix->end(), embedding.begin(), embedding.end());
         }
@@ -247,13 +269,13 @@ static bool multipleSources(std::span<const core::CorpusChunk> chunks)
                                [&first](const core::CorpusChunk &chunk) { return chunk.chunk.source != first; });
 }
 
-static std::expected<std::vector<float>, Error> packMatrix(std::span<const core::CorpusChunk> chunks,
-                                                           size_t skippedLines, ErrorKind failure)
+static std::expected<std::vector<float>, Error> packMatrix(std::span<const core::CorpusChunk> chunks, LineCounts counts,
+                                                           ErrorKind failure)
 {
     const size_t dims = chunks.front().embedding.size();
     if (dims == 0)
     {
-        return textFailure(failure, core::EngineError::DatabaseNotInitialized, skippedLines);
+        return textFailure(failure, core::EngineError::DatabaseNotInitialized, counts);
     }
 
     std::vector<float> matrix;
@@ -262,7 +284,7 @@ static std::expected<std::vector<float>, Error> packMatrix(std::span<const core:
     {
         if (chunk.embedding.size() != dims)
         {
-            return textFailure(failure, core::EngineError::MismatchedDimensions, skippedLines);
+            return textFailure(failure, core::EngineError::MismatchedDimensions, counts);
         }
         matrix.insert(matrix.end(), chunk.embedding.begin(), chunk.embedding.end());
     }
@@ -271,7 +293,7 @@ static std::expected<std::vector<float>, Error> packMatrix(std::span<const core:
 
 static std::expected<TextResults, Error> rankChunks(std::span<const core::CorpusChunk> chunks,
                                                     const embed::OnnxEmbedder &embedder, std::string_view query,
-                                                    size_t topK, size_t skippedLines, ErrorKind packFailure,
+                                                    size_t topK, LineCounts counts, ErrorKind packFailure,
                                                     std::span<const float> packed)
 {
     const ScopedStage stage{"rank"};
@@ -280,7 +302,7 @@ static std::expected<TextResults, Error> rankChunks(std::span<const core::Corpus
     size_t dims = 0;
     if (matrix.empty())
     {
-        auto built = packMatrix(chunks, skippedLines, packFailure);
+        auto built = packMatrix(chunks, counts, packFailure);
         if (!built)
         {
             return std::unexpected(built.error());
@@ -297,20 +319,23 @@ static std::expected<TextResults, Error> rankChunks(std::span<const core::Corpus
     const auto queryEmbedding = embedder.embed(query);
     if (!queryEmbedding)
     {
-        return textFailure(ErrorKind::QueryEmbed, queryEmbedding.error(), skippedLines);
+        return textFailure(ErrorKind::QueryEmbed, queryEmbedding.error(), counts);
     }
 
     const auto ranked = core::topK(*queryEmbedding, matrix, dims, topK);
     if (!ranked)
     {
-        return textFailure(ErrorKind::Search, ranked.error(), skippedLines);
+        return textFailure(ErrorKind::Search, ranked.error(), counts);
     }
     if (ranked->empty())
     {
-        return noMatch(ErrorKind::NoMatches, skippedLines);
+        return noMatch(ErrorKind::NoMatches, counts);
     }
 
-    TextResults results{.matches = {}, .skippedLines = skippedLines, .multipleSources = multipleSources(chunks)};
+    TextResults results{.matches = {},
+                        .skippedLines = counts.skipped,
+                        .truncatedLines = counts.truncated,
+                        .multipleSources = multipleSources(chunks)};
     results.matches.reserve(ranked->size());
     for (const core::Hit &hit : *ranked)
     {
@@ -366,7 +391,7 @@ std::expected<TextResults, Error> Nesso::grep(const GrepRequest &request) const
         return std::unexpected(embedder.error());
     }
 
-    const auto parsed = parseFiles(request.files);
+    const auto parsed = parseFiles(request.files, request.jsonField);
     if (!parsed)
     {
         return std::unexpected(parsed.error());
@@ -380,10 +405,10 @@ std::expected<TextResults, Error> Nesso::grep(const GrepRequest &request) const
     }
     if (chunks->empty())
     {
-        return noMatch(ErrorKind::EmptyInput, parsed->skippedLines);
+        return noMatch(ErrorKind::EmptyInput, lineCounts(*parsed));
     }
 
-    return rankChunks(*chunks, **embedder, request.query, request.topK, parsed->skippedLines, ErrorKind::IndexBuild,
+    return rankChunks(*chunks, **embedder, request.query, request.topK, lineCounts(*parsed), ErrorKind::IndexBuild,
                       matrix);
 }
 
@@ -396,7 +421,7 @@ std::expected<IndexSummary, Error> Nesso::index(const IndexRequest &request) con
         return std::unexpected(embedder.error());
     }
 
-    const auto parsed = parseFiles(request.files);
+    const auto parsed = parseFiles(request.files, request.jsonField);
     if (!parsed)
     {
         return std::unexpected(parsed.error());
@@ -415,12 +440,11 @@ std::expected<IndexSummary, Error> Nesso::index(const IndexRequest &request) con
     }();
     if (!written)
     {
-        return std::unexpected(Error{.kind = ErrorKind::CorpusWrite,
-                                     .cause = causeOf(written.error()),
-                                     .path = request.output,
-                                     .skippedLines = parsed->skippedLines});
+        return std::unexpected(
+            makeError(ErrorKind::CorpusWrite, causeOf(written.error()), request.output, lineCounts(*parsed)));
     }
-    return IndexSummary{.chunks = chunks->size(), .skippedLines = parsed->skippedLines};
+    return IndexSummary{
+        .chunks = chunks->size(), .skippedLines = parsed->skippedLines, .truncatedLines = parsed->truncatedLines};
 }
 
 std::expected<TextResults, Error> Nesso::search(const SearchRequest &request) const
@@ -438,7 +462,7 @@ std::expected<TextResults, Error> Nesso::search(const SearchRequest &request) co
     }
     if (chunks->chunks().empty() || request.topK == 0)
     {
-        return noMatch(ErrorKind::NoMatches, 0);
+        return noMatch(ErrorKind::NoMatches, {});
     }
 
     const auto embedder = impl_->embedder();
@@ -447,7 +471,7 @@ std::expected<TextResults, Error> Nesso::search(const SearchRequest &request) co
         return std::unexpected(embedder.error());
     }
 
-    return rankChunks(chunks->chunks(), **embedder, request.query, request.topK, 0, ErrorKind::CorpusLoad,
+    return rankChunks(chunks->chunks(), **embedder, request.query, request.topK, {}, ErrorKind::CorpusLoad,
                       chunks->matrix());
 }
 
