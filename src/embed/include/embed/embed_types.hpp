@@ -6,6 +6,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <string_view>
 
 namespace embed
 {
@@ -21,6 +22,7 @@ enum class EmbedError : uint8_t
 
 inline constexpr size_t DEFAULT_MAX_SEQUENCE_LENGTH = 256;
 inline constexpr size_t MINILM_EMBEDDING_DIMENSIONS = 384;
+inline constexpr std::string_view MINILM_MODEL_ID = "sentence-transformers/all-MiniLM-L6-v2";
 
 } // namespace embed
 

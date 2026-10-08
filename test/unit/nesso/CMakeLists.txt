@@ -4,7 +4,7 @@ target_link_libraries(model_paths_test PRIVATE nesso_lib Catch2::Catch2WithMain)
 
 add_executable(nesso_facade_test nesso_facade_test.cpp)
 add_test(NAME nesso_facade_test COMMAND nesso_facade_test)
-target_link_libraries(nesso_facade_test PRIVATE nesso_lib
+target_link_libraries(nesso_facade_test PRIVATE nesso_lib core
                                                 Catch2::Catch2WithMain)
 target_compile_definitions(
   nesso_facade_test PRIVATE NESSO_TEST_FIXTURES="${NESSO_TEST_FIXTURES}"

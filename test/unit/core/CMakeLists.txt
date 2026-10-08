@@ -9,6 +9,12 @@ target_include_directories(distance_test PRIVATE "${CMAKE_SOURCE_DIR}/src/core")
 add_executable(corpus_index_test corpus_index_test.cpp)
 add_test(NAME corpus_index_test COMMAND corpus_index_test)
 target_link_libraries(corpus_index_test PRIVATE core Catch2::Catch2WithMain)
+target_compile_definitions(
+  corpus_index_test
+  PRIVATE
+    "NESSO_ONE_CHUNK_FIXTURE=\"${CMAKE_SOURCE_DIR}/test/functional/features/testdata/one-chunk.nesso\""
+    "NESSO_MISMATCH_FIXTURE=\"${CMAKE_SOURCE_DIR}/test/functional/features/testdata/mismatch.nesso\""
+)
 
 add_executable(top_k_test top_k_test.cpp)
 add_test(NAME top_k_test COMMAND top_k_test)

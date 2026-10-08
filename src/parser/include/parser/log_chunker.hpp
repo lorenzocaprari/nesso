@@ -23,6 +23,7 @@ struct ParsedChunk
 {
     std::string text;
     uint64_t lineNumber = 0;
+    uint64_t byteOffset = 0;
 };
 
 struct ParseStats

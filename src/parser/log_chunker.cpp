@@ -40,26 +40,26 @@ std::expected<std::vector<ParsedChunk>, ParseError> LogChunker::fromLogFile(cons
     std::vector<ParsedChunk> chunks;
     std::string line;
     uint64_t lineNumber = 0;
+    uint64_t byteOffset = 0;
     while (std::getline(input, line))
     {
         ++lineNumber;
-        if (line.empty())
+        if (line.empty() || line.size() > maxLineLength)
         {
             if (stats != nullptr)
             {
                 ++stats->skippedLines;
             }
-            continue;
         }
-        if (line.size() > maxLineLength)
+        else
         {
-            if (stats != nullptr)
-            {
-                ++stats->skippedLines;
-            }
-            continue;
+            chunks.push_back({.text = line, .lineNumber = lineNumber, .byteOffset = byteOffset});
         }
-        chunks.push_back({.text = line, .lineNumber = lineNumber});
+        byteOffset += line.size();
+        if (!input.eof())
+        {
+            ++byteOffset;
+        }
     }
     return chunks;
 }
@@ -77,7 +77,7 @@ std::expected<std::vector<ParsedChunk>, ParseError> LogChunker::fromJsonFile(con
     std::string line;
     uint64_t lineNumber = 0;
 
-    const auto appendMessage = [&](const nlohmann::json &document, uint64_t sourceLine)
+    const auto appendMessage = [&](const nlohmann::json &document, uint64_t sourceLine, uint64_t byteOffset)
     {
         if (!document.contains("message") || !document.at("message").is_string())
         {
@@ -87,11 +87,13 @@ std::expected<std::vector<ParsedChunk>, ParseError> LogChunker::fromJsonFile(con
             }
             return;
         }
-        chunks.push_back({.text = document.at("message").get<std::string>(), .lineNumber = sourceLine});
+        chunks.push_back(
+            {.text = document.at("message").get<std::string>(), .lineNumber = sourceLine, .byteOffset = byteOffset});
     };
 
     if (hasExtension(path, ".jsonl"))
     {
+        uint64_t byteOffset = 0;
         while (std::getline(input, line))
         {
             ++lineNumber;
@@ -101,18 +103,25 @@ std::expected<std::vector<ParsedChunk>, ParseError> LogChunker::fromJsonFile(con
                 {
                     ++stats->skippedLines;
                 }
-                continue;
             }
-            try
+            else
             {
-                appendMessage(nlohmann::json::parse(line), lineNumber);
-            }
-            catch (const nlohmann::json::exception &)
-            {
-                if (stats != nullptr)
+                try
                 {
-                    ++stats->skippedLines;
+                    appendMessage(nlohmann::json::parse(line), lineNumber, byteOffset);
                 }
+                catch (const nlohmann::json::exception &)
+                {
+                    if (stats != nullptr)
+                    {
+                        ++stats->skippedLines;
+                    }
+                }
+            }
+            byteOffset += line.size();
+            if (!input.eof())
+            {
+                ++byteOffset;
             }
         }
         return chunks;
@@ -127,11 +136,11 @@ std::expected<std::vector<ParsedChunk>, ParseError> LogChunker::fromJsonFile(con
             for (const auto &entry : document)
             {
                 ++index;
-                appendMessage(entry, index);
+                appendMessage(entry, index, 0);
             }
             return chunks;
         }
-        appendMessage(document, 1);
+        appendMessage(document, 1, 0);
         return chunks;
     }
     catch (const nlohmann::json::exception &)

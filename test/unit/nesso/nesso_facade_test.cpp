@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 #include <catch2/catch_all.hpp>
+#include <core/corpus_index.hpp>
 #include <nesso.hpp>
 
 #include <array>
@@ -49,16 +50,7 @@ void writeBytes(const std::filesystem::path &path, const void *data, size_t size
     REQUIRE(output);
 }
 
-void writeEmptyCorpus(const std::filesystem::path &path)
-{
-    std::array<unsigned char, 24> header{};
-    header[0] = 'N';
-    header[1] = 'E';
-    header[2] = 'S';
-    header[3] = 'C';
-    header[4] = 1;
-    writeBytes(path, header.data(), header.size());
-}
+void writeEmptyCorpus(const std::filesystem::path &path) { REQUIRE(core::writeCorpusFile(path, {}, "model")); }
 
 nesso::Nesso withMissingModel(const std::filesystem::path &root)
 {

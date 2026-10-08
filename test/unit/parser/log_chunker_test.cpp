@@ -16,7 +16,9 @@ TEST_CASE("LogChunker parses .log files line-by-line", "[LogChunker][parser][Uni
     REQUIRE(chunks->size() == 2);
     REQUIRE((*chunks)[0].text == "alpha line");
     REQUIRE((*chunks)[0].lineNumber == 1);
+    REQUIRE((*chunks)[0].byteOffset == 0);
     REQUIRE((*chunks)[1].text == "gamma line");
+    REQUIRE((*chunks)[1].byteOffset == 209);
     REQUIRE(stats.skippedLines >= 2);
 }
 
@@ -28,7 +30,9 @@ TEST_CASE("LogChunker extracts message fields from jsonl", "[LogChunker][parser]
     REQUIRE(chunks.has_value());
     REQUIRE(chunks->size() == 2);
     REQUIRE((*chunks)[0].text == "payment timeout after 30s");
+    REQUIRE((*chunks)[0].byteOffset == 0);
     REQUIRE((*chunks)[1].text == "database connection refused");
+    REQUIRE((*chunks)[1].byteOffset == 66);
     REQUIRE(stats.skippedLines == 1);
 }
 

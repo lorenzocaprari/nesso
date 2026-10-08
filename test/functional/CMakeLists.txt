@@ -28,5 +28,5 @@ set_tests_properties(
     LABELS
     functional
     ENVIRONMENT
-    "NESSO_BINARY=$<TARGET_FILE:nesso>;NESSO_MODEL_DIR=${CMAKE_SOURCE_DIR}/models"
+    "NESSO_BINARY=$<TARGET_FILE:nesso>;NESSO_MODEL_DIR=${CMAKE_SOURCE_DIR}/models;NESSO_FIXTURE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/features/testdata"
 )

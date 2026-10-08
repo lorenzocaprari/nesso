@@ -3,14 +3,12 @@
 
 #include "trace.hpp"
 
-#include <array>
+#include <platform/file.hpp>
+
 #include <cstdint>
 #include <cstdlib>
-#include <cstring>
 #include <iostream>
-#include <new>
 #include <string>
-#include <sys/resource.h>
 #include <vector>
 
 namespace nesso
@@ -46,24 +44,6 @@ static bool tracingEnabled()
     return value != nullptr && value[0] == '1' && value[1] == '\0';
 }
 
-// glibc stores ru_maxrss in an anonymous union immediately after the two timevals.
-// Copy that object representation so the reported peak stays getrusage's value
-// (kilobytes on Linux) without naming the union member.
-static std::int64_t peakRssBytes()
-{
-    static_assert(sizeof(std::int64_t) == 8);
-    static_assert((sizeof(timeval) * 2) + sizeof(std::int64_t) <= sizeof(rusage));
-    std::array<std::byte, sizeof(rusage)> raw{};
-    auto *usage = new (raw.data()) rusage;
-    if (getrusage(RUSAGE_SELF, usage) != 0)
-    {
-        return 0;
-    }
-    std::int64_t peakKb = 0;
-    std::memcpy(&peakKb, raw.data() + (sizeof(timeval) * 2), sizeof(peakKb));
-    return peakKb * 1024;
-}
-
 static void emit(TraceState &current)
 {
     if (current.stages.empty())
@@ -71,7 +51,7 @@ static void emit(TraceState &current)
         return;
     }
 
-    const std::int64_t rssBytes = peakRssBytes();
+    const std::int64_t rssBytes = platform::peakResidentBytes();
 
     std::cerr << R"({"peakRssBytes":)" << rssBytes << R"(,"stages":[)";
     for (size_t index = 0; index < current.stages.size(); ++index)
