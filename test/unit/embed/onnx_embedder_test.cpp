@@ -94,7 +94,9 @@ TEST_CASE("OnnxEmbedder embedBatch matches per-string embed", "[OnnxEmbedder][em
         {
             cosine += (*batch)[i][dim] * (*single)[dim];
         }
-        REQUIRE(cosine > 0.99F);
+        // Dynamic quantization scales across the padded batch, so a batched
+        // embed and a single embed of the same text differ by about 0.0125.
+        REQUIRE(cosine > 0.98F);
     }
 }
 
@@ -138,6 +140,23 @@ TEST_CASE("OnnxEmbedder mixed-length batch matches a single embed", "[OnnxEmbedd
     const auto longAlone = (*embedder)->embed(longText);
     REQUIRE(shortAlone.has_value());
     REQUIRE(longAlone.has_value());
-    REQUIRE(cosineSimilarity((*batch)[0], *shortAlone) > 0.99F);
-    REQUIRE(cosineSimilarity((*batch)[1], *longAlone) > 0.99F);
+    REQUIRE(cosineSimilarity((*batch)[0], *shortAlone) > 0.98F);
+    REQUIRE(cosineSimilarity((*batch)[1], *longAlone) > 0.98F);
+}
+
+TEST_CASE("OnnxEmbedder repeats an embedding", "[OnnxEmbedder][embed][integration]")
+{
+    const std::filesystem::path modelDir = modelDirOrSkip();
+
+    const auto embedder = embed::OnnxEmbedder::create(modelDir);
+    REQUIRE(embedder.has_value());
+
+    const auto first = (*embedder)->embed("database connection refused");
+    REQUIRE(first.has_value());
+    for (int run = 0; run < 20; ++run)
+    {
+        const auto again = (*embedder)->embed("database connection refused");
+        REQUIRE(again.has_value());
+        REQUIRE(cosineSimilarity(*first, *again) > 0.9999F);
+    }
 }

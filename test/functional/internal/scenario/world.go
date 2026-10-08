@@ -9,7 +9,8 @@ import "github.com/lorenzocaprari/nesso/test/functional/internal/runner"
 // World is the per-scenario state: its directory and the last nesso run, with
 // output already normalized.
 type World struct {
-	Dir    string
-	Ran    bool
-	Result runner.Result
+	Dir         string
+	Ran         bool
+	CommandLine string
+	Result      runner.Result
 }

@@ -75,9 +75,18 @@ struct ModelIo
 static Ort::SessionOptions makeSessionOptions()
 {
     Ort::SessionOptions options;
+    // Inter-op parallelism finishes graph nodes in an arbitrary order, so two
+    // runs of the same input can rank differently. One intra-op pool of fixed
+    // size keeps the GEMM reduction order stable.
+    options.SetExecutionMode(ORT_SEQUENTIAL);
+    options.SetInterOpNumThreads(1);
     const unsigned int threads = std::thread::hardware_concurrency();
     options.SetIntraOpNumThreads(threads == 0 ? 1 : static_cast<int>(threads));
     options.SetGraphOptimizationLevel(ORT_ENABLE_ALL);
+    // ORT 1.18 U8S8 quantized GEMM overflows on AVX2 and on AVX-512 without
+    // VNNI. The garbage depends on how the GEMM is tiled, which is why the
+    // same query scored 0.05 under CPU load on the Xeon. U8U8 does not overflow.
+    options.AddConfigEntry("session.x64quantprecision", "1");
     return options;
 }
 
