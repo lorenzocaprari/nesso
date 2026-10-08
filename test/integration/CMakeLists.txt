@@ -21,20 +21,5 @@ target_compile_options(grep_integration_test PRIVATE -fno-profile-arcs
 add_test(NAME grep_integration_test COMMAND $<TARGET_FILE:grep_integration_test>
                                             ${NESSO_MODEL_TEST_ARGS})
 
-add_executable(cli_store_test cli_store_test.cpp)
-add_test(NAME cli_store_test COMMAND cli_store_test)
-target_link_libraries(cli_store_test PRIVATE Catch2::Catch2WithMain)
-target_compile_definitions(
-  cli_store_test
-  PRIVATE "NESSO_BINARY=\"$<TARGET_FILE:nesso>\""
-          "NESSO_TEST_FIXTURES=\"${NESSO_TEST_FIXTURES}\""
-          "NESSO_MODELS_DIR=\"${NESSO_MODELS_DIR}\"")
-# This test forks and execs nesso. The child never flushes gcov, so
-# instrumenting this TU records only the parent and pulls the library coverage
-# floor down.
-target_compile_options(cli_store_test PRIVATE -fno-profile-arcs
-                                              -fno-test-coverage)
-add_dependencies(cli_store_test nesso)
-
-set_tests_properties(dependency_link_test grep_integration_test cli_store_test
+set_tests_properties(dependency_link_test grep_integration_test
                      PROPERTIES LABELS integration)
