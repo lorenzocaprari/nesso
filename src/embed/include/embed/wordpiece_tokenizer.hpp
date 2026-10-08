@@ -36,7 +36,6 @@ class WordPieceTokenizer
     WordPieceTokenizer(std::unordered_map<std::string, int64_t> vocab, int64_t clsId, int64_t sepId, int64_t unkId,
                        size_t maxSequenceLength);
 
-    [[nodiscard]] std::vector<std::string> basicTokenize(std::string_view text) const;
     [[nodiscard]] std::vector<std::string> wordPieceTokenize(std::string_view token) const;
 
     std::unordered_map<std::string, int64_t> vocab_;
