@@ -36,6 +36,10 @@ func InitializeScenario(sc *godog.ScenarioContext) {
 	})
 
 	sc.Step(`^a file "([^"]+)" with:$`, b.writeFile)
+	sc.Step(`^an empty file "([^"]+)"$`, b.writeEmptyFile)
+	sc.Step(`^a directory "([^"]+)"$`, b.makeDirectory)
+	sc.Step(`^a line of (\d+) "(.)" in "([^"]+)"$`, b.appendRepeatedLine)
+	sc.Step(`^a file "([^"]+)" with hex:$`, b.writeHexFile)
 	sc.Step(`^I run nesso with arguments (.+)$`, b.runNesso)
 	sc.Step(`^I run nesso without arguments$`, func() error { return b.runNesso("") })
 	sc.Step(`^the exit code is (\d+)$`, b.exitCodeIs)
