@@ -33,11 +33,12 @@ Feature: command errors
       database connection refused
       """
     When I run nesso with arguments grep "database connection error" {dir}/app.log --model-dir {dir}/missing
-    Then the exit code is 1
-    And stderr contains "Failed to load embedder"
+    Then the exit code is 2
+    And stderr contains "failed to load the embedder"
+    And stderr contains "could not load the model"
     When I run nesso with arguments index --model-dir {dir}/missing -o {dir}/corpus.nesso {dir}/app.log
     Then the exit code is 1
-    And stderr contains "Failed to load embedder"
+    And stderr contains "failed to load the embedder"
 
   Scenario: an unsupported extension is rejected
     Given a file "notes.txt" with:
@@ -45,11 +46,12 @@ Feature: command errors
       not a log
       """
     When I run nesso with arguments grep "database connection error" {dir}/notes.txt
-    Then the exit code is 1
-    And stderr contains "Failed to parse"
+    Then the exit code is 2
+    And stderr contains "failed to parse"
+    And stderr contains "unsupported format"
     When I run nesso with arguments index -o {dir}/corpus.nesso {dir}/notes.txt
     Then the exit code is 1
-    And stderr contains "Failed to parse"
+    And stderr contains "failed to parse"
 
   Scenario: grep rejects an empty log
     Given an empty file "empty.log"
@@ -76,7 +78,8 @@ Feature: command errors
       """
     When I run nesso with arguments search "database connection error" -i {dir}/bad.nesso
     Then the exit code is 1
-    And stderr contains "Failed to read corpus"
+    And stderr contains "failed to read the corpus"
+    And stderr contains "the file is corrupt"
 
   Scenario: the corpus cannot be written onto a directory
     Given a file "app.log" with:
@@ -86,9 +89,11 @@ Feature: command errors
     And a directory "outdir"
     When I run nesso with arguments index -o {dir}/outdir {dir}/app.log
     Then the exit code is 1
-    And stderr contains "Failed to write corpus"
+    And stderr contains "failed to write the corpus"
+    And stderr contains "could not open the file"
 
   Scenario: a corpus with the wrong dimensions cannot be searched
     When I run nesso with arguments search "database connection error" -i {fixture}/mismatch.nesso
     Then the exit code is 1
-    And stderr contains "Semantic search failed"
+    And stderr contains "failed to search"
+    And stderr contains "the embedding width does not match"

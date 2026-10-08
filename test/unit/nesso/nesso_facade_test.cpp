@@ -74,6 +74,7 @@ TEST_CASE("text operations report model and corpus failures", "[nesso][text]")
     const auto grepped = app.grep({.query = "database", .files = {log}});
     REQUIRE_FALSE(grepped.has_value());
     REQUIRE(grepped.error().kind == nesso::ErrorKind::EmbedderLoad);
+    REQUIRE(grepped.error().cause == nesso::ErrorCause::ModelLoad);
     REQUIRE(grepped.error().path == dir.path() / "no-models");
 
     const auto indexed = app.index({.files = {log}, .output = dir.path() / "out.nesso"});
@@ -83,11 +84,13 @@ TEST_CASE("text operations report model and corpus failures", "[nesso][text]")
     const auto unreadable = app.search({.query = "database", .index = corrupt});
     REQUIRE_FALSE(unreadable.has_value());
     REQUIRE(unreadable.error().kind == nesso::ErrorKind::CorpusRead);
+    REQUIRE(unreadable.error().cause == nesso::ErrorCause::CorruptFile);
     REQUIRE(unreadable.error().path == corrupt);
 
     const auto nothing = app.search({.query = "database", .index = empty});
     REQUIRE_FALSE(nothing.has_value());
     REQUIRE(nothing.error().kind == nesso::ErrorKind::NoMatches);
+    REQUIRE(nothing.error().cause == nesso::ErrorCause::None);
 }
 
 TEST_CASE("grep, index, and search run the text stages", "[nesso][text]")
@@ -130,4 +133,5 @@ TEST_CASE("Nesso is movable", "[nesso]")
     const auto missing = first.search({.query = "database", .index = dir.path() / "missing.nesso"});
     REQUIRE_FALSE(missing.has_value());
     REQUIRE(missing.error().kind == nesso::ErrorKind::CorpusRead);
+    REQUIRE(missing.error().cause == nesso::ErrorCause::FileOpen);
 }

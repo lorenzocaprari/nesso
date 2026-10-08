@@ -42,60 +42,45 @@ static int render(const IndexSummary &summary, const IndexRequest &request)
     return 0;
 }
 
-static int renderError(const Error &error)
+static int renderError(const Error &error, int status)
 {
     if (error.kind == ErrorKind::Parse)
     {
-        std::println(std::cerr, "Error: Failed to parse '{}'. Code: {}", error.path.string(), error.code);
+        std::println(std::cerr, "{}", message(error));
         renderSkippedLines(error.skippedLines);
+        return status;
+    }
+    renderSkippedLines(error.skippedLines);
+    if (error.kind != ErrorKind::EmptyInput && error.kind != ErrorKind::NoMatches)
+    {
+        std::println(std::cerr, "{}", message(error));
+    }
+    return status;
+}
+
+static int grepStatus(const Error &error)
+{
+    if (error.kind == ErrorKind::EmptyInput || error.kind == ErrorKind::NoMatches)
+    {
         return 1;
     }
-
-    renderSkippedLines(error.skippedLines);
-    switch (error.kind)
-    {
-    case ErrorKind::EmbedderLoad:
-        std::println(std::cerr, "Error: Failed to load embedder. Code: {}", error.code);
-        break;
-    case ErrorKind::Embed:
-        std::println(std::cerr, "Error: Failed to embed log chunks. Code: {}", error.code);
-        break;
-    case ErrorKind::QueryEmbed:
-        std::println(std::cerr, "Error: Failed to embed query. Code: {}", error.code);
-        break;
-    case ErrorKind::IndexBuild:
-        std::println(std::cerr, "Error: Failed to build index. Code: {}", error.code);
-        break;
-    case ErrorKind::Search:
-        std::println(std::cerr, "Error: Semantic search failed. Code: {}", error.code);
-        break;
-    case ErrorKind::CorpusRead:
-        std::println(std::cerr, "Error: Failed to read corpus. Code: {}", error.code);
-        break;
-    case ErrorKind::CorpusWrite:
-        std::println(std::cerr, "Error: Failed to write corpus. Code: {}", error.code);
-        break;
-    case ErrorKind::CorpusLoad:
-        std::println(std::cerr, "Error: Failed to load corpus. Code: {}", error.code);
-        break;
-    case ErrorKind::Parse:
-    case ErrorKind::EmptyInput:
-    case ErrorKind::NoMatches:
-        break;
-    }
-    return 1;
+    return 2;
 }
 
 template <typename Result, typename... Context>
-static int report(const std::expected<Result, Error> &outcome, const Context &...context)
+static int report(const std::expected<Result, Error> &outcome, int failureStatus, const Context &...context)
 {
-    return outcome ? render(*outcome, context...) : renderError(outcome.error());
+    return outcome ? render(*outcome, context...) : renderError(outcome.error(), failureStatus);
 }
 
-int execute(const Nesso &nesso, const GrepRequest &request) { return report(nesso.grep(request)); }
+int execute(const Nesso &nesso, const GrepRequest &request)
+{
+    const auto outcome = nesso.grep(request);
+    return report(outcome, outcome ? 0 : grepStatus(outcome.error()));
+}
 
-int execute(const Nesso &nesso, const IndexRequest &request) { return report(nesso.index(request), request); }
+int execute(const Nesso &nesso, const IndexRequest &request) { return report(nesso.index(request), 1, request); }
 
-int execute(const Nesso &nesso, const SearchRequest &request) { return report(nesso.search(request)); }
+int execute(const Nesso &nesso, const SearchRequest &request) { return report(nesso.search(request), 1); }
 
 } // namespace nesso::cli

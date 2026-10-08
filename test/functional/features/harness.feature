@@ -17,6 +17,6 @@ Feature: Harness smoke test
       disk full on /var
       """
     When I run nesso with arguments grep disk {dir}/logs/app.log --model-dir {dir}/no-model
-    Then the exit code is 1
-    And stderr contains "Failed to load embedder"
+    Then the exit code is 2
+    And stderr contains "failed to load the embedder"
     And stderr does not contain "does not exist"

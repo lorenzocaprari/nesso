@@ -10,11 +10,16 @@ target_compile_definitions(
   nesso_facade_test PRIVATE NESSO_TEST_FIXTURES="${NESSO_TEST_FIXTURES}"
                             ${NESSO_MODEL_TEST_DEFS})
 
+add_executable(error_test error_test.cpp)
+add_test(NAME error_test COMMAND error_test)
+target_link_libraries(error_test PRIVATE nesso_lib parser embed core
+                                         Catch2::Catch2WithMain)
+
 add_executable(trace_test trace_test.cpp)
 add_test(NAME trace_test COMMAND trace_test)
 target_link_libraries(trace_test PRIVATE nesso_lib Catch2::Catch2WithMain)
 # The harness only redirects stderr. trace.cpp stays in the coverage floor.
 target_compile_options(trace_test PRIVATE -fno-profile-arcs -fno-test-coverage)
 
-set_tests_properties(model_paths_test nesso_facade_test trace_test
+set_tests_properties(model_paths_test nesso_facade_test error_test trace_test
                      PROPERTIES LABELS unit)
