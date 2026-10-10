@@ -37,6 +37,7 @@ TEST_CASE("Chunker parses .log files line-by-line", "[Chunker][parser][Unit]")
     REQUIRE((*chunks)[2].text == "gamma line");
     REQUIRE((*chunks)[2].byteOffset == 209);
     REQUIRE(stats.skippedLines == 2);
+    REQUIRE(stats.emptyLines == 2);
     REQUIRE(stats.truncatedLines == 1);
 }
 
@@ -52,6 +53,7 @@ TEST_CASE("Chunker extracts message fields from jsonl", "[Chunker][parser][Unit]
     REQUIRE((*chunks)[1].text == "database connection refused");
     REQUIRE((*chunks)[1].byteOffset == 66);
     REQUIRE(stats.skippedLines == 1);
+    REQUIRE(stats.missingFieldLines == 1);
 }
 
 TEST_CASE("Chunker routes fromFile by extension", "[Chunker][parser][Unit]")
@@ -97,6 +99,7 @@ TEST_CASE("Chunker skips malformed jsonl lines", "[Chunker][parser][Unit]")
     REQUIRE((*chunks)[0].text == "valid line");
     REQUIRE((*chunks)[1].text == "after bad line");
     REQUIRE(stats.skippedLines == 1);
+    REQUIRE(stats.malformedLines == 1);
 }
 
 TEST_CASE("Chunker tolerates invalid json documents", "[Chunker][parser][Unit]")
@@ -107,6 +110,7 @@ TEST_CASE("Chunker tolerates invalid json documents", "[Chunker][parser][Unit]")
     REQUIRE(chunks.has_value());
     REQUIRE(chunks->empty());
     REQUIRE(stats.skippedLines == 1);
+    REQUIRE(stats.malformedLines == 1);
 }
 
 TEST_CASE("Chunker reports file open failures", "[Chunker][parser][Unit]")

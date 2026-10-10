@@ -39,7 +39,7 @@ Feature: grep
     When I run nesso with arguments grep "second entry" {dir}/rows.json
     Then the exit code is 0
     And stdout contains "second entry"
-    And stderr contains "Skipped 1 lines."
+    And stderr contains "Skipped 1 line missing the \"message\" field."
 
   Scenario: a JSONL file skips objects without a string message
     Given a file "rows.jsonl" with:
@@ -50,7 +50,7 @@ Feature: grep
     When I run nesso with arguments grep "database connection error" {dir}/rows.jsonl
     Then the exit code is 0
     And stdout contains "database connection refused"
-    And stderr contains "Skipped 1 lines."
+    And stderr contains "Skipped 1 line missing the \"message\" field."
 
   Scenario: empty lines are skipped and overlong lines are truncated
     Given a file "app.log" with:
@@ -63,8 +63,8 @@ Feature: grep
     Then the exit code is 0
     And stdout contains "keep this line"
     And stdout contains "xxxxx"
-    And stderr contains "Skipped "
-    And stderr contains "Truncated "
+    And stderr contains "Skipped 1 empty line."
+    And stderr contains "Truncated 1 line."
 
   Scenario: json-field selects which string is ranked
     Given a file "rows.jsonl" with:

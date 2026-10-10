@@ -52,11 +52,17 @@ func (b *bindings) stream(name string) (string, error) {
 	return b.world.Result.Stderr, nil
 }
 
+func phrase(fragment string) string {
+	// Feature files write \" for a quote inside a step.
+	return strings.ReplaceAll(fragment, `\"`, `"`)
+}
+
 func (b *bindings) streamContains(name, fragment string) error {
 	text, err := b.stream(name)
 	if err != nil {
 		return err
 	}
+	fragment = phrase(fragment)
 	if !strings.Contains(text, fragment) {
 		return fmt.Errorf("%s does not contain %q:\n%s", name, fragment, text)
 	}
@@ -68,6 +74,7 @@ func (b *bindings) streamOmits(name, fragment string) error {
 	if err != nil {
 		return err
 	}
+	fragment = phrase(fragment)
 	if strings.Contains(text, fragment) {
 		return fmt.Errorf("%s contains %q:\n%s", name, fragment, text)
 	}
