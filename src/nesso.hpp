@@ -52,6 +52,12 @@ enum class ErrorCause : uint8_t
     EmptyCorpus
 };
 
+struct StaleSource
+{
+    std::string path;
+    bool missing = false;
+};
+
 /// Failure of a Nesso operation.
 ///
 /// `cause` names the layer failure. `path`, the skip counters, and `truncatedLines` are set when the failure concerns
@@ -68,6 +74,7 @@ struct Error
     size_t truncatedLines = 0;
     std::string jsonField = "message";
     std::string note;
+    std::vector<StaleSource> staleSources;
 };
 
 /// Phrase for `cause`, used after the operation sentence.
@@ -120,6 +127,7 @@ struct TextResults
     size_t truncatedLines = 0;
     std::string jsonField = "message";
     bool multipleSources = false;
+    std::vector<StaleSource> staleSources;
 };
 
 struct IndexSummary

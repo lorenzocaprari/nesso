@@ -75,6 +75,15 @@ static void renderLineCounts(const LineReport &lines)
     }
 }
 
+static void renderStaleSources(const std::vector<StaleSource> &sources)
+{
+    for (const StaleSource &source : sources)
+    {
+        const std::string_view status = source.missing ? "is missing" : "changed since indexing";
+        std::println(std::cerr, "Warning: source '{}' {}.", source.path, status);
+    }
+}
+
 static LineReport lineReport(const TextResults &results)
 {
     return {.emptyLines = results.emptyLines,
@@ -105,6 +114,7 @@ static LineReport lineReport(const Error &error)
 static int render(const TextResults &results)
 {
     renderLineCounts(lineReport(results));
+    renderStaleSources(results.staleSources);
     for (const TextMatch &match : results.matches)
     {
         const char *place = match.arrayElement ? "element" : "line";
@@ -135,6 +145,7 @@ static int renderError(const Error &error, int status)
         std::println(std::cerr, "{}", text);
     }
     renderLineCounts(lineReport(error));
+    renderStaleSources(error.staleSources);
     return status;
 }
 

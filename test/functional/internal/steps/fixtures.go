@@ -47,6 +47,14 @@ func (b *bindings) writeEmptyFile(name string) error {
 	return os.WriteFile(target, nil, 0o644)
 }
 
+func (b *bindings) removeFile(name string) error {
+	target, err := b.scenarioPath(name)
+	if err != nil {
+		return err
+	}
+	return os.Remove(target)
+}
+
 func (b *bindings) makeDirectory(name string) error {
 	target, err := b.scenarioPath(name)
 	if err != nil {

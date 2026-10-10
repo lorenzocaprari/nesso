@@ -47,7 +47,8 @@ TEST_CASE("each failure kind names itself", "[nesso][error]")
 {
     const auto text = [](nesso::ErrorKind kind, nesso::ErrorCause cause)
     {
-        const nesso::Error error{.kind = kind, .cause = cause, .path = "in.log", .skippedLines = 0, .note = {}};
+        const nesso::Error error{
+            .kind = kind, .cause = cause, .path = "in.log", .skippedLines = 0, .note = {}, .staleSources = {}};
         return nesso::message(error);
     };
 
