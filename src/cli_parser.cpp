@@ -61,6 +61,7 @@ struct TextOptions
     size_t topK = DEFAULT_TEXT_TOP_K;
     std::string modelDir;
     std::string jsonField = "message";
+    bool quiet = false;
 };
 
 static std::vector<std::filesystem::path> toPaths(const std::vector<std::string> &args)
@@ -99,6 +100,7 @@ std::expected<ParsedCommand, int> parseCommandLine(int argc, char **argv)
     grepCmd->add_option("-k,--top-k", text.topK, "Maximum number of matches to return (default: 5)")
         ->default_val(5)
         ->check(positiveCount());
+    grepCmd->add_flag("--quiet", text.quiet, "Suppress interactive progress output");
     const auto *grepModelDir = grepCmd->add_option("--model-dir", text.modelDir, MODEL_DIR_HELP);
 
     auto *indexCmd = app.add_subcommand("index", "Embed text files into a corpus file. .json and .jsonl are JSON; "
@@ -109,6 +111,7 @@ std::expected<ParsedCommand, int> parseCommandLine(int argc, char **argv)
     indexCmd->add_option("files", text.files, TEXT_FILES_HELP)->required()->expected(1, -1)->check(inputFile());
     indexCmd->add_option("--json-field", text.jsonField, "JSON object field to read (default: message)")
         ->default_val("message");
+    indexCmd->add_flag("--quiet", text.quiet, "Suppress interactive progress output");
     const auto *indexModelDir = indexCmd->add_option("--model-dir", text.modelDir, MODEL_DIR_HELP);
 
     auto *searchCmd = app.add_subcommand("search", "Semantic search of a corpus file. Prints matches only.");
@@ -131,16 +134,20 @@ std::expected<ParsedCommand, int> parseCommandLine(int argc, char **argv)
 
     if (grepCmd->parsed())
     {
-        return ParsedCommand{
-            .config = configFrom(*grepModelDir, text),
-            .request = GrepRequest{
-                .query = text.query, .files = toPaths(text.files), .topK = text.topK, .jsonField = text.jsonField}};
+        return ParsedCommand{.config = configFrom(*grepModelDir, text),
+                             .request = GrepRequest{.query = text.query,
+                                                    .files = toPaths(text.files),
+                                                    .topK = text.topK,
+                                                    .jsonField = text.jsonField,
+                                                    .progress = !text.quiet}};
     }
     if (indexCmd->parsed())
     {
-        return ParsedCommand{
-            .config = configFrom(*indexModelDir, text),
-            .request = IndexRequest{.files = toPaths(text.files), .output = text.output, .jsonField = text.jsonField}};
+        return ParsedCommand{.config = configFrom(*indexModelDir, text),
+                             .request = IndexRequest{.files = toPaths(text.files),
+                                                     .output = text.output,
+                                                     .jsonField = text.jsonField,
+                                                     .progress = !text.quiet}};
     }
     return ParsedCommand{.config = configFrom(*searchModelDir, text),
                          .request = SearchRequest{.query = text.query, .index = text.index, .topK = text.topK}};

@@ -4,6 +4,7 @@
 #include <cmath>
 #include <filesystem>
 #include <string>
+#include <utility>
 #include <vector>
 
 #ifndef NESSO_MODELS_DIR
@@ -142,6 +143,26 @@ TEST_CASE("OnnxEmbedder mixed-length batch matches a single embed", "[OnnxEmbedd
     REQUIRE(longAlone.has_value());
     REQUIRE(cosineSimilarity((*batch)[0], *shortAlone) > 0.98F);
     REQUIRE(cosineSimilarity((*batch)[1], *longAlone) > 0.98F);
+}
+
+TEST_CASE("OnnxEmbedder reports completed batches", "[OnnxEmbedder][embed][integration]")
+{
+    const std::filesystem::path modelDir = modelDirOrSkip();
+
+    const auto embedder = embed::OnnxEmbedder::create(modelDir);
+    REQUIRE(embedder.has_value());
+
+    std::vector<std::string> texts;
+    for (int index = 0; index < 33; ++index)
+    {
+        texts.push_back("progress sample " + std::to_string(index));
+    }
+
+    std::vector<std::pair<size_t, size_t>> progress;
+    const auto batch = (*embedder)->embedBatch(texts, [&progress](size_t completed, size_t total)
+                                               { progress.emplace_back(completed, total); });
+    REQUIRE(batch.has_value());
+    REQUIRE(progress == std::vector<std::pair<size_t, size_t>>{{32, 33}, {33, 33}});
 }
 
 TEST_CASE("OnnxEmbedder repeats an embedding", "[OnnxEmbedder][embed][integration]")

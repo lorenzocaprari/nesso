@@ -7,6 +7,14 @@ Feature: command errors
     And stdout contains "Exit codes"
     And stdout contains "2 on error"
 
+  Scenario: grep and index help document quiet mode
+    When I run nesso with arguments grep --help
+    Then the exit code is 0
+    And stdout contains "--quiet"
+    When I run nesso with arguments index --help
+    Then the exit code is 0
+    And stdout contains "--quiet"
+
   Scenario: an unknown flag is rejected
     Given a file "app.log" with:
       """

@@ -14,15 +14,51 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cstdio>
 #include <format>
+#include <print>
 #include <span>
 #include <string>
+#include <unistd.h>
 #include <utility>
 
 namespace nesso
 {
 
 static constexpr size_t MAX_LINE_LENGTH = 4096;
+
+class ProgressReporter
+{
+  public:
+    explicit ProgressReporter(bool requested)
+        : enabled_(requested && ::isatty(STDERR_FILENO) != 0), started_(std::chrono::steady_clock::now())
+    {
+    }
+
+    void update(size_t completed, size_t total)
+    {
+        if (!enabled_)
+        {
+            return;
+        }
+        const std::chrono::duration<double> elapsed = std::chrono::steady_clock::now() - started_;
+        const double linesPerSecond = elapsed.count() > 0.0 ? static_cast<double>(completed) / elapsed.count() : 0.0;
+        std::print(stderr, "\rEmbedded {}/{} lines ({:.0f} lines/s)", completed, total, linesPerSecond);
+        (void)std::fflush(stderr);
+    }
+
+    void finish() const
+    {
+        if (enabled_)
+        {
+            std::println(stderr);
+        }
+    }
+
+  private:
+    bool enabled_;
+    std::chrono::steady_clock::time_point started_;
+};
 
 ErrorCause causeOf(parser::ParseError error)
 {
@@ -307,8 +343,9 @@ static std::unexpected<Error> noMatch(ErrorKind kind, const LineCounts &counts)
     return std::unexpected(makeError(kind, ErrorCause::None, {}, counts));
 }
 
-static std::expected<std::vector<core::CorpusChunk>, Error>
-embedFiles(const ParsedFiles &parsed, const embed::OnnxEmbedder &embedder, std::vector<float> *matrix)
+static std::expected<std::vector<core::CorpusChunk>, Error> embedFiles(const ParsedFiles &parsed,
+                                                                       const embed::OnnxEmbedder &embedder,
+                                                                       std::vector<float> *matrix, bool showProgress)
 {
     const ScopedStage stage{"embed"};
     if (parsed.chunks.empty())
@@ -323,7 +360,10 @@ embedFiles(const ParsedFiles &parsed, const embed::OnnxEmbedder &embedder, std::
         texts.push_back(chunk.text);
     }
 
-    const auto embeddings = embedder.embedBatch(texts);
+    ProgressReporter progress(showProgress);
+    const auto embeddings =
+        embedder.embedBatch(texts, [&progress](size_t completed, size_t total) { progress.update(completed, total); });
+    progress.finish();
     if (!embeddings)
     {
         return std::unexpected(makeError(ErrorKind::Embed, causeOf(embeddings.error()), {}, lineCounts(parsed)));
@@ -531,7 +571,7 @@ std::expected<TextResults, Error> Nesso::grep(const GrepRequest &request) const
     }
 
     std::vector<float> matrix;
-    const auto chunks = embedFiles(*parsed, **embedder, &matrix);
+    const auto chunks = embedFiles(*parsed, **embedder, &matrix, request.progress);
     if (!chunks)
     {
         return std::unexpected(chunks.error());
@@ -562,7 +602,7 @@ std::expected<IndexSummary, Error> Nesso::index(const IndexRequest &request) con
         return std::unexpected(parsed.error());
     }
 
-    const auto chunks = embedFiles(*parsed, **embedder, nullptr);
+    const auto chunks = embedFiles(*parsed, **embedder, nullptr, request.progress);
     if (!chunks)
     {
         return std::unexpected(chunks.error());

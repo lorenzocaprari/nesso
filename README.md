@@ -157,6 +157,8 @@ NESSO_MODEL_DIR=models \
 
 Use the same input, model, and gate in Release and Debug ASan builds before tagging. The default stress command is `stress-ng --cpu 1`; pass `--stress-command` when the machine needs a different load generator.
 
+When `grep` or `index` runs in a terminal, embedding progress is shown on stderr. Redirected output stays quiet; pass `--quiet` to suppress progress explicitly.
+
 ## License
 
 MIT — see LICENSE.

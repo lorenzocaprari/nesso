@@ -92,6 +92,7 @@ struct GrepRequest
     std::vector<std::filesystem::path> files;
     size_t topK = DEFAULT_TEXT_TOP_K;
     std::string jsonField = "message";
+    bool progress = false;
 };
 
 struct IndexRequest
@@ -99,6 +100,7 @@ struct IndexRequest
     std::vector<std::filesystem::path> files;
     std::filesystem::path output;
     std::string jsonField = "message";
+    bool progress = false;
 };
 
 struct SearchRequest
