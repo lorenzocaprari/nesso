@@ -139,6 +139,23 @@ The `bench` CI job runs both on every pull request and uploads the results. It i
 
 Google Benchmark microbenchmarks build with `-o "&:bench=True"` on the Release profile and produce `build/Release/bench/nesso_bench`.
 
+### Checking embedding determinism
+
+The release gate starts fresh `nesso` processes for each index and search run, compares corpus files and complete rankings byte-for-byte, and keeps a CPU-load process running:
+
+```bash
+NESSO_BINARY=./build/Release/src/nesso \
+NESSO_MODEL_DIR=models \
+./scripts/check-determinism \
+  --input /path/to/events.log \
+  --query PAY-E1042 \
+  --runs 10 \
+  --top-k 1000000 \
+  --stress-command "stress-ng --cpu 8"
+```
+
+Use the same input, model, and gate in Release and Debug ASan builds before tagging. The default stress command is `stress-ng --cpu 1`; pass `--stress-command` when the machine needs a different load generator.
+
 ## License
 
 MIT — see LICENSE.

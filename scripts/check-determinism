@@ -1,0 +1,163 @@
+#!/usr/bin/env python3
+
+import argparse
+import hashlib
+import os
+import shlex
+import shutil
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
+
+
+DEFAULT_QUERY = "PAY-E1042"
+DEFAULT_RUNS = 10
+DEFAULT_TOP_K = 1_000_000
+
+
+class GateFailure(Exception):
+    pass
+
+
+def command_path(value: str) -> str:
+    path = Path(value)
+    if path.parent != Path(".") or path.is_absolute():
+        if not path.is_file():
+            raise argparse.ArgumentTypeError(f"binary does not exist: {value}")
+        return str(path)
+    resolved = shutil.which(value)
+    if resolved is None:
+        raise argparse.ArgumentTypeError(f"binary is not on PATH: {value}")
+    return resolved
+
+
+def positive(value: str) -> int:
+    parsed = int(value)
+    if parsed < 1:
+        raise argparse.ArgumentTypeError("must be positive")
+    return parsed
+
+
+def arguments() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Compare fresh nesso processes under CPU load.")
+    parser.add_argument("--binary", default=os.environ.get("NESSO_BINARY", "nesso"), type=command_path)
+    parser.add_argument("--model-dir", default=os.environ.get("NESSO_MODEL_DIR"), required=False, type=Path)
+    parser.add_argument("--input", required=True, type=Path)
+    parser.add_argument("--query", default=DEFAULT_QUERY)
+    parser.add_argument("--runs", default=DEFAULT_RUNS, type=positive)
+    parser.add_argument("--top-k", default=DEFAULT_TOP_K, type=positive)
+    parser.add_argument(
+        "--stress-command",
+        default=os.environ.get("NESSO_STRESS_COMMAND", "stress-ng --cpu 1"),
+        help="Command to run while the gate executes; default: stress-ng --cpu 1",
+    )
+    parsed = parser.parse_args()
+    if parsed.model_dir is None:
+        parser.error("--model-dir or NESSO_MODEL_DIR is required")
+    if not parsed.model_dir.is_dir():
+        parser.error(f"model directory does not exist: {parsed.model_dir}")
+    if not parsed.input.is_file():
+        parser.error(f"input does not exist: {parsed.input}")
+    if parsed.runs < 2:
+        parser.error("--runs must be at least 2")
+    return parsed
+
+
+def digest(data: bytes) -> str:
+    return hashlib.sha256(data).hexdigest()[:16]
+
+
+def run_process(command: list[str], name: str) -> subprocess.CompletedProcess[str]:
+    result = subprocess.run(command, capture_output=True, text=True, check=False)
+    if result.returncode != 0:
+        details = result.stderr.strip() or result.stdout.strip() or "no output"
+        raise GateFailure(f"{name} failed with exit {result.returncode}: {details}")
+    return result
+
+
+def start_stress(command: str) -> subprocess.Popen[bytes]:
+    parts = shlex.split(command)
+    if not parts:
+        raise GateFailure("stress command is empty")
+    if shutil.which(parts[0]) is None:
+        raise GateFailure(f"stress command is not available: {parts[0]}")
+    return subprocess.Popen(parts, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
+def stop_stress(process: subprocess.Popen[bytes]) -> None:
+    if process.poll() is None:
+        process.terminate()
+        try:
+            process.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            process.wait()
+
+
+def check_determinism(options: argparse.Namespace) -> None:
+    stress = start_stress(options.stress_command)
+    baseline_corpus: bytes | None = None
+    baseline_ranking: str | None = None
+    try:
+        with tempfile.TemporaryDirectory(prefix="nesso-determinism-") as temp:
+            output_dir = Path(temp)
+            for run in range(options.runs):
+                if stress.poll() is not None:
+                    raise GateFailure("stress command exited before the gate completed")
+                corpus = output_dir / f"corpus-{run}.nesso"
+                run_process(
+                    [
+                        options.binary,
+                        "index",
+                        "-o",
+                        str(corpus),
+                        "--model-dir",
+                        str(options.model_dir),
+                        str(options.input),
+                    ],
+                    f"index run {run + 1}",
+                )
+                corpus_bytes = corpus.read_bytes()
+                ranking = run_process(
+                    [
+                        options.binary,
+                        "search",
+                        options.query,
+                        "-i",
+                        str(corpus),
+                        "-k",
+                        str(options.top_k),
+                        "--model-dir",
+                        str(options.model_dir),
+                    ],
+                    f"search run {run + 1}",
+                ).stdout
+
+                if baseline_corpus is None:
+                    baseline_corpus = corpus_bytes
+                    baseline_ranking = ranking
+                    continue
+                if corpus_bytes != baseline_corpus:
+                    raise GateFailure(
+                        f"corpus differs on run {run + 1}: {digest(corpus_bytes)} != {digest(baseline_corpus)}"
+                    )
+                if ranking != baseline_ranking:
+                    raise GateFailure(f"ranking differs on run {run + 1}")
+    finally:
+        stop_stress(stress)
+    print(f"determinism OK: {options.runs} runs, corpus and rankings identical")
+
+
+def main() -> int:
+    options = arguments()
+    try:
+        check_determinism(options)
+    except GateFailure as error:
+        print(f"error: {error}", file=sys.stderr)
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
