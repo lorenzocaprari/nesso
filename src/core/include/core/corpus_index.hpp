@@ -35,6 +35,14 @@ struct CorpusChunk
     std::vector<float> embedding;
 };
 
+struct SourceInfo
+{
+    std::string path;
+    std::uint64_t size = 0;
+    std::int64_t modifiedTime = 0;
+    bool tracked = false;
+};
+
 /// A corpus mapped so the float block is the top-k matrix. Chunk text is owned;
 /// `matrix` views the mapping.
 class MappedCorpus
@@ -49,6 +57,7 @@ class MappedCorpus
     [[nodiscard]] std::string_view modelId() const noexcept;
     [[nodiscard]] std::uint32_t dimensions() const noexcept;
     [[nodiscard]] std::span<const CorpusChunk> chunks() const noexcept;
+    [[nodiscard]] std::span<const SourceInfo> sources() const noexcept;
     [[nodiscard]] std::span<const float> matrix() const noexcept;
 
   private:

@@ -7,6 +7,7 @@
 
 #include <algorithm>
 #include <bit>
+#include <chrono>
 #include <cstring>
 #include <fstream>
 #include <limits>
@@ -22,7 +23,8 @@ namespace
 static_assert(std::endian::native == std::endian::little);
 
 constexpr std::size_t HEADER_BYTES = 64;
-constexpr std::size_t SOURCE_RECORD_BYTES = 16;
+constexpr std::size_t SOURCE_RECORD_BYTES = 32;
+constexpr std::size_t LEGACY_SOURCE_RECORD_BYTES = 16;
 constexpr std::size_t CHUNK_RECORD_BYTES = 32;
 constexpr std::uint32_t MAX_MODEL_ID_BYTES = 1024;
 constexpr std::uint64_t MAX_TEXT_BYTES = 8ULL * 1024ULL * 1024ULL;
@@ -55,6 +57,32 @@ static void loadLineNumber(LogChunk &chunk, std::uint64_t stored)
 {
     chunk.arrayElement = (stored & ARRAY_ELEMENT_BIT) != 0;
     chunk.lineNumber = stored & ~ARRAY_ELEMENT_BIT;
+}
+
+static SourceInfo sourceInfoFor(std::string_view path)
+{
+    SourceInfo info{.path = std::string(path)};
+    if (path == "-")
+    {
+        return info;
+    }
+
+    std::error_code error;
+    const std::uint64_t size = std::filesystem::file_size(path, error);
+    if (error)
+    {
+        return info;
+    }
+    const auto modified = std::filesystem::last_write_time(path, error);
+    if (error)
+    {
+        return info;
+    }
+
+    info.size = size;
+    info.modifiedTime = std::chrono::duration_cast<std::chrono::nanoseconds>(modified.time_since_epoch()).count();
+    info.tracked = true;
+    return info;
 }
 
 static std::uint64_t alignUp(std::uint64_t value, std::uint64_t alignment)
@@ -158,6 +186,7 @@ struct MappedCorpus::Impl
     platform::MappedFile file;
     std::string modelId;
     std::uint32_t dimensions = 0;
+    std::vector<SourceInfo> sources;
     std::vector<CorpusChunk> chunks;
     std::span<const float> matrix;
 };
@@ -176,6 +205,8 @@ std::uint32_t MappedCorpus::dimensions() const noexcept { return impl_->dimensio
 
 std::span<const CorpusChunk> MappedCorpus::chunks() const noexcept { return impl_->chunks; }
 
+std::span<const SourceInfo> MappedCorpus::sources() const noexcept { return impl_->sources; }
+
 std::span<const float> MappedCorpus::matrix() const noexcept { return impl_->matrix; }
 
 std::expected<void, EngineError> writeCorpusFile(const std::filesystem::path &path, std::span<const CorpusChunk> chunks,
@@ -192,7 +223,7 @@ std::expected<void, EngineError> writeCorpusFile(const std::filesystem::path &pa
         return std::unexpected(EngineError::FileOpenFailure);
     }
 
-    std::vector<std::string_view> sources;
+    std::vector<SourceInfo> sources;
     std::unordered_map<std::string_view, std::uint32_t> sourceIndex;
     std::vector<std::uint32_t> chunkSource;
     chunkSource.reserve(chunks.size());
@@ -201,7 +232,7 @@ std::expected<void, EngineError> writeCorpusFile(const std::filesystem::path &pa
         const auto [it, inserted] = sourceIndex.emplace(chunk.chunk.source, static_cast<std::uint32_t>(sources.size()));
         if (inserted)
         {
-            sources.push_back(chunk.chunk.source);
+            sources.push_back(sourceInfoFor(chunk.chunk.source));
         }
         chunkSource.push_back(it->second);
     }
@@ -215,10 +246,10 @@ std::expected<void, EngineError> writeCorpusFile(const std::filesystem::path &pa
     std::uint64_t sourceBlob = sourceTableOffset + (sources.size() * SOURCE_RECORD_BYTES);
     std::vector<std::uint64_t> sourceOffsets;
     sourceOffsets.reserve(sources.size());
-    for (const std::string_view source : sources)
+    for (const SourceInfo &source : sources)
     {
         sourceOffsets.push_back(sourceBlob);
-        sourceBlob += source.size();
+        sourceBlob += source.path.size();
     }
 
     const std::uint64_t chunkTableOffset = sourceBlob;
@@ -251,12 +282,14 @@ std::expected<void, EngineError> writeCorpusFile(const std::filesystem::path &pa
     for (std::size_t index = 0; index < sources.size(); ++index)
     {
         appendU64(bytes, sourceOffsets[index]);
-        appendU32(bytes, static_cast<std::uint32_t>(sources[index].size()));
-        appendU32(bytes, 0);
+        appendU32(bytes, static_cast<std::uint32_t>(sources[index].path.size()));
+        appendU32(bytes, sources[index].tracked ? 1U : 0U);
+        appendU64(bytes, sources[index].size);
+        appendU64(bytes, static_cast<std::uint64_t>(sources[index].modifiedTime));
     }
-    for (const std::string_view source : sources)
+    for (const SourceInfo &source : sources)
     {
-        appendBytes(bytes, source.data(), source.size());
+        appendBytes(bytes, source.path.data(), source.path.size());
     }
     for (std::size_t index = 0; index < chunks.size(); ++index)
     {
@@ -347,20 +380,62 @@ std::expected<MappedCorpus, EngineError> mapCorpusFile(const std::filesystem::pa
     impl->modelId.assign(reinterpret_cast<const char *>(bytes.data() + HEADER_BYTES), layout.modelIdBytes);
     impl->dimensions = layout.dimensions;
 
-    std::vector<std::string> sources;
-    sources.reserve(static_cast<std::size_t>(layout.sourceCount));
+    const auto validSourceTable = [&](std::size_t recordBytes)
+    {
+        if (layout.sourceTableOffset > layout.chunkTableOffset ||
+            layout.sourceCount > (layout.chunkTableOffset - layout.sourceTableOffset) / recordBytes)
+        {
+            return false;
+        }
+        const std::uint64_t sourceBlob = layout.sourceTableOffset + (layout.sourceCount * recordBytes);
+        for (std::uint64_t index = 0; index < layout.sourceCount; ++index)
+        {
+            const std::uint64_t record = layout.sourceTableOffset + (index * recordBytes);
+            std::uint64_t stringOffset = 0;
+            std::uint32_t length = 0;
+            if (!readU64(bytes, record, stringOffset) || !readU32(bytes, record + 8, length) ||
+                length > MAX_TEXT_BYTES || !rangeInside(stringOffset, length, layout.chunkTableOffset) ||
+                stringOffset < sourceBlob)
+            {
+                return false;
+            }
+        }
+        return true;
+    };
+
+    const std::size_t sourceRecordBytes =
+        validSourceTable(SOURCE_RECORD_BYTES) ? SOURCE_RECORD_BYTES : LEGACY_SOURCE_RECORD_BYTES;
+    if (!validSourceTable(sourceRecordBytes))
+    {
+        return std::unexpected(EngineError::CorruptDatabase);
+    }
+
+    impl->sources.reserve(static_cast<std::size_t>(layout.sourceCount));
     for (std::uint64_t index = 0; index < layout.sourceCount; ++index)
     {
-        const std::uint64_t record = layout.sourceTableOffset + (index * SOURCE_RECORD_BYTES);
+        const std::uint64_t record = layout.sourceTableOffset + (index * sourceRecordBytes);
         std::uint64_t stringOffset = 0;
         std::uint32_t length = 0;
-        if (!readU64(bytes, record, stringOffset) || !readU32(bytes, record + 8, length) || length > MAX_TEXT_BYTES ||
-            !rangeInside(stringOffset, length, layout.matrixOffset))
+        if (!readU64(bytes, record, stringOffset) || !readU32(bytes, record + 8, length))
         {
             return std::unexpected(EngineError::CorruptDatabase);
         }
+        SourceInfo source;
         // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-        sources.emplace_back(reinterpret_cast<const char *>(bytes.data() + stringOffset), length);
+        source.path.assign(reinterpret_cast<const char *>(bytes.data() + stringOffset), length);
+        if (sourceRecordBytes == SOURCE_RECORD_BYTES)
+        {
+            std::uint32_t flags = 0;
+            std::uint64_t modifiedTime = 0;
+            if (!readU32(bytes, record + 12, flags) || !readU64(bytes, record + 16, source.size) ||
+                !readU64(bytes, record + 24, modifiedTime) || (flags & ~1U) != 0)
+            {
+                return std::unexpected(EngineError::CorruptDatabase);
+            }
+            source.tracked = (flags & 1U) != 0;
+            source.modifiedTime = static_cast<std::int64_t>(modifiedTime);
+        }
+        impl->sources.push_back(std::move(source));
     }
 
     impl->chunks.reserve(static_cast<std::size_t>(layout.chunkCount));
@@ -374,13 +449,13 @@ std::expected<MappedCorpus, EngineError> mapCorpusFile(const std::filesystem::pa
         std::uint64_t storedLine = 0;
         if (!readU64(bytes, record, storedLine) || !readU64(bytes, record + 8, chunk.chunk.byteOffset) ||
             !readU32(bytes, record + 16, sourceIndex) || !readU32(bytes, record + 20, textLength) ||
-            !readU64(bytes, record + 24, textOffset) || sourceIndex >= sources.size() || textLength > MAX_TEXT_BYTES ||
-            !rangeInside(textOffset, textLength, layout.matrixOffset))
+            !readU64(bytes, record + 24, textOffset) || sourceIndex >= impl->sources.size() ||
+            textLength > MAX_TEXT_BYTES || !rangeInside(textOffset, textLength, layout.matrixOffset))
         {
             return std::unexpected(EngineError::CorruptDatabase);
         }
         loadLineNumber(chunk.chunk, storedLine);
-        chunk.chunk.source = sources[sourceIndex];
+        chunk.chunk.source = impl->sources[sourceIndex].path;
         // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
         chunk.chunk.text.assign(reinterpret_cast<const char *>(bytes.data() + textOffset), textLength);
         impl->chunks.push_back(std::move(chunk));

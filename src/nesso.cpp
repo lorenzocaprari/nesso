@@ -13,6 +13,7 @@
 #include <parser/log_chunker.hpp>
 
 #include <algorithm>
+#include <chrono>
 #include <format>
 #include <span>
 #include <string>
@@ -195,6 +196,39 @@ static LineCounts lineCounts(const parser::ParseStats &stats, std::string jsonFi
             .jsonField = std::move(jsonField)};
 }
 
+static std::vector<StaleSource> staleSources(std::span<const core::SourceInfo> sources)
+{
+    std::vector<StaleSource> stale;
+    for (const core::SourceInfo &source : sources)
+    {
+        if (!source.tracked || source.path == "-")
+        {
+            continue;
+        }
+
+        std::error_code error;
+        const std::uint64_t size = std::filesystem::file_size(source.path, error);
+        if (error)
+        {
+            stale.push_back({.path = source.path, .missing = true});
+            continue;
+        }
+        const auto modified = std::filesystem::last_write_time(source.path, error);
+        if (error)
+        {
+            stale.push_back({.path = source.path, .missing = true});
+            continue;
+        }
+        const auto modifiedTime =
+            std::chrono::duration_cast<std::chrono::nanoseconds>(modified.time_since_epoch()).count();
+        if (size != source.size || modifiedTime != source.modifiedTime)
+        {
+            stale.push_back({.path = source.path, .missing = false});
+        }
+    }
+    return stale;
+}
+
 static Error makeError(ErrorKind kind, ErrorCause cause, std::filesystem::path path, LineCounts counts)
 {
     return Error{.kind = kind,
@@ -206,7 +240,8 @@ static Error makeError(ErrorKind kind, ErrorCause cause, std::filesystem::path p
                  .missingFieldLines = counts.missingFieldLines,
                  .truncatedLines = counts.truncated,
                  .jsonField = std::move(counts.jsonField),
-                 .note = {}};
+                 .note = {},
+                 .staleSources = {}};
 }
 
 static std::string modelLoadNote(const std::vector<std::filesystem::path> &tried)
@@ -414,7 +449,8 @@ static std::expected<TextResults, Error> rankChunks(std::span<const core::Corpus
                         .missingFieldLines = counts.missingFieldLines,
                         .truncatedLines = counts.truncated,
                         .jsonField = counts.jsonField,
-                        .multipleSources = multipleSources(chunks)};
+                        .multipleSources = multipleSources(chunks),
+                        .staleSources = {}};
     results.matches.reserve(ranked->size());
     for (const core::Hit &hit : *ranked)
     {
@@ -453,8 +489,11 @@ class Nesso::Impl
             auto created = embed::OnnxEmbedder::create(modelDir);
             if (!created)
             {
-                Error error{
-                    .kind = ErrorKind::EmbedderLoad, .cause = causeOf(created.error()), .path = modelDir, .note = {}};
+                Error error{.kind = ErrorKind::EmbedderLoad,
+                            .cause = causeOf(created.error()),
+                            .path = modelDir,
+                            .note = {},
+                            .staleSources = {}};
                 error.note = modelLoadNote(tried);
                 return std::unexpected(std::move(error));
             }
@@ -558,13 +597,19 @@ std::expected<TextResults, Error> Nesso::search(const SearchRequest &request) co
     }();
     if (!chunks)
     {
-        return std::unexpected(
-            Error{.kind = ErrorKind::CorpusRead, .cause = causeOf(chunks.error()), .path = request.index, .note = {}});
+        return std::unexpected(Error{.kind = ErrorKind::CorpusRead,
+                                     .cause = causeOf(chunks.error()),
+                                     .path = request.index,
+                                     .note = {},
+                                     .staleSources = {}});
     }
     if (chunks->chunks().empty())
     {
-        return std::unexpected(
-            Error{.kind = ErrorKind::EmptyInput, .cause = ErrorCause::EmptyCorpus, .path = request.index, .note = {}});
+        return std::unexpected(Error{.kind = ErrorKind::EmptyInput,
+                                     .cause = ErrorCause::EmptyCorpus,
+                                     .path = request.index,
+                                     .note = {},
+                                     .staleSources = {}});
     }
 
     const auto embedder = impl_->embedder();
@@ -573,8 +618,18 @@ std::expected<TextResults, Error> Nesso::search(const SearchRequest &request) co
         return std::unexpected(embedder.error());
     }
 
-    return rankChunks(chunks->chunks(), **embedder, request.query, request.topK, {}, ErrorKind::CorpusLoad,
-                      chunks->matrix());
+    auto result = rankChunks(chunks->chunks(), **embedder, request.query, request.topK, {}, ErrorKind::CorpusLoad,
+                             chunks->matrix());
+    const auto sourceWarnings = staleSources(chunks->sources());
+    if (result)
+    {
+        result->staleSources = sourceWarnings;
+    }
+    else
+    {
+        result.error().staleSources = sourceWarnings;
+    }
+    return result;
 }
 
 } // namespace nesso

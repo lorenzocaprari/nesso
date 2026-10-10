@@ -111,6 +111,28 @@ TEST_CASE("corpus file round-trips chunks", "[corpus][core]")
     std::filesystem::remove_all(directory);
 }
 
+TEST_CASE("corpus file stores source metadata", "[corpus][core]")
+{
+    const auto directory = makeTempDir();
+    const auto source = directory / "app.log";
+    writeBytes(source, "alpha\n");
+    const auto path = directory / "corpus.nesso";
+    const std::vector<core::CorpusChunk> chunks{
+        {.chunk = {.text = "alpha", .lineNumber = 1, .source = source.string(), .byteOffset = 0}, .embedding = {1.F}},
+    };
+
+    REQUIRE(core::writeCorpusFile(path, chunks, "model"));
+    const auto mapped = core::mapCorpusFile(path);
+    REQUIRE(mapped);
+    REQUIRE(mapped->sources().size() == 1);
+    REQUIRE(mapped->sources()[0].path == source.string());
+    REQUIRE(mapped->sources()[0].size == 6);
+    REQUIRE(mapped->sources()[0].modifiedTime != 0);
+    REQUIRE(mapped->sources()[0].tracked);
+
+    std::filesystem::remove_all(directory);
+}
+
 TEST_CASE("empty corpus is a valid file", "[corpus][core]")
 {
     const auto directory = makeTempDir();

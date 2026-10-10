@@ -30,6 +30,38 @@ Feature: index and search
     Then the exit code is 0
     And stdout contains "{dir}/app.log:line 1:"
 
+  Scenario: search warns when an indexed source changes
+    Given a file "app.log" with:
+      """
+      database connection refused
+      """
+    When I run nesso with arguments index -o {dir}/corpus.nesso {dir}/app.log
+    Then the exit code is 0
+    Given a file "app.log" with:
+      """
+      database connection refused
+      changed after indexing
+      """
+    When I run nesso with arguments search "database connection error" -i {dir}/corpus.nesso
+    Then the exit code is 0
+    And stdout contains "database connection refused"
+    And stderr contains "changed since indexing"
+    And stderr contains "{dir}/app.log"
+
+  Scenario: search warns when an indexed source is missing
+    Given a file "app.log" with:
+      """
+      database connection refused
+      """
+    When I run nesso with arguments index -o {dir}/corpus.nesso {dir}/app.log
+    Then the exit code is 0
+    Given the file "app.log" is removed
+    When I run nesso with arguments search "database connection error" -i {dir}/corpus.nesso
+    Then the exit code is 0
+    And stdout contains "database connection refused"
+    And stderr contains "is missing"
+    And stderr contains "{dir}/app.log"
+
   Scenario: an empty log indexes zero chunks
     Given an empty file "empty.log"
     When I run nesso with arguments index -o {dir}/corpus.nesso {dir}/empty.log

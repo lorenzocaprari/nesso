@@ -38,6 +38,7 @@ func InitializeScenario(sc *godog.ScenarioContext) {
 	sc.Step(`^a file "([^"]+)" with:$`, b.writeFile)
 	sc.Step(`^stdin is:$`, b.setStdin)
 	sc.Step(`^an empty file "([^"]+)"$`, b.writeEmptyFile)
+	sc.Step(`^the file "([^"]+)" is removed$`, b.removeFile)
 	sc.Step(`^a directory "([^"]+)"$`, b.makeDirectory)
 	sc.Step(`^a line of (\d+) "(.)" in "([^"]+)"$`, b.appendRepeatedLine)
 	sc.Step(`^a file "([^"]+)" with hex:$`, b.writeHexFile)
