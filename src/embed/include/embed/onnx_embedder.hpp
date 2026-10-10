@@ -9,6 +9,7 @@
 
 #include <expected>
 #include <filesystem>
+#include <functional>
 #include <memory>
 #include <span>
 #include <string>
@@ -20,6 +21,8 @@ namespace embed
 class OnnxEmbedder
 {
   public:
+    using ProgressCallback = std::function<void(size_t completed, size_t total)>;
+
     [[nodiscard]] static std::expected<std::unique_ptr<OnnxEmbedder>, EmbedError>
     create(const std::filesystem::path &modelDir);
 
@@ -28,7 +31,7 @@ class OnnxEmbedder
     [[nodiscard]] std::expected<std::vector<float>, EmbedError> embed(std::string_view text) const;
 
     [[nodiscard]] std::expected<std::vector<std::vector<float>>, EmbedError>
-    embedBatch(std::span<const std::string> texts) const;
+    embedBatch(std::span<const std::string> texts, ProgressCallback progress = {}) const;
 
     OnnxEmbedder(const OnnxEmbedder &) = delete;
     OnnxEmbedder &operator=(const OnnxEmbedder &) = delete;

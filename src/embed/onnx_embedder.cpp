@@ -280,8 +280,8 @@ std::expected<std::vector<float>, EmbedError> OnnxEmbedder::embed(std::string_vi
     return batchResult->front();
 }
 
-std::expected<std::vector<std::vector<float>>, EmbedError>
-OnnxEmbedder::embedBatch(std::span<const std::string> texts) const
+std::expected<std::vector<std::vector<float>>, EmbedError> OnnxEmbedder::embedBatch(std::span<const std::string> texts,
+                                                                                    ProgressCallback progress) const
 {
     if (texts.empty())
     {
@@ -313,6 +313,10 @@ OnnxEmbedder::embedBatch(std::span<const std::string> texts) const
         }
         embeddings.insert(embeddings.end(), std::make_move_iterator(part->begin()),
                           std::make_move_iterator(part->end()));
+        if (progress)
+        {
+            progress(embeddings.size(), texts.size());
+        }
     }
     return embeddings;
 }
