@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"os/exec"
+	"strings"
 	"time"
 )
 
@@ -26,7 +27,7 @@ type Result struct {
 
 // Run executes binary with args in dir. A non-zero exit status is a Result, not
 // an error. Failing to start the process or exceeding Timeout is an error.
-func Run(binary string, args []string, dir string) (Result, error) {
+func Run(binary string, args []string, dir string, stdin string) (Result, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), Timeout)
 	defer cancel()
 
@@ -35,6 +36,9 @@ func Run(binary string, args []string, dir string) (Result, error) {
 	cmd.Dir = dir
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
+	if stdin != "" {
+		cmd.Stdin = strings.NewReader(stdin)
+	}
 	runErr := cmd.Run()
 
 	result := Result{Stdout: stdout.String(), Stderr: stderr.String()}

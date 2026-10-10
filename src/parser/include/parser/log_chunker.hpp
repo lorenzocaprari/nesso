@@ -17,7 +17,8 @@ namespace parser
 enum class ParseError : uint8_t
 {
     FileOpenFailure,
-    UnsupportedFormat
+    UnsupportedFormat,
+    BinaryFile
 };
 
 struct ParsedChunk
@@ -25,6 +26,7 @@ struct ParsedChunk
     std::string text;
     uint64_t lineNumber = 0;
     uint64_t byteOffset = 0;
+    bool arrayElement = false;
 };
 
 /// Counts for one parse. `skippedLines` is the sum of the reason counters. `truncatedLines` were kept after cutting

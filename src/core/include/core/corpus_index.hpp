@@ -26,6 +26,7 @@ struct LogChunk
     std::uint64_t lineNumber = 0;
     std::string source;
     std::uint64_t byteOffset = 0;
+    bool arrayElement = false;
 };
 
 struct CorpusChunk

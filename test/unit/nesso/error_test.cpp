@@ -10,6 +10,7 @@ TEST_CASE("layer errors map onto a cause", "[nesso][error]")
 {
     REQUIRE(nesso::causeOf(parser::ParseError::FileOpenFailure) == nesso::ErrorCause::FileOpen);
     REQUIRE(nesso::causeOf(parser::ParseError::UnsupportedFormat) == nesso::ErrorCause::UnsupportedFormat);
+    REQUIRE(nesso::causeOf(parser::ParseError::BinaryFile) == nesso::ErrorCause::BinaryFile);
 
     REQUIRE(nesso::causeOf(embed::EmbedError::VocabLoadFailure) == nesso::ErrorCause::VocabLoad);
     REQUIRE(nesso::causeOf(embed::EmbedError::TokenizationFailure) == nesso::ErrorCause::Tokenization);
@@ -28,6 +29,7 @@ TEST_CASE("each cause has a readable phrase", "[nesso][error]")
     REQUIRE(nesso::describe(nesso::ErrorCause::None).empty());
     REQUIRE(nesso::describe(nesso::ErrorCause::FileOpen) == "could not open the file");
     REQUIRE(nesso::describe(nesso::ErrorCause::UnsupportedFormat) == "unsupported format");
+    REQUIRE(nesso::describe(nesso::ErrorCause::BinaryFile) == "the file is binary");
     REQUIRE(nesso::describe(nesso::ErrorCause::VocabLoad) == "could not load the vocabulary");
     REQUIRE(nesso::describe(nesso::ErrorCause::Tokenization) == "could not tokenize the text");
     REQUIRE(nesso::describe(nesso::ErrorCause::ModelLoad) == "could not load the model");

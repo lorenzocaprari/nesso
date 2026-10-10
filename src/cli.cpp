@@ -107,13 +107,14 @@ static int render(const TextResults &results)
     renderLineCounts(lineReport(results));
     for (const TextMatch &match : results.matches)
     {
-        if (results.multipleSources)
+        const char *place = match.arrayElement ? "element" : "line";
+        if (results.multipleSources || match.source == "-")
         {
-            std::println("{}:line {}: {:.4f}: {}", match.source, match.line, match.score, match.text);
+            std::println("{}:{} {}: {:.4f}: {}", match.source, place, match.line, match.score, match.text);
         }
         else
         {
-            std::println("line {}: {:.4f}: {}", match.line, match.score, match.text);
+            std::println("{} {}: {:.4f}: {}", place, match.line, match.score, match.text);
         }
     }
     return 0;

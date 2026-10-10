@@ -36,6 +36,7 @@ func InitializeScenario(sc *godog.ScenarioContext) {
 	})
 
 	sc.Step(`^a file "([^"]+)" with:$`, b.writeFile)
+	sc.Step(`^stdin is:$`, b.setStdin)
 	sc.Step(`^an empty file "([^"]+)"$`, b.writeEmptyFile)
 	sc.Step(`^a directory "([^"]+)"$`, b.makeDirectory)
 	sc.Step(`^a line of (\d+) "(.)" in "([^"]+)"$`, b.appendRepeatedLine)
