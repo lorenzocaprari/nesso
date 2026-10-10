@@ -48,20 +48,20 @@ Feature: command errors
     Then the exit code is 2
     And stderr contains "failed to load the embedder"
 
-  Scenario: an unsupported extension is rejected
-    Given a file "notes.txt" with:
+  Scenario: a binary file is rejected
+    Given a file "blob.log" with hex:
       """
-      not a log
+      68656c6c6f00776f726c64
       """
-    When I run nesso with arguments grep "database connection error" {dir}/notes.txt
+    When I run nesso with arguments grep "database connection error" {dir}/blob.log
     Then the exit code is 2
     And stderr contains "failed to parse"
-    And stderr contains "unsupported format"
-    And stderr contains "notes.txt"
-    When I run nesso with arguments index -o {dir}/corpus.nesso {dir}/notes.txt
+    And stderr contains "the file is binary"
+    And stderr contains "blob.log"
+    When I run nesso with arguments index -o {dir}/corpus.nesso {dir}/blob.log
     Then the exit code is 2
-    And stderr contains "failed to parse"
-    And stderr contains "notes.txt"
+    And stderr contains "the file is binary"
+    And stderr contains "blob.log"
 
   Scenario: grep rejects an empty log
     Given an empty file "empty.log"

@@ -38,6 +38,7 @@ enum class ErrorCause : uint8_t
     None,
     FileOpen,
     UnsupportedFormat,
+    BinaryFile,
     VocabLoad,
     Tokenization,
     ModelLoad,
@@ -106,6 +107,7 @@ struct TextMatch
     uint64_t line = 0;
     float score = 0.0F;
     std::string text;
+    bool arrayElement = false;
 };
 
 struct TextResults

@@ -30,6 +30,8 @@ constexpr std::uint64_t MAX_DIMENSIONS = 65536;
 constexpr std::uint64_t MAX_CHUNKS = 1'000'000;
 constexpr std::uint64_t MAX_SOURCES = 1'000'000;
 constexpr std::array<char, 4> MAGIC{'N', 'E', 'S', 'C'};
+// Bit 63 marks a JSON array element. Older v2 files leave it clear, so they still read as lines.
+constexpr std::uint64_t ARRAY_ELEMENT_BIT = std::uint64_t{1} << 63U;
 
 struct Layout
 {
@@ -43,6 +45,17 @@ struct Layout
 };
 
 } // namespace
+
+static std::uint64_t storedLineNumber(const LogChunk &chunk)
+{
+    return chunk.arrayElement ? (chunk.lineNumber | ARRAY_ELEMENT_BIT) : chunk.lineNumber;
+}
+
+static void loadLineNumber(LogChunk &chunk, std::uint64_t stored)
+{
+    chunk.arrayElement = (stored & ARRAY_ELEMENT_BIT) != 0;
+    chunk.lineNumber = stored & ~ARRAY_ELEMENT_BIT;
+}
 
 static std::uint64_t alignUp(std::uint64_t value, std::uint64_t alignment)
 {
@@ -248,7 +261,7 @@ std::expected<void, EngineError> writeCorpusFile(const std::filesystem::path &pa
     for (std::size_t index = 0; index < chunks.size(); ++index)
     {
         const CorpusChunk &chunk = chunks[index];
-        appendU64(bytes, chunk.chunk.lineNumber);
+        appendU64(bytes, storedLineNumber(chunk.chunk));
         appendU64(bytes, chunk.chunk.byteOffset);
         appendU32(bytes, chunkSource[index]);
         appendU32(bytes, static_cast<std::uint32_t>(chunk.chunk.text.size()));
@@ -358,13 +371,15 @@ std::expected<MappedCorpus, EngineError> mapCorpusFile(const std::filesystem::pa
         std::uint32_t sourceIndex = 0;
         std::uint32_t textLength = 0;
         std::uint64_t textOffset = 0;
-        if (!readU64(bytes, record, chunk.chunk.lineNumber) || !readU64(bytes, record + 8, chunk.chunk.byteOffset) ||
+        std::uint64_t storedLine = 0;
+        if (!readU64(bytes, record, storedLine) || !readU64(bytes, record + 8, chunk.chunk.byteOffset) ||
             !readU32(bytes, record + 16, sourceIndex) || !readU32(bytes, record + 20, textLength) ||
             !readU64(bytes, record + 24, textOffset) || sourceIndex >= sources.size() || textLength > MAX_TEXT_BYTES ||
             !rangeInside(textOffset, textLength, layout.matrixOffset))
         {
             return std::unexpected(EngineError::CorruptDatabase);
         }
+        loadLineNumber(chunk.chunk, storedLine);
         chunk.chunk.source = sources[sourceIndex];
         // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
         chunk.chunk.text.assign(reinterpret_cast<const char *>(bytes.data() + textOffset), textLength);

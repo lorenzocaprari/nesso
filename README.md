@@ -96,9 +96,10 @@ Matches go to stdout. Skipped lines, the index summary, and errors go to stderr.
 
 ### File limits
 
-- Formats: `.log`, `.json`, `.jsonl` only (by extension). Directories and other files are rejected.
-- `.log`: one chunk per non-empty line. Lines longer than 4096 characters are truncated. A trailing CR is stripped.
-- `.json` / `.jsonl`: only objects with a string field are indexed (`message` by default, or `--json-field`). Malformed lines and documents are skipped. String values longer than 4096 characters are truncated.
+- `.json` and `.jsonl` are JSON, matched without regard to case. Every other name is read as lines: no extension, `.log.N` rotations, `.LOG`, `.txt`, `syslog`. `-` reads stdin as lines, and those matches are prefixed with `-:`.
+- A file whose first 4 KiB contains a NUL byte is rejected. Directories are rejected.
+- Lines: one chunk per non-empty line. Lines longer than 4096 characters are truncated. A trailing CR is stripped.
+- JSON: only objects with a string field are indexed (`message` by default, or `--json-field`). Malformed lines and documents are skipped. String values longer than 4096 characters are truncated. A JSON array is numbered `element N`, not `line N`.
 - `grep` holds the whole corpus in memory for that invocation. `index` writes it to the corpus file; `search` loads that file back into memory. Very large files will be slow and RAM-heavy.
 - Empty lines and JSON values without that string field are skipped. Overlong log lines and JSON string values are truncated. Skip and truncation counts are printed on stderr.
 

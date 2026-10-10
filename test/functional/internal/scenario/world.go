@@ -10,6 +10,7 @@ import "github.com/lorenzocaprari/nesso/test/functional/internal/runner"
 // output already normalized.
 type World struct {
 	Dir         string
+	Stdin       string
 	Ran         bool
 	CommandLine string
 	Result      runner.Result

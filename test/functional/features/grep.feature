@@ -31,6 +31,36 @@ Feature: grep
     Then the exit code is 0
     And stdout contains "standalone entry"
 
+  Scenario: extensionless, rotated, and uppercase names are lines
+    Given a file "syslog" with:
+      """
+      database connection refused
+      """
+    When I run nesso with arguments grep "database connection error" {dir}/syslog
+    Then the exit code is 0
+    And stdout contains "database connection refused"
+    Given a file "app.log.1" with:
+      """
+      database connection refused
+      """
+    When I run nesso with arguments grep "database connection error" {dir}/app.log.1
+    Then the exit code is 0
+    And stdout contains "database connection refused"
+    Given a file "APP.LOG" with:
+      """
+      database connection refused
+      """
+    When I run nesso with arguments grep "database connection error" {dir}/APP.LOG
+    Then the exit code is 0
+    And stdout contains "database connection refused"
+    Given a file "notes.txt" with:
+      """
+      database connection refused
+      """
+    When I run nesso with arguments grep "database connection error" {dir}/notes.txt
+    Then the exit code is 0
+    And stdout contains "database connection refused"
+
   Scenario: a JSON array keeps string message fields
     Given a file "rows.json" with:
       """
@@ -39,7 +69,13 @@ Feature: grep
     When I run nesso with arguments grep "second entry" {dir}/rows.json
     Then the exit code is 0
     And stdout contains "second entry"
+    And stdout contains "element 3:"
     And stderr contains "Skipped 1 line missing the \"message\" field."
+    When I run nesso with arguments index -o {dir}/corpus.nesso {dir}/rows.json
+    Then the exit code is 0
+    When I run nesso with arguments search "second entry" -i {dir}/corpus.nesso
+    Then the exit code is 0
+    And stdout contains "element 3:"
 
   Scenario: a JSONL file skips objects without a string message
     Given a file "rows.jsonl" with:
@@ -88,6 +124,31 @@ Feature: grep
     When I run nesso with arguments grep "database connection error" {dir}/app.log {dir}/other.log
     Then the exit code is 0
     And stdout contains "{dir}/app.log:line 1:"
+
+  Scenario: an uppercase JSON extension is still JSON
+    Given a file "rows.JSON" with:
+      """
+      {"message":"database connection refused"}
+      """
+    When I run nesso with arguments grep "database connection error" {dir}/rows.JSON
+    Then the exit code is 0
+    And stdout contains "database connection refused"
+    And stdout contains "line 1:"
+
+  Scenario: stdin is read as lines
+    Given stdin is:
+      """
+      database connection refused
+      """
+    When I run nesso with arguments grep "database connection error" -
+    Then the exit code is 0
+    And stdout contains "-:line 1:"
+    And stdout contains "database connection refused"
+    When I run nesso with arguments index -o {dir}/corpus.nesso -
+    Then the exit code is 0
+    When I run nesso with arguments search "database connection error" -i {dir}/corpus.nesso
+    Then the exit code is 0
+    And stdout contains "-:line 1:"
 
   Scenario: the model directory comes from the environment
     Given a file "app.log" with:

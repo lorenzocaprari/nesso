@@ -26,6 +26,11 @@ func (b *bindings) scenarioPath(name string) (string, error) {
 	return target, nil
 }
 
+func (b *bindings) setStdin(content *godog.DocString) error {
+	b.world.Stdin = content.Content + "\n"
+	return nil
+}
+
 func (b *bindings) writeFile(name string, content *godog.DocString) error {
 	target, err := b.scenarioPath(name)
 	if err != nil {

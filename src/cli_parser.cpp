@@ -15,6 +15,24 @@
 namespace nesso::cli
 {
 
+static CLI::Validator inputFile()
+{
+    return CLI::Validator{[](std::string &value)
+                          {
+                              if (value == "-")
+                              {
+                                  return std::string{};
+                              }
+                              std::error_code error;
+                              if (!std::filesystem::is_regular_file(value, error))
+                              {
+                                  return std::string{"file does not exist"};
+                              }
+                              return std::string{};
+                          },
+                          "FILE", "existing file, or - for stdin"};
+}
+
 static CLI::Validator positiveCount()
 {
     return CLI::Validator{[](std::string &value)
@@ -32,7 +50,7 @@ static CLI::Validator positiveCount()
 static constexpr const char *MODEL_DIR_HELP = "Directory containing model.onnx and vocab.txt. "
                                               "Default: NESSO_MODEL_DIR, ./models, XDG data, /usr/share/nesso";
 
-static constexpr const char *TEXT_FILES_HELP = "One or more .log, .json, or .jsonl files";
+static constexpr const char *TEXT_FILES_HELP = "Text files to read. - reads stdin as lines";
 
 struct TextOptions
 {
@@ -69,12 +87,13 @@ std::expected<ParsedCommand, int> parseCommandLine(int argc, char **argv)
     app.footer("Exit codes: 0 when matches are printed or index succeeds, 1 when nothing matches, 2 on error.");
     app.require_subcommand(1);
 
-    auto *grepCmd = app.add_subcommand("grep", "Semantic search over .log, .json, and .jsonl files. "
-                                               "Skips empty lines. Log lines and JSON string values longer than 4096 "
-                                               "characters are truncated. JSON objects must have a string field "
-                                               "(default: message). Directories are not searched.");
+    auto *grepCmd = app.add_subcommand("grep", "Semantic search over text files. .json and .jsonl are JSON; every "
+                                               "other name, including no extension and rotations, is read as lines. "
+                                               "- reads stdin. Skips empty lines. Lines and JSON string values longer "
+                                               "than 4096 characters are truncated. JSON objects must have a string "
+                                               "field (default: message). Directories are not searched.");
     grepCmd->add_option("query", text.query, "Natural-language query")->required();
-    grepCmd->add_option("files", text.files, TEXT_FILES_HELP)->required()->expected(1, -1)->check(CLI::ExistingFile);
+    grepCmd->add_option("files", text.files, TEXT_FILES_HELP)->required()->expected(1, -1)->check(inputFile());
     grepCmd->add_option("--json-field", text.jsonField, "JSON object field to read (default: message)")
         ->default_val("message");
     grepCmd->add_option("-k,--top-k", text.topK, "Maximum number of matches to return (default: 5)")
@@ -82,11 +101,12 @@ std::expected<ParsedCommand, int> parseCommandLine(int argc, char **argv)
         ->check(positiveCount());
     const auto *grepModelDir = grepCmd->add_option("--model-dir", text.modelDir, MODEL_DIR_HELP);
 
-    auto *indexCmd = app.add_subcommand("index", "Embed .log, .json, and .jsonl files into a corpus file. "
-                                                 "Skips empty lines. Log lines and JSON string values longer than "
-                                                 "4096 characters are truncated.");
+    auto *indexCmd = app.add_subcommand("index", "Embed text files into a corpus file. .json and .jsonl are JSON; "
+                                                 "every other name is read as lines. - reads stdin. Skips empty lines. "
+                                                 "Lines and JSON string values longer than 4096 characters are "
+                                                 "truncated.");
     indexCmd->add_option("-o,--output", text.output, "Corpus file to write")->required();
-    indexCmd->add_option("files", text.files, TEXT_FILES_HELP)->required()->expected(1, -1)->check(CLI::ExistingFile);
+    indexCmd->add_option("files", text.files, TEXT_FILES_HELP)->required()->expected(1, -1)->check(inputFile());
     indexCmd->add_option("--json-field", text.jsonField, "JSON object field to read (default: message)")
         ->default_val("message");
     const auto *indexModelDir = indexCmd->add_option("--model-dir", text.modelDir, MODEL_DIR_HELP);

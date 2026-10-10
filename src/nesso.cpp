@@ -31,6 +31,8 @@ ErrorCause causeOf(parser::ParseError error)
         return ErrorCause::FileOpen;
     case parser::ParseError::UnsupportedFormat:
         return ErrorCause::UnsupportedFormat;
+    case parser::ParseError::BinaryFile:
+        return ErrorCause::BinaryFile;
     }
     std::unreachable();
 }
@@ -79,6 +81,8 @@ std::string_view describe(ErrorCause cause)
         return "could not open the file";
     case ErrorCause::UnsupportedFormat:
         return "unsupported format";
+    case ErrorCause::BinaryFile:
+        return "the file is binary";
     case ErrorCause::VocabLoad:
         return "could not load the vocabulary";
     case ErrorCause::Tokenization:
@@ -308,7 +312,8 @@ embedFiles(const ParsedFiles &parsed, const embed::OnnxEmbedder &embedder, std::
         core::CorpusChunk chunk{.chunk = {.text = parsed.chunks[index].text,
                                           .lineNumber = parsed.chunks[index].lineNumber,
                                           .source = parsed.sources[index],
-                                          .byteOffset = parsed.chunks[index].byteOffset},
+                                          .byteOffset = parsed.chunks[index].byteOffset,
+                                          .arrayElement = parsed.chunks[index].arrayElement},
                                 .embedding = {}};
         if (matrix != nullptr)
         {
@@ -414,8 +419,11 @@ static std::expected<TextResults, Error> rankChunks(std::span<const core::Corpus
     for (const core::Hit &hit : *ranked)
     {
         const core::LogChunk &chunk = chunks[static_cast<size_t>(hit.index)].chunk;
-        results.matches.push_back(
-            {.source = chunk.source, .line = chunk.lineNumber, .score = hit.score, .text = chunk.text});
+        results.matches.push_back({.source = chunk.source,
+                                   .line = chunk.lineNumber,
+                                   .score = hit.score,
+                                   .text = chunk.text,
+                                   .arrayElement = chunk.arrayElement});
     }
     return results;
 }

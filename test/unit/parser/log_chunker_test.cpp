@@ -124,11 +124,76 @@ TEST_CASE("Chunker reports file open failures", "[Chunker][parser][Unit]")
     REQUIRE(jsonChunks.error() == parser::ParseError::FileOpenFailure);
 }
 
-TEST_CASE("Chunker rejects unsupported extensions", "[Chunker][parser][Unit]")
+TEST_CASE("Chunker reads any non-JSON name as lines", "[Chunker][parser][Unit]")
 {
-    const auto chunks = parser::Chunker::fromFile("README.md");
-    REQUIRE_FALSE(chunks.has_value());
-    REQUIRE(chunks.error() == parser::ParseError::UnsupportedFormat);
+    const auto directory = std::filesystem::temp_directory_path() / "nesso-chunker-names";
+    std::filesystem::remove_all(directory);
+    std::filesystem::create_directories(directory);
+
+    const auto expectLine = [&](const char *name)
+    {
+        const auto path = directory / name;
+        writeBytes(path, "database connection refused\n");
+        const auto chunks = parser::Chunker::fromFile(path);
+        REQUIRE(chunks.has_value());
+        REQUIRE(chunks->size() == 1);
+        REQUIRE((*chunks)[0].text == "database connection refused");
+        REQUIRE_FALSE((*chunks)[0].arrayElement);
+    };
+    expectLine("syslog");
+    expectLine("APP.LOG");
+    expectLine("app.log.1");
+    expectLine("notes.txt");
+
+    const auto jsonPath = directory / "rows.JSON";
+    writeBytes(jsonPath, "{\"message\":\"standalone entry\"}\n");
+    const auto jsonChunks = parser::Chunker::fromFile(jsonPath);
+    REQUIRE(jsonChunks.has_value());
+    REQUIRE(jsonChunks->size() == 1);
+    REQUIRE((*jsonChunks)[0].text == "standalone entry");
+
+    const auto jsonlPath = directory / "rows.JSONL";
+    writeBytes(jsonlPath, "{\"message\":\"one\"}\n{\"message\":\"two\"}\n");
+    const auto jsonlChunks = parser::Chunker::fromFile(jsonlPath);
+    REQUIRE(jsonlChunks.has_value());
+    REQUIRE(jsonlChunks->size() == 2);
+
+    std::filesystem::remove_all(directory);
+}
+
+TEST_CASE("Chunker rejects a NUL in the first 4 KiB", "[Chunker][parser][Unit]")
+{
+    const auto directory = std::filesystem::temp_directory_path() / "nesso-chunker-binary";
+    std::filesystem::remove_all(directory);
+    std::filesystem::create_directories(directory);
+
+    const auto binary = directory / "blob.log";
+    writeBytes(binary, std::string("hello\0world", 11));
+    const auto rejected = parser::Chunker::fromFile(binary);
+    REQUIRE_FALSE(rejected.has_value());
+    REQUIRE(rejected.error() == parser::ParseError::BinaryFile);
+
+    std::string late(4096, 'a');
+    late.push_back('\0');
+    late += "tail\n";
+    const auto after = directory / "late.log";
+    writeBytes(after, late);
+    const auto kept = parser::Chunker::fromFile(after);
+    REQUIRE(kept.has_value());
+    REQUIRE_FALSE(kept->empty());
+
+    std::filesystem::remove_all(directory);
+}
+
+TEST_CASE("Chunker numbers JSON array elements", "[Chunker][parser][Unit]")
+{
+    const auto array = parser::Chunker::fromFile(std::filesystem::path(NESSO_TEST_FIXTURES) / "sample_array.json");
+    REQUIRE(array.has_value());
+    REQUIRE(array->size() == 2);
+    REQUIRE((*array)[0].arrayElement);
+    REQUIRE((*array)[0].lineNumber == 1);
+    REQUIRE((*array)[1].arrayElement);
+    REQUIRE((*array)[1].lineNumber == 3);
 }
 
 TEST_CASE("Chunker keeps a final line that has no trailing newline", "[Chunker][parser][Unit]")
