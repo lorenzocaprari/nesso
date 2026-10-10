@@ -89,8 +89,8 @@ TEST_CASE("text operations report model and corpus failures", "[nesso][text]")
 
     const auto nothing = app.search({.query = "database", .index = empty});
     REQUIRE_FALSE(nothing.has_value());
-    REQUIRE(nothing.error().kind == nesso::ErrorKind::NoMatches);
-    REQUIRE(nothing.error().cause == nesso::ErrorCause::None);
+    REQUIRE(nothing.error().kind == nesso::ErrorKind::EmptyInput);
+    REQUIRE(nothing.error().cause == nesso::ErrorCause::EmptyCorpus);
 }
 
 TEST_CASE("grep, index, and search run the text stages", "[nesso][text]")

@@ -24,11 +24,31 @@ static bool stripCarriageReturn(std::string &line)
     return true;
 }
 
-static void countSkip(ParseStats *stats)
+enum class SkipReason : uint8_t
 {
-    if (stats != nullptr)
+    Empty,
+    Malformed,
+    MissingField
+};
+
+static void countSkip(ParseStats *stats, SkipReason reason)
+{
+    if (stats == nullptr)
     {
-        ++stats->skippedLines;
+        return;
+    }
+    ++stats->skippedLines;
+    switch (reason)
+    {
+    case SkipReason::Empty:
+        ++stats->emptyLines;
+        break;
+    case SkipReason::Malformed:
+        ++stats->malformedLines;
+        break;
+    case SkipReason::MissingField:
+        ++stats->missingFieldLines;
+        break;
     }
 }
 
@@ -93,7 +113,7 @@ std::expected<std::vector<ParsedChunk>, ParseError> Chunker::fromLogFile(const s
         const size_t fileBytes = line.size() + (hadCarriageReturn ? 1U : 0U);
         if (line.empty())
         {
-            countSkip(stats);
+            countSkip(stats, SkipReason::Empty);
         }
         else
         {
@@ -124,7 +144,7 @@ std::expected<std::vector<ParsedChunk>, ParseError> Chunker::fromJsonFile(const 
     {
         if (!document.contains(field) || !document.at(field).is_string())
         {
-            countSkip(stats);
+            countSkip(stats, SkipReason::MissingField);
             return;
         }
         std::string text = document.at(field).get<std::string>();
@@ -142,7 +162,7 @@ std::expected<std::vector<ParsedChunk>, ParseError> Chunker::fromJsonFile(const 
             const size_t fileBytes = line.size() + (hadCarriageReturn ? 1U : 0U);
             if (line.empty())
             {
-                countSkip(stats);
+                countSkip(stats, SkipReason::Empty);
             }
             else
             {
@@ -152,7 +172,7 @@ std::expected<std::vector<ParsedChunk>, ParseError> Chunker::fromJsonFile(const 
                 }
                 catch (const nlohmann::json::exception &)
                 {
-                    countSkip(stats);
+                    countSkip(stats, SkipReason::Malformed);
                 }
             }
             advanceOffset(byteOffset, fileBytes, !input.eof());
@@ -178,7 +198,7 @@ std::expected<std::vector<ParsedChunk>, ParseError> Chunker::fromJsonFile(const 
     }
     catch (const nlohmann::json::exception &)
     {
-        countSkip(stats);
+        countSkip(stats, SkipReason::Malformed);
         return chunks;
     }
 }

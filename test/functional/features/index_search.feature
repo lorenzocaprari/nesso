@@ -38,6 +38,7 @@ Feature: index and search
     When I run nesso with arguments search "database connection error" -i {dir}/corpus.nesso
     Then the exit code is 1
     And stdout is empty
+    And stderr contains "the corpus is empty"
 
   Scenario: search reads a checked-in corpus
     When I run nesso with arguments search "database connection error" -i {fixture}/one-chunk.nesso

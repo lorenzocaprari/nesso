@@ -27,11 +27,14 @@ struct ParsedChunk
     uint64_t byteOffset = 0;
 };
 
-/// Counts for one parse. `skippedLines` were dropped. `truncatedLines` were kept after cutting the value to the
-/// maximum length.
+/// Counts for one parse. `skippedLines` is the sum of the reason counters. `truncatedLines` were kept after cutting
+/// the value to the maximum length.
 struct ParseStats
 {
     size_t skippedLines = 0;
+    size_t emptyLines = 0;
+    size_t malformedLines = 0;
+    size_t missingFieldLines = 0;
     size_t truncatedLines = 0;
 };
 

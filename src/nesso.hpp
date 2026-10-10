@@ -45,26 +45,35 @@ enum class ErrorCause : uint8_t
     InvalidInput,
     MismatchedDimensions,
     EmptyEmbedding,
-    CorruptFile
+    CorruptFile,
+    EmptyFile,
+    NothingIndexable,
+    EmptyCorpus
 };
 
 /// Failure of a Nesso operation.
 ///
-/// `cause` names the layer failure. `path`, `skippedLines`, and `truncatedLines` are set when the failure concerns a
-/// file or happens after parsing.
+/// `cause` names the layer failure. `path`, the skip counters, and `truncatedLines` are set when the failure concerns
+/// a file or happens after parsing. `note` is an extra sentence, used when the model directories were listed.
 struct Error
 {
     ErrorKind kind{};
     ErrorCause cause = ErrorCause::None;
     std::filesystem::path path;
     size_t skippedLines = 0;
+    size_t emptyLines = 0;
+    size_t malformedLines = 0;
+    size_t missingFieldLines = 0;
     size_t truncatedLines = 0;
+    std::string jsonField = "message";
+    std::string note;
 };
 
 /// Phrase for `cause`, used after the operation sentence.
 [[nodiscard]] std::string_view describe(ErrorCause cause);
 
-/// One stderr line for `error`. Empty when the outcome is no match.
+/// One stderr line for `error`. Empty when the outcome is no match. `EmptyInput` is a reason, without an "Error:"
+/// prefix.
 [[nodiscard]] std::string message(const Error &error);
 
 inline constexpr size_t DEFAULT_TEXT_TOP_K = 5;
@@ -103,7 +112,11 @@ struct TextResults
 {
     std::vector<TextMatch> matches;
     size_t skippedLines = 0;
+    size_t emptyLines = 0;
+    size_t malformedLines = 0;
+    size_t missingFieldLines = 0;
     size_t truncatedLines = 0;
+    std::string jsonField = "message";
     bool multipleSources = false;
 };
 
@@ -111,7 +124,11 @@ struct IndexSummary
 {
     size_t chunks = 0;
     size_t skippedLines = 0;
+    size_t emptyLines = 0;
+    size_t malformedLines = 0;
+    size_t missingFieldLines = 0;
     size_t truncatedLines = 0;
+    std::string jsonField = "message";
 };
 
 struct Config

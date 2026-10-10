@@ -23,6 +23,28 @@ bool containsModelFiles(const std::filesystem::path &dir)
            std::filesystem::is_regular_file(dir / MODEL_FILENAME, ec);
 }
 
+std::vector<std::filesystem::path> modelDirCandidates(const std::filesystem::path &cwd,
+                                                      const std::filesystem::path &packagedDir)
+{
+    if (const char *envDir = envOrEmpty("NESSO_MODEL_DIR"); envDir[0] != '\0')
+    {
+        return {envDir};
+    }
+
+    std::vector<std::filesystem::path> dirs;
+    dirs.push_back(cwd / "models");
+    if (const char *xdg = envOrEmpty("XDG_DATA_HOME"); xdg[0] != '\0')
+    {
+        dirs.push_back(std::filesystem::path(xdg) / "nesso");
+    }
+    else if (const char *home = envOrEmpty("HOME"); home[0] != '\0')
+    {
+        dirs.push_back(std::filesystem::path(home) / ".local" / "share" / "nesso");
+    }
+    dirs.push_back(packagedDir);
+    return dirs;
+}
+
 std::filesystem::path resolveDefaultModelDir(const std::filesystem::path &cwd, const std::filesystem::path &packagedDir)
 {
     if (const char *envDir = envOrEmpty("NESSO_MODEL_DIR"); envDir[0] != '\0')
@@ -30,26 +52,13 @@ std::filesystem::path resolveDefaultModelDir(const std::filesystem::path &cwd, c
         return envDir;
     }
 
-    std::filesystem::path cwdModels = cwd / "models";
-    if (containsModelFiles(cwdModels))
+    for (const std::filesystem::path &dir : modelDirCandidates(cwd, packagedDir))
     {
-        return cwdModels;
+        if (containsModelFiles(dir))
+        {
+            return dir;
+        }
     }
-
-    std::filesystem::path xdgNesso;
-    if (const char *xdg = envOrEmpty("XDG_DATA_HOME"); xdg[0] != '\0')
-    {
-        xdgNesso = std::filesystem::path(xdg) / "nesso";
-    }
-    else if (const char *home = envOrEmpty("HOME"); home[0] != '\0')
-    {
-        xdgNesso = std::filesystem::path(home) / ".local" / "share" / "nesso";
-    }
-    if (!xdgNesso.empty() && containsModelFiles(xdgNesso))
-    {
-        return xdgNesso;
-    }
-
     return packagedDir;
 }
 

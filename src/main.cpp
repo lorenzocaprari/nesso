@@ -31,16 +31,16 @@ int main(int argc, char *argv[]) noexcept
     catch (const std::format_error &e)
     {
         std::cerr << "System Format Error: " << e.what() << '\n';
-        return 1;
+        return 2;
     }
     catch (const std::exception &e)
     {
         std::cerr << "Unhandled Runtime Exception: " << e.what() << '\n';
-        return 1;
+        return 2;
     }
     catch (...)
     {
         std::cerr << "Unknown critical failure occurred." << '\n';
-        return 1;
+        return 2;
     }
 }

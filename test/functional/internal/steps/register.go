@@ -45,7 +45,8 @@ func InitializeScenario(sc *godog.ScenarioContext) {
 	sc.Step(`^running nesso again prints the same stdout$`, b.runAgainSameStdout)
 	sc.Step(`^the exit code is (\d+)$`, b.exitCodeIs)
 	sc.Step(`^the exit code is not (\d+)$`, b.exitCodeIsNot)
-	sc.Step(`^(stdout|stderr) contains "([^"]*)"$`, b.streamContains)
-	sc.Step(`^(stdout|stderr) does not contain "([^"]*)"$`, b.streamOmits)
+	// (.*) so a phrase may contain quotes, as in: missing the "message" field.
+	sc.Step(`^(stdout|stderr) contains "(.*)"$`, b.streamContains)
+	sc.Step(`^(stdout|stderr) does not contain "(.*)"$`, b.streamOmits)
 	sc.Step(`^(stdout|stderr) is empty$`, b.streamIsEmpty)
 }

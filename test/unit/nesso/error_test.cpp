@@ -36,13 +36,16 @@ TEST_CASE("each cause has a readable phrase", "[nesso][error]")
     REQUIRE(nesso::describe(nesso::ErrorCause::MismatchedDimensions) == "the embedding width does not match");
     REQUIRE(nesso::describe(nesso::ErrorCause::EmptyEmbedding) == "the embedding is empty");
     REQUIRE(nesso::describe(nesso::ErrorCause::CorruptFile) == "the file is corrupt");
+    REQUIRE(nesso::describe(nesso::ErrorCause::EmptyFile) == "the file is empty");
+    REQUIRE(nesso::describe(nesso::ErrorCause::NothingIndexable) == "no indexable lines");
+    REQUIRE(nesso::describe(nesso::ErrorCause::EmptyCorpus) == "the corpus is empty");
 }
 
 TEST_CASE("each failure kind names itself", "[nesso][error]")
 {
     const auto text = [](nesso::ErrorKind kind, nesso::ErrorCause cause)
     {
-        const nesso::Error error{.kind = kind, .cause = cause, .path = "in.log", .skippedLines = 0};
+        const nesso::Error error{.kind = kind, .cause = cause, .path = "in.log", .skippedLines = 0, .note = {}};
         return nesso::message(error);
     };
 
@@ -64,6 +67,9 @@ TEST_CASE("each failure kind names itself", "[nesso][error]")
             std::string::npos);
     REQUIRE(text(nesso::ErrorKind::CorpusLoad, nesso::ErrorCause::EmptyEmbedding).find("failed to load the corpus") !=
             std::string::npos);
-    REQUIRE(text(nesso::ErrorKind::EmptyInput, nesso::ErrorCause::None).empty());
+    const std::string emptyFile = text(nesso::ErrorKind::EmptyInput, nesso::ErrorCause::EmptyFile);
+    REQUIRE(emptyFile.find("nothing to search") != std::string::npos);
+    REQUIRE(emptyFile.find("the file is empty") != std::string::npos);
+    REQUIRE(emptyFile.find("in.log") != std::string::npos);
     REQUIRE(text(nesso::ErrorKind::NoMatches, nesso::ErrorCause::None).empty());
 }

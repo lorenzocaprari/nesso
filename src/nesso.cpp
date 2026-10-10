@@ -95,6 +95,12 @@ std::string_view describe(ErrorCause cause)
         return "the embedding is empty";
     case ErrorCause::CorruptFile:
         return "the file is corrupt";
+    case ErrorCause::EmptyFile:
+        return "the file is empty";
+    case ErrorCause::NothingIndexable:
+        return "no indexable lines";
+    case ErrorCause::EmptyCorpus:
+        return "the corpus is empty";
     }
     std::unreachable();
 }
@@ -106,7 +112,15 @@ std::string message(const Error &error)
     switch (error.kind)
     {
     case ErrorKind::EmbedderLoad:
-        return std::format("Error: failed to load the embedder from '{}': {}", path, reason);
+    {
+        std::string text = std::format("Error: failed to load the embedder from '{}': {}", path, reason);
+        if (!error.note.empty())
+        {
+            text += ". ";
+            text += error.note;
+        }
+        return text;
+    }
     case ErrorKind::Parse:
         return std::format("Error: failed to parse '{}': {}", path, reason);
     case ErrorKind::Embed:
@@ -124,6 +138,11 @@ std::string message(const Error &error)
     case ErrorKind::CorpusLoad:
         return std::format("Error: failed to load the corpus: {}", reason);
     case ErrorKind::EmptyInput:
+        if (path.empty())
+        {
+            return std::format("nothing to search: {}", reason);
+        }
+        return std::format("nothing to search in '{}': {}", path, reason);
     case ErrorKind::NoMatches:
         return {};
     }
@@ -135,23 +154,41 @@ struct ParsedFiles
     std::vector<parser::ParsedChunk> chunks;
     std::vector<std::string> sources;
     size_t skippedLines = 0;
+    size_t emptyLines = 0;
+    size_t malformedLines = 0;
+    size_t missingFieldLines = 0;
     size_t truncatedLines = 0;
+    std::string jsonField = "message";
 };
 
 struct LineCounts
 {
     size_t skipped = 0;
+    size_t emptyLines = 0;
+    size_t malformedLines = 0;
+    size_t missingFieldLines = 0;
     size_t truncated = 0;
+    std::string jsonField = "message";
 };
 
 static LineCounts lineCounts(const ParsedFiles &parsed)
 {
-    return {.skipped = parsed.skippedLines, .truncated = parsed.truncatedLines};
+    return {.skipped = parsed.skippedLines,
+            .emptyLines = parsed.emptyLines,
+            .malformedLines = parsed.malformedLines,
+            .missingFieldLines = parsed.missingFieldLines,
+            .truncated = parsed.truncatedLines,
+            .jsonField = parsed.jsonField};
 }
 
-static LineCounts lineCounts(const parser::ParseStats &stats)
+static LineCounts lineCounts(const parser::ParseStats &stats, std::string jsonField)
 {
-    return {.skipped = stats.skippedLines, .truncated = stats.truncatedLines};
+    return {.skipped = stats.skippedLines,
+            .emptyLines = stats.emptyLines,
+            .malformedLines = stats.malformedLines,
+            .missingFieldLines = stats.missingFieldLines,
+            .truncated = stats.truncatedLines,
+            .jsonField = std::move(jsonField)};
 }
 
 static Error makeError(ErrorKind kind, ErrorCause cause, std::filesystem::path path, LineCounts counts)
@@ -160,7 +197,35 @@ static Error makeError(ErrorKind kind, ErrorCause cause, std::filesystem::path p
                  .cause = cause,
                  .path = std::move(path),
                  .skippedLines = counts.skipped,
-                 .truncatedLines = counts.truncated};
+                 .emptyLines = counts.emptyLines,
+                 .malformedLines = counts.malformedLines,
+                 .missingFieldLines = counts.missingFieldLines,
+                 .truncatedLines = counts.truncated,
+                 .jsonField = std::move(counts.jsonField),
+                 .note = {}};
+}
+
+static std::string modelLoadNote(const std::vector<std::filesystem::path> &tried)
+{
+    std::string text = "Tried";
+    for (size_t index = 0; index < tried.size(); ++index)
+    {
+        if (index == 0)
+        {
+            text += ' ';
+        }
+        else if (index + 1 == tried.size())
+        {
+            text += " and ";
+        }
+        else
+        {
+            text += ", ";
+        }
+        text += std::format("'{}'", tried[index].string());
+    }
+    text += ". Run scripts/fetch-model or pass --model-dir.";
+    return text;
 }
 
 static std::expected<ParsedFiles, Error> parseFiles(std::span<const std::filesystem::path> files,
@@ -174,7 +239,8 @@ static std::expected<ParsedFiles, Error> parseFiles(std::span<const std::filesys
         auto fileChunks = parser::Chunker::fromFile(path, MAX_LINE_LENGTH, &stats, jsonField);
         if (!fileChunks)
         {
-            return std::unexpected(makeError(ErrorKind::Parse, causeOf(fileChunks.error()), path, lineCounts(stats)));
+            return std::unexpected(makeError(ErrorKind::Parse, causeOf(fileChunks.error()), path,
+                                             lineCounts(stats, std::string{jsonField})));
         }
         const std::string source = path.string();
         for (parser::ParsedChunk &chunk : *fileChunks)
@@ -184,16 +250,20 @@ static std::expected<ParsedFiles, Error> parseFiles(std::span<const std::filesys
         }
     }
     parsed.skippedLines = stats.skippedLines;
+    parsed.emptyLines = stats.emptyLines;
+    parsed.malformedLines = stats.malformedLines;
+    parsed.missingFieldLines = stats.missingFieldLines;
     parsed.truncatedLines = stats.truncatedLines;
+    parsed.jsonField = std::string{jsonField};
     return parsed;
 }
 
-template <typename E> static std::unexpected<Error> textFailure(ErrorKind kind, E cause, LineCounts counts)
+template <typename E> static std::unexpected<Error> textFailure(ErrorKind kind, E cause, const LineCounts &counts)
 {
     return std::unexpected(makeError(kind, causeOf(cause), {}, counts));
 }
 
-static std::unexpected<Error> noMatch(ErrorKind kind, LineCounts counts)
+static std::unexpected<Error> noMatch(ErrorKind kind, const LineCounts &counts)
 {
     return std::unexpected(makeError(kind, ErrorCause::None, {}, counts));
 }
@@ -269,8 +339,8 @@ static bool multipleSources(std::span<const core::CorpusChunk> chunks)
                                [&first](const core::CorpusChunk &chunk) { return chunk.chunk.source != first; });
 }
 
-static std::expected<std::vector<float>, Error> packMatrix(std::span<const core::CorpusChunk> chunks, LineCounts counts,
-                                                           ErrorKind failure)
+static std::expected<std::vector<float>, Error> packMatrix(std::span<const core::CorpusChunk> chunks,
+                                                           const LineCounts &counts, ErrorKind failure)
 {
     const size_t dims = chunks.front().embedding.size();
     if (dims == 0)
@@ -293,7 +363,7 @@ static std::expected<std::vector<float>, Error> packMatrix(std::span<const core:
 
 static std::expected<TextResults, Error> rankChunks(std::span<const core::CorpusChunk> chunks,
                                                     const embed::OnnxEmbedder &embedder, std::string_view query,
-                                                    size_t topK, LineCounts counts, ErrorKind packFailure,
+                                                    size_t topK, const LineCounts &counts, ErrorKind packFailure,
                                                     std::span<const float> packed)
 {
     const ScopedStage stage{"rank"};
@@ -334,7 +404,11 @@ static std::expected<TextResults, Error> rankChunks(std::span<const core::Corpus
 
     TextResults results{.matches = {},
                         .skippedLines = counts.skipped,
+                        .emptyLines = counts.emptyLines,
+                        .malformedLines = counts.malformedLines,
+                        .missingFieldLines = counts.missingFieldLines,
                         .truncatedLines = counts.truncated,
+                        .jsonField = counts.jsonField,
                         .multipleSources = multipleSources(chunks)};
     results.matches.reserve(ranked->size());
     for (const core::Hit &hit : *ranked)
@@ -356,13 +430,25 @@ class Nesso::Impl
     {
         if (!embedder_)
         {
-            const std::filesystem::path modelDir =
-                config_.modelDir.has_value() ? *config_.modelDir : resolveDefaultModelDir();
+            std::vector<std::filesystem::path> tried;
+            std::filesystem::path modelDir;
+            if (config_.modelDir.has_value())
+            {
+                modelDir = *config_.modelDir;
+                tried.push_back(modelDir);
+            }
+            else
+            {
+                tried = modelDirCandidates();
+                modelDir = resolveDefaultModelDir();
+            }
             auto created = embed::OnnxEmbedder::create(modelDir);
             if (!created)
             {
-                return std::unexpected(
-                    Error{.kind = ErrorKind::EmbedderLoad, .cause = causeOf(created.error()), .path = modelDir});
+                Error error{
+                    .kind = ErrorKind::EmbedderLoad, .cause = causeOf(created.error()), .path = modelDir, .note = {}};
+                error.note = modelLoadNote(tried);
+                return std::unexpected(std::move(error));
             }
             embedder_ = std::move(*created);
         }
@@ -405,7 +491,9 @@ std::expected<TextResults, Error> Nesso::grep(const GrepRequest &request) const
     }
     if (chunks->empty())
     {
-        return noMatch(ErrorKind::EmptyInput, lineCounts(*parsed));
+        const ErrorCause cause = parsed->skippedLines == 0 ? ErrorCause::EmptyFile : ErrorCause::NothingIndexable;
+        const std::filesystem::path path = request.files.size() == 1 ? request.files.front() : std::filesystem::path{};
+        return std::unexpected(makeError(ErrorKind::EmptyInput, cause, path, lineCounts(*parsed)));
     }
 
     return rankChunks(*chunks, **embedder, request.query, request.topK, lineCounts(*parsed), ErrorKind::IndexBuild,
@@ -443,8 +531,13 @@ std::expected<IndexSummary, Error> Nesso::index(const IndexRequest &request) con
         return std::unexpected(
             makeError(ErrorKind::CorpusWrite, causeOf(written.error()), request.output, lineCounts(*parsed)));
     }
-    return IndexSummary{
-        .chunks = chunks->size(), .skippedLines = parsed->skippedLines, .truncatedLines = parsed->truncatedLines};
+    return IndexSummary{.chunks = chunks->size(),
+                        .skippedLines = parsed->skippedLines,
+                        .emptyLines = parsed->emptyLines,
+                        .malformedLines = parsed->malformedLines,
+                        .missingFieldLines = parsed->missingFieldLines,
+                        .truncatedLines = parsed->truncatedLines,
+                        .jsonField = parsed->jsonField};
 }
 
 std::expected<TextResults, Error> Nesso::search(const SearchRequest &request) const
@@ -458,11 +551,12 @@ std::expected<TextResults, Error> Nesso::search(const SearchRequest &request) co
     if (!chunks)
     {
         return std::unexpected(
-            Error{.kind = ErrorKind::CorpusRead, .cause = causeOf(chunks.error()), .path = request.index});
+            Error{.kind = ErrorKind::CorpusRead, .cause = causeOf(chunks.error()), .path = request.index, .note = {}});
     }
-    if (chunks->chunks().empty() || request.topK == 0)
+    if (chunks->chunks().empty())
     {
-        return noMatch(ErrorKind::NoMatches, {});
+        return std::unexpected(
+            Error{.kind = ErrorKind::EmptyInput, .cause = ErrorCause::EmptyCorpus, .path = request.index, .note = {}});
     }
 
     const auto embedder = impl_->embedder();
