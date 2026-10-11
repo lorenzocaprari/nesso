@@ -579,3 +579,279 @@ jobs:
             echo '```'
           } >> "${GITHUB_STEP_SUMMARY}"
           exit "${status}"
+
+  # Experimental, not a required check. continue-on-error keeps Pipeline
+  # green until this job has stayed green long enough to require it.
+  # Clang 21 compiles nesso against the gcc-built libstdc++ packages
+  # already in nesso-build-env (see conan/profiles/clang-26). libc++ is
+  # not used: it is a different ABI from those static archives.
+  build-clang-26:
+    name: "clang-26-release (experimental, not required)"
+    needs: prepare-image
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    timeout-minutes: 60
+    container:
+      image: ${{ needs.prepare-image.outputs.image }}
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Show Clang
+        run: clang++-21 --version
+
+      - name: Install Dependencies (Conan)
+        run: |
+          conan profile detect --force
+          conan install . -pr:h ./conan/profiles/clang-26 -pr:b default --lockfile=conan.lock --build=missing --no-remote
+
+      - name: Build
+        env:
+          NESSO_REQUIRE_MODEL: "1"
+          NESSO_REQUIRE_BDD: "1"
+        run: conan build . -pr:h ./conan/profiles/clang-26 -pr:b default --lockfile=conan.lock --build=missing --no-remote
+
+      - name: Require Clang and libstdc++
+        run: |
+          set -euo pipefail
+          toolchain="build/Release/generators/conan_toolchain.cmake"
+          commands="build/Release/compile_commands.json"
+          grep -q 'clang++-21' "${toolchain}"
+          grep -q 'clang++-21' "${commands}"
+          if grep -q -- '-stdlib=libc++' "${commands}"; then
+            echo "error: compile commands select libc++" >&2
+            exit 1
+          fi
+          ldd build/Release/src/nesso > /tmp/nesso-ldd.txt
+          cat /tmp/nesso-ldd.txt
+          grep -q 'libstdc++' /tmp/nesso-ldd.txt
+          if grep -q 'libc++' /tmp/nesso-ldd.txt; then
+            echo "error: nesso is linked to libc++" >&2
+            exit 1
+          fi
+
+      - name: Archive Release build
+        run: tar -czf release-build-clang.tar.gz build/Release
+
+      - name: Upload Release build
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release-build-clang
+          path: release-build-clang.tar.gz
+          retention-days: 1
+          if-no-files-found: error
+
+  unit-tests-clang:
+    name: "${{ matrix.label }}-tests-clang (experimental, not required)"
+    needs: [prepare-image, build-clang-26]
+    if: ${{ !cancelled() && needs.build-clang-26.result == 'success' }}
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        label: [unit, integration, functional]
+    container:
+      image: ${{ needs.prepare-image.outputs.image }}
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Restore MiniLM models
+        id: models
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: models
+          key: minilm-${{ hashFiles('scripts/fetch-model') }}
+
+      - name: Fetch MiniLM models
+        if: steps.models.outputs.cache-hit != 'true'
+        run: ./scripts/fetch-model models
+
+      - name: Download Release build
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: release-build-clang
+
+      - name: Extract Release build
+        run: tar -xzf release-build-clang.tar.gz
+
+      - name: Run ${{ matrix.label }} tests
+        run: ctest --test-dir build/Release -L ${{ matrix.label }} -V
+
+  # Experimental, not a required check. Native arm64 image; the amd64
+  # prepare-image job and its tag are unchanged. QEMU is not used.
+  prepare-image-arm64:
+    name: "prepare-image-arm64 (experimental, not required)"
+    runs-on: ubuntu-24.04-arm
+    continue-on-error: true
+    timeout-minutes: 360
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      image: ${{ steps.select.outputs.image }}
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Resolve image reference
+        id: select
+        run: |
+          set -euo pipefail
+          owner_lc="$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')"
+          reg="${{ env.REGISTRY }}/${owner_lc}/nesso-build-env"
+          deps_hash="$(sha256sum .devcontainer/Dockerfile.arm64 conanfile.py conan.lock \
+            conan/profiles/gcc-26-armv8 | sha256sum | cut -c1-16)"
+          {
+            echo "image=${reg}:deps-${deps_hash}-arm64"
+            echo "cache_ref=${reg}:buildcache-arm64"
+          } >> "${GITHUB_OUTPUT}"
+
+      - name: Log into ${{ env.REGISTRY }}
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
+
+      - name: Check dependency image
+        id: image
+        run: |
+          if [ '${{ github.event_name == 'workflow_dispatch' && inputs.force_image_rebuild == true }}' != 'true' ] &&
+            docker buildx imagetools inspect '${{ steps.select.outputs.image }}' >/dev/null 2>&1; then
+            echo "rebuild=false" >> "${GITHUB_OUTPUT}"
+          else
+            echo "rebuild=true" >> "${GITHUB_OUTPUT}"
+          fi
+
+      - name: Free disk space
+        if: steps.image.outputs.rebuild == 'true'
+        uses: jlumbroso/free-disk-space@54081f138730dfa15788a46383842cd2f914a1be # v1.3.1
+        with:
+          tool-cache: true
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: true
+          docker-images: true
+          swap-storage: true
+
+      - name: Build and push nesso-build-env arm64
+        if: steps.image.outputs.rebuild == 'true'
+        uses: docker/build-push-action@ca052bb54ab0790a636c9b5f226502c73d547a25 # v5.4.0
+        with:
+          context: .
+          file: .devcontainer/Dockerfile.arm64
+          platforms: linux/arm64
+          push: true
+          tags: ${{ steps.select.outputs.image }}
+          cache-from: type=registry,ref=${{ steps.select.outputs.cache_ref }}
+          cache-to: type=registry,ref=${{ steps.select.outputs.cache_ref }},mode=max
+
+      - name: Verify image architecture
+        run: |
+          set -euo pipefail
+          docker buildx imagetools inspect '${{ steps.select.outputs.image }}' | tee /tmp/image-inspect.txt
+          grep -Eiq 'arm64|aarch64' /tmp/image-inspect.txt
+
+  build-gcc-26-arm64:
+    name: "gcc-26-arm64-release (experimental, not required)"
+    needs: prepare-image-arm64
+    if: ${{ !cancelled() && needs.prepare-image-arm64.result == 'success' }}
+    runs-on: ubuntu-24.04-arm
+    continue-on-error: true
+    timeout-minutes: 90
+    container:
+      image: ${{ needs.prepare-image-arm64.outputs.image }}
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Require an aarch64 compiler
+        run: |
+          set -euo pipefail
+          uname -m | grep -qx aarch64
+          g++-15 -dumpmachine | grep -q aarch64
+
+      - name: Install Dependencies (Conan)
+        run: |
+          conan profile detect --force
+          conan install . -pr:h ./conan/profiles/gcc-26-armv8 -pr:b default --lockfile=conan.lock --build=missing --no-remote
+
+      - name: Build
+        env:
+          NESSO_REQUIRE_MODEL: "1"
+          NESSO_REQUIRE_BDD: "1"
+        run: conan build . -pr:h ./conan/profiles/gcc-26-armv8 -pr:b default --lockfile=conan.lock --build=missing --no-remote
+
+      - name: Require an AArch64 binary
+        run: |
+          set -euo pipefail
+          readelf -h build/Release/src/nesso | grep -q 'Machine:.*AArch64'
+
+      - name: Archive Release build
+        run: tar -czf release-build-arm64.tar.gz build/Release
+
+      - name: Upload Release build
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release-build-arm64
+          path: release-build-arm64.tar.gz
+          retention-days: 1
+          if-no-files-found: error
+
+  unit-tests-arm64:
+    name: "${{ matrix.label }}-tests-arm64 (experimental, not required)"
+    needs: [prepare-image-arm64, build-gcc-26-arm64]
+    if: ${{ !cancelled() && needs.prepare-image-arm64.result == 'success' && needs.build-gcc-26-arm64.result == 'success' }}
+    runs-on: ubuntu-24.04-arm
+    continue-on-error: true
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        label: [unit, integration, functional]
+    container:
+      image: ${{ needs.prepare-image-arm64.outputs.image }}
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Restore MiniLM models
+        id: models
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: models
+          key: minilm-${{ hashFiles('scripts/fetch-model') }}
+
+      - name: Fetch MiniLM models
+        if: steps.models.outputs.cache-hit != 'true'
+        run: ./scripts/fetch-model models
+
+      - name: Download Release build
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: release-build-arm64
+
+      - name: Extract Release build
+        run: tar -xzf release-build-arm64.tar.gz
+
+      - name: Run ${{ matrix.label }} tests
+        run: ctest --test-dir build/Release -L ${{ matrix.label }} -V
