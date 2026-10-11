@@ -51,8 +51,8 @@ jobs:
           set -euo pipefail
           owner_lc="$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')"
           reg="${{ env.REGISTRY }}/${owner_lc}/nesso-build-env"
-          deps_hash="$(sha256sum .devcontainer/Dockerfile conanfile.py conan.lock \
-            conan/profiles/gcc-26 conan/profiles/gcc-26-debug | sha256sum | cut -c1-16)"
+          # Shared with prepare-image-arm64 and release.yml.
+          deps_hash="$(./scripts/build-env-hash amd64)"
           cache_ref="${reg}:buildcache"
           {
             echo "image=${reg}:deps-${deps_hash}"
@@ -700,8 +700,7 @@ jobs:
           set -euo pipefail
           owner_lc="$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')"
           reg="${{ env.REGISTRY }}/${owner_lc}/nesso-build-env"
-          deps_hash="$(sha256sum .devcontainer/Dockerfile.arm64 conanfile.py conan.lock \
-            conan/profiles/gcc-26-armv8 | sha256sum | cut -c1-16)"
+          deps_hash="$(./scripts/build-env-hash arm64)"
           {
             echo "image=${reg}:deps-${deps_hash}-arm64"
             echo "cache_ref=${reg}:buildcache-arm64"

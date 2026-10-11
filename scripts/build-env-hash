@@ -1,0 +1,406 @@
+#!/usr/bin/env python3
+"""Print the nesso-build-env tag hash for amd64 or arm64.
+
+CI and release both call this script. The hash covers the Dockerfile and
+every file it copies into the image. conanfile.py is not hashed as text:
+`conan install` of the root recipe is what fills the cache, so only that
+resolved dependency spec is included.
+
+requires() and test_requires() of the root are the same baked binaries.
+Conan keeps direct host requirements of the consumer (test_requires sets
+headers and libs, so the binary is not skipped) and the package id comes
+from settings and options, not from the test trait.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import importlib.util
+import json
+import posixpath
+import shlex
+import sys
+import types
+from pathlib import Path
+
+DOCKERFILES = {
+    "amd64": ".devcontainer/Dockerfile",
+    "arm64": ".devcontainer/Dockerfile.arm64",
+}
+
+# kwargs that change the resolved package. Trait flags (visible, test,
+# headers, libs, run) do not change the binary conan install stores for a
+# direct root requirement.
+_KEPT_KWARGS = ("options", "force", "override", "package_id_mode")
+
+_VALUE_FLAGS = {
+    "--from",
+    "--chmod",
+    "--chown",
+    "--exclude",
+    "--checksum",
+    "--mount",
+    "--network",
+    "--security",
+}
+
+
+class _Options:
+    def __init__(self, own: dict, deps: dict) -> None:
+        object.__setattr__(self, "_own", own)
+        object.__setattr__(self, "_deps", deps)
+
+    def __getattr__(self, name: str):
+        own = object.__getattribute__(self, "_own")
+        if name not in own:
+            raise SystemExit(
+                f"error: conanfile read unset option '{name}' while resolving the build-env spec"
+            )
+        return own[name]
+
+    def __getitem__(self, key: str) -> "_DepOption":
+        return _DepOption(object.__getattribute__(self, "_deps"), str(key))
+
+
+class _DepOption:
+    def __init__(self, deps: dict, key: str) -> None:
+        object.__setattr__(self, "_deps", deps)
+        object.__setattr__(self, "_key", key)
+
+    def __setattr__(self, name: str, value) -> None:
+        deps = object.__getattribute__(self, "_deps")
+        key = object.__getattribute__(self, "_key")
+        deps.setdefault(key, {})[name] = value
+
+    def __getattr__(self, name: str):
+        deps = object.__getattribute__(self, "_deps")
+        key = object.__getattribute__(self, "_key")
+        bucket = deps.get(key, {})
+        if name not in bucket:
+            raise SystemExit(
+                f"error: conanfile read unset dependency option '{key}:{name}'"
+            )
+        return bucket[name]
+
+
+def _fail(message: str) -> None:
+    raise SystemExit(f"error: {message}")
+
+
+def _canon(value):
+    if isinstance(value, (str, int, float, bool)) or value is None:
+        return value
+    if isinstance(value, dict):
+        return {str(key): _canon(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_canon(item) for item in value]
+    _fail(f"cannot normalize dependency value {value!r}")
+
+
+def _parse_scalar(text: str):
+    if text in ("True", "true"):
+        return True
+    if text in ("False", "false"):
+        return False
+    if text in ("None", "none"):
+        return None
+    if text.startswith(("'", '"')) and text.endswith(("'", '"')) and len(text) >= 2:
+        return text[1:-1]
+    try:
+        return int(text)
+    except ValueError:
+        return text
+
+
+def _assign_option(key: str, value, own: dict, deps: dict) -> None:
+    if ":" in key:
+        pattern, option = key.split(":", 1)
+        deps.setdefault(pattern, {})[option] = value
+        return
+    own[key] = value
+
+
+def _apply_default_options(raw, own: dict, deps: dict) -> None:
+    if raw is None:
+        return
+    if isinstance(raw, dict):
+        for key, value in raw.items():
+            _assign_option(str(key), value, own, deps)
+        return
+    items = [raw] if isinstance(raw, str) else list(raw) if isinstance(raw, (list, tuple)) else None
+    if items is None:
+        _fail(f"unsupported default_options {raw!r}")
+    for item in items:
+        if not isinstance(item, str) or "=" not in item:
+            _fail(f"unsupported default_options entry {item!r}")
+        key, value = item.split("=", 1)
+        _assign_option(key.strip(), _parse_scalar(value.strip()), own, deps)
+
+
+def _kept_kwargs(kwargs: dict) -> dict:
+    return {key: kwargs[key] for key in _KEPT_KWARGS if kwargs.get(key) is not None}
+
+
+def _install_stubs():
+    conan = types.ModuleType("conan")
+
+    class ConanFile:
+        def __init__(self) -> None:
+            self._recorded: list[tuple[str, str, dict]] = []
+            self._dep_options: dict = {}
+            own: dict = {}
+            _apply_default_options(getattr(type(self), "default_options", None), own, self._dep_options)
+            self.options = _Options(own, self._dep_options)
+
+        def requires(self, ref, **kwargs):
+            context = "build" if kwargs.get("build") else "host"
+            self._recorded.append((context, str(ref), _kept_kwargs(kwargs)))
+
+        def test_requires(self, ref, **kwargs):
+            self._recorded.append(("host", str(ref), _kept_kwargs(kwargs)))
+
+        def tool_requires(self, ref, **kwargs):
+            self._recorded.append(("build", str(ref), _kept_kwargs(kwargs)))
+
+        def build_requires(self, ref, **kwargs):
+            self._recorded.append(("build", str(ref), _kept_kwargs(kwargs)))
+
+    conan.ConanFile = ConanFile
+    tools = types.ModuleType("conan.tools")
+    cmake = types.ModuleType("conan.tools.cmake")
+    for name in ("CMake", "CMakeToolchain", "CMakeDeps"):
+        setattr(cmake, name, type(name, (), {}))
+    cmake.cmake_layout = lambda *args, **kwargs: None
+    return conan, tools, cmake, ConanFile
+
+
+def _record_attributes(recipe) -> None:
+    mapping = (
+        ("requires", "host"),
+        ("test_requires", "host"),
+        ("tool_requires", "build"),
+        ("build_requires", "build"),
+    )
+    for name, context in mapping:
+        value = recipe.__class__.__dict__.get(name)
+        if isinstance(value, str):
+            refs = [value]
+        elif isinstance(value, (list, tuple)):
+            refs = list(value)
+        else:
+            continue
+        for ref in refs:
+            recipe._recorded.append((context, str(ref), {}))
+
+
+def dependency_spec(conanfile: Path) -> str:
+    """Canonical JSON of the dependencies `conan install` bakes for the root recipe."""
+    conan, tools, cmake, base = _install_stubs()
+    saved = {name: sys.modules.get(name) for name in ("conan", "conan.tools", "conan.tools.cmake")}
+    mod_name = f"_nesso_conanfile_{conanfile.stat().st_mtime_ns}_{id(conanfile)}"
+    sys.modules["conan"] = conan
+    sys.modules["conan.tools"] = tools
+    sys.modules["conan.tools.cmake"] = cmake
+    try:
+        spec = importlib.util.spec_from_file_location(mod_name, conanfile)
+        if spec is None or spec.loader is None:
+            _fail(f"cannot load {conanfile}")
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[mod_name] = module
+        try:
+            spec.loader.exec_module(module)
+        except SystemExit:
+            raise
+        except Exception as exc:
+            _fail(f"cannot load {conanfile}: {exc}")
+        classes = [
+            obj
+            for obj in vars(module).values()
+            if isinstance(obj, type) and issubclass(obj, base) and obj.__module__ == module.__name__
+        ]
+        if len(classes) != 1:
+            _fail(f"{conanfile} must define exactly one ConanFile recipe")
+        recipe = classes[0]()
+        try:
+            configure = getattr(recipe, "configure", None)
+            if callable(configure):
+                configure()
+            requirements = recipe.__class__.__dict__.get("requirements")
+            if callable(requirements):
+                requirements(recipe)
+            build_requirements = recipe.__class__.__dict__.get("build_requirements")
+            if callable(build_requirements):
+                build_requirements(recipe)
+            _record_attributes(recipe)
+        except SystemExit:
+            raise
+        except Exception as exc:
+            _fail(f"evaluating {conanfile} dependencies failed: {exc}")
+        recorded = recipe._recorded
+        dep_options = recipe._dep_options
+    finally:
+        sys.modules.pop(mod_name, None)
+        for name, module in saved.items():
+            if module is None:
+                sys.modules.pop(name, None)
+            else:
+                sys.modules[name] = module
+
+    options = {}
+    for pattern, bucket in dep_options.items():
+        for option, value in bucket.items():
+            options[f"{pattern}:{option}"] = _canon(value)
+    seen = set()
+    requires = []
+    for context, ref, kwargs in recorded:
+        item = {"context": context, "ref": ref}
+        if kwargs:
+            item["kwargs"] = _canon(kwargs)
+        key = json.dumps(item, sort_keys=True, separators=(",", ":"))
+        if key in seen:
+            continue
+        seen.add(key)
+        requires.append(json.loads(key))
+    requires.sort(key=lambda item: json.dumps(item, sort_keys=True, separators=(",", ":")))
+    payload = {"dep_options": options, "requires": requires}
+    return json.dumps(payload, sort_keys=True, separators=(",", ":")) + "\n"
+
+
+def logical_lines(text: str) -> list[str]:
+    lines = []
+    buf = ""
+    continuing = False
+    for raw in text.splitlines():
+        if not continuing and raw.lstrip().startswith("#"):
+            continue
+        if raw.endswith("\\"):
+            buf += raw[:-1] + " "
+            continuing = True
+            continue
+        buf += raw
+        lines.append(buf)
+        buf = ""
+        continuing = False
+    if buf:
+        lines.append(buf)
+    return lines
+
+
+def _instruction_args(line: str) -> tuple[str, list]:
+    stripped = line.strip()
+    if not stripped:
+        return "", []
+    cmd, _, rest = stripped.partition(" ")
+    rest = rest.strip()
+    if not rest:
+        return cmd, []
+    if rest.startswith("["):
+        try:
+            args = json.loads(rest)
+        except json.JSONDecodeError:
+            _fail(f"cannot parse Dockerfile JSON instruction: {stripped}")
+        if not isinstance(args, list):
+            _fail(f"Dockerfile JSON instruction is not a list: {stripped}")
+        return cmd, args
+    tokens = shlex.split(stripped)
+    args = []
+    index = 1
+    while index < len(tokens):
+        token = tokens[index]
+        if token.startswith("--"):
+            flag = token.split("=", 1)[0]
+            index += 1
+            if "=" not in token and flag in _VALUE_FLAGS:
+                index += 1
+            continue
+        args.append(token)
+        index += 1
+    return cmd, args
+
+
+def copied_sources(dockerfile_text: str) -> list[str]:
+    sources = []
+    for line in logical_lines(dockerfile_text):
+        cmd, args = _instruction_args(line)
+        if cmd not in ("COPY", "ADD") or len(args) < 2:
+            continue
+        for src in args[:-1]:
+            text = str(src)
+            if "://" in text:
+                continue
+            if any(char in text for char in "*?["):
+                _fail(f"glob COPY is not supported ({text})")
+            sources.append(posixpath.normpath(text))
+    return sources
+
+
+def hashed_chunks(root: Path, arch: str) -> list[tuple[str, bytes]]:
+    if arch not in DOCKERFILES:
+        _fail(f"unknown arch {arch}")
+    dockerfile = DOCKERFILES[arch]
+    docker_path = root / dockerfile
+    if not docker_path.is_file():
+        _fail(f"missing {dockerfile}")
+    text = docker_path.read_text()
+    chunks: dict[str, bytes] = {f"file:{dockerfile}": docker_path.read_bytes()}
+    saw_conanfile = False
+    for src in copied_sources(text):
+        if src == "conanfile.py":
+            saw_conanfile = True
+            continue
+        path = root / src
+        if path.is_dir():
+            files = sorted(item for item in path.rglob("*") if item.is_file())
+            if not files:
+                _fail(f"Dockerfile copies empty directory {src}")
+            for file in files:
+                rel = file.relative_to(root).as_posix()
+                if rel == "conanfile.py":
+                    saw_conanfile = True
+                    continue
+                chunks[f"file:{rel}"] = file.read_bytes()
+            continue
+        if not path.is_file():
+            _fail(f"Dockerfile copies missing path {src}")
+        chunks[f"file:{src}"] = path.read_bytes()
+    if saw_conanfile:
+        conanfile = root / "conanfile.py"
+        if not conanfile.is_file():
+            _fail("Dockerfile copies conanfile.py but it is missing")
+        chunks["spec:dependencies"] = dependency_spec(conanfile).encode()
+    return sorted(chunks.items())
+
+
+def image_hash(root: Path, arch: str) -> str:
+    hasher = hashlib.sha256()
+    for label, data in hashed_chunks(root, arch):
+        hasher.update(label.encode())
+        hasher.update(b"\0")
+        hasher.update(str(len(data)).encode())
+        hasher.update(b"\0")
+        hasher.update(data)
+        hasher.update(b"\0")
+    return hasher.hexdigest()[:16]
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = sys.argv[1:] if argv is None else argv
+    if len(args) not in (1, 2) or args[0] not in DOCKERFILES:
+        print("usage: build-env-hash amd64|arm64 [root]", file=sys.stderr)
+        return 2
+    root = Path(args[1]).resolve() if len(args) == 2 else Path(__file__).resolve().parent.parent
+    if not root.is_dir():
+        print(f"error: {root} is not a directory", file=sys.stderr)
+        return 1
+    try:
+        print(image_hash(root, args[0]))
+    except SystemExit as exc:
+        if isinstance(exc.code, str):
+            print(exc.code, file=sys.stderr)
+            return 1
+        raise
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
