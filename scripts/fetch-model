@@ -2,9 +2,25 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+if [[ $# -gt 2 ]]; then
+  echo "usage: fetch-model [MODEL_DIR] [int8|fp32]" >&2
+  exit 2
+fi
 MODEL_DIR="${1:-${ROOT}/models}"
+VARIANT="${2:-int8}"
 VOCAB_URL="https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2/resolve/main/vocab.txt"
-MODEL_URL="https://huggingface.co/Xenova/all-MiniLM-L6-v2/resolve/main/onnx/model_quantized.onnx"
+case "${VARIANT}" in
+  int8)
+    MODEL_URL="https://huggingface.co/Xenova/all-MiniLM-L6-v2/resolve/main/onnx/model_quantized.onnx"
+    ;;
+  fp32)
+    MODEL_URL="https://huggingface.co/Xenova/all-MiniLM-L6-v2/resolve/main/onnx/model.onnx"
+    ;;
+  *)
+    echo "error: variant must be int8 or fp32, got ${VARIANT}" >&2
+    exit 2
+    ;;
+esac
 
 mkdir -p "${MODEL_DIR}"
 
@@ -16,7 +32,7 @@ fi
 echo "fetch-model: downloading vocab.txt"
 curl -fsSL "${VOCAB_URL}" -o "${MODEL_DIR}/vocab.txt"
 
-echo "fetch-model: downloading model_quantized.onnx"
+echo "fetch-model: downloading ${VARIANT} model.onnx"
 curl -fsSL "${MODEL_URL}" -o "${MODEL_DIR}/model.onnx"
 
 echo "fetch-model OK: ${MODEL_DIR}"

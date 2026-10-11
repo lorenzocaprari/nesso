@@ -115,7 +115,7 @@ bash scripts/lint
 ./scripts/code-coverage conan/profiles/code-coverage
 ```
 
-See [.github/workflows/ci.yml](.github/workflows/ci.yml) for lint, clang-tidy, cppcheck, Release/Debug builds, unit, integration, and functional tests, fuzz, and coverage. Tag `v*` publishes via [.github/workflows/release.yml](.github/workflows/release.yml). Weekly [CodeQL](.github/workflows/codeql.yml) (`c-cpp`, `build-mode: none`) and [OpenSSF Scorecard](.github/workflows/scorecard.yml) run on `main`.
+See [.github/workflows/ci.yml](.github/workflows/ci.yml) for lint, clang-tidy, cppcheck, Release/Debug builds, unit, integration, and functional tests, fuzz, coverage, and the fp32 determinism gate. The pipeline runs on pull requests, on pushes to `main`, and nightly. Tag `v*` publishes via [.github/workflows/release.yml](.github/workflows/release.yml). Weekly [CodeQL](.github/workflows/codeql.yml) (`c-cpp`, `build-mode: none`) and [OpenSSF Scorecard](.github/workflows/scorecard.yml) run on `main`.
 
 ### Measuring performance
 
@@ -158,6 +158,8 @@ NESSO_MODEL_DIR=models \
 ```
 
 Use the same input, model, and gate in Release and Debug ASan builds before tagging. The default stress command is `stress-ng --cpu 1`; pass `--stress-command` when the machine needs a different load generator.
+
+`scripts/fetch-model` downloads the int8 MiniLM. Pass `fp32` as the second argument for the float model (`./scripts/fetch-model models-fp32 fp32`). CI fails the job when this gate disagrees on the fp32 model. The same check against the int8 model is report-only: quantized inference is not deterministic under CPU load.
 
 When `grep` or `index` runs in a terminal, embedding progress is shown on stderr. Redirected output stays quiet; pass `--quiet` to suppress progress explicitly.
 
