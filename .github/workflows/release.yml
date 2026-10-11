@@ -24,6 +24,8 @@ jobs:
     permissions:
       contents: write
       packages: write
+      id-token: write
+      attestations: write
     steps:
       - name: Checkout Repository
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
@@ -32,7 +34,8 @@ jobs:
         id: ver
         run: |
           set -euo pipefail
-          if [[ "${{ github.ref }}" == refs/tags/* ]]; then
+          ref='${{ github.ref }}'
+          if [[ "${ref}" == refs/tags/* ]]; then
             tag='${{ github.ref_name }}'
             if [[ ! "${tag}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
               echo "error: tag must be vX.Y.Z, got ${tag}" >&2
@@ -88,6 +91,7 @@ jobs:
             .
 
       - name: Push runtime image
+        id: push
         if: startsWith(github.ref, 'refs/tags/')
         run: |
           set -euo pipefail
@@ -95,9 +99,23 @@ jobs:
           tag='${{ steps.ver.outputs.tag }}'
           ver='${{ steps.ver.outputs.ver }}'
           docker tag "${img}:${tag}" "${img}:latest"
-          docker push "${img}:${tag}"
+          push_log="$(docker push "${img}:${tag}")"
+          printf '%s\n' "${push_log}"
           docker push "${img}:${ver}"
           docker push "${img}:latest"
+          digest="$(printf '%s\n' "${push_log}" | sed -n 's/.*digest: \(sha256:[0-9a-f]\{64\}\).*/\1/p' | tail -n1)"
+          if [[ -z "${digest}" ]]; then
+            digest="$(docker image inspect --format '{{range .RepoDigests}}{{println .}}{{end}}' "${img}:${tag}" \
+              | sed -n 's/.*@\(sha256:[0-9a-f]\{64\}\)$/\1/p' | head -n1)"
+          fi
+          if [[ ! "${digest}" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+            echo "error: could not resolve digest for ${img}:${tag}" >&2
+            exit 1
+          fi
+          {
+            echo "image=${img}"
+            echo "digest=${digest}"
+          } >> "${GITHUB_OUTPUT}"
 
       - name: Extract binary and model
         run: |
@@ -113,6 +131,10 @@ jobs:
       - name: Build .deb
         run: |
           set -euo pipefail
+          if ! command -v objdump >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo apt-get install -y --no-install-recommends binutils
+          fi
           chmod +x scripts/package-deb
           scripts/package-deb '${{ steps.ver.outputs.ver }}' ./nesso ./models .
 
@@ -124,12 +146,47 @@ jobs:
             '${{ steps.select.outputs.runtime_image }}:${{ steps.ver.outputs.tag }}'
           ./scripts/smoke-deb './nesso_${{ steps.ver.outputs.ver }}_amd64.deb'
 
+      - name: Generate SPDX SBOM
+        uses: anchore/sbom-action@v0
+        with:
+          image: ${{ steps.select.outputs.runtime_image }}:${{ steps.ver.outputs.tag }}
+          format: spdx-json
+          output-file: nesso_${{ steps.ver.outputs.ver }}.spdx.json
+          upload-artifact: false
+          upload-release-assets: false
+
+      - name: Generate SHA256SUMS
+        run: |
+          set -euo pipefail
+          ver='${{ steps.ver.outputs.ver }}'
+          sha256sum \
+            "nesso_${ver}_amd64.deb" \
+            "nesso_${ver}.spdx.json" \
+            > SHA256SUMS
+          cat SHA256SUMS
+
+      - name: Attest .deb provenance
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: actions/attest-build-provenance@v4
+        with:
+          subject-path: nesso_${{ steps.ver.outputs.ver }}_amd64.deb
+
+      - name: Attest runtime image provenance
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: actions/attest-build-provenance@v4
+        with:
+          subject-name: ${{ steps.push.outputs.image }}
+          subject-digest: ${{ steps.push.outputs.digest }}
+          push-to-registry: true
+
       - name: Upload artifacts
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: nesso-${{ steps.ver.outputs.ver }}-linux-amd64
           path: |
             nesso_${{ steps.ver.outputs.ver }}_amd64.deb
+            nesso_${{ steps.ver.outputs.ver }}.spdx.json
+            SHA256SUMS
             nesso
           if-no-files-found: error
 
@@ -137,5 +194,8 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
         with:
-          files: nesso_${{ steps.ver.outputs.ver }}_amd64.deb
+          files: |
+            nesso_${{ steps.ver.outputs.ver }}_amd64.deb
+            nesso_${{ steps.ver.outputs.ver }}.spdx.json
+            SHA256SUMS
           generate_release_notes: true
