@@ -71,6 +71,14 @@ Feature: command errors
     And stderr contains "the file is binary"
     And stderr contains "blob.log"
 
+  Scenario: grep of several empty logs names no file
+    Given an empty file "a.log"
+    And an empty file "b.log"
+    When I run nesso with arguments grep "database connection error" {dir}/a.log {dir}/b.log
+    Then the exit code is 1
+    And stderr contains "nothing to search:"
+    And stderr does not contain "a.log"
+
   Scenario: grep rejects an empty log
     Given an empty file "empty.log"
     When I run nesso with arguments grep "database connection error" {dir}/empty.log

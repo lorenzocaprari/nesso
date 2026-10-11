@@ -7,6 +7,7 @@
 #include <cstdint>
 #include <expected>
 #include <filesystem>
+#include <functional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -43,6 +44,12 @@ struct ParseStats
 class Chunker
 {
   public:
+    /// Invokes `consume` for each kept chunk and does not retain the chunk list.
+    [[nodiscard]] static std::expected<void, ParseError> forEach(const std::filesystem::path &path,
+                                                                 size_t maxLineLength, ParseStats *stats,
+                                                                 std::string_view jsonField,
+                                                                 const std::function<void(ParsedChunk)> &consume);
+
     [[nodiscard]] static std::expected<std::vector<ParsedChunk>, ParseError>
     fromFile(const std::filesystem::path &path, size_t maxLineLength = 4096, ParseStats *stats = nullptr,
              std::string_view jsonField = "message");

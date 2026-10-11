@@ -129,10 +129,9 @@ static void advanceOffset(uint64_t &byteOffset, size_t fileBytes, bool delimiter
     }
 }
 
-static std::expected<std::vector<ParsedChunk>, ParseError> readLogStream(std::istream &input, size_t maxLineLength,
-                                                                         ParseStats *stats)
+static std::expected<void, ParseError> readLogStream(std::istream &input, size_t maxLineLength, ParseStats *stats,
+                                                     const std::function<void(ParsedChunk)> &consume)
 {
-    std::vector<ParsedChunk> chunks;
     std::string line;
     uint64_t lineNumber = 0;
     uint64_t byteOffset = 0;
@@ -148,17 +147,17 @@ static std::expected<std::vector<ParsedChunk>, ParseError> readLogStream(std::is
         else
         {
             limitValue(line, maxLineLength, stats);
-            chunks.push_back({.text = line, .lineNumber = lineNumber, .byteOffset = byteOffset});
+            consume(ParsedChunk{.text = line, .lineNumber = lineNumber, .byteOffset = byteOffset});
         }
         advanceOffset(byteOffset, fileBytes, !input.eof());
     }
-    return chunks;
+    return {};
 }
 
-static std::expected<std::vector<ParsedChunk>, ParseError>
-readJsonStream(std::istream &input, bool jsonLines, ParseStats *stats, std::string_view jsonField, size_t maxLineLength)
+static std::expected<void, ParseError> readJsonStream(std::istream &input, bool jsonLines, ParseStats *stats,
+                                                      std::string_view jsonField, size_t maxLineLength,
+                                                      const std::function<void(ParsedChunk)> &consume)
 {
-    std::vector<ParsedChunk> chunks;
     std::string line;
     uint64_t lineNumber = 0;
     const std::string field{jsonField};
@@ -173,10 +172,8 @@ readJsonStream(std::istream &input, bool jsonLines, ParseStats *stats, std::stri
         }
         std::string text = document.at(field).get<std::string>();
         limitValue(text, maxLineLength, stats);
-        chunks.push_back({.text = std::move(text),
-                          .lineNumber = sourceLine,
-                          .byteOffset = byteOffset,
-                          .arrayElement = arrayElement});
+        consume(ParsedChunk{
+            .text = std::move(text), .lineNumber = sourceLine, .byteOffset = byteOffset, .arrayElement = arrayElement});
     };
 
     if (jsonLines)
@@ -204,7 +201,7 @@ readJsonStream(std::istream &input, bool jsonLines, ParseStats *stats, std::stri
             }
             advanceOffset(byteOffset, fileBytes, !input.eof());
         }
-        return chunks;
+        return {};
     }
 
     try
@@ -218,21 +215,21 @@ readJsonStream(std::istream &input, bool jsonLines, ParseStats *stats, std::stri
                 ++index;
                 appendValue(entry, index, 0, true);
             }
-            return chunks;
+            return {};
         }
         appendValue(document, 1, 0, false);
-        return chunks;
+        return {};
     }
     catch (const nlohmann::json::exception &)
     {
         countSkip(stats, SkipReason::Malformed);
-        return chunks;
+        return {};
     }
 }
 
-std::expected<std::vector<ParsedChunk>, ParseError> Chunker::fromFile(const std::filesystem::path &path,
-                                                                      size_t maxLineLength, ParseStats *stats,
-                                                                      std::string_view jsonField)
+std::expected<void, ParseError> Chunker::forEach(const std::filesystem::path &path, size_t maxLineLength,
+                                                 ParseStats *stats, std::string_view jsonField,
+                                                 const std::function<void(ParsedChunk)> &consume)
 {
     if (path == "-")
     {
@@ -242,14 +239,33 @@ std::expected<std::vector<ParsedChunk>, ParseError> Chunker::fromFile(const std:
             return std::unexpected(bytes.error());
         }
         std::istringstream input{*bytes};
-        return readLogStream(input, maxLineLength, stats);
+        return readLogStream(input, maxLineLength, stats, consume);
+    }
+    auto input = openChecked(path);
+    if (!input)
+    {
+        return std::unexpected(input.error());
     }
     const std::string extension = extensionLower(path);
     if (extension == ".json" || extension == ".jsonl")
     {
-        return fromJsonFile(path, stats, jsonField, maxLineLength);
+        return readJsonStream(*input, extension == ".jsonl", stats, jsonField, maxLineLength, consume);
     }
-    return fromLogFile(path, maxLineLength, stats);
+    return readLogStream(*input, maxLineLength, stats, consume);
+}
+
+std::expected<std::vector<ParsedChunk>, ParseError> Chunker::fromFile(const std::filesystem::path &path,
+                                                                      size_t maxLineLength, ParseStats *stats,
+                                                                      std::string_view jsonField)
+{
+    std::vector<ParsedChunk> chunks;
+    const auto streamed = forEach(path, maxLineLength, stats, jsonField,
+                                  [&chunks](ParsedChunk chunk) { chunks.push_back(std::move(chunk)); });
+    if (!streamed)
+    {
+        return std::unexpected(streamed.error());
+    }
+    return chunks;
 }
 
 std::expected<std::vector<ParsedChunk>, ParseError> Chunker::fromLogFile(const std::filesystem::path &path,
@@ -260,7 +276,14 @@ std::expected<std::vector<ParsedChunk>, ParseError> Chunker::fromLogFile(const s
     {
         return std::unexpected(input.error());
     }
-    return readLogStream(*input, maxLineLength, stats);
+    std::vector<ParsedChunk> chunks;
+    const auto streamed = readLogStream(*input, maxLineLength, stats,
+                                        [&chunks](ParsedChunk chunk) { chunks.push_back(std::move(chunk)); });
+    if (!streamed)
+    {
+        return std::unexpected(streamed.error());
+    }
+    return chunks;
 }
 
 std::expected<std::vector<ParsedChunk>, ParseError> Chunker::fromJsonFile(const std::filesystem::path &path,
@@ -272,7 +295,14 @@ std::expected<std::vector<ParsedChunk>, ParseError> Chunker::fromJsonFile(const 
     {
         return std::unexpected(input.error());
     }
-    return readJsonStream(*input, extensionLower(path) == ".jsonl", stats, jsonField, maxLineLength);
+    std::vector<ParsedChunk> chunks;
+    const auto streamed = readJsonStream(*input, extensionLower(path) == ".jsonl", stats, jsonField, maxLineLength,
+                                         [&chunks](ParsedChunk chunk) { chunks.push_back(std::move(chunk)); });
+    if (!streamed)
+    {
+        return std::unexpected(streamed.error());
+    }
+    return chunks;
 }
 
 } // namespace nesso::parser

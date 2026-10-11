@@ -63,6 +63,27 @@ func (b *bindings) makeDirectory(name string) error {
 	return os.MkdirAll(target, 0o755)
 }
 
+func (b *bindings) appendNumberedLines(count int, text, name string) error {
+	if count <= 0 {
+		return fmt.Errorf("line count must be positive")
+	}
+	target, err := b.scenarioPath(name)
+	if err != nil {
+		return err
+	}
+	var body strings.Builder
+	for i := 1; i <= count; i++ {
+		fmt.Fprintf(&body, "%s %d\n", text, i)
+	}
+	file, err := os.OpenFile(target, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+	_, err = file.WriteString(body.String())
+	return err
+}
+
 func (b *bindings) appendRepeatedLine(count int, character, name string) error {
 	target, err := b.scenarioPath(name)
 	if err != nil {

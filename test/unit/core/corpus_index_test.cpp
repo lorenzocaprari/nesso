@@ -299,3 +299,104 @@ TEST_CASE("corpus reader rejects truncated tables", "[corpus][core]")
     REQUIRE(mapped->matrix().empty());
     std::filesystem::remove_all(directory);
 }
+
+TEST_CASE("streaming corpus writer matches writeCorpusFile", "[corpus][core]")
+{
+    const auto directory = makeTempDir();
+    const auto source = directory / "app.log";
+    writeBytes(source, "alpha\n");
+    nesso::core::CorpusChunk chunk;
+    chunk.chunk = {.text = "alpha", .lineNumber = 1, .source = source.string(), .byteOffset = 0, .arrayElement = false};
+    chunk.embedding = {1.F, 2.F, 3.F, 4.F};
+
+    const auto directPath = directory / "direct.nesso";
+    const auto streamedPath = directory / "streamed.nesso";
+    REQUIRE(nesso::core::writeCorpusFile(directPath, std::span<const nesso::core::CorpusChunk>{&chunk, 1}, "model"));
+    auto writer = nesso::core::CorpusWriter::create(streamedPath, "model");
+    REQUIRE(writer);
+    REQUIRE(writer->add(std::span<const nesso::core::CorpusChunk>{&chunk, 1}));
+    REQUIRE(writer->finish());
+
+    const auto readFile = [](const std::filesystem::path &path)
+    {
+        std::ifstream input(path, std::ios::binary);
+        REQUIRE(input);
+        return std::string{std::istreambuf_iterator<char>{input}, std::istreambuf_iterator<char>{}};
+    };
+    REQUIRE(readFile(directPath) == readFile(streamedPath));
+
+    const auto emptyDirect = directory / "empty-direct.nesso";
+    const auto emptyStreamed = directory / "empty-streamed.nesso";
+    REQUIRE(nesso::core::writeCorpusFile(emptyDirect, {}, "model"));
+    auto emptyWriter = nesso::core::CorpusWriter::create(emptyStreamed, "model");
+    REQUIRE(emptyWriter);
+    REQUIRE(emptyWriter->finish());
+    REQUIRE(readFile(emptyDirect) == readFile(emptyStreamed));
+    std::filesystem::remove_all(directory);
+}
+
+TEST_CASE("a corpus writer rejects inconsistent chunks", "[corpus][core]")
+{
+    const auto directory = makeTempDir();
+    const auto path = directory / "out.nesso";
+    auto writer = nesso::core::CorpusWriter::create(path, "model");
+    REQUIRE(writer);
+
+    nesso::core::CorpusChunk chunk;
+    chunk.chunk = {.text = "alpha", .lineNumber = 1, .source = "app.log", .byteOffset = 0, .arrayElement = false};
+    const auto rejected = writer->add(std::span<const nesso::core::CorpusChunk>{&chunk, 1});
+    REQUIRE_FALSE(rejected);
+    REQUIRE(rejected.error() == nesso::core::EngineError::DatabaseNotInitialized);
+
+    chunk.embedding = {1.F, 2.F, 3.F, 4.F};
+    REQUIRE(writer->add(std::span<const nesso::core::CorpusChunk>{&chunk, 1}));
+
+    nesso::core::CorpusChunk other = chunk;
+    other.embedding = {1.F, 2.F};
+    const auto mismatch = writer->add(std::span<const nesso::core::CorpusChunk>{&other, 1});
+    REQUIRE_FALSE(mismatch);
+    REQUIRE(mismatch.error() == nesso::core::EngineError::MismatchedDimensions);
+
+    const nesso::core::CorpusChunk batch[] = {chunk, other};
+    const auto mixed = writer->add(batch);
+    REQUIRE_FALSE(mixed);
+    REQUIRE(mixed.error() == nesso::core::EngineError::MismatchedDimensions);
+    std::filesystem::remove_all(directory);
+}
+
+TEST_CASE("moving a corpus writer keeps one owner of the spill file", "[corpus][core]")
+{
+    const auto directory = makeTempDir();
+    const auto source = directory / "app.log";
+    writeBytes(source, "alpha\n");
+    nesso::core::CorpusChunk chunk;
+    chunk.chunk = {.text = "alpha", .lineNumber = 1, .source = source.string(), .byteOffset = 0, .arrayElement = false};
+    chunk.embedding = {1.F, 2.F, 3.F, 4.F};
+
+    const auto firstPath = directory / "first.nesso";
+    const auto secondPath = directory / "second.nesso";
+    auto created = nesso::core::CorpusWriter::create(firstPath, "model");
+    REQUIRE(created);
+    const auto abandonedRecords = firstPath.string() + ".records";
+    nesso::core::CorpusWriter writer = std::move(*created);
+    {
+        auto other = nesso::core::CorpusWriter::create(secondPath, "model");
+        REQUIRE(other);
+        writer = std::move(*other);
+    }
+    REQUIRE_FALSE(std::filesystem::exists(abandonedRecords));
+    REQUIRE(writer.add(std::span<const nesso::core::CorpusChunk>{&chunk, 1}));
+    REQUIRE(writer.finish());
+    REQUIRE(std::filesystem::is_regular_file(secondPath));
+    REQUIRE_FALSE(std::filesystem::exists(secondPath.string() + ".records"));
+
+    const auto droppedPath = directory / "dropped.nesso";
+    {
+        auto dropped = nesso::core::CorpusWriter::create(droppedPath, "model");
+        REQUIRE(dropped);
+        nesso::core::CorpusWriter holder = std::move(*dropped);
+        REQUIRE(holder.add(std::span<const nesso::core::CorpusChunk>{&chunk, 1}));
+    }
+    REQUIRE_FALSE(std::filesystem::exists(droppedPath.string() + ".records"));
+    std::filesystem::remove_all(directory);
+}

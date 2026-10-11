@@ -9,6 +9,7 @@
 #include <cstdint>
 #include <expected>
 #include <filesystem>
+#include <fstream>
 #include <memory>
 #include <span>
 #include <string>
@@ -69,6 +70,33 @@ class MappedCorpus
 
 [[nodiscard]] std::expected<void, EngineError>
 writeCorpusFile(const std::filesystem::path &path, std::span<const CorpusChunk> chunks, std::string_view modelId);
+
+/// Writes a corpus from batches. Embeddings are spilled to a side file so the caller can drop each batch.
+class CorpusWriter
+{
+  public:
+    ~CorpusWriter();
+    CorpusWriter(const CorpusWriter &) = delete;
+    CorpusWriter &operator=(const CorpusWriter &) = delete;
+    CorpusWriter(CorpusWriter &&other) noexcept;
+    CorpusWriter &operator=(CorpusWriter &&other) noexcept;
+
+    [[nodiscard]] static std::expected<CorpusWriter, EngineError> create(const std::filesystem::path &path,
+                                                                         std::string_view modelId);
+    [[nodiscard]] std::expected<void, EngineError> add(std::span<const CorpusChunk> chunks);
+    [[nodiscard]] std::expected<void, EngineError> finish();
+
+  private:
+    CorpusWriter() = default;
+
+    std::filesystem::path destination_;
+    std::filesystem::path recordsPath_;
+    std::ofstream records_;
+    std::string modelId_;
+    std::uint32_t dimensions_ = 0;
+    std::uint64_t chunkCount_ = 0;
+    bool open_ = false;
+};
 
 [[nodiscard]] std::expected<MappedCorpus, EngineError> mapCorpusFile(const std::filesystem::path &path);
 

@@ -3,11 +3,14 @@
 
 #include <catch2/catch_all.hpp>
 #include <core/corpus_index.hpp>
+#include <model_paths.hpp>
 #include <nesso.hpp>
 
 #include <array>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <optional>
 #include <string>
 #include <unistd.h>
 #include <utility>
@@ -122,6 +125,55 @@ TEST_CASE("grep, index, and search run the text stages", "[nesso][text]")
     const auto found = app.search({.query = "database connection error", .index = corpus});
     REQUIRE(found.has_value());
     REQUIRE_FALSE(found->matches.empty());
+}
+
+TEST_CASE("a missing default model lists every directory it tried", "[nesso][text]")
+{
+    if (nesso::containsModelFiles("/usr/share/nesso"))
+    {
+        SKIP("packaged model directory is installed");
+    }
+
+    const TempDir dir{"nesso_facade_default_model"};
+    const auto previousDir = std::filesystem::current_path();
+    const char *modelEnv = std::getenv("NESSO_MODEL_DIR");
+    const char *xdgEnv = std::getenv("XDG_DATA_HOME");
+    const std::optional<std::string> savedModel =
+        modelEnv == nullptr ? std::nullopt : std::optional<std::string>{modelEnv};
+    const std::optional<std::string> savedXdg = xdgEnv == nullptr ? std::nullopt : std::optional<std::string>{xdgEnv};
+    const auto restore = [&]()
+    {
+        std::filesystem::current_path(previousDir);
+        if (savedModel)
+        {
+            setenv("NESSO_MODEL_DIR", savedModel->c_str(), 1);
+        }
+        else
+        {
+            unsetenv("NESSO_MODEL_DIR");
+        }
+        if (savedXdg)
+        {
+            setenv("XDG_DATA_HOME", savedXdg->c_str(), 1);
+        }
+        else
+        {
+            unsetenv("XDG_DATA_HOME");
+        }
+    };
+
+    unsetenv("NESSO_MODEL_DIR");
+    setenv("XDG_DATA_HOME", (dir.path() / "xdg").c_str(), 1);
+    std::filesystem::current_path(dir.path());
+    const nesso::Nesso app{nesso::Config{}};
+    const auto log = std::filesystem::path(NESSO_TEST_FIXTURES) / "grep_sample.log";
+    const auto grepped = app.grep({.query = "database", .files = {log}});
+    restore();
+
+    REQUIRE_FALSE(grepped.has_value());
+    REQUIRE(grepped.error().kind == nesso::ErrorKind::EmbedderLoad);
+    REQUIRE(grepped.error().note.find(" and ") != std::string::npos);
+    REQUIRE(grepped.error().note.find(',') != std::string::npos);
 }
 
 TEST_CASE("Nesso is movable", "[nesso]")
