@@ -1,9 +1,10 @@
 name: Release
 
-# arm64 is not published here. Dockerfile.runtime and scripts/package-deb
-# are amd64-only (gcc-26's -march=x86-64-v2, Architecture: amd64). The
-# experimental gcc-26-arm64 CI job has to stay green before a follow-up
-# adds a workflow_dispatch input, default false, that:
+# arm64 CI blocks Pipeline. This workflow still publishes only the amd64
+# .deb, checksums, SBOM, and provenance bundles. Dockerfile.runtime and
+# scripts/package-deb are amd64-only (gcc-26's -march=x86-64-v2,
+# Architecture: amd64). A follow-up, behind a workflow_dispatch input that
+# defaults to false, should:
 #   - builds the runtime image natively on ubuntu-24.04-arm with
 #     conan/profiles/gcc-26-armv8
 #   - pushes a multi-arch manifest (an arm image must not replace :latest)
