@@ -1,7 +1,7 @@
 // Copyright (c) 2026 Lorenzo Caprari
 // SPDX-License-Identifier: MIT
 
-#include "include/core/corpus_index.hpp"
+#include <core/corpus_index.hpp>
 
 #include <platform/file.hpp>
 
@@ -15,7 +15,7 @@
 #include <utility>
 #include <vector>
 
-namespace core
+namespace nesso::core
 {
 namespace
 {
@@ -183,7 +183,7 @@ static std::expected<std::uint64_t, EngineError> checkedDimensions(std::span<con
 
 struct MappedCorpus::Impl
 {
-    platform::MappedFile file;
+    nesso::platform::MappedFile file;
     std::string modelId;
     std::uint32_t dimensions = 0;
     std::vector<SourceInfo> sources;
@@ -199,6 +199,7 @@ MappedCorpus &MappedCorpus::operator=(MappedCorpus &&) noexcept = default;
 
 MappedCorpus::MappedCorpus(std::unique_ptr<Impl> impl) : impl_(std::move(impl)) {}
 
+// cppcheck-suppress unusedFunction
 std::string_view MappedCorpus::modelId() const noexcept { return impl_->modelId; }
 
 std::uint32_t MappedCorpus::dimensions() const noexcept { return impl_->dimensions; }
@@ -325,7 +326,7 @@ std::expected<void, EngineError> writeCorpusFile(const std::filesystem::path &pa
             return std::unexpected(EngineError::FileOpenFailure);
         }
     }
-    if (const auto replaced = platform::replaceFileAtomically(temporary, path); !replaced)
+    if (const auto replaced = nesso::platform::replaceFileAtomically(temporary, path); !replaced)
     {
         std::filesystem::remove(temporary);
         return std::unexpected(EngineError::FileOpenFailure);
@@ -335,11 +336,12 @@ std::expected<void, EngineError> writeCorpusFile(const std::filesystem::path &pa
 
 std::expected<MappedCorpus, EngineError> mapCorpusFile(const std::filesystem::path &path)
 {
-    auto mapped = platform::MappedFile::open(path);
+    auto mapped = nesso::platform::MappedFile::open(path);
     if (!mapped)
     {
-        return std::unexpected(mapped.error() == platform::FileError::OpenFailure ? EngineError::FileOpenFailure
-                                                                                  : EngineError::CorruptDatabase);
+        return std::unexpected(mapped.error() == nesso::platform::FileError::OpenFailure
+                                   ? EngineError::FileOpenFailure
+                                   : EngineError::CorruptDatabase);
     }
     const std::span<const std::byte> bytes = mapped->bytes();
     if (bytes.size() < HEADER_BYTES || std::memcmp(bytes.data(), MAGIC.data(), MAGIC.size()) != 0)
@@ -469,6 +471,7 @@ std::expected<MappedCorpus, EngineError> mapCorpusFile(const std::filesystem::pa
     return MappedCorpus{std::move(impl)};
 }
 
+// cppcheck-suppress unusedFunction
 std::expected<std::vector<CorpusChunk>, EngineError> readCorpusFile(const std::filesystem::path &path)
 {
     auto mapped = mapCorpusFile(path);
@@ -487,4 +490,4 @@ std::expected<std::vector<CorpusChunk>, EngineError> readCorpusFile(const std::f
     return chunks;
 }
 
-} // namespace core
+} // namespace nesso::core

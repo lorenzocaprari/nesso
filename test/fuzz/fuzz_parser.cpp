@@ -39,7 +39,7 @@ extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t *data, std::size_t size
         std::ofstream out(path, std::ios::binary | std::ios::trunc);
         out.write(bytes.data(), static_cast<std::streamsize>(bytes.size()));
         out.close();
-        (void)parser::Chunker::fromFile(path);
+        (void)nesso::parser::Chunker::fromFile(path);
     }
 
     std::filesystem::remove_all(dir, ec);

@@ -4,11 +4,11 @@
 #ifndef CORE_DISTANCE_HPP
 #define CORE_DISTANCE_HPP
 
-#include "core_types.hpp"
+#include <core/core_types.hpp>
 #include <expected>
 #include <span>
 
-namespace core::math
+namespace nesso::core::math
 {
 
 class CosineSimilarity
@@ -36,6 +36,6 @@ template <SupportedScalar T>
 [[nodiscard]] T l2SquaredDistanceScalar(std::span<const T> a, std::span<const T> b) noexcept;
 } // namespace detail
 
-} // namespace core::math
+} // namespace nesso::core::math
 
 #endif // CORE_DISTANCE_HPP

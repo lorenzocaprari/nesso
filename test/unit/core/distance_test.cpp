@@ -6,9 +6,9 @@
 #include <span>
 #include <vector>
 
-using namespace core;
-using core::math::CosineSimilarity;
-using core::math::DistanceMetrics;
+using namespace nesso::core;
+using nesso::core::math::CosineSimilarity;
+using nesso::core::math::DistanceMetrics;
 
 TEMPLATE_TEST_CASE("CosineSimilarity handles well-formed vectors", "[CosineSimilarity][core][Unit]", float, double)
 {
@@ -223,7 +223,7 @@ TEMPLATE_TEST_CASE("DistanceMetrics::l2SquaredDistance rejects invalid inputs", 
 }
 
 #if defined(__x86_64__)
-#include "distance_kernels.hpp"
+#include <core/distance_kernels.hpp>
 
 namespace
 {
@@ -256,19 +256,19 @@ TEST_CASE("float kernels match the scalar oracle", "[DistanceMetrics][core][Unit
         const std::span<const float> leftSpan{left};
         const std::span<const float> rightSpan{right};
 
-        const float scalarDot = core::math::detail::dotProductScalar<float>(leftSpan, rightSpan);
-        const float fmaDot =
-            core::math::detail::dotProductKernel(core::math::detail::DistanceKernel::Avx2Fma, leftSpan, rightSpan);
-        const float forcedScalarDot =
-            core::math::detail::dotProductKernel(core::math::detail::DistanceKernel::Scalar, leftSpan, rightSpan);
+        const float scalarDot = nesso::core::math::detail::dotProductScalar<float>(leftSpan, rightSpan);
+        const float fmaDot = nesso::core::math::detail::dotProductKernel(
+            nesso::core::math::detail::DistanceKernel::Avx2Fma, leftSpan, rightSpan);
+        const float forcedScalarDot = nesso::core::math::detail::dotProductKernel(
+            nesso::core::math::detail::DistanceKernel::Scalar, leftSpan, rightSpan);
         REQUIRE(fmaDot == Catch::Approx(scalarDot).margin(1e-3F));
         REQUIRE(forcedScalarDot == Catch::Approx(scalarDot).margin(1e-3F));
 
-        const float scalarL2 = core::math::detail::l2SquaredDistanceScalar<float>(leftSpan, rightSpan);
-        const float fmaL2 = core::math::detail::l2SquaredDistanceKernel(core::math::detail::DistanceKernel::Avx2Fma,
-                                                                        leftSpan, rightSpan);
-        const float forcedScalarL2 = core::math::detail::l2SquaredDistanceKernel(
-            core::math::detail::DistanceKernel::Scalar, leftSpan, rightSpan);
+        const float scalarL2 = nesso::core::math::detail::l2SquaredDistanceScalar<float>(leftSpan, rightSpan);
+        const float fmaL2 = nesso::core::math::detail::l2SquaredDistanceKernel(
+            nesso::core::math::detail::DistanceKernel::Avx2Fma, leftSpan, rightSpan);
+        const float forcedScalarL2 = nesso::core::math::detail::l2SquaredDistanceKernel(
+            nesso::core::math::detail::DistanceKernel::Scalar, leftSpan, rightSpan);
         REQUIRE(fmaL2 == Catch::Approx(scalarL2).margin(1e-3F));
         REQUIRE(forcedScalarL2 == Catch::Approx(scalarL2).margin(1e-3F));
 

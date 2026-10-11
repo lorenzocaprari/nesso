@@ -37,7 +37,7 @@ extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t *data, std::size_t size
         out.write(bytes.data(), static_cast<std::streamsize>(bytes.size()));
     }
 
-    if (auto loaded = embed::WordPieceTokenizer::fromVocabFile(inputPath))
+    if (auto loaded = nesso::embed::WordPieceTokenizer::fromVocabFile(inputPath))
     {
         (void)loaded->encode("the quick brown fox");
     }
@@ -49,7 +49,7 @@ extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t *data, std::size_t size
         vocab << "[CLS]\n[SEP]\n[UNK]\nhello\nworld\n##ing\n";
     }
 
-    if (auto tok = embed::WordPieceTokenizer::fromVocabFile(vocabPath))
+    if (auto tok = nesso::embed::WordPieceTokenizer::fromVocabFile(vocabPath))
     {
         std::string capped = bytes;
         if (capped.size() > kMaxEncodeBytes)

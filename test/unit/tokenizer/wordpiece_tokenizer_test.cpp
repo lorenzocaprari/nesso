@@ -10,7 +10,7 @@
 TEST_CASE("WordPieceTokenizer encodes known strings", "[WordPieceTokenizer][embed][Unit]")
 {
     const std::filesystem::path vocabPath = std::filesystem::path(NESSO_TEST_FIXTURES) / "tiny_vocab.txt";
-    const auto tokenizer = embed::WordPieceTokenizer::fromVocabFile(vocabPath, 16);
+    const auto tokenizer = nesso::embed::WordPieceTokenizer::fromVocabFile(vocabPath, 16);
     REQUIRE(tokenizer.has_value());
 
     const auto encoded = tokenizer->encode("hello world");
@@ -22,7 +22,7 @@ TEST_CASE("WordPieceTokenizer encodes known strings", "[WordPieceTokenizer][embe
 TEST_CASE("WordPieceTokenizer truncates at max sequence length", "[WordPieceTokenizer][embed][Unit]")
 {
     const std::filesystem::path vocabPath = std::filesystem::path(NESSO_TEST_FIXTURES) / "tiny_vocab.txt";
-    const auto tokenizer = embed::WordPieceTokenizer::fromVocabFile(vocabPath, 4);
+    const auto tokenizer = nesso::embed::WordPieceTokenizer::fromVocabFile(vocabPath, 4);
     REQUIRE(tokenizer.has_value());
 
     const auto encoded = tokenizer->encode("hello world testing");
@@ -34,16 +34,16 @@ TEST_CASE("WordPieceTokenizer truncates at max sequence length", "[WordPieceToke
 TEST_CASE("WordPieceTokenizer rejects empty input", "[WordPieceTokenizer][embed][Unit]")
 {
     const std::filesystem::path vocabPath = std::filesystem::path(NESSO_TEST_FIXTURES) / "tiny_vocab.txt";
-    const auto tokenizer = embed::WordPieceTokenizer::fromVocabFile(vocabPath);
+    const auto tokenizer = nesso::embed::WordPieceTokenizer::fromVocabFile(vocabPath);
     REQUIRE(tokenizer.has_value());
     REQUIRE_FALSE(tokenizer->encode("").has_value());
-    REQUIRE_FALSE(embed::WordPieceTokenizer::fromVocabFile(vocabPath / "missing").has_value());
+    REQUIRE_FALSE(nesso::embed::WordPieceTokenizer::fromVocabFile(vocabPath / "missing").has_value());
 }
 
 TEST_CASE("WordPieceTokenizer splits subwords and replaces an unknown word", "[WordPieceTokenizer][embed][Unit]")
 {
     const std::filesystem::path vocabPath = std::filesystem::path(NESSO_TEST_FIXTURES) / "tiny_vocab.txt";
-    const auto tokenizer = embed::WordPieceTokenizer::fromVocabFile(vocabPath);
+    const auto tokenizer = nesso::embed::WordPieceTokenizer::fromVocabFile(vocabPath);
     REQUIRE(tokenizer.has_value());
 
     const auto split = tokenizer->encode("helloing");
@@ -79,7 +79,7 @@ TEST_CASE("WordPieceTokenizer matches BERT uncased token ids", "[WordPieceTokeni
 #endif
     }
 
-    const auto tokenizer = embed::WordPieceTokenizer::fromVocabFile(vocabPath);
+    const auto tokenizer = nesso::embed::WordPieceTokenizer::fromVocabFile(vocabPath);
     REQUIRE(tokenizer.has_value());
 
     const auto sentence = tokenizer->encode("This is an example sentence");

@@ -10,7 +10,7 @@
 #include <filesystem>
 #include <span>
 
-namespace platform
+namespace nesso::platform
 {
 
 enum class FileError : uint8_t
@@ -48,6 +48,6 @@ class MappedFile
 /// Peak resident set size in bytes, from getrusage. Zero when the query fails.
 [[nodiscard]] std::int64_t peakResidentBytes() noexcept;
 
-} // namespace platform
+} // namespace nesso::platform
 
 #endif // PLATFORM_FILE_HPP

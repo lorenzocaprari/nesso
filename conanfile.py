@@ -17,11 +17,11 @@ class Nesso(ConanFile):
 
     def requirements(self):
         self.requires("cli11/2.6.2")
-        self.requires("catch2/3.14.0")
         self.requires("nlohmann_json/3.11.3")
         self.requires("onnxruntime/1.18.1")
 
     def build_requirements(self):
+        self.test_requires("catch2/3.14.0")
         if self.options.bench:
             self.test_requires("benchmark/1.9.1")
 

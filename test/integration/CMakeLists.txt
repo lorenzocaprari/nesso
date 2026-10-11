@@ -9,8 +9,9 @@ target_compile_options(dependency_link_test PRIVATE -fno-profile-arcs
                                                     -fno-test-coverage)
 
 add_executable(grep_integration_test grep_integration_test.cpp)
-target_link_libraries(grep_integration_test PRIVATE core embed parser
-                                                    Catch2::Catch2WithMain)
+target_link_libraries(
+  grep_integration_test PRIVATE nesso_core nesso_embed nesso_parser
+                                Catch2::Catch2WithMain)
 target_compile_definitions(
   grep_integration_test PRIVATE NESSO_TEST_FIXTURES="${NESSO_TEST_FIXTURES}"
                                 ${NESSO_MODEL_TEST_DEFS})

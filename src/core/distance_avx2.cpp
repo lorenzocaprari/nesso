@@ -1,11 +1,11 @@
 // Copyright (c) 2026 Lorenzo Caprari
 // SPDX-License-Identifier: MIT
 
-#include "distance_kernels.hpp"
+#include <core/distance_kernels.hpp>
 
 #include <immintrin.h>
 
-namespace core::math::detail
+namespace nesso::core::math::detail
 {
 namespace
 {
@@ -100,4 +100,4 @@ NESSO_TARGET_AVX2_FMA float l2SquaredDistanceAvx2Fma(std::span<const float> a, s
 
 #undef NESSO_TARGET_AVX2_FMA
 
-} // namespace core::math::detail
+} // namespace nesso::core::math::detail

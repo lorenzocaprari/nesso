@@ -48,7 +48,7 @@ Push a `vX.Y.Z` tag that matches `version` in `conanfile.py` to publish the imag
 ## Prerequisites
 
 - **Compiler:** GCC 15+ with C++26 support
-- **Build system:** CMake 3.28+
+- **Build system:** CMake 4.2+
 - **Package manager:** Conan 2.x
 - **OS:** Linux
 

@@ -1,7 +1,7 @@
 // Copyright (c) 2026 Lorenzo Caprari
 // SPDX-License-Identifier: MIT
 
-#include "cli_parser.hpp"
+#include <cli_parser.hpp>
 
 #include <CLI/CLI.hpp>
 

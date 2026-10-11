@@ -8,7 +8,7 @@
 #include <span>
 #include <vector>
 
-using namespace core;
+using namespace nesso::core;
 
 namespace
 {

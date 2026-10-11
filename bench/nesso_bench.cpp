@@ -49,7 +49,7 @@ void dotProduct384(benchmark::State &state)
     const std::vector<float> right = randomVector(rng, EMBEDDING_DIMENSIONS);
     for (auto _ : state)
     {
-        auto score = core::math::DistanceMetrics::dotProduct<float>(left, right);
+        auto score = nesso::core::math::DistanceMetrics::dotProduct<float>(left, right);
         benchmark::DoNotOptimize(score);
     }
 }
@@ -61,7 +61,7 @@ void cosine384(benchmark::State &state)
     const std::vector<float> right = randomVector(rng, EMBEDDING_DIMENSIONS);
     for (auto _ : state)
     {
-        auto score = core::math::CosineSimilarity::calculate<float>(left, right);
+        auto score = nesso::core::math::CosineSimilarity::calculate<float>(left, right);
         benchmark::DoNotOptimize(score);
     }
 }
@@ -73,7 +73,7 @@ void l2Squared384(benchmark::State &state)
     const std::vector<float> right = randomVector(rng, EMBEDDING_DIMENSIONS);
     for (auto _ : state)
     {
-        auto score = core::math::DistanceMetrics::l2SquaredDistance<float>(left, right);
+        auto score = nesso::core::math::DistanceMetrics::l2SquaredDistance<float>(left, right);
         benchmark::DoNotOptimize(score);
     }
 }
@@ -92,7 +92,7 @@ void selectTopK(benchmark::State &state)
     for (auto _ : state)
     {
         std::vector<Ranked> working = candidates;
-        core::detail::selectTopKInPlace(working, TOP_K, order);
+        nesso::core::detail::selectTopKInPlace(working, TOP_K, order);
         benchmark::DoNotOptimize(working);
     }
 }
@@ -111,7 +111,7 @@ void topKFlatMatrix(benchmark::State &state)
 
     for (auto _ : state)
     {
-        auto hits = core::topK(query, matrix, EMBEDDING_DIMENSIONS, TOP_K);
+        auto hits = nesso::core::topK(query, matrix, EMBEDDING_DIMENSIONS, TOP_K);
         benchmark::DoNotOptimize(hits);
     }
     state.SetItemsProcessed(static_cast<int64_t>(state.iterations() * rows));
@@ -119,7 +119,7 @@ void topKFlatMatrix(benchmark::State &state)
 
 void encodeWordPiece(benchmark::State &state)
 {
-    const auto tokenizer = embed::WordPieceTokenizer::fromVocabFile(NESSO_BENCH_VOCAB);
+    const auto tokenizer = nesso::embed::WordPieceTokenizer::fromVocabFile(NESSO_BENCH_VOCAB);
     if (!tokenizer)
     {
         state.SkipWithError("failed to load bench vocab");
@@ -137,7 +137,7 @@ void readCorpus(benchmark::State &state)
 {
     const std::filesystem::path path = std::filesystem::temp_directory_path() / "nesso-bench-corpus.nessc";
     std::mt19937 rng{1};
-    std::vector<core::CorpusChunk> chunks;
+    std::vector<nesso::core::CorpusChunk> chunks;
     chunks.reserve(CORPUS_CHUNKS);
     for (uint64_t index = 0; index < CORPUS_CHUNKS; ++index)
     {
@@ -145,7 +145,7 @@ void readCorpus(benchmark::State &state)
             {.chunk = {.text = "database connection refused", .lineNumber = index + 1, .source = "bench.log"},
              .embedding = randomVector(rng, EMBEDDING_DIMENSIONS)});
     }
-    if (!core::writeCorpusFile(path, chunks, "bench"))
+    if (!nesso::core::writeCorpusFile(path, chunks, "bench"))
     {
         state.SkipWithError("failed to write bench corpus");
         return;
@@ -153,7 +153,7 @@ void readCorpus(benchmark::State &state)
 
     for (auto _ : state)
     {
-        auto loaded = core::readCorpusFile(path);
+        auto loaded = nesso::core::readCorpusFile(path);
         benchmark::DoNotOptimize(loaded);
     }
     std::filesystem::remove(path);

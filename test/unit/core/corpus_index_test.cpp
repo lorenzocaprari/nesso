@@ -80,14 +80,14 @@ TEST_CASE("corpus file round-trips chunks", "[corpus][core]")
     const auto directory = makeTempDir();
     const auto path = directory / "corpus.nesso";
 
-    const std::vector<core::CorpusChunk> chunks{
+    const std::vector<nesso::core::CorpusChunk> chunks{
         {.chunk = {.text = "alpha", .lineNumber = 1, .source = "a.log", .byteOffset = 0}, .embedding = {1.F, 0.F}},
         {.chunk = {.text = "beta", .lineNumber = 4, .source = "a.log", .byteOffset = 12}, .embedding = {0.F, 1.F}},
     };
-    REQUIRE(core::writeCorpusFile(path, chunks, "sentence-transformers/all-MiniLM-L6-v2"));
+    REQUIRE(nesso::core::writeCorpusFile(path, chunks, "sentence-transformers/all-MiniLM-L6-v2"));
     REQUIRE(matrixOffset(path) % 64 == 0);
 
-    const auto mapped = core::mapCorpusFile(path);
+    const auto mapped = nesso::core::mapCorpusFile(path);
     REQUIRE(mapped);
     REQUIRE(mapped->modelId() == "sentence-transformers/all-MiniLM-L6-v2");
     REQUIRE(mapped->dimensions() == 2);
@@ -100,7 +100,7 @@ TEST_CASE("corpus file round-trips chunks", "[corpus][core]")
     REQUIRE(mapped->matrix()[0] == 1.F);
     REQUIRE(reinterpret_cast<std::uintptr_t>(mapped->matrix().data()) % 64 == 0);
 
-    const auto read = core::readCorpusFile(path);
+    const auto read = nesso::core::readCorpusFile(path);
     REQUIRE(read);
     REQUIRE(read->size() == 2);
     REQUIRE((*read)[0].embedding.size() == 2);
@@ -117,12 +117,12 @@ TEST_CASE("corpus file stores source metadata", "[corpus][core]")
     const auto source = directory / "app.log";
     writeBytes(source, "alpha\n");
     const auto path = directory / "corpus.nesso";
-    const std::vector<core::CorpusChunk> chunks{
+    const std::vector<nesso::core::CorpusChunk> chunks{
         {.chunk = {.text = "alpha", .lineNumber = 1, .source = source.string(), .byteOffset = 0}, .embedding = {1.F}},
     };
 
-    REQUIRE(core::writeCorpusFile(path, chunks, "model"));
-    const auto mapped = core::mapCorpusFile(path);
+    REQUIRE(nesso::core::writeCorpusFile(path, chunks, "model"));
+    const auto mapped = nesso::core::mapCorpusFile(path);
     REQUIRE(mapped);
     REQUIRE(mapped->sources().size() == 1);
     REQUIRE(mapped->sources()[0].path == source.string());
@@ -137,11 +137,11 @@ TEST_CASE("empty corpus is a valid file", "[corpus][core]")
 {
     const auto directory = makeTempDir();
     const auto path = directory / "empty.nesso";
-    REQUIRE(core::writeCorpusFile(path, {}, "model"));
-    const auto read = core::readCorpusFile(path);
+    REQUIRE(nesso::core::writeCorpusFile(path, {}, "model"));
+    const auto read = nesso::core::readCorpusFile(path);
     REQUIRE(read);
     REQUIRE(read->empty());
-    const auto mapped = core::mapCorpusFile(path);
+    const auto mapped = nesso::core::mapCorpusFile(path);
     REQUIRE(mapped);
     REQUIRE(mapped->matrix().empty());
     REQUIRE(mapped->modelId() == "model");
@@ -153,39 +153,42 @@ TEST_CASE("corpus writer rejects bad embeddings", "[corpus][core]")
     const auto directory = makeTempDir();
     const auto path = directory / "bad.nesso";
 
-    const core::CorpusChunk emptyEmbedding{.chunk = {.text = "alpha", .lineNumber = 1, .source = "a.log"},
-                                           .embedding = {}};
-    const auto empty = core::writeCorpusFile(path, std::span<const core::CorpusChunk>(&emptyEmbedding, 1), "model");
+    const nesso::core::CorpusChunk emptyEmbedding{.chunk = {.text = "alpha", .lineNumber = 1, .source = "a.log"},
+                                                  .embedding = {}};
+    const auto empty =
+        nesso::core::writeCorpusFile(path, std::span<const nesso::core::CorpusChunk>(&emptyEmbedding, 1), "model");
     REQUIRE_FALSE(empty);
-    REQUIRE(empty.error() == core::EngineError::DatabaseNotInitialized);
+    REQUIRE(empty.error() == nesso::core::EngineError::DatabaseNotInitialized);
 
-    const std::vector<core::CorpusChunk> mismatched{
+    const std::vector<nesso::core::CorpusChunk> mismatched{
         {.chunk = {.text = "alpha", .lineNumber = 1, .source = "a.log"}, .embedding = {1.F}},
         {.chunk = {.text = "beta", .lineNumber = 2, .source = "a.log"}, .embedding = {1.F, 2.F}},
     };
-    const auto mismatch = core::writeCorpusFile(path, mismatched, "model");
+    const auto mismatch = nesso::core::writeCorpusFile(path, mismatched, "model");
     REQUIRE_FALSE(mismatch);
-    REQUIRE(mismatch.error() == core::EngineError::MismatchedDimensions);
+    REQUIRE(mismatch.error() == nesso::core::EngineError::MismatchedDimensions);
 
-    core::CorpusChunk huge{.chunk = {.text = "alpha", .lineNumber = 1, .source = "a.log"},
-                           .embedding = std::vector<float>(65537, 1.F)};
-    const auto oversized = core::writeCorpusFile(path, std::span<const core::CorpusChunk>(&huge, 1), "model");
+    nesso::core::CorpusChunk huge{.chunk = {.text = "alpha", .lineNumber = 1, .source = "a.log"},
+                                  .embedding = std::vector<float>(65537, 1.F)};
+    const auto oversized =
+        nesso::core::writeCorpusFile(path, std::span<const nesso::core::CorpusChunk>(&huge, 1), "model");
     REQUIRE_FALSE(oversized);
-    REQUIRE(oversized.error() == core::EngineError::CorruptDatabase);
+    REQUIRE(oversized.error() == nesso::core::EngineError::CorruptDatabase);
 
-    core::CorpusChunk longText{
+    nesso::core::CorpusChunk longText{
         .chunk = {.text = std::string(8ULL * 1024ULL * 1024ULL + 1, 'x'), .lineNumber = 1, .source = {}},
         .embedding = {1.F}};
-    const auto longWrite = core::writeCorpusFile(path, std::span<const core::CorpusChunk>(&longText, 1), "model");
+    const auto longWrite =
+        nesso::core::writeCorpusFile(path, std::span<const nesso::core::CorpusChunk>(&longText, 1), "model");
     REQUIRE_FALSE(longWrite);
-    REQUIRE(longWrite.error() == core::EngineError::CorruptDatabase);
+    REQUIRE(longWrite.error() == nesso::core::EngineError::CorruptDatabase);
 
-    const core::CorpusChunk writable{.chunk = {.text = "alpha", .lineNumber = 1, .source = "a.log"},
-                                     .embedding = {1.F}};
+    const nesso::core::CorpusChunk writable{.chunk = {.text = "alpha", .lineNumber = 1, .source = "a.log"},
+                                            .embedding = {1.F}};
     const auto directoryWrite =
-        core::writeCorpusFile(directory, std::span<const core::CorpusChunk>(&writable, 1), "model");
+        nesso::core::writeCorpusFile(directory, std::span<const nesso::core::CorpusChunk>(&writable, 1), "model");
     REQUIRE_FALSE(directoryWrite);
-    REQUIRE(directoryWrite.error() == core::EngineError::FileOpenFailure);
+    REQUIRE(directoryWrite.error() == nesso::core::EngineError::FileOpenFailure);
 
     std::filesystem::remove_all(directory);
 }
@@ -195,9 +198,9 @@ TEST_CASE("corpus reader rejects corrupt files", "[corpus][core]")
     const auto directory = makeTempDir();
     const auto path = directory / "corrupt.nesso";
 
-    const auto missing = core::readCorpusFile(directory / "missing.nesso");
+    const auto missing = nesso::core::readCorpusFile(directory / "missing.nesso");
     REQUIRE_FALSE(missing);
-    REQUIRE(missing.error() == core::EngineError::FileOpenFailure);
+    REQUIRE(missing.error() == nesso::core::EngineError::FileOpenFailure);
 
     std::string header(64, '\0');
     header[0] = 'N';
@@ -205,12 +208,12 @@ TEST_CASE("corpus reader rejects corrupt files", "[corpus][core]")
     header[2] = 'S';
     header[3] = 'S';
     writeBytes(path, header);
-    REQUIRE(core::readCorpusFile(path).error() == core::EngineError::CorruptDatabase);
+    REQUIRE(nesso::core::readCorpusFile(path).error() == nesso::core::EngineError::CorruptDatabase);
 
     header[3] = 'C';
     header[4] = 1;
     writeBytes(path, header);
-    REQUIRE(core::readCorpusFile(path).error() == core::EngineError::CorruptDatabase);
+    REQUIRE(nesso::core::readCorpusFile(path).error() == nesso::core::EngineError::CorruptDatabase);
 
     header[4] = 2;
     const std::uint32_t dimensions = 0;
@@ -218,25 +221,25 @@ TEST_CASE("corpus reader rejects corrupt files", "[corpus][core]")
     std::memcpy(header.data() + 12, &dimensions, sizeof(dimensions));
     std::memcpy(header.data() + 24, &chunkCount, sizeof(chunkCount));
     writeBytes(path, header);
-    REQUIRE(core::readCorpusFile(path).error() == core::EngineError::CorruptDatabase);
+    REQUIRE(nesso::core::readCorpusFile(path).error() == nesso::core::EngineError::CorruptDatabase);
 
-    REQUIRE(core::writeCorpusFile(path, {}, "model"));
+    REQUIRE(nesso::core::writeCorpusFile(path, {}, "model"));
     {
         std::ofstream extra(path, std::ios::binary | std::ios::app);
         REQUIRE(extra);
         extra << 'x';
     }
-    REQUIRE(core::readCorpusFile(path).error() == core::EngineError::CorruptDatabase);
+    REQUIRE(nesso::core::readCorpusFile(path).error() == nesso::core::EngineError::CorruptDatabase);
 
     writeBytes(path, "short");
-    REQUIRE(core::readCorpusFile(path).error() == core::EngineError::CorruptDatabase);
+    REQUIRE(nesso::core::readCorpusFile(path).error() == nesso::core::EngineError::CorruptDatabase);
 
     std::filesystem::remove_all(directory);
 }
 
 TEST_CASE("checked-in corpora round-trip", "[corpus][core]")
 {
-    const auto one = core::readCorpusFile(NESSO_ONE_CHUNK_FIXTURE);
+    const auto one = nesso::core::readCorpusFile(NESSO_ONE_CHUNK_FIXTURE);
     REQUIRE(one);
     REQUIRE(one->size() == 1);
     REQUIRE((*one)[0].chunk.text == "checked in line");
@@ -244,14 +247,14 @@ TEST_CASE("checked-in corpora round-trip", "[corpus][core]")
     REQUIRE((*one)[0].chunk.source == "app.log");
     REQUIRE((*one)[0].chunk.byteOffset == 0);
     REQUIRE((*one)[0].embedding.size() == 384);
-    const auto mapped = core::mapCorpusFile(NESSO_ONE_CHUNK_FIXTURE);
+    const auto mapped = nesso::core::mapCorpusFile(NESSO_ONE_CHUNK_FIXTURE);
     REQUIRE(mapped);
     REQUIRE(mapped->modelId() == "sentence-transformers/all-MiniLM-L6-v2");
     REQUIRE(mapped->dimensions() == 384);
     REQUIRE(mapped->matrix().size() == 384);
     REQUIRE(reinterpret_cast<std::uintptr_t>(mapped->matrix().data()) % 64 == 0);
 
-    const auto mismatch = core::readCorpusFile(NESSO_MISMATCH_FIXTURE);
+    const auto mismatch = nesso::core::readCorpusFile(NESSO_MISMATCH_FIXTURE);
     REQUIRE(mismatch);
     REQUIRE(mismatch->size() == 1);
     REQUIRE((*mismatch)[0].chunk.text == "short vector");
@@ -263,13 +266,13 @@ TEST_CASE("corpus writer rejects an unusable destination", "[corpus][core]")
 {
     const auto directory = makeTempDir();
     const auto path = directory / "corpus.nesso";
-    const auto longId = core::writeCorpusFile(path, {}, std::string(1025, 'm'));
+    const auto longId = nesso::core::writeCorpusFile(path, {}, std::string(1025, 'm'));
     REQUIRE_FALSE(longId);
-    REQUIRE(longId.error() == core::EngineError::CorruptDatabase);
+    REQUIRE(longId.error() == nesso::core::EngineError::CorruptDatabase);
 
-    const auto missing = core::writeCorpusFile(directory / "missing" / "corpus.nesso", {}, "model");
+    const auto missing = nesso::core::writeCorpusFile(directory / "missing" / "corpus.nesso", {}, "model");
     REQUIRE_FALSE(missing);
-    REQUIRE(missing.error() == core::EngineError::FileOpenFailure);
+    REQUIRE(missing.error() == nesso::core::EngineError::FileOpenFailure);
     std::filesystem::remove_all(directory);
 }
 
@@ -280,15 +283,15 @@ TEST_CASE("corpus reader rejects truncated tables", "[corpus][core]")
 
     // The source-record length sits past EOF, so the 32-bit read fails.
     writeBytes(path, corpusHeader(132, 1, 1, 1, 124, 124, 128));
-    REQUIRE(core::readCorpusFile(path).error() == core::EngineError::CorruptDatabase);
+    REQUIRE(nesso::core::readCorpusFile(path).error() == nesso::core::EngineError::CorruptDatabase);
 
     // The chunk record starts too close to EOF for its first 64-bit field.
     writeBytes(path, corpusHeader(68, 1, 0, 1, 64, 64, 64));
-    REQUIRE(core::readCorpusFile(path).error() == core::EngineError::CorruptDatabase);
+    REQUIRE(nesso::core::readCorpusFile(path).error() == nesso::core::EngineError::CorruptDatabase);
 
-    REQUIRE(core::writeCorpusFile(path, {}, "model"));
-    auto mapped = core::mapCorpusFile(path);
-    auto second = core::mapCorpusFile(path);
+    REQUIRE(nesso::core::writeCorpusFile(path, {}, "model"));
+    auto mapped = nesso::core::mapCorpusFile(path);
+    auto second = nesso::core::mapCorpusFile(path);
     REQUIRE(mapped);
     REQUIRE(second);
     *mapped = std::move(*second);

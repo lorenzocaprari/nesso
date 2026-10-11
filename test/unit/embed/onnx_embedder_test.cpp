@@ -31,12 +31,12 @@ TEST_CASE("OnnxEmbedder produces unit-normal 384-d embeddings", "[OnnxEmbedder][
 {
     const std::filesystem::path modelDir = modelDirOrSkip();
 
-    const auto embedder = embed::OnnxEmbedder::create(modelDir);
+    const auto embedder = nesso::embed::OnnxEmbedder::create(modelDir);
     REQUIRE(embedder.has_value());
 
     const auto embedding = (*embedder)->embed("database connection refused");
     REQUIRE(embedding.has_value());
-    REQUIRE(embedding->size() == embed::MINILM_EMBEDDING_DIMENSIONS);
+    REQUIRE(embedding->size() == nesso::embed::MINILM_EMBEDDING_DIMENSIONS);
 
     float norm = 0.0F;
     for (const float value : *embedding)
@@ -50,7 +50,7 @@ TEST_CASE("OnnxEmbedder ranks similar strings above dissimilar ones", "[OnnxEmbe
 {
     const std::filesystem::path modelDir = modelDirOrSkip();
 
-    const auto embedder = embed::OnnxEmbedder::create(modelDir);
+    const auto embedder = nesso::embed::OnnxEmbedder::create(modelDir);
     REQUIRE(embedder.has_value());
 
     const auto query = (*embedder)->embed("database connection refused");
@@ -77,7 +77,7 @@ TEST_CASE("OnnxEmbedder embedBatch matches per-string embed", "[OnnxEmbedder][em
 {
     const std::filesystem::path modelDir = modelDirOrSkip();
 
-    const auto embedder = embed::OnnxEmbedder::create(modelDir);
+    const auto embedder = nesso::embed::OnnxEmbedder::create(modelDir);
     REQUIRE(embedder.has_value());
 
     const std::array<std::string, 2> texts{"payment timeout", "database connection refused"};
@@ -115,7 +115,7 @@ TEST_CASE("OnnxEmbedder mixed-length batch matches a single embed", "[OnnxEmbedd
 {
     const std::filesystem::path modelDir = modelDirOrSkip();
 
-    const auto embedder = embed::OnnxEmbedder::create(modelDir);
+    const auto embedder = nesso::embed::OnnxEmbedder::create(modelDir);
     REQUIRE(embedder.has_value());
 
     const std::string shortText = "database connection refused";
@@ -149,7 +149,7 @@ TEST_CASE("OnnxEmbedder reports completed batches", "[OnnxEmbedder][embed][integ
 {
     const std::filesystem::path modelDir = modelDirOrSkip();
 
-    const auto embedder = embed::OnnxEmbedder::create(modelDir);
+    const auto embedder = nesso::embed::OnnxEmbedder::create(modelDir);
     REQUIRE(embedder.has_value());
 
     std::vector<std::string> texts;
@@ -169,7 +169,7 @@ TEST_CASE("OnnxEmbedder repeats an embedding", "[OnnxEmbedder][embed][integratio
 {
     const std::filesystem::path modelDir = modelDirOrSkip();
 
-    const auto embedder = embed::OnnxEmbedder::create(modelDir);
+    const auto embedder = nesso::embed::OnnxEmbedder::create(modelDir);
     REQUIRE(embedder.has_value());
 
     const auto first = (*embedder)->embed("database connection refused");

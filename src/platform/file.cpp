@@ -1,7 +1,7 @@
 // Copyright (c) 2026 Lorenzo Caprari
 // SPDX-License-Identifier: MIT
 
-#include "platform/file.hpp"
+#include <platform/file.hpp>
 
 #include <array>
 #include <cstring>
@@ -12,7 +12,7 @@
 
 #include <fcntl.h>
 
-namespace platform
+namespace nesso::platform
 {
 
 MappedFile::~MappedFile()
@@ -106,4 +106,4 @@ std::int64_t peakResidentBytes() noexcept
     return peakKb * 1024;
 }
 
-} // namespace platform
+} // namespace nesso::platform

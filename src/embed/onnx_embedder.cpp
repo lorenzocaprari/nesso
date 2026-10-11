@@ -1,7 +1,7 @@
 // Copyright (c) 2026 Lorenzo Caprari
 // SPDX-License-Identifier: MIT
 
-#include "include/embed/onnx_embedder.hpp"
+#include <embed/onnx_embedder.hpp>
 
 #include <algorithm>
 #include <cmath>
@@ -11,7 +11,7 @@
 #include <thread>
 #include <utility>
 
-namespace embed
+namespace nesso::embed
 {
 
 static std::vector<float> meanPoolAndNormalize(const float *hiddenStates, const int64_t *attentionMask,
@@ -321,4 +321,4 @@ std::expected<std::vector<std::vector<float>>, EmbedError> OnnxEmbedder::embedBa
     return embeddings;
 }
 
-} // namespace embed
+} // namespace nesso::embed

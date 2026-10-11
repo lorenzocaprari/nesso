@@ -4,8 +4,8 @@
 #ifndef EMBED_ONNX_EMBEDDER_HPP
 #define EMBED_ONNX_EMBEDDER_HPP
 
-#include "embed_types.hpp"
-#include "wordpiece_tokenizer.hpp"
+#include <embed/embed_types.hpp>
+#include <embed/wordpiece_tokenizer.hpp>
 
 #include <expected>
 #include <filesystem>
@@ -15,7 +15,7 @@
 #include <string>
 #include <vector>
 
-namespace embed
+namespace nesso::embed
 {
 
 class OnnxEmbedder
@@ -45,6 +45,6 @@ class OnnxEmbedder
     WordPieceTokenizer tokenizer_;
 };
 
-} // namespace embed
+} // namespace nesso::embed
 
 #endif // EMBED_ONNX_EMBEDDER_HPP

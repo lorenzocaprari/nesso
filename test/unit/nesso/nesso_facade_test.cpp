@@ -50,7 +50,7 @@ void writeBytes(const std::filesystem::path &path, const void *data, size_t size
     REQUIRE(output);
 }
 
-void writeEmptyCorpus(const std::filesystem::path &path) { REQUIRE(core::writeCorpusFile(path, {}, "model")); }
+void writeEmptyCorpus(const std::filesystem::path &path) { REQUIRE(nesso::core::writeCorpusFile(path, {}, "model")); }
 
 nesso::Nesso withMissingModel(const std::filesystem::path &root)
 {

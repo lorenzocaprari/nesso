@@ -4,8 +4,8 @@
 #ifndef CORE_TOP_K_HPP
 #define CORE_TOP_K_HPP
 
-#include "core_types.hpp"
-#include "distance.hpp"
+#include <core/core_types.hpp>
+#include <core/distance.hpp>
 
 #include <algorithm>
 #include <cstddef>
@@ -13,7 +13,7 @@
 #include <span>
 #include <vector>
 
-namespace core
+namespace nesso::core
 {
 
 struct Hit
@@ -84,6 +84,6 @@ topK(std::span<const float> query, std::span<const float> matrix, size_t dims, s
     return hits;
 }
 
-} // namespace core
+} // namespace nesso::core
 
 #endif // CORE_TOP_K_HPP
