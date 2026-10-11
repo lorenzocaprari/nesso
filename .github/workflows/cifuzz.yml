@@ -18,23 +18,27 @@ jobs:
     permissions:
       contents: read
     steps:
+      # google/clusterfuzzlite actions omit OSS_FUZZ_PROJECT_NAME. The oss-fuzz
+      # copies of these actions require that name and then look the project up
+      # in OSS-Fuzz, which fails for a repo that only has .clusterfuzzlite/.
+      # v1 is an annotated tag; the pinned SHA is the commit it points at.
       - name: Build fuzzers
         id: build
-        uses: google/oss-fuzz/infra/cifuzz/actions/build_fuzzers@4af4c649704a468da115f46f70aac0ba0ccbef42 # 2026-10-08
+        uses: google/clusterfuzzlite/actions/build_fuzzers@884713a6c30a92e5e8544c39945cd7cb630abcd1 # v1
         with:
-          oss-fuzz-project-name: nesso
           language: c++
           sanitizer: address
+          github-token: ${{ secrets.GITHUB_TOKEN }}
           # Run both targets on every pull request. Affected-target pruning needs
           # coverage metadata this header-only build does not emit.
           keep-unaffected-fuzz-targets: true
 
       - name: Run fuzzers
-        uses: google/oss-fuzz/infra/cifuzz/actions/run_fuzzers@4af4c649704a468da115f46f70aac0ba0ccbef42 # 2026-10-08
+        uses: google/clusterfuzzlite/actions/run_fuzzers@884713a6c30a92e5e8544c39945cd7cb630abcd1 # v1
         with:
-          oss-fuzz-project-name: nesso
           language: c++
           sanitizer: address
+          github-token: ${{ secrets.GITHUB_TOKEN }}
           # Pull requests get a short code-change run. The weekly schedule batch-fuzzes longer.
           fuzz-seconds: ${{ github.event_name == 'schedule' && '600' || '180' }}
           mode: ${{ github.event_name == 'schedule' && 'batch' || 'code-change' }}
