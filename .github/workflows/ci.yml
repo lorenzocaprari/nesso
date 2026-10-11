@@ -15,10 +15,11 @@ env:
   REGISTRY: ghcr.io
   CONAN_HOME: /opt/conan2
 
+# Read-only default. Every job checks out the repo and pulls nesso-build-env.
+# prepare-image overrides packages to write so it can push that image.
 permissions:
   contents: read
   packages: read
-  actions: write
 
 jobs:
   prepare-image:
@@ -31,7 +32,7 @@ jobs:
       image: ${{ steps.select.outputs.image }}
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
       - name: Resolve image reference
         id: select
@@ -48,14 +49,14 @@ jobs:
           } >> "${GITHUB_OUTPUT}"
 
       - name: Log into ${{ env.REGISTRY }}
-        uses: docker/login-action@v3
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
 
       - name: Check dependency image
         id: image
@@ -69,7 +70,7 @@ jobs:
 
       - name: Free disk space
         if: steps.image.outputs.rebuild == 'true'
-        uses: jlumbroso/free-disk-space@v1.3.1
+        uses: jlumbroso/free-disk-space@54081f138730dfa15788a46383842cd2f914a1be # v1.3.1
         with:
           tool-cache: true
           android: true
@@ -81,7 +82,7 @@ jobs:
 
       - name: Build and push nesso-build-env
         if: steps.image.outputs.rebuild == 'true'
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@ca052bb54ab0790a636c9b5f226502c73d547a25 # v5.4.0
         with:
           context: .
           file: .devcontainer/Dockerfile
@@ -100,7 +101,7 @@ jobs:
         password: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
       - name: Mark repository safe for Git
         run: git config --global --add safe.directory "$(pwd)"
@@ -118,7 +119,7 @@ jobs:
         password: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
       - name: Install Dependencies (Conan)
         run: |
@@ -147,7 +148,7 @@ jobs:
         password: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
       - name: Install Dependencies (Conan)
         run: |
@@ -174,7 +175,7 @@ jobs:
         password: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
       - name: Install Dependencies (Conan)
         run: |
@@ -193,7 +194,7 @@ jobs:
         run: tar -czf release-build.tar.gz build/Release
 
       - name: Upload Release build
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: release-build
           path: release-build.tar.gz
@@ -210,7 +211,7 @@ jobs:
         password: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
       - name: Install Dependencies (Conan)
         run: |
@@ -227,7 +228,7 @@ jobs:
         run: tar -czf debug-build.tar.gz build/Debug
 
       - name: Upload Debug build
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: debug-build
           path: debug-build.tar.gz
@@ -249,11 +250,11 @@ jobs:
         password: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
       - name: Restore MiniLM models
         id: models
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: models
           key: minilm-${{ hashFiles('scripts/fetch-model') }}
@@ -263,7 +264,7 @@ jobs:
         run: ./scripts/fetch-model models
 
       - name: Download Release build
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: release-build
 
@@ -291,11 +292,11 @@ jobs:
       UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
       - name: Restore MiniLM models
         id: models
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: models
           key: minilm-${{ hashFiles('scripts/fetch-model') }}
@@ -305,7 +306,7 @@ jobs:
         run: ./scripts/fetch-model models
 
       - name: Download Debug build
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: debug-build
 
@@ -326,7 +327,7 @@ jobs:
         password: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
       - name: Install AFL++ toolchain (idempotent if baked into image)
         run: |
@@ -372,7 +373,7 @@ jobs:
 
       - name: Upload AFL findings on failure
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: fuzz-test-findings
           path: build/fuzz/findings
@@ -388,11 +389,11 @@ jobs:
         password: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
       - name: Restore MiniLM models
         id: models
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: models
           key: minilm-${{ hashFiles('scripts/fetch-model') }}
@@ -413,7 +414,7 @@ jobs:
           ./scripts/code-coverage conan/profiles/code-coverage
 
       - name: Upload Coverage Report
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: coverage-report
           path: build/coverage/report
@@ -432,7 +433,7 @@ jobs:
         password: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
       - name: Install GNU time
         run: |
@@ -442,7 +443,7 @@ jobs:
 
       - name: Restore MiniLM models
         id: models
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: models
           key: minilm-${{ hashFiles('scripts/fetch-model') }}
@@ -452,7 +453,7 @@ jobs:
         run: ./scripts/fetch-model models
 
       - name: Download Release build
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: release-build
 
@@ -484,7 +485,7 @@ jobs:
 
       - name: Upload benchmark results
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: bench-results
           path: bench/results/
