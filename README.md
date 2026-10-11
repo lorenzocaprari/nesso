@@ -1,5 +1,8 @@
 # Nesso
 
+[![Pipeline](https://github.com/lorenzocaprari/nesso/actions/workflows/ci.yml/badge.svg)](https://github.com/lorenzocaprari/nesso/actions/workflows/ci.yml)
+[![Latest release](https://img.shields.io/github/v/release/lorenzocaprari/nesso)](https://github.com/lorenzocaprari/nesso/releases/latest)
+[![License: MIT](https://img.shields.io/github/license/lorenzocaprari/nesso)](LICENSE)
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/lorenzocaprari/nesso/badge)](https://scorecard.dev/viewer/?uri=github.com/lorenzocaprari/nesso)
 
 **Local semantic search for unstructured text** (C++26)
@@ -165,4 +168,4 @@ When `grep` or `index` runs in a terminal, embedding progress is shown on stderr
 
 ## License
 
-MIT — see LICENSE.
+MIT — see [LICENSE](LICENSE). Changes are in [CHANGELOG.md](CHANGELOG.md). Contributing, security reports, and the code of conduct: [CONTRIBUTING.md](CONTRIBUTING.md), [SECURITY.md](SECURITY.md), [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md).
