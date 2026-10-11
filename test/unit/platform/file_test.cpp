@@ -18,13 +18,13 @@ TEST_CASE("a mapped file views its bytes", "[platform]")
         output << "nesso";
     }
 
-    const auto mapped = platform::MappedFile::open(path);
+    const auto mapped = nesso::platform::MappedFile::open(path);
     REQUIRE(mapped);
     REQUIRE(mapped->bytes().size() == 5);
     REQUIRE(mapped->bytes()[0] == std::byte{'n'});
 
     std::filesystem::remove(path);
-    REQUIRE_FALSE(platform::MappedFile::open(path));
+    REQUIRE_FALSE(nesso::platform::MappedFile::open(path));
 }
 
 TEST_CASE("mapping handles directories, empty files, and a failed replace", "[platform]")
@@ -32,16 +32,16 @@ TEST_CASE("mapping handles directories, empty files, and a failed replace", "[pl
     const auto directory = std::filesystem::temp_directory_path() / ("nesso_mapdir_" + std::to_string(getpid()));
     std::filesystem::create_directory(directory);
 
-    const auto directoryMap = platform::MappedFile::open(directory);
+    const auto directoryMap = nesso::platform::MappedFile::open(directory);
     REQUIRE_FALSE(directoryMap);
-    REQUIRE(directoryMap.error() == platform::FileError::MapFailure);
+    REQUIRE(directoryMap.error() == nesso::platform::FileError::MapFailure);
 
     const auto empty = directory / "empty";
     {
         std::ofstream output(empty, std::ios::binary);
         REQUIRE(output);
     }
-    const auto mapped = platform::MappedFile::open(empty);
+    const auto mapped = nesso::platform::MappedFile::open(empty);
     REQUIRE(mapped);
     REQUIRE(mapped->bytes().empty());
 
@@ -57,8 +57,8 @@ TEST_CASE("mapping handles directories, empty files, and a failed replace", "[pl
         REQUIRE(output);
         output << "two!";
     }
-    auto left = platform::MappedFile::open(first);
-    auto right = platform::MappedFile::open(second);
+    auto left = nesso::platform::MappedFile::open(first);
+    auto right = nesso::platform::MappedFile::open(second);
     REQUIRE(left);
     REQUIRE(right);
     *left = std::move(*right);
@@ -67,7 +67,7 @@ TEST_CASE("mapping handles directories, empty files, and a failed replace", "[pl
 
     const auto nested = directory / "nested";
     std::filesystem::create_directory(nested);
-    REQUIRE_FALSE(platform::replaceFileAtomically(first, nested));
+    REQUIRE_FALSE(nesso::platform::replaceFileAtomically(first, nested));
 
     std::filesystem::remove_all(directory);
 }
@@ -84,7 +84,7 @@ TEST_CASE("atomic replace keeps the destination name", "[platform]")
         output << "v2";
     }
 
-    REQUIRE(platform::replaceFileAtomically(source, destination));
+    REQUIRE(nesso::platform::replaceFileAtomically(source, destination));
     REQUIRE_FALSE(std::filesystem::exists(source));
     std::ifstream input(destination);
     std::string text;
@@ -95,7 +95,7 @@ TEST_CASE("atomic replace keeps the destination name", "[platform]")
 
 TEST_CASE("peak resident bytes is a whole number of pages", "[platform]")
 {
-    const std::int64_t peak = platform::peakResidentBytes();
+    const std::int64_t peak = nesso::platform::peakResidentBytes();
     REQUIRE(peak >= 0);
     REQUIRE(peak % 1024 == 0);
 }

@@ -1,13 +1,13 @@
 // Copyright (c) 2026 Lorenzo Caprari
 // SPDX-License-Identifier: MIT
 
-#include "include/core/distance.hpp"
+#include <core/distance.hpp>
 
-#include "distance_kernels.hpp"
+#include <core/distance_kernels.hpp>
 
 #include <cmath>
 
-namespace core::math
+namespace nesso::core::math
 {
 namespace detail
 {
@@ -86,6 +86,7 @@ template double l2SquaredDistanceScalar<double>(std::span<const double>, std::sp
 
 } // namespace detail
 
+// cppcheck-suppress unusedFunction
 template <SupportedScalar T>
 std::expected<T, EngineError> CosineSimilarity::calculate(std::span<const T> a, std::span<const T> b) noexcept
 {
@@ -146,6 +147,7 @@ template std::expected<float, EngineError> DistanceMetrics::dotProduct<float>(st
 template std::expected<double, EngineError> DistanceMetrics::dotProduct<double>(std::span<const double>,
                                                                                 std::span<const double>) noexcept;
 
+// cppcheck-suppress unusedFunction
 template <SupportedScalar T>
 std::expected<T, EngineError> DistanceMetrics::l2SquaredDistance(std::span<const T> a, std::span<const T> b) noexcept
 {
@@ -170,4 +172,4 @@ template std::expected<float, EngineError> DistanceMetrics::l2SquaredDistance<fl
 template std::expected<double, EngineError>
     DistanceMetrics::l2SquaredDistance<double>(std::span<const double>, std::span<const double>) noexcept;
 
-} // namespace core::math
+} // namespace nesso::core::math

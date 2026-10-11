@@ -1,11 +1,11 @@
 // Copyright (c) 2026 Lorenzo Caprari
 // SPDX-License-Identifier: MIT
 
-#include "nesso.hpp"
+#include <nesso.hpp>
 
-#include "error_map.hpp"
-#include "model_paths.hpp"
-#include "trace.hpp"
+#include <error_map.hpp>
+#include <model_paths.hpp>
+#include <trace.hpp>
 
 #include <core/corpus_index.hpp>
 #include <core/top_k.hpp>
@@ -60,49 +60,49 @@ class ProgressReporter
     std::chrono::steady_clock::time_point started_;
 };
 
-ErrorCause causeOf(parser::ParseError error)
+ErrorCause causeOf(nesso::parser::ParseError error)
 {
     switch (error)
     {
-    case parser::ParseError::FileOpenFailure:
+    case nesso::parser::ParseError::FileOpenFailure:
         return ErrorCause::FileOpen;
-    case parser::ParseError::UnsupportedFormat:
+    case nesso::parser::ParseError::UnsupportedFormat:
         return ErrorCause::UnsupportedFormat;
-    case parser::ParseError::BinaryFile:
+    case nesso::parser::ParseError::BinaryFile:
         return ErrorCause::BinaryFile;
     }
     std::unreachable();
 }
 
-ErrorCause causeOf(embed::EmbedError error)
+ErrorCause causeOf(nesso::embed::EmbedError error)
 {
     switch (error)
     {
-    case embed::EmbedError::VocabLoadFailure:
+    case nesso::embed::EmbedError::VocabLoadFailure:
         return ErrorCause::VocabLoad;
-    case embed::EmbedError::TokenizationFailure:
+    case nesso::embed::EmbedError::TokenizationFailure:
         return ErrorCause::Tokenization;
-    case embed::EmbedError::ModelLoadFailure:
+    case nesso::embed::EmbedError::ModelLoadFailure:
         return ErrorCause::ModelLoad;
-    case embed::EmbedError::InferenceFailure:
+    case nesso::embed::EmbedError::InferenceFailure:
         return ErrorCause::Inference;
-    case embed::EmbedError::InvalidInput:
+    case nesso::embed::EmbedError::InvalidInput:
         return ErrorCause::InvalidInput;
     }
     std::unreachable();
 }
 
-ErrorCause causeOf(core::EngineError error)
+ErrorCause causeOf(nesso::core::EngineError error)
 {
     switch (error)
     {
-    case core::EngineError::FileOpenFailure:
+    case nesso::core::EngineError::FileOpenFailure:
         return ErrorCause::FileOpen;
-    case core::EngineError::MismatchedDimensions:
+    case nesso::core::EngineError::MismatchedDimensions:
         return ErrorCause::MismatchedDimensions;
-    case core::EngineError::DatabaseNotInitialized:
+    case nesso::core::EngineError::DatabaseNotInitialized:
         return ErrorCause::EmptyEmbedding;
-    case core::EngineError::CorruptDatabase:
+    case nesso::core::EngineError::CorruptDatabase:
         return ErrorCause::CorruptFile;
     }
     std::unreachable();
@@ -192,7 +192,7 @@ std::string message(const Error &error)
 
 struct ParsedFiles
 {
-    std::vector<parser::ParsedChunk> chunks;
+    std::vector<nesso::parser::ParsedChunk> chunks;
     std::vector<std::string> sources;
     size_t skippedLines = 0;
     size_t emptyLines = 0;
@@ -222,7 +222,7 @@ static LineCounts lineCounts(const ParsedFiles &parsed)
             .jsonField = parsed.jsonField};
 }
 
-static LineCounts lineCounts(const parser::ParseStats &stats, std::string jsonField)
+static LineCounts lineCounts(const nesso::parser::ParseStats &stats, std::string jsonField)
 {
     return {.skipped = stats.skippedLines,
             .emptyLines = stats.emptyLines,
@@ -232,10 +232,10 @@ static LineCounts lineCounts(const parser::ParseStats &stats, std::string jsonFi
             .jsonField = std::move(jsonField)};
 }
 
-static std::vector<StaleSource> staleSources(std::span<const core::SourceInfo> sources)
+static std::vector<StaleSource> staleSources(std::span<const nesso::core::SourceInfo> sources)
 {
     std::vector<StaleSource> stale;
-    for (const core::SourceInfo &source : sources)
+    for (const nesso::core::SourceInfo &source : sources)
     {
         if (!source.tracked || source.path == "-")
         {
@@ -307,18 +307,18 @@ static std::expected<ParsedFiles, Error> parseFiles(std::span<const std::filesys
                                                     std::string_view jsonField)
 {
     const ScopedStage stage{"parse"};
-    parser::ParseStats stats{};
+    nesso::parser::ParseStats stats{};
     ParsedFiles parsed;
     for (const std::filesystem::path &path : files)
     {
-        auto fileChunks = parser::Chunker::fromFile(path, MAX_LINE_LENGTH, &stats, jsonField);
+        auto fileChunks = nesso::parser::Chunker::fromFile(path, MAX_LINE_LENGTH, &stats, jsonField);
         if (!fileChunks)
         {
             return std::unexpected(makeError(ErrorKind::Parse, causeOf(fileChunks.error()), path,
                                              lineCounts(stats, std::string{jsonField})));
         }
         const std::string source = path.string();
-        for (parser::ParsedChunk &chunk : *fileChunks)
+        for (nesso::parser::ParsedChunk &chunk : *fileChunks)
         {
             parsed.chunks.push_back(std::move(chunk));
             parsed.sources.push_back(source);
@@ -343,19 +343,19 @@ static std::unexpected<Error> noMatch(ErrorKind kind, const LineCounts &counts)
     return std::unexpected(makeError(kind, ErrorCause::None, {}, counts));
 }
 
-static std::expected<std::vector<core::CorpusChunk>, Error> embedFiles(const ParsedFiles &parsed,
-                                                                       const embed::OnnxEmbedder &embedder,
-                                                                       std::vector<float> *matrix, bool showProgress)
+static std::expected<std::vector<nesso::core::CorpusChunk>, Error>
+embedFiles(const ParsedFiles &parsed, const nesso::embed::OnnxEmbedder &embedder, std::vector<float> *matrix,
+           bool showProgress)
 {
     const ScopedStage stage{"embed"};
     if (parsed.chunks.empty())
     {
-        return std::vector<core::CorpusChunk>{};
+        return std::vector<nesso::core::CorpusChunk>{};
     }
 
     std::vector<std::string> texts;
     texts.reserve(parsed.chunks.size());
-    for (const parser::ParsedChunk &chunk : parsed.chunks)
+    for (const nesso::parser::ParsedChunk &chunk : parsed.chunks)
     {
         texts.push_back(chunk.text);
     }
@@ -375,27 +375,28 @@ static std::expected<std::vector<core::CorpusChunk>, Error> embedFiles(const Par
         dims = embeddings->front().size();
         if (dims == 0)
         {
-            return textFailure(ErrorKind::Embed, core::EngineError::DatabaseNotInitialized, lineCounts(parsed));
+            return textFailure(ErrorKind::Embed, nesso::core::EngineError::DatabaseNotInitialized, lineCounts(parsed));
         }
         matrix->reserve(embeddings->size() * dims);
     }
 
-    std::vector<core::CorpusChunk> chunks;
+    std::vector<nesso::core::CorpusChunk> chunks;
     chunks.reserve(embeddings->size());
     for (size_t index = 0; index < embeddings->size(); ++index)
     {
-        core::CorpusChunk chunk{.chunk = {.text = parsed.chunks[index].text,
-                                          .lineNumber = parsed.chunks[index].lineNumber,
-                                          .source = parsed.sources[index],
-                                          .byteOffset = parsed.chunks[index].byteOffset,
-                                          .arrayElement = parsed.chunks[index].arrayElement},
-                                .embedding = {}};
+        nesso::core::CorpusChunk chunk{.chunk = {.text = parsed.chunks[index].text,
+                                                 .lineNumber = parsed.chunks[index].lineNumber,
+                                                 .source = parsed.sources[index],
+                                                 .byteOffset = parsed.chunks[index].byteOffset,
+                                                 .arrayElement = parsed.chunks[index].arrayElement},
+                                       .embedding = {}};
         if (matrix != nullptr)
         {
             const std::vector<float> &embedding = (*embeddings)[index];
             if (embedding.size() != dims)
             {
-                return textFailure(ErrorKind::Embed, core::EngineError::MismatchedDimensions, lineCounts(parsed));
+                return textFailure(ErrorKind::Embed, nesso::core::EngineError::MismatchedDimensions,
+                                   lineCounts(parsed));
             }
             matrix->insert(matrix->end(), embedding.begin(), embedding.end());
         }
@@ -408,7 +409,7 @@ static std::expected<std::vector<core::CorpusChunk>, Error> embedFiles(const Par
     return chunks;
 }
 
-static bool multipleSources(std::span<const core::CorpusChunk> chunks)
+static bool multipleSources(std::span<const nesso::core::CorpusChunk> chunks)
 {
     if (chunks.empty())
     {
@@ -416,33 +417,33 @@ static bool multipleSources(std::span<const core::CorpusChunk> chunks)
     }
     const std::string &first = chunks.front().chunk.source;
     return std::ranges::any_of(chunks,
-                               [&first](const core::CorpusChunk &chunk) { return chunk.chunk.source != first; });
+                               [&first](const nesso::core::CorpusChunk &chunk) { return chunk.chunk.source != first; });
 }
 
-static std::expected<std::vector<float>, Error> packMatrix(std::span<const core::CorpusChunk> chunks,
+static std::expected<std::vector<float>, Error> packMatrix(std::span<const nesso::core::CorpusChunk> chunks,
                                                            const LineCounts &counts, ErrorKind failure)
 {
     const size_t dims = chunks.front().embedding.size();
     if (dims == 0)
     {
-        return textFailure(failure, core::EngineError::DatabaseNotInitialized, counts);
+        return textFailure(failure, nesso::core::EngineError::DatabaseNotInitialized, counts);
     }
 
     std::vector<float> matrix;
     matrix.reserve(chunks.size() * dims);
-    for (const core::CorpusChunk &chunk : chunks)
+    for (const nesso::core::CorpusChunk &chunk : chunks)
     {
         if (chunk.embedding.size() != dims)
         {
-            return textFailure(failure, core::EngineError::MismatchedDimensions, counts);
+            return textFailure(failure, nesso::core::EngineError::MismatchedDimensions, counts);
         }
         matrix.insert(matrix.end(), chunk.embedding.begin(), chunk.embedding.end());
     }
     return matrix;
 }
 
-static std::expected<TextResults, Error> rankChunks(std::span<const core::CorpusChunk> chunks,
-                                                    const embed::OnnxEmbedder &embedder, std::string_view query,
+static std::expected<TextResults, Error> rankChunks(std::span<const nesso::core::CorpusChunk> chunks,
+                                                    const nesso::embed::OnnxEmbedder &embedder, std::string_view query,
                                                     size_t topK, const LineCounts &counts, ErrorKind packFailure,
                                                     std::span<const float> packed)
 {
@@ -472,7 +473,7 @@ static std::expected<TextResults, Error> rankChunks(std::span<const core::Corpus
         return textFailure(ErrorKind::QueryEmbed, queryEmbedding.error(), counts);
     }
 
-    const auto ranked = core::topK(*queryEmbedding, matrix, dims, topK);
+    const auto ranked = nesso::core::topK(*queryEmbedding, matrix, dims, topK);
     if (!ranked)
     {
         return textFailure(ErrorKind::Search, ranked.error(), counts);
@@ -492,9 +493,9 @@ static std::expected<TextResults, Error> rankChunks(std::span<const core::Corpus
                         .multipleSources = multipleSources(chunks),
                         .staleSources = {}};
     results.matches.reserve(ranked->size());
-    for (const core::Hit &hit : *ranked)
+    for (const nesso::core::Hit &hit : *ranked)
     {
-        const core::LogChunk &chunk = chunks[static_cast<size_t>(hit.index)].chunk;
+        const nesso::core::LogChunk &chunk = chunks[static_cast<size_t>(hit.index)].chunk;
         results.matches.push_back({.source = chunk.source,
                                    .line = chunk.lineNumber,
                                    .score = hit.score,
@@ -510,7 +511,7 @@ class Nesso::Impl
     explicit Impl(Config config) : config_(std::move(config)) {}
 
     // The model is loaded on first use.
-    std::expected<const embed::OnnxEmbedder *, Error> embedder()
+    std::expected<const nesso::embed::OnnxEmbedder *, Error> embedder()
     {
         if (!embedder_)
         {
@@ -526,7 +527,7 @@ class Nesso::Impl
                 tried = modelDirCandidates();
                 modelDir = resolveDefaultModelDir();
             }
-            auto created = embed::OnnxEmbedder::create(modelDir);
+            auto created = nesso::embed::OnnxEmbedder::create(modelDir);
             if (!created)
             {
                 Error error{.kind = ErrorKind::EmbedderLoad,
@@ -544,7 +545,7 @@ class Nesso::Impl
 
   private:
     Config config_;
-    std::unique_ptr<embed::OnnxEmbedder> embedder_;
+    std::unique_ptr<nesso::embed::OnnxEmbedder> embedder_;
 };
 
 Nesso::Nesso(Config config) : impl_(std::make_unique<Impl>(std::move(config))) {}
@@ -611,7 +612,7 @@ std::expected<IndexSummary, Error> Nesso::index(const IndexRequest &request) con
     const auto written = [&request, &chunks]
     {
         const ScopedStage stage{"corpus-write"};
-        return core::writeCorpusFile(request.output, *chunks, embed::MINILM_MODEL_ID);
+        return nesso::core::writeCorpusFile(request.output, *chunks, nesso::embed::MINILM_MODEL_ID);
     }();
     if (!written)
     {
@@ -633,7 +634,7 @@ std::expected<TextResults, Error> Nesso::search(const SearchRequest &request) co
     const auto chunks = [&request]
     {
         const ScopedStage stage{"corpus-read"};
-        return core::mapCorpusFile(request.index);
+        return nesso::core::mapCorpusFile(request.index);
     }();
     if (!chunks)
     {

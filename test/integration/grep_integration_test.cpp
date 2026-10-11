@@ -52,10 +52,10 @@ TEST_CASE("Semantic grep ranks the expected log line", "[grep][integration]")
     const std::filesystem::path modelDir = modelDirOrSkip();
 
     const std::filesystem::path logPath = std::filesystem::path(NESSO_TEST_FIXTURES) / "grep_sample.log";
-    const auto embedder = embed::OnnxEmbedder::create(modelDir);
+    const auto embedder = nesso::embed::OnnxEmbedder::create(modelDir);
     REQUIRE(embedder.has_value());
 
-    const auto chunks = parser::Chunker::fromFile(logPath);
+    const auto chunks = nesso::parser::Chunker::fromFile(logPath);
     REQUIRE(chunks.has_value());
     REQUIRE(chunks->size() == 1);
 
@@ -67,7 +67,7 @@ TEST_CASE("Semantic grep ranks the expected log line", "[grep][integration]")
     REQUIRE(queryEmbedding.has_value());
 
     const std::span<const float> matrix{(*embeddings)[0]};
-    const auto results = core::topK(*queryEmbedding, matrix, matrix.size(), 1);
+    const auto results = nesso::core::topK(*queryEmbedding, matrix, matrix.size(), 1);
     REQUIRE(results.has_value());
     REQUIRE(results->size() == 1);
     REQUIRE((*results)[0].index == 0);
@@ -80,20 +80,20 @@ TEST_CASE("WordPieceTokenizer rejects a bad vocab and splits punctuation", "[emb
     std::filesystem::remove_all(directory);
     std::filesystem::create_directories(directory);
 
-    const auto missing = embed::WordPieceTokenizer::fromVocabFile(directory / "missing.txt");
+    const auto missing = nesso::embed::WordPieceTokenizer::fromVocabFile(directory / "missing.txt");
     REQUIRE_FALSE(missing.has_value());
-    REQUIRE(missing.error() == embed::EmbedError::VocabLoadFailure);
+    REQUIRE(missing.error() == nesso::embed::EmbedError::VocabLoadFailure);
 
     const auto emptyPath = directory / "empty.txt";
     writeBytes(emptyPath, "");
-    const auto empty = embed::WordPieceTokenizer::fromVocabFile(emptyPath);
+    const auto empty = nesso::embed::WordPieceTokenizer::fromVocabFile(emptyPath);
     REQUIRE_FALSE(empty.has_value());
-    REQUIRE(empty.error() == embed::EmbedError::VocabLoadFailure);
+    REQUIRE(empty.error() == nesso::embed::EmbedError::VocabLoadFailure);
 
     const auto vocabPath = directory / "vocab.txt";
     writeBytes(vocabPath, "[PAD]\n[unused0]\n[CLS]\n[SEP]\nhello\nworld\n##ing\ntesting\n");
 
-    const auto tokenizer = embed::WordPieceTokenizer::fromVocabFile(vocabPath, 16);
+    const auto tokenizer = nesso::embed::WordPieceTokenizer::fromVocabFile(vocabPath, 16);
     REQUIRE(tokenizer.has_value());
 
     const auto punctuated = tokenizer->encode("hello, world");
@@ -104,7 +104,7 @@ TEST_CASE("WordPieceTokenizer rejects a bad vocab and splits punctuation", "[emb
     REQUIRE(unknown.has_value());
     REQUIRE(unknown->inputIds == std::vector<int64_t>{2, 0, 3});
 
-    const auto shortTokenizer = embed::WordPieceTokenizer::fromVocabFile(vocabPath, 2);
+    const auto shortTokenizer = nesso::embed::WordPieceTokenizer::fromVocabFile(vocabPath, 2);
     REQUIRE(shortTokenizer.has_value());
     const auto truncated = shortTokenizer->encode("helloing");
     REQUIRE(truncated.has_value());

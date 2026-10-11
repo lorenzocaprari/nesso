@@ -1,7 +1,7 @@
 // Copyright (c) 2026 Lorenzo Caprari
 // SPDX-License-Identifier: MIT
 
-#include "trace.hpp"
+#include <trace.hpp>
 
 #include <platform/file.hpp>
 
@@ -51,7 +51,7 @@ static void emit(TraceState &current)
         return;
     }
 
-    const std::int64_t rssBytes = platform::peakResidentBytes();
+    const std::int64_t rssBytes = nesso::platform::peakResidentBytes();
 
     std::cerr << R"({"peakRssBytes":)" << rssBytes << R"(,"stages":[)";
     for (size_t index = 0; index < current.stages.size(); ++index)

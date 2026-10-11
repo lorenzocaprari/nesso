@@ -4,7 +4,7 @@
 #ifndef CORE_CORPUS_INDEX_HPP
 #define CORE_CORPUS_INDEX_HPP
 
-#include "core_types.hpp"
+#include <core/core_types.hpp>
 
 #include <cstdint>
 #include <expected>
@@ -15,7 +15,7 @@
 #include <string_view>
 #include <vector>
 
-namespace core
+namespace nesso::core
 {
 
 inline constexpr std::uint32_t CORPUS_VERSION = 2;
@@ -74,6 +74,6 @@ writeCorpusFile(const std::filesystem::path &path, std::span<const CorpusChunk> 
 
 [[nodiscard]] std::expected<std::vector<CorpusChunk>, EngineError> readCorpusFile(const std::filesystem::path &path);
 
-} // namespace core
+} // namespace nesso::core
 
 #endif // CORE_CORPUS_INDEX_HPP

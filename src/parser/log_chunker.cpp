@@ -1,7 +1,7 @@
 // Copyright (c) 2026 Lorenzo Caprari
 // SPDX-License-Identifier: MIT
 
-#include "include/parser/log_chunker.hpp"
+#include <parser/log_chunker.hpp>
 
 #include <array>
 #include <fstream>
@@ -9,7 +9,7 @@
 #include <nlohmann/json.hpp>
 #include <sstream>
 
-namespace parser
+namespace nesso::parser
 {
 
 static constexpr size_t BINARY_PROBE_BYTES = 4096;
@@ -275,4 +275,4 @@ std::expected<std::vector<ParsedChunk>, ParseError> Chunker::fromJsonFile(const 
     return readJsonStream(*input, extensionLower(path) == ".jsonl", stats, jsonField, maxLineLength);
 }
 
-} // namespace parser
+} // namespace nesso::parser

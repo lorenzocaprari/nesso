@@ -1,7 +1,7 @@
 // Copyright (c) 2026 Lorenzo Caprari
 // SPDX-License-Identifier: MIT
 
-#include "include/embed/wordpiece_tokenizer.hpp"
+#include <embed/wordpiece_tokenizer.hpp>
 
 #include <algorithm>
 #include <array>
@@ -9,7 +9,7 @@
 #include <fstream>
 #include <span>
 
-namespace embed
+namespace nesso::embed
 {
 
 struct CodeRange
@@ -567,4 +567,4 @@ std::expected<TokenizedInput, EmbedError> WordPieceTokenizer::encode(std::string
     return encoded;
 }
 
-} // namespace embed
+} // namespace nesso::embed

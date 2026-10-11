@@ -6,7 +6,7 @@
 #include <concepts>
 #include <cstdint>
 
-namespace core
+namespace nesso::core
 {
 
 // Constrain types to valid vector floating points
@@ -21,6 +21,6 @@ enum class EngineError : uint8_t
     CorruptDatabase
 };
 
-} // namespace core
+} // namespace nesso::core
 
 #endif // CORE_CORE_TYPES_HPP

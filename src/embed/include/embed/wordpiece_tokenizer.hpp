@@ -4,7 +4,7 @@
 #ifndef EMBED_WORDPIECE_TOKENIZER_HPP
 #define EMBED_WORDPIECE_TOKENIZER_HPP
 
-#include "embed_types.hpp"
+#include <embed/embed_types.hpp>
 
 #include <cstdint>
 #include <expected>
@@ -14,7 +14,7 @@
 #include <unordered_map>
 #include <vector>
 
-namespace embed
+namespace nesso::embed
 {
 
 struct TokenizedInput
@@ -45,6 +45,6 @@ class WordPieceTokenizer
     size_t maxSequenceLength_ = DEFAULT_MAX_SEQUENCE_LENGTH;
 };
 
-} // namespace embed
+} // namespace nesso::embed
 
 #endif // EMBED_WORDPIECE_TOKENIZER_HPP

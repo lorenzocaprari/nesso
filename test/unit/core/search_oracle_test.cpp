@@ -8,7 +8,7 @@
 #include <span>
 #include <vector>
 
-using core::math::CosineSimilarity;
+using nesso::core::math::CosineSimilarity;
 
 namespace
 {

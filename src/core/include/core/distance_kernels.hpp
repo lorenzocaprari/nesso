@@ -7,7 +7,7 @@
 #include <cstdint>
 #include <span>
 
-namespace core::math::detail
+namespace nesso::core::math::detail
 {
 
 enum class DistanceKernel : uint8_t
@@ -28,6 +28,6 @@ enum class DistanceKernel : uint8_t
 
 [[nodiscard]] float l2SquaredDistanceAvx2Fma(std::span<const float> a, std::span<const float> b) noexcept;
 
-} // namespace core::math::detail
+} // namespace nesso::core::math::detail
 
 #endif // CORE_DISTANCE_KERNELS_HPP

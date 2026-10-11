@@ -11,7 +11,7 @@
 #include <string_view>
 #include <vector>
 
-namespace parser
+namespace nesso::parser
 {
 
 enum class ParseError : uint8_t
@@ -55,6 +55,6 @@ class Chunker
                  size_t maxLineLength = 4096);
 };
 
-} // namespace parser
+} // namespace nesso::parser
 
 #endif // PARSER_LOG_CHUNKER_HPP

@@ -8,20 +8,20 @@
 
 TEST_CASE("layer errors map onto a cause", "[nesso][error]")
 {
-    REQUIRE(nesso::causeOf(parser::ParseError::FileOpenFailure) == nesso::ErrorCause::FileOpen);
-    REQUIRE(nesso::causeOf(parser::ParseError::UnsupportedFormat) == nesso::ErrorCause::UnsupportedFormat);
-    REQUIRE(nesso::causeOf(parser::ParseError::BinaryFile) == nesso::ErrorCause::BinaryFile);
+    REQUIRE(nesso::causeOf(nesso::parser::ParseError::FileOpenFailure) == nesso::ErrorCause::FileOpen);
+    REQUIRE(nesso::causeOf(nesso::parser::ParseError::UnsupportedFormat) == nesso::ErrorCause::UnsupportedFormat);
+    REQUIRE(nesso::causeOf(nesso::parser::ParseError::BinaryFile) == nesso::ErrorCause::BinaryFile);
 
-    REQUIRE(nesso::causeOf(embed::EmbedError::VocabLoadFailure) == nesso::ErrorCause::VocabLoad);
-    REQUIRE(nesso::causeOf(embed::EmbedError::TokenizationFailure) == nesso::ErrorCause::Tokenization);
-    REQUIRE(nesso::causeOf(embed::EmbedError::ModelLoadFailure) == nesso::ErrorCause::ModelLoad);
-    REQUIRE(nesso::causeOf(embed::EmbedError::InferenceFailure) == nesso::ErrorCause::Inference);
-    REQUIRE(nesso::causeOf(embed::EmbedError::InvalidInput) == nesso::ErrorCause::InvalidInput);
+    REQUIRE(nesso::causeOf(nesso::embed::EmbedError::VocabLoadFailure) == nesso::ErrorCause::VocabLoad);
+    REQUIRE(nesso::causeOf(nesso::embed::EmbedError::TokenizationFailure) == nesso::ErrorCause::Tokenization);
+    REQUIRE(nesso::causeOf(nesso::embed::EmbedError::ModelLoadFailure) == nesso::ErrorCause::ModelLoad);
+    REQUIRE(nesso::causeOf(nesso::embed::EmbedError::InferenceFailure) == nesso::ErrorCause::Inference);
+    REQUIRE(nesso::causeOf(nesso::embed::EmbedError::InvalidInput) == nesso::ErrorCause::InvalidInput);
 
-    REQUIRE(nesso::causeOf(core::EngineError::FileOpenFailure) == nesso::ErrorCause::FileOpen);
-    REQUIRE(nesso::causeOf(core::EngineError::MismatchedDimensions) == nesso::ErrorCause::MismatchedDimensions);
-    REQUIRE(nesso::causeOf(core::EngineError::DatabaseNotInitialized) == nesso::ErrorCause::EmptyEmbedding);
-    REQUIRE(nesso::causeOf(core::EngineError::CorruptDatabase) == nesso::ErrorCause::CorruptFile);
+    REQUIRE(nesso::causeOf(nesso::core::EngineError::FileOpenFailure) == nesso::ErrorCause::FileOpen);
+    REQUIRE(nesso::causeOf(nesso::core::EngineError::MismatchedDimensions) == nesso::ErrorCause::MismatchedDimensions);
+    REQUIRE(nesso::causeOf(nesso::core::EngineError::DatabaseNotInitialized) == nesso::ErrorCause::EmptyEmbedding);
+    REQUIRE(nesso::causeOf(nesso::core::EngineError::CorruptDatabase) == nesso::ErrorCause::CorruptFile);
 }
 
 TEST_CASE("each cause has a readable phrase", "[nesso][error]")
