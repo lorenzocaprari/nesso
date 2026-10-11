@@ -1,28 +1,28 @@
 {
-  "sha": "8585740f52aded75f503b92a6e0844df8b5c42c0",
-  "binary": "build/bench-rel/build/Release/src/nesso",
+  "sha": "5772a243edcf79d95592ea4b185a12065a8f9316",
+  "binary": "build/Release/src/nesso",
   "query": "database connection refused",
   "cases": [
     {
       "lines": 1000,
       "ok": true,
       "exitCode": 0,
-      "wallSeconds": 0.69,
-      "peakRssBytes": 88068096,
+      "wallSeconds": 0.49,
+      "peakRssBytes": 84688896,
       "trace": {
-        "peakRssBytes": 87937024,
+        "peakRssBytes": 84557824,
         "stages": [
           {
             "name": "parse",
-            "us": 190
+            "us": 216
           },
           {
             "name": "embed",
-            "us": 537414
+            "us": 399701
           },
           {
             "name": "rank",
-            "us": 9041
+            "us": 927
           }
         ]
       }
@@ -31,22 +31,22 @@
       "lines": 10000,
       "ok": true,
       "exitCode": 0,
-      "wallSeconds": 4.55,
-      "peakRssBytes": 120250368,
+      "wallSeconds": 3.83,
+      "peakRssBytes": 119738368,
       "trace": {
-        "peakRssBytes": 120119296,
+        "peakRssBytes": 119738368,
         "stages": [
           {
             "name": "parse",
-            "us": 1509
+            "us": 1385
           },
           {
             "name": "embed",
-            "us": 4443010
+            "us": 3739877
           },
           {
             "name": "rank",
-            "us": 9306
+            "us": 1681
           }
         ]
       }
@@ -55,22 +55,22 @@
       "lines": 100000,
       "ok": true,
       "exitCode": 0,
-      "wallSeconds": 35.74,
-      "peakRssBytes": 469700608,
+      "wallSeconds": 34.9,
+      "peakRssBytes": 472023040,
       "trace": {
-        "peakRssBytes": 469700608,
+        "peakRssBytes": 472023040,
         "stages": [
           {
             "name": "parse",
-            "us": 11628
+            "us": 14628
           },
           {
             "name": "embed",
-            "us": 35535514
+            "us": 34752940
           },
           {
             "name": "rank",
-            "us": 69212
+            "us": 8695
           }
         ]
       }
