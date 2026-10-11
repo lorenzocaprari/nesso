@@ -1,0 +1,38 @@
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      github-actions:
+        patterns:
+          - "*"
+    cooldown:
+      default-days: 7
+
+  - package-ecosystem: gomod
+    directory: /test/functional
+    schedule:
+      interval: weekly
+    groups:
+      go-modules:
+        patterns:
+          - "*"
+    cooldown:
+      default-days: 7
+
+  # Dockerfile.runtime (repo root) and .devcontainer/Dockerfile.
+  # FROM ${BUILD_IMAGE} in the runtime image is not a pinned upstream image.
+  - package-ecosystem: docker
+    directories:
+      - /
+      - /.devcontainer
+    schedule:
+      interval: weekly
+    groups:
+      docker:
+        patterns:
+          - "*"
+    cooldown:
+      default-days: 7
