@@ -4,6 +4,7 @@
 
 #include <embed/wordpiece_tokenizer.hpp>
 
+#include <cstdint>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
@@ -13,33 +14,30 @@
 namespace
 {
 
-constexpr size_t kMaxEncodeBytes = 65536;
+constexpr std::size_t kMaxEncodeBytes = 65536;
 
-std::string readCapped(const char *path)
+std::string bytesFrom(const std::uint8_t *data, std::size_t size)
 {
-    std::ifstream in(path, std::ios::binary);
-    if (!in)
+    if (data == nullptr || size == 0)
     {
         return {};
     }
-    std::string bytes((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
-    if (bytes.size() > kMaxEncodeBytes)
-    {
-        bytes.resize(kMaxEncodeBytes);
-    }
-    return bytes;
+    return std::string(reinterpret_cast<const char *>(data), size);
 }
 
 } // namespace
 
-int main(int argc, char *argv[])
+extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t *data, std::size_t size)
 {
-    if (argc < 2)
+    const std::string bytes = bytesFrom(data, size);
+    const auto inputPath =
+        std::filesystem::temp_directory_path() / ("nesso-fuzz-input-" + std::to_string(::getpid()) + ".txt");
     {
-        return 1;
+        std::ofstream out(inputPath, std::ios::binary | std::ios::trunc);
+        out.write(bytes.data(), static_cast<std::streamsize>(bytes.size()));
     }
 
-    if (auto loaded = embed::WordPieceTokenizer::fromVocabFile(argv[1]))
+    if (auto loaded = embed::WordPieceTokenizer::fromVocabFile(inputPath))
     {
         (void)loaded->encode("the quick brown fox");
     }
@@ -53,10 +51,35 @@ int main(int argc, char *argv[])
 
     if (auto tok = embed::WordPieceTokenizer::fromVocabFile(vocabPath))
     {
-        (void)tok->encode(readCapped(argv[1]));
+        std::string capped = bytes;
+        if (capped.size() > kMaxEncodeBytes)
+        {
+            capped.resize(kMaxEncodeBytes);
+        }
+        (void)tok->encode(capped);
     }
 
     std::error_code ec;
+    std::filesystem::remove(inputPath, ec);
     std::filesystem::remove(vocabPath, ec);
     return 0;
 }
+
+// libFuzzer supplies main. The AFL++ CI job keeps this file-input entry point.
+#ifndef NESSO_LIBFUZZER
+int main(int argc, char *argv[])
+{
+    if (argc < 2)
+    {
+        return 1;
+    }
+
+    std::ifstream in(argv[1], std::ios::binary);
+    if (!in)
+    {
+        return 0;
+    }
+    const std::string bytes((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+    return LLVMFuzzerTestOneInput(reinterpret_cast<const std::uint8_t *>(bytes.data()), bytes.size());
+}
+#endif

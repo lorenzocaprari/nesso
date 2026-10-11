@@ -1,0 +1,9 @@
+language: c++
+primary_contact: "caprarilorenzo5@gmail.com"
+main_repo: "https://github.com/lorenzocaprari/nesso"
+fuzzing_engines:
+  - libfuzzer
+sanitizers:
+  - address
+architectures:
+  - x86_64
