@@ -1,14 +1,25 @@
 name: Pipeline
 
 on:
+  push:
+    branches: ["main"]
   pull_request:
     branches: ["main"]
+  schedule:
+    # 03:17 UTC, off the hour so the nightly run misses the :00 cron pile-up.
+    - cron: "17 3 * * *"
   workflow_dispatch:
     inputs:
       force_image_rebuild:
         description: Force rebuild of nesso-build-env even if inputs are unchanged
         type: boolean
         default: false
+
+# Cancel a PR run when a newer push supersedes it. Push and schedule runs
+# (main and any tag ref) are left running.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
@@ -61,7 +72,7 @@ jobs:
       - name: Check dependency image
         id: image
         run: |
-          if [ '${{ inputs.force_image_rebuild }}' != 'true' ] &&
+          if [ '${{ github.event_name == 'workflow_dispatch' && inputs.force_image_rebuild == true }}' != 'true' ] &&
             docker buildx imagetools inspect '${{ steps.select.outputs.image }}' >/dev/null 2>&1; then
             echo "rebuild=false" >> "${GITHUB_OUTPUT}"
           else
@@ -490,3 +501,81 @@ jobs:
           name: bench-results
           path: bench/results/
           if-no-files-found: warn
+
+  # fp32 embeddings are deterministic and gate the job. int8 is not
+  # deterministic under CPU load, so that run only reports.
+  determinism:
+    needs: [prepare-image, build-gcc-26]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    container:
+      image: ${{ needs.prepare-image.outputs.image }}
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Install stress-ng
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends stress-ng
+          rm -rf /var/lib/apt/lists/*
+
+      - name: Restore int8 MiniLM
+        id: int8
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: models
+          key: minilm-${{ hashFiles('scripts/fetch-model') }}
+
+      - name: Fetch int8 MiniLM
+        if: steps.int8.outputs.cache-hit != 'true'
+        run: ./scripts/fetch-model models int8
+
+      - name: Restore fp32 MiniLM
+        id: fp32
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: models-fp32
+          key: minilm-fp32-${{ hashFiles('scripts/fetch-model') }}
+
+      - name: Fetch fp32 MiniLM
+        if: steps.fp32.outputs.cache-hit != 'true'
+        run: ./scripts/fetch-model models-fp32 fp32
+
+      - name: Download Release build
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: release-build
+
+      - name: Extract Release build
+        run: tar -xzf release-build.tar.gz
+
+      - name: Write determinism input
+        run: printf '%s\n' 'PAY-E1042 connection refused' > determinism-input.log
+
+      - name: Gate fp32 determinism
+        run: |
+          ./scripts/check-determinism \
+            --binary build/Release/src/nesso \
+            --model-dir models-fp32 \
+            --input determinism-input.log
+
+      - name: Report int8 determinism
+        continue-on-error: true
+        run: |
+          status=0
+          ./scripts/check-determinism \
+            --binary build/Release/src/nesso \
+            --model-dir models \
+            --input determinism-input.log >int8-determinism.txt 2>&1 || status=$?
+          cat int8-determinism.txt
+          {
+            echo '### int8 determinism (report only)'
+            echo '```'
+            cat int8-determinism.txt
+            echo '```'
+          } >> "${GITHUB_STEP_SUMMARY}"
+          exit "${status}"

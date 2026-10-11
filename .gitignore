@@ -7,3 +7,4 @@ coverage.cleaned
 build/fuzz/
 fuzz-*.log
 models/
+models-fp32/
