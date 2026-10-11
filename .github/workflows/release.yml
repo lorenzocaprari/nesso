@@ -147,7 +147,7 @@ jobs:
           ./scripts/smoke-deb './nesso_${{ steps.ver.outputs.ver }}_amd64.deb'
 
       - name: Generate SPDX SBOM
-        uses: anchore/sbom-action@v0
+        uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
         with:
           image: ${{ steps.select.outputs.runtime_image }}:${{ steps.ver.outputs.tag }}
           format: spdx-json
@@ -155,29 +155,50 @@ jobs:
           upload-artifact: false
           upload-release-assets: false
 
-      - name: Generate SHA256SUMS
-        run: |
-          set -euo pipefail
-          ver='${{ steps.ver.outputs.ver }}'
-          sha256sum \
-            "nesso_${ver}_amd64.deb" \
-            "nesso_${ver}.spdx.json" \
-            > SHA256SUMS
-          cat SHA256SUMS
-
       - name: Attest .deb provenance
+        id: attest-deb
         if: startsWith(github.ref, 'refs/tags/')
-        uses: actions/attest-build-provenance@v4
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-path: nesso_${{ steps.ver.outputs.ver }}_amd64.deb
 
       - name: Attest runtime image provenance
+        id: attest-image
         if: startsWith(github.ref, 'refs/tags/')
-        uses: actions/attest-build-provenance@v4
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-name: ${{ steps.push.outputs.image }}
           subject-digest: ${{ steps.push.outputs.digest }}
           push-to-registry: true
+
+      # Scorecard Signed-Releases ignores the attestation store. releasesHaveProvenance
+      # matches a release asset whose name ends in .intoto.jsonl (score 10).
+      - name: Attach provenance bundles
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          set -euo pipefail
+          ver='${{ steps.ver.outputs.ver }}'
+          cp '${{ steps.attest-deb.outputs.bundle-path }}' "nesso_${ver}_amd64.deb.intoto.jsonl"
+          cp '${{ steps.attest-image.outputs.bundle-path }}' "nesso_${ver}_ghcr.intoto.jsonl"
+
+      - name: Generate SHA256SUMS
+        run: |
+          set -euo pipefail
+          ver='${{ steps.ver.outputs.ver }}'
+          files=(
+            "nesso_${ver}_amd64.deb"
+            "nesso_${ver}.spdx.json"
+          )
+          for extra in \
+            "nesso_${ver}_amd64.deb.intoto.jsonl" \
+            "nesso_${ver}_ghcr.intoto.jsonl"
+          do
+            if [[ -f "${extra}" ]]; then
+              files+=("${extra}")
+            fi
+          done
+          sha256sum "${files[@]}" > SHA256SUMS
+          cat SHA256SUMS
 
       - name: Upload artifacts
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -196,6 +217,8 @@ jobs:
         with:
           files: |
             nesso_${{ steps.ver.outputs.ver }}_amd64.deb
+            nesso_${{ steps.ver.outputs.ver }}_amd64.deb.intoto.jsonl
+            nesso_${{ steps.ver.outputs.ver }}_ghcr.intoto.jsonl
             nesso_${{ steps.ver.outputs.ver }}.spdx.json
             SHA256SUMS
           generate_release_notes: true
