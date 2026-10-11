@@ -1,0 +1,33 @@
+# Clang 21 + libstdc++ (the GCC 15 ABI), C++26.
+#
+# settings.compiler stays gcc/15/libstdc++11 on purpose. nesso-build-env
+# bakes Release packages for that tuple; compiler=clang would change every
+# package id and rebuild onnxruntime, protobuf, and abseil from source.
+# libc++ is a different ABI and cannot link those static archives.
+#
+# tools.build:compiler_executables is not part of the package id, so
+# `conan install --no-remote` reuses the gcc-26 cache while CMake compiles
+# and links nesso with clang++-21 -stdlib=libstdc++.
+#
+# No -flto: clang turns -flto=auto into LLVM bitcode, which does not mix
+# cleanly with the gcc-built static dependencies.
+
+[settings]
+os=Linux
+arch=x86_64
+compiler=gcc
+compiler.version=15
+compiler.libcxx=libstdc++11
+compiler.cppstd=26
+build_type=Release
+
+[conf]
+tools.build:compiler_executables={"c": "clang-21", "cpp": "clang++-21"}
+user.nesso:cxxflags=["-O3", "-march=x86-64-v2", "-stdlib=libstdc++", "-fvisibility=hidden", "-DNDEBUG"]
+user.nesso:cflags=["-O3", "-march=x86-64-v2", "-fvisibility=hidden", "-DNDEBUG"]
+user.nesso:sharedlinkflags=["-Wl,-O1", "-Wl,--as-needed"]
+user.nesso:exelinkflags=["-stdlib=libstdc++", "-Wl,-O1", "-Wl,--as-needed"]
+
+[buildenv]
+CC=clang-21
+CXX=clang++-21
