@@ -1,0 +1,67 @@
+name: Bug report
+description: Incorrect search, index, exit code, or build of the nesso CLI.
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        For a vulnerability, use private vulnerability reporting (see SECURITY.md). Do not paste secrets or private logs.
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: "`nesso --version`, the `.deb` version, the image tag, or the git SHA."
+      placeholder: "0.1.0"
+    validations:
+      required: true
+  - type: dropdown
+    id: install
+    attributes:
+      label: How you run nesso
+      options:
+        - Debian package
+        - ghcr.io/lorenzocaprari/nesso image
+        - Local Conan and CMake build
+    validations:
+      required: true
+  - type: dropdown
+    id: command
+    attributes:
+      label: Command
+      options:
+        - grep
+        - index
+        - search
+        - build or test
+    validations:
+      required: true
+  - type: textarea
+    id: invocation
+    attributes:
+      label: Invocation
+      description: Command line, input kind (`.log`, `.json`, `.jsonl`, stdin, or a `.nesso` corpus), and `--model-dir` or `NESSO_MODEL_DIR` if set.
+      render: shell
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected
+      description: Exit codes are 0 (matches or index succeeded), 1 (nothing matched), and 2 (failure, including bad arguments).
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual
+      description: Exit code, stderr, and any stdout. Matches go to stdout; skips, the index summary, and errors go to stderr.
+    validations:
+      required: true
+  - type: textarea
+    id: input
+    attributes:
+      label: Minimal input
+      description: A few lines that reproduce the failure, with secrets removed.
+    validations:
+      required: true
