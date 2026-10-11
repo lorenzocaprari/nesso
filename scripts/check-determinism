@@ -8,12 +8,21 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 from pathlib import Path
 
 
 DEFAULT_QUERY = "PAY-E1042"
 DEFAULT_RUNS = 10
 DEFAULT_TOP_K = 1_000_000
+# --cpu-method all exits the only worker (and then stress-ng) when Apéry's
+# accuracy check fails or a target_clones method takes SIGILL. The default
+# LLC-sized cache mmap can also fail before the first nesso process.
+# loop is a one-core integer spin; timeout 0 runs until the gate stops it;
+# the cache cap avoids that startup mmap.
+DEFAULT_STRESS_COMMAND = "stress-ng --cpu 1 --cpu-method loop --timeout 0 --cache-size 2M"
+STRESS_WARMUP_SECONDS = 0.5
+STRESS_START_ATTEMPTS = 3
 
 
 class GateFailure(Exception):
@@ -49,8 +58,8 @@ def arguments() -> argparse.Namespace:
     parser.add_argument("--top-k", default=DEFAULT_TOP_K, type=positive)
     parser.add_argument(
         "--stress-command",
-        default=os.environ.get("NESSO_STRESS_COMMAND", "stress-ng --cpu 1"),
-        help="Command to run while the gate executes; default: stress-ng --cpu 1",
+        default=os.environ.get("NESSO_STRESS_COMMAND", DEFAULT_STRESS_COMMAND),
+        help=f"Command to run while the gate executes; default: {DEFAULT_STRESS_COMMAND}",
     )
     parsed = parser.parse_args()
     if parsed.model_dir is None:
@@ -76,13 +85,39 @@ def run_process(command: list[str], name: str) -> subprocess.CompletedProcess[st
     return result
 
 
-def start_stress(command: str) -> subprocess.Popen[bytes]:
+def start_stress(command: str) -> tuple[subprocess.Popen[bytes], Path]:
     parts = shlex.split(command)
     if not parts:
         raise GateFailure("stress command is empty")
     if shutil.which(parts[0]) is None:
         raise GateFailure(f"stress command is not available: {parts[0]}")
-    return subprocess.Popen(parts, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    fd, name = tempfile.mkstemp(prefix="nesso-stress-", suffix=".log")
+    os.close(fd)
+    stderr_path = Path(name)
+    stderr_file = stderr_path.open("wb")
+    try:
+        # stress-ng reports mmap and worker failures on stdout.
+        process = subprocess.Popen(parts, stdout=stderr_file, stderr=subprocess.STDOUT)
+    except Exception:
+        stderr_file.close()
+        stderr_path.unlink(missing_ok=True)
+        raise
+    stderr_file.close()
+    return process, stderr_path
+
+
+def stress_exit_message(process: subprocess.Popen[bytes], stderr_path: Path) -> str:
+    code = process.poll()
+    status = f"signal {-code}" if code is not None and code < 0 else f"exit {code}"
+    try:
+        text = stderr_path.read_text(errors="replace")
+    except OSError:
+        text = ""
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    tail = " | ".join(lines[-8:])
+    if tail:
+        return f"stress command exited before the gate completed ({status}): {tail}"
+    return f"stress command exited before the gate completed ({status})"
 
 
 def stop_stress(process: subprocess.Popen[bytes]) -> None:
@@ -95,16 +130,50 @@ def stop_stress(process: subprocess.Popen[bytes]) -> None:
             process.wait()
 
 
+def alive_after_warmup(process: subprocess.Popen[bytes]) -> bool:
+    deadline = time.monotonic() + STRESS_WARMUP_SECONDS
+    while True:
+        if process.poll() is not None:
+            return False
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            return True
+        time.sleep(min(0.05, remaining))
+
+
+def ensure_stress(command: str) -> tuple[subprocess.Popen[bytes], Path]:
+    last = "stress command exited before the gate completed"
+    for _ in range(STRESS_START_ATTEMPTS):
+        process, stderr_path = start_stress(command)
+        if alive_after_warmup(process):
+            return process, stderr_path
+        last = stress_exit_message(process, stderr_path)
+        stderr_path.unlink(missing_ok=True)
+    raise GateFailure(last)
+
+
+def refresh_stress(
+    process: subprocess.Popen[bytes],
+    stderr_path: Path,
+    command: str,
+) -> tuple[subprocess.Popen[bytes], Path]:
+    if process.poll() is None:
+        return process, stderr_path
+    previous = stderr_path
+    process, stderr_path = ensure_stress(command)
+    previous.unlink(missing_ok=True)
+    return process, stderr_path
+
+
 def check_determinism(options: argparse.Namespace) -> None:
-    stress = start_stress(options.stress_command)
+    stress, stderr_path = ensure_stress(options.stress_command)
     baseline_corpus: bytes | None = None
     baseline_ranking: str | None = None
     try:
         with tempfile.TemporaryDirectory(prefix="nesso-determinism-") as temp:
             output_dir = Path(temp)
             for run in range(options.runs):
-                if stress.poll() is not None:
-                    raise GateFailure("stress command exited before the gate completed")
+                stress, stderr_path = refresh_stress(stress, stderr_path, options.stress_command)
                 corpus = output_dir / f"corpus-{run}.nesso"
                 run_process(
                     [
@@ -119,6 +188,7 @@ def check_determinism(options: argparse.Namespace) -> None:
                     f"index run {run + 1}",
                 )
                 corpus_bytes = corpus.read_bytes()
+                stress, stderr_path = refresh_stress(stress, stderr_path, options.stress_command)
                 ranking = run_process(
                     [
                         options.binary,
@@ -146,6 +216,7 @@ def check_determinism(options: argparse.Namespace) -> None:
                     raise GateFailure(f"ranking differs on run {run + 1}")
     finally:
         stop_stress(stress)
+        stderr_path.unlink(missing_ok=True)
     print(f"determinism OK: {options.runs} runs, corpus and rankings identical")
 
 

@@ -52,12 +52,16 @@ class CheckDeterminismTest(unittest.TestCase):
             (directory / unstable).touch()
         return binary
 
-    def run_gate(self, binary: pathlib.Path, directory: pathlib.Path) -> subprocess.CompletedProcess[str]:
+    def run_gate(
+        self,
+        binary: pathlib.Path,
+        directory: pathlib.Path,
+        stress: str = "python3 -c 'import time; time.sleep(60)'",
+    ) -> subprocess.CompletedProcess[str]:
         model_dir = directory / "models"
         model_dir.mkdir()
         input_file = directory / "events.log"
         input_file.write_text("PAY-E1042\n")
-        stress = "python3 -c 'import time; time.sleep(60)'"
         return subprocess.run(
             [
                 str(GATE),
@@ -100,6 +104,57 @@ class CheckDeterminismTest(unittest.TestCase):
 
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("ranking differs", result.stderr)
+
+    def test_fails_when_stress_exits_before_a_comparison(self) -> None:
+        stress = """python3 -c 'import sys; sys.stderr.write("stress-died-now\\n"); raise SystemExit(9)'"""
+        with tempfile.TemporaryDirectory() as temp:
+            directory = pathlib.Path(temp)
+            result = self.run_gate(self.write_binary(directory, unstable=None), directory, stress)
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("stress command exited before the gate completed", result.stderr)
+        self.assertIn("exit 9", result.stderr)
+        self.assertIn("stress-died-now", result.stderr)
+        self.assertNotIn("determinism OK", result.stdout)
+
+    def test_restarts_stress_after_an_early_exit(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            directory = pathlib.Path(temp)
+            marker = directory / "stress-marker"
+            launcher = directory / "flaky-stress.py"
+            launcher.write_text(
+                textwrap.dedent(
+                    f"""\
+                    import pathlib
+                    import sys
+                    import time
+
+                    marker = pathlib.Path({str(marker)!r})
+                    if not marker.exists():
+                        marker.write_text("1")
+                        sys.stderr.write("first-start-died\\n")
+                        raise SystemExit(3)
+                    time.sleep(60)
+                    """
+                )
+            )
+            result = self.run_gate(
+                self.write_binary(directory, unstable=None),
+                directory,
+                f"python3 {launcher}",
+            )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("3 runs", result.stdout)
+        self.assertNotIn("first-start-died", result.stderr)
+
+    def test_default_stress_command_pins_a_cpu_loop(self) -> None:
+        result = subprocess.run([str(GATE), "--help"], capture_output=True, text=True, check=False)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn(
+            "stress-ng --cpu 1 --cpu-method loop --timeout 0 --cache-size 2M",
+            " ".join(result.stdout.split()),
+        )
 
 
 if __name__ == "__main__":
