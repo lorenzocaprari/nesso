@@ -1,0 +1,101 @@
+# Contributing
+
+Nesso is a solo-maintained Linux CLI. Pull requests are squash-merged: the PR title becomes the commit on `main`.
+
+## Reports
+
+Bugs and feature requests use the issue forms. Vulnerabilities follow [SECURITY.md](SECURITY.md). Conduct reports go to [@lorenzocaprari](https://github.com/lorenzocaprari) through GitHub private vulnerability reporting, as described in [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md).
+
+## What you need
+
+- Linux
+- GCC 15+ with C++26 (`conan/profiles/gcc-26*`)
+- CMake 4.2+ (`cmake_minimum_required` in `CMakeLists.txt`) and Ninja
+- Conan 2 (`conanfile.py`, `conan.lock`)
+- Python 3 for pre-commit, `scripts/bench`, and `scripts/bench-compare`
+- Go 1.24+ only for the godog specs (`test/functional/go.mod`)
+- AFL++, Clang 21, lld 21, and llvm-21 only for `scripts/fuzz-test`
+
+## Devcontainer image
+
+CI builds `.devcontainer/Dockerfile` (Ubuntu 26.04, GCC 15, Clang 21, AFL++, Go, Conan 2, pre-commit) and pushes `ghcr.io/lorenzocaprari/nesso-build-env:deps-<hash>`. The hash covers that Dockerfile, `conanfile.py`, `conan.lock`, and `conan/profiles/gcc-26` plus `gcc-26-debug`. There is no `devcontainer.json`. The image sets `CONAN_HOME=/opt/conan2` with the locked dependencies already installed; CI configures with `--no-remote`.
+
+```bash
+docker build -f .devcontainer/Dockerfile -t nesso-build-env .
+docker run --rm -it -v "$PWD:/src" -w /src nesso-build-env bash
+```
+
+## Build
+
+Profiles in `conan/profiles/`:
+
+| Profile | Use |
+| --- | --- |
+| `gcc-26` | Release (`-O3`, `-march=x86-64-v2`, LTO) |
+| `gcc-26-debug` | Debug with ASan and UBSan |
+| `gcc-26-fuzz` | AFL++ library harnesses |
+| `code-coverage` | Debug plus `--coverage` |
+
+`conanfile.py` uses Conan `cmake_layout` and `CMakeToolchain` and sets the generator to Ninja. `conan install` writes `CMakeUserPresets.json` at the repo root; that file includes `build/<Config>/generators/CMakePresets.json`. Both are generated and should stay uncommitted. `cmake --list-presets` prints the names (Conan uses `conan-<build type>` in lowercase, so `conan-debug` and `conan-release` for these two profiles). `cmake --preset` and `cmake --build --preset` drive those presets. CI and the README call `conan build`, which configures and builds through the same toolchain.
+
+Debug:
+
+```bash
+conan install . -pr:h ./conan/profiles/gcc-26-debug -pr:b default \
+  --lockfile=conan.lock --build=missing
+conan build . -pr:h ./conan/profiles/gcc-26-debug -pr:b default \
+  --lockfile=conan.lock --build=missing
+ctest --test-dir build/Debug --output-on-failure
+```
+
+Release: the same commands with `gcc-26` and `build/Release`. The binary is `build/<Config>/src/nesso`. Fetch the MiniLM files once with `./scripts/fetch-model`.
+
+Inside the published build image, add `--no-remote` so Conan does not leave the baked cache.
+
+## Tests
+
+Catch2 unit and integration tests, and the godog functional suite, are separate ctest labels:
+
+```bash
+ctest --test-dir build/Debug -L unit
+ctest --test-dir build/Debug -L integration
+ctest --test-dir build/Debug -L functional
+```
+
+The functional label includes the `bdd` test. It runs `go test` in `test/functional/` (godog v0.16.0). Specs are `test/functional/features/*.feature`. Without Go, CMake skips `bdd`. `NESSO_REQUIRE_BDD=1` turns a missing Go toolchain into a configure error; CI sets it. `NESSO_REQUIRE_MODEL=1` fails model-backed tests instead of skipping them; CI sets that too.
+
+Debug ctest in CI also sets `ASAN_OPTIONS` and `UBSAN_OPTIONS` so sanitizer findings abort the job.
+
+## Fuzz
+
+`./scripts/fuzz-test` builds AFL++ LTO and ASan harnesses `nesso_fuzz_parser` and `nesso_fuzz_tokenizer` with `conan/profiles/gcc-26-fuzz`, then runs `afl-fuzz`. Seeds live in `test/fuzz/seeds/parser` and `test/fuzz/seeds/tokenizer`. `NESSO_FUZZ_MAX_TOTAL_TIME` defaults to 60 seconds per target; CI uses 60. The script needs `afl-clang-lto++`, `llvm-ar`, and `llvm-ranlib`.
+
+## Lint and the local gate
+
+```bash
+pre-commit install
+bash scripts/lint
+```
+
+`scripts/lint` runs pre-commit on the whole tree and `scripts/check-versions`. Hooks in `.pre-commit-config.yaml` fix trailing whitespace and line endings, reject merge markers and large files, check YAML, and run clang-format (LLVM, Allman braces, indent 4, column 120) and cmake-format. cppcheck runs only when `build/Release/compile_commands.json` or `build/Debug/compile_commands.json` is present. CI runs `scripts/clang-tidy` after a Release configure.
+
+The README local gate, before pushing:
+
+```bash
+bash scripts/lint
+./scripts/code-coverage conan/profiles/code-coverage
+```
+
+Coverage floors are the `REQUIRED_*` values in `scripts/code-coverage`. The Pipeline workflow (`.github/workflows/ci.yml`) is the merge gate: lint, clang-tidy, cppcheck, Release and Debug builds, unit, integration, and functional tests, fuzz, and coverage. The `bench` job is report-only.
+
+## Pull requests
+
+Title format: `type(scope): subject` or `type: subject`. Types: `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `build`, `ci`, `chore`, `revert`. A `!` immediately before `:` is a breaking change (`feat(core)!: ...`). `.github/workflows/pr-title.yml` enforces this.
+
+Put user-facing notes under `## [Unreleased]` in [CHANGELOG.md](CHANGELOG.md). On release, move that section to `## [X.Y.Z] - YYYY-MM-DD`.
+
+`.github/release-drafter.yml` maps labels to changelog sections. The Release Drafter workflow applies those labels from the PR title. It does not create labels. These already exist: `enhancement` (`feat`), `bug` (`fix`), `documentation` (`docs`). The maintainer still has to create `breaking`, `changed`, `chore`, `deprecated`, `removed`, and `security` or autolabel fails when a title needs one of them. On push to `main`, the same workflow updates the draft release `v$RESOLVED_VERSION`. Copy that draft into `CHANGELOG.md` before tagging.
+
+`version` in `conanfile.py` is the version (`scripts/check-versions`). Pushing a `vX.Y.Z` tag that matches it runs `.github/workflows/release.yml`, which publishes the `.deb`, `ghcr.io/lorenzocaprari/nesso`, and the GitHub Release. CI must already have published `nesso-build-env`.
+
+`CODEOWNERS` requests a review from `@lorenzocaprari`.
