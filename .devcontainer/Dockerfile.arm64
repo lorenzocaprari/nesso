@@ -1,0 +1,42 @@
+# Native arm64 build-env. Kept separate from Dockerfile so the amd64
+# image tag and prepare-image job stay untouched.
+# Build only on arm64 (ubuntu-24.04-arm). The host profile is
+# conan/profiles/gcc-26-armv8; the x86-64 profile will not compile here.
+#
+# Clang, AFL, and the x86_64 compiler-rt symlinks are omitted. This image
+# only has to configure, build, and run the Release tests.
+
+FROM ubuntu:26.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    ca-certificates \
+    wget curl git python3-pip \
+    cmake ninja-build \
+    gcc-15 g++-15 \
+    golang-go \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-15 100 \
+    && update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-15 100
+
+RUN pip install conan --break-system-packages \
+    && rm -rf /root/.cache/pip
+
+# GitHub Actions container jobs override HOME, so the cache lives at CONAN_HOME.
+ENV CONAN_HOME=/opt/conan2
+
+WORKDIR /tmp/nesso
+COPY conanfile.py /tmp/nesso/conanfile.py
+COPY conan.lock /tmp/nesso/conan.lock
+COPY conan/profiles/gcc-26-armv8 /tmp/nesso/conan/profiles/gcc-26-armv8
+RUN conan profile detect --force \
+    && conan remote add conancenter https://center2.conan.io --force \
+    && conan install . -pr:h=conan/profiles/gcc-26-armv8 -pr:b=default --lockfile=conan.lock --build=missing \
+    && conan cache clean "*" --build --source --download --temp \
+    && rm -rf /tmp/nesso /tmp/* /var/tmp/*
+WORKDIR /
+
+LABEL org.opencontainers.image.source=https://github.com/lorenzocaprari/nesso
