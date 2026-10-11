@@ -1,6 +1,10 @@
 name: CodeQL
 
 on:
+  pull_request:
+    branches: ["main"]
+  push:
+    branches: ["main"]
   workflow_dispatch:
   schedule:
     - cron: "17 4 * * 1"
@@ -21,7 +25,8 @@ jobs:
       matrix:
         include:
           # C/C++ build-mode none is supported and is what default setup uses.
-          # clang-tidy and cppcheck already gate pull requests, so this stays weekly.
+          # pull_request plus push to main covers every commit that lands on main.
+          # The weekly schedule re-scans the branch if a commit was not analyzed.
           - language: c-cpp
             build-mode: none
     steps:
