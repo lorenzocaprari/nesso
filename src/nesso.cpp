@@ -16,6 +16,7 @@
 #include <chrono>
 #include <cstdio>
 #include <format>
+#include <optional>
 #include <print>
 #include <span>
 #include <string>
@@ -190,18 +191,6 @@ std::string message(const Error &error)
     std::unreachable();
 }
 
-struct ParsedFiles
-{
-    std::vector<nesso::parser::ParsedChunk> chunks;
-    std::vector<std::string> sources;
-    size_t skippedLines = 0;
-    size_t emptyLines = 0;
-    size_t malformedLines = 0;
-    size_t missingFieldLines = 0;
-    size_t truncatedLines = 0;
-    std::string jsonField = "message";
-};
-
 struct LineCounts
 {
     size_t skipped = 0;
@@ -211,16 +200,6 @@ struct LineCounts
     size_t truncated = 0;
     std::string jsonField = "message";
 };
-
-static LineCounts lineCounts(const ParsedFiles &parsed)
-{
-    return {.skipped = parsed.skippedLines,
-            .emptyLines = parsed.emptyLines,
-            .malformedLines = parsed.malformedLines,
-            .missingFieldLines = parsed.missingFieldLines,
-            .truncated = parsed.truncatedLines,
-            .jsonField = parsed.jsonField};
-}
 
 static LineCounts lineCounts(const nesso::parser::ParseStats &stats, std::string jsonField)
 {
@@ -303,34 +282,74 @@ static std::string modelLoadNote(const std::vector<std::filesystem::path> &tried
     return text;
 }
 
-static std::expected<ParsedFiles, Error> parseFiles(std::span<const std::filesystem::path> files,
-                                                    std::string_view jsonField)
+struct Scan
+{
+    size_t chunks = 0;
+    LineCounts counts{};
+    // Stdin cannot be rewound. The count pass keeps its chunks so embed can stream them.
+    std::vector<nesso::parser::ParsedChunk> stdinChunks;
+};
+
+static std::expected<Scan, Error> scanFiles(std::span<const std::filesystem::path> files, std::string_view jsonField)
 {
     const ScopedStage stage{"parse"};
     nesso::parser::ParseStats stats{};
-    ParsedFiles parsed;
+    Scan scan{.chunks = 0, .counts = {}, .stdinChunks = {}};
+    bool capturedStdin = false;
     for (const std::filesystem::path &path : files)
     {
-        auto fileChunks = nesso::parser::Chunker::fromFile(path, MAX_LINE_LENGTH, &stats, jsonField);
-        if (!fileChunks)
+        if (path == "-")
         {
-            return std::unexpected(makeError(ErrorKind::Parse, causeOf(fileChunks.error()), path,
+            if (capturedStdin)
+            {
+                continue;
+            }
+            capturedStdin = true;
+            const auto streamed = nesso::parser::Chunker::forEach(path, MAX_LINE_LENGTH, &stats, jsonField,
+                                                                  [&scan](nesso::parser::ParsedChunk chunk)
+                                                                  {
+                                                                      ++scan.chunks;
+                                                                      scan.stdinChunks.push_back(std::move(chunk));
+                                                                  });
+            if (!streamed)
+            {
+                return std::unexpected(makeError(ErrorKind::Parse, causeOf(streamed.error()), path,
+                                                 lineCounts(stats, std::string{jsonField})));
+            }
+            continue;
+        }
+
+        const auto streamed = nesso::parser::Chunker::forEach(path, MAX_LINE_LENGTH, &stats, jsonField,
+                                                              [&scan](nesso::parser::ParsedChunk) { ++scan.chunks; });
+        if (!streamed)
+        {
+            return std::unexpected(makeError(ErrorKind::Parse, causeOf(streamed.error()), path,
                                              lineCounts(stats, std::string{jsonField})));
         }
-        const std::string source = path.string();
-        for (nesso::parser::ParsedChunk &chunk : *fileChunks)
-        {
-            parsed.chunks.push_back(std::move(chunk));
-            parsed.sources.push_back(source);
-        }
     }
-    parsed.skippedLines = stats.skippedLines;
-    parsed.emptyLines = stats.emptyLines;
-    parsed.malformedLines = stats.malformedLines;
-    parsed.missingFieldLines = stats.missingFieldLines;
-    parsed.truncatedLines = stats.truncatedLines;
-    parsed.jsonField = std::string{jsonField};
-    return parsed;
+    scan.counts = lineCounts(stats, std::string{jsonField});
+    return scan;
+}
+
+// Files are parsed again so embeddings stay batched. Stdin is replayed from the count pass.
+template <typename Consume>
+static std::expected<void, nesso::parser::ParseError> visitChunks(const std::filesystem::path &path, Scan &scan,
+                                                                  bool &stdinUsed, std::string_view jsonField,
+                                                                  const Consume &consume)
+{
+    if (path == "-")
+    {
+        if (!stdinUsed)
+        {
+            stdinUsed = true;
+            for (nesso::parser::ParsedChunk &chunk : scan.stdinChunks)
+            {
+                consume(std::move(chunk));
+            }
+        }
+        return {};
+    }
+    return nesso::parser::Chunker::forEach(path, MAX_LINE_LENGTH, nullptr, jsonField, consume);
 }
 
 template <typename E> static std::unexpected<Error> textFailure(ErrorKind kind, E cause, const LineCounts &counts)
@@ -341,72 +360,6 @@ template <typename E> static std::unexpected<Error> textFailure(ErrorKind kind, 
 static std::unexpected<Error> noMatch(ErrorKind kind, const LineCounts &counts)
 {
     return std::unexpected(makeError(kind, ErrorCause::None, {}, counts));
-}
-
-static std::expected<std::vector<nesso::core::CorpusChunk>, Error>
-embedFiles(const ParsedFiles &parsed, const nesso::embed::OnnxEmbedder &embedder, std::vector<float> *matrix,
-           bool showProgress)
-{
-    const ScopedStage stage{"embed"};
-    if (parsed.chunks.empty())
-    {
-        return std::vector<nesso::core::CorpusChunk>{};
-    }
-
-    std::vector<std::string> texts;
-    texts.reserve(parsed.chunks.size());
-    for (const nesso::parser::ParsedChunk &chunk : parsed.chunks)
-    {
-        texts.push_back(chunk.text);
-    }
-
-    ProgressReporter progress(showProgress);
-    const auto embeddings =
-        embedder.embedBatch(texts, [&progress](size_t completed, size_t total) { progress.update(completed, total); });
-    progress.finish();
-    if (!embeddings)
-    {
-        return std::unexpected(makeError(ErrorKind::Embed, causeOf(embeddings.error()), {}, lineCounts(parsed)));
-    }
-
-    size_t dims = 0;
-    if (matrix != nullptr)
-    {
-        dims = embeddings->front().size();
-        if (dims == 0)
-        {
-            return textFailure(ErrorKind::Embed, nesso::core::EngineError::DatabaseNotInitialized, lineCounts(parsed));
-        }
-        matrix->reserve(embeddings->size() * dims);
-    }
-
-    std::vector<nesso::core::CorpusChunk> chunks;
-    chunks.reserve(embeddings->size());
-    for (size_t index = 0; index < embeddings->size(); ++index)
-    {
-        nesso::core::CorpusChunk chunk{.chunk = {.text = parsed.chunks[index].text,
-                                                 .lineNumber = parsed.chunks[index].lineNumber,
-                                                 .source = parsed.sources[index],
-                                                 .byteOffset = parsed.chunks[index].byteOffset,
-                                                 .arrayElement = parsed.chunks[index].arrayElement},
-                                       .embedding = {}};
-        if (matrix != nullptr)
-        {
-            const std::vector<float> &embedding = (*embeddings)[index];
-            if (embedding.size() != dims)
-            {
-                return textFailure(ErrorKind::Embed, nesso::core::EngineError::MismatchedDimensions,
-                                   lineCounts(parsed));
-            }
-            matrix->insert(matrix->end(), embedding.begin(), embedding.end());
-        }
-        else
-        {
-            chunk.embedding = (*embeddings)[index];
-        }
-        chunks.push_back(std::move(chunk));
-    }
-    return chunks;
 }
 
 static bool multipleSources(std::span<const nesso::core::CorpusChunk> chunks)
@@ -505,50 +458,7 @@ static std::expected<TextResults, Error> rankChunks(std::span<const nesso::core:
     return results;
 }
 
-class Nesso::Impl
-{
-  public:
-    explicit Impl(Config config) : config_(std::move(config)) {}
-
-    // The model is loaded on first use.
-    std::expected<const nesso::embed::OnnxEmbedder *, Error> embedder()
-    {
-        if (!embedder_)
-        {
-            std::vector<std::filesystem::path> tried;
-            std::filesystem::path modelDir;
-            if (config_.modelDir.has_value())
-            {
-                modelDir = *config_.modelDir;
-                tried.push_back(modelDir);
-            }
-            else
-            {
-                tried = modelDirCandidates();
-                modelDir = resolveDefaultModelDir();
-            }
-            auto created = nesso::embed::OnnxEmbedder::create(modelDir);
-            if (!created)
-            {
-                Error error{.kind = ErrorKind::EmbedderLoad,
-                            .cause = causeOf(created.error()),
-                            .path = modelDir,
-                            .note = {},
-                            .staleSources = {}};
-                error.note = modelLoadNote(tried);
-                return std::unexpected(std::move(error));
-            }
-            embedder_ = std::move(*created);
-        }
-        return embedder_.get();
-    }
-
-  private:
-    Config config_;
-    std::unique_ptr<nesso::embed::OnnxEmbedder> embedder_;
-};
-
-Nesso::Nesso(Config config) : impl_(std::make_unique<Impl>(std::move(config))) {}
+Nesso::Nesso(Config config) : config_(std::move(config)) {}
 
 Nesso::~Nesso() = default;
 
@@ -556,76 +466,346 @@ Nesso::Nesso(Nesso &&) noexcept = default;
 
 Nesso &Nesso::operator=(Nesso &&) noexcept = default;
 
+std::expected<const nesso::embed::OnnxEmbedder *, Error> Nesso::embedder() const
+{
+    if (!embedder_)
+    {
+        std::vector<std::filesystem::path> tried;
+        std::filesystem::path modelDir;
+        if (config_.modelDir.has_value())
+        {
+            modelDir = *config_.modelDir;
+            tried.push_back(modelDir);
+        }
+        else
+        {
+            tried = modelDirCandidates();
+            modelDir = resolveDefaultModelDir();
+        }
+        auto created = nesso::embed::OnnxEmbedder::create(modelDir);
+        if (!created)
+        {
+            Error error{.kind = ErrorKind::EmbedderLoad,
+                        .cause = causeOf(created.error()),
+                        .path = modelDir,
+                        .note = {},
+                        .staleSources = {}};
+            error.note = modelLoadNote(tried);
+            return std::unexpected(std::move(error));
+        }
+        embedder_ = std::move(*created);
+    }
+    return embedder_.get();
+}
+
+// Matches OnnxEmbedder's inference window so only one batch of vectors is live.
+static constexpr size_t STREAM_BATCH = 32;
+
+struct PendingChunk
+{
+    nesso::parser::ParsedChunk chunk;
+    std::string source;
+};
+
+static std::expected<std::vector<std::vector<float>>, Error> embedPending(std::span<const PendingChunk> pending,
+                                                                          const nesso::embed::OnnxEmbedder &embedder,
+                                                                          ProgressReporter &progress, size_t &completed,
+                                                                          size_t total, const LineCounts &counts)
+{
+    std::vector<std::string> texts;
+    texts.reserve(pending.size());
+    for (const PendingChunk &item : pending)
+    {
+        texts.push_back(item.chunk.text);
+    }
+    const auto embeddings = embedder.embedBatch(texts, [&progress, &completed, total](size_t batchCompleted, size_t)
+                                                { progress.update(completed + batchCompleted, total); });
+    if (!embeddings)
+    {
+        return std::unexpected(makeError(ErrorKind::Embed, causeOf(embeddings.error()), {}, counts));
+    }
+    completed += pending.size();
+    progress.update(completed, total);
+    return *embeddings;
+}
+
 std::expected<TextResults, Error> Nesso::grep(const GrepRequest &request) const
 {
     const TraceSession session;
-    const auto embedder = impl_->embedder();
-    if (!embedder)
+    const auto model = embedder();
+    if (!model)
     {
-        return std::unexpected(embedder.error());
+        return std::unexpected(model.error());
     }
 
-    const auto parsed = parseFiles(request.files, request.jsonField);
-    if (!parsed)
+    auto scanned = scanFiles(request.files, request.jsonField);
+    if (!scanned)
     {
-        return std::unexpected(parsed.error());
+        return std::unexpected(scanned.error());
     }
-
-    std::vector<float> matrix;
-    const auto chunks = embedFiles(*parsed, **embedder, &matrix, request.progress);
-    if (!chunks)
+    if (scanned->chunks == 0)
     {
-        return std::unexpected(chunks.error());
-    }
-    if (chunks->empty())
-    {
-        const ErrorCause cause = parsed->skippedLines == 0 ? ErrorCause::EmptyFile : ErrorCause::NothingIndexable;
+        const ErrorCause cause = scanned->counts.skipped == 0 ? ErrorCause::EmptyFile : ErrorCause::NothingIndexable;
         const std::filesystem::path path = request.files.size() == 1 ? request.files.front() : std::filesystem::path{};
-        return std::unexpected(makeError(ErrorKind::EmptyInput, cause, path, lineCounts(*parsed)));
+        return std::unexpected(makeError(ErrorKind::EmptyInput, cause, path, scanned->counts));
     }
 
-    return rankChunks(*chunks, **embedder, request.query, request.topK, lineCounts(*parsed), ErrorKind::IndexBuild,
-                      matrix);
+    const auto queryEmbedding = [&request, &model]
+    {
+        const ScopedStage stage{"query-embed"};
+        return (*model)->embed(request.query);
+    }();
+    if (!queryEmbedding)
+    {
+        return textFailure(ErrorKind::QueryEmbed, queryEmbedding.error(), scanned->counts);
+    }
+
+    struct Candidate
+    {
+        uint64_t index = 0;
+        float score = 0.0F;
+        TextMatch match;
+    };
+    const auto better = [](const Candidate &left, const Candidate &right)
+    { return left.score != right.score ? left.score > right.score : left.index < right.index; };
+
+    std::vector<Candidate> best;
+    std::vector<PendingChunk> pending;
+    pending.reserve(STREAM_BATCH);
+    ProgressReporter progress(request.progress);
+    size_t completed = 0;
+    uint64_t ordinal = 0;
+    bool severalSources = false;
+    std::string firstSource;
+    const LineCounts &counts = scanned->counts;
+
+    const auto flush = [&]() -> std::expected<void, Error>
+    {
+        if (pending.empty())
+        {
+            return {};
+        }
+        const auto embeddings = embedPending(pending, **model, progress, completed, scanned->chunks, counts);
+        if (!embeddings)
+        {
+            return std::unexpected(embeddings.error());
+        }
+        if (embeddings->size() != pending.size())
+        {
+            return textFailure(ErrorKind::Embed, nesso::core::EngineError::MismatchedDimensions, counts);
+        }
+        for (size_t index = 0; index < pending.size(); ++index)
+        {
+            const std::vector<float> &embedding = (*embeddings)[index];
+            const auto score = nesso::core::math::DistanceMetrics::dotProduct<float>(*queryEmbedding, embedding);
+            if (!score)
+            {
+                return textFailure(ErrorKind::Search, score.error(), counts);
+            }
+            const PendingChunk &item = pending[index];
+            best.push_back(Candidate{.index = ordinal,
+                                     .score = *score,
+                                     .match = {.source = item.source,
+                                               .line = item.chunk.lineNumber,
+                                               .score = *score,
+                                               .text = item.chunk.text,
+                                               .arrayElement = item.chunk.arrayElement}});
+            ++ordinal;
+        }
+        if (best.size() > request.topK)
+        {
+            std::partial_sort(best.begin(), best.begin() + static_cast<std::ptrdiff_t>(request.topK), best.end(),
+                              better);
+            best.resize(request.topK);
+        }
+        pending.clear();
+        return {};
+    };
+
+    {
+        const ScopedStage stage{"embed"};
+        std::optional<Error> failed;
+        bool stdinUsed = false;
+        for (const std::filesystem::path &path : request.files)
+        {
+            const std::string source = path.string();
+            const auto streamed =
+                visitChunks(path, *scanned, stdinUsed, request.jsonField,
+                            [&](nesso::parser::ParsedChunk chunk)
+                            {
+                                if (failed)
+                                {
+                                    return;
+                                }
+                                if (firstSource.empty())
+                                {
+                                    firstSource = source;
+                                }
+                                else if (source != firstSource)
+                                {
+                                    severalSources = true;
+                                }
+                                pending.push_back(PendingChunk{.chunk = std::move(chunk), .source = source});
+                                if (pending.size() == STREAM_BATCH)
+                                {
+                                    if (const auto flushed = flush(); !flushed)
+                                    {
+                                        failed = flushed.error();
+                                    }
+                                }
+                            });
+            if (!streamed)
+            {
+                return std::unexpected(makeError(ErrorKind::Parse, causeOf(streamed.error()), path, counts));
+            }
+            if (failed)
+            {
+                return std::unexpected(*failed);
+            }
+        }
+        if (const auto flushed = flush(); !flushed)
+        {
+            return std::unexpected(flushed.error());
+        }
+    }
+    progress.finish();
+    std::ranges::sort(best, better);
+
+    TextResults results{.matches = {},
+                        .skippedLines = counts.skipped,
+                        .emptyLines = counts.emptyLines,
+                        .malformedLines = counts.malformedLines,
+                        .missingFieldLines = counts.missingFieldLines,
+                        .truncatedLines = counts.truncated,
+                        .jsonField = counts.jsonField,
+                        .multipleSources = severalSources,
+                        .staleSources = {}};
+    results.matches.reserve(best.size());
+    for (const Candidate &candidate : best)
+    {
+        results.matches.push_back(candidate.match);
+    }
+    return results;
 }
 
 std::expected<IndexSummary, Error> Nesso::index(const IndexRequest &request) const
 {
     const TraceSession session;
-    const auto embedder = impl_->embedder();
-    if (!embedder)
+    const auto model = embedder();
+    if (!model)
     {
-        return std::unexpected(embedder.error());
+        return std::unexpected(model.error());
     }
 
-    const auto parsed = parseFiles(request.files, request.jsonField);
-    if (!parsed)
+    auto scanned = scanFiles(request.files, request.jsonField);
+    if (!scanned)
     {
-        return std::unexpected(parsed.error());
+        return std::unexpected(scanned.error());
     }
 
-    const auto chunks = embedFiles(*parsed, **embedder, nullptr, request.progress);
-    if (!chunks)
+    auto writer = nesso::core::CorpusWriter::create(request.output, nesso::embed::MINILM_MODEL_ID);
+    if (!writer)
     {
-        return std::unexpected(chunks.error());
+        return std::unexpected(
+            makeError(ErrorKind::CorpusWrite, causeOf(writer.error()), request.output, scanned->counts));
     }
 
-    const auto written = [&request, &chunks]
+    std::vector<PendingChunk> pending;
+    pending.reserve(STREAM_BATCH);
+    ProgressReporter progress(request.progress);
+    size_t completed = 0;
+    const LineCounts &counts = scanned->counts;
+    const auto flush = [&]() -> std::expected<void, Error>
+    {
+        if (pending.empty())
+        {
+            return {};
+        }
+        const auto embeddings = embedPending(pending, **model, progress, completed, scanned->chunks, counts);
+        if (!embeddings)
+        {
+            return std::unexpected(embeddings.error());
+        }
+        if (embeddings->size() != pending.size())
+        {
+            return textFailure(ErrorKind::Embed, nesso::core::EngineError::MismatchedDimensions, counts);
+        }
+        std::vector<nesso::core::CorpusChunk> batch;
+        batch.reserve(pending.size());
+        for (size_t index = 0; index < pending.size(); ++index)
+        {
+            const PendingChunk &item = pending[index];
+            batch.push_back(nesso::core::CorpusChunk{.chunk = {.text = item.chunk.text,
+                                                               .lineNumber = item.chunk.lineNumber,
+                                                               .source = item.source,
+                                                               .byteOffset = item.chunk.byteOffset,
+                                                               .arrayElement = item.chunk.arrayElement},
+                                                     .embedding = (*embeddings)[index]});
+        }
+        if (const auto added = writer->add(batch); !added)
+        {
+            return std::unexpected(makeError(ErrorKind::CorpusWrite, causeOf(added.error()), request.output, counts));
+        }
+        pending.clear();
+        return {};
+    };
+
+    {
+        const ScopedStage stage{"embed"};
+        std::optional<Error> failed;
+        bool stdinUsed = false;
+        for (const std::filesystem::path &path : request.files)
+        {
+            const std::string source = path.string();
+            const auto streamed =
+                visitChunks(path, *scanned, stdinUsed, request.jsonField,
+                            [&](nesso::parser::ParsedChunk chunk)
+                            {
+                                if (failed)
+                                {
+                                    return;
+                                }
+                                pending.push_back(PendingChunk{.chunk = std::move(chunk), .source = source});
+                                if (pending.size() == STREAM_BATCH)
+                                {
+                                    if (const auto flushed = flush(); !flushed)
+                                    {
+                                        failed = flushed.error();
+                                    }
+                                }
+                            });
+            if (!streamed)
+            {
+                return std::unexpected(makeError(ErrorKind::Parse, causeOf(streamed.error()), path, counts));
+            }
+            if (failed)
+            {
+                return std::unexpected(*failed);
+            }
+        }
+        if (const auto flushed = flush(); !flushed)
+        {
+            return std::unexpected(flushed.error());
+        }
+    }
+    progress.finish();
+
+    const auto written = [&writer]
     {
         const ScopedStage stage{"corpus-write"};
-        return nesso::core::writeCorpusFile(request.output, *chunks, nesso::embed::MINILM_MODEL_ID);
+        return writer->finish();
     }();
     if (!written)
     {
-        return std::unexpected(
-            makeError(ErrorKind::CorpusWrite, causeOf(written.error()), request.output, lineCounts(*parsed)));
+        return std::unexpected(makeError(ErrorKind::CorpusWrite, causeOf(written.error()), request.output, counts));
     }
-    return IndexSummary{.chunks = chunks->size(),
-                        .skippedLines = parsed->skippedLines,
-                        .emptyLines = parsed->emptyLines,
-                        .malformedLines = parsed->malformedLines,
-                        .missingFieldLines = parsed->missingFieldLines,
-                        .truncatedLines = parsed->truncatedLines,
-                        .jsonField = parsed->jsonField};
+    return IndexSummary{.chunks = scanned->chunks,
+                        .skippedLines = counts.skipped,
+                        .emptyLines = counts.emptyLines,
+                        .malformedLines = counts.malformedLines,
+                        .missingFieldLines = counts.missingFieldLines,
+                        .truncatedLines = counts.truncated,
+                        .jsonField = counts.jsonField};
 }
 
 std::expected<TextResults, Error> Nesso::search(const SearchRequest &request) const
@@ -653,14 +833,14 @@ std::expected<TextResults, Error> Nesso::search(const SearchRequest &request) co
                                      .staleSources = {}});
     }
 
-    const auto embedder = impl_->embedder();
-    if (!embedder)
+    const auto model = embedder();
+    if (!model)
     {
-        return std::unexpected(embedder.error());
+        return std::unexpected(model.error());
     }
 
-    auto result = rankChunks(chunks->chunks(), **embedder, request.query, request.topK, {}, ErrorKind::CorpusLoad,
-                             chunks->matrix());
+    auto result =
+        rankChunks(chunks->chunks(), **model, request.query, request.topK, {}, ErrorKind::CorpusLoad, chunks->matrix());
     const auto sourceWarnings = staleSources(chunks->sources());
     if (result)
     {

@@ -135,6 +135,31 @@ Feature: grep
     And stdout contains "database connection refused"
     And stdout contains "line 1:"
 
+  Scenario: grep and index flush a full embedding batch
+    Given a file "app.log" with:
+      """
+      database connection refused
+      """
+    And 32 lines "heartbeat ok" in "app.log"
+    When I run nesso with arguments grep "database connection error" {dir}/app.log
+    Then the exit code is 0
+    And stdout contains "database connection refused"
+    When I run nesso with arguments index -o {dir}/corpus.nesso {dir}/app.log
+    Then the exit code is 0
+    When I run nesso with arguments search "database connection error" -i {dir}/corpus.nesso
+    Then the exit code is 0
+    And stdout contains "database connection refused"
+
+  Scenario: a repeated stdin path is read once
+    Given stdin is:
+      """
+      database connection refused
+      """
+    When I run nesso with arguments grep "database connection error" - -
+    Then the exit code is 0
+    And stdout contains "-:line 1:"
+    And stdout contains "database connection refused"
+
   Scenario: stdin is read as lines
     Given stdin is:
       """

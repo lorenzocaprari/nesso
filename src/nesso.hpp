@@ -148,6 +148,11 @@ struct Config
     std::optional<std::filesystem::path> modelDir;
 };
 
+namespace embed
+{
+class OnnxEmbedder;
+} // namespace embed
+
 class Nesso
 {
   public:
@@ -163,8 +168,11 @@ class Nesso
     [[nodiscard]] std::expected<TextResults, Error> search(const SearchRequest &request) const;
 
   private:
-    class Impl;
-    std::unique_ptr<Impl> impl_;
+    [[nodiscard]] std::expected<const embed::OnnxEmbedder *, Error> embedder() const;
+
+    Config config_;
+    // Created on first use. const operations share that cache.
+    mutable std::unique_ptr<embed::OnnxEmbedder> embedder_;
 };
 
 } // namespace nesso
