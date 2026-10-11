@@ -24,6 +24,36 @@ if [[ ! -f "${MODEL_DIR}/vocab.txt" || ! -f "${MODEL_DIR}/model.onnx" ]]; then
   exit 2
 fi
 
+# Highest GLIBC_ version the binary references. dpkg-shlibdeps only knows the
+# host libc symbols file, which does not list versions newer than the runner.
+libc6_min_version() {
+  local binary="$1"
+  if ! command -v objdump >/dev/null 2>&1; then
+    echo "error: objdump is required to derive the libc6 dependency" >&2
+    return 1
+  fi
+  local dump
+  if ! dump="$(objdump -T "${binary}")"; then
+    echo "error: objdump failed for ${binary}" >&2
+    return 1
+  fi
+  local symbols
+  symbols="$(printf '%s\n' "${dump}" | grep -oE 'GLIBC_[0-9]+(\.[0-9]+)+' || true)"
+  if [[ -z "${symbols}" ]]; then
+    echo "error: no GLIBC_ symbol versions in ${binary}" >&2
+    return 1
+  fi
+  local libc_min
+  libc_min="$(printf '%s\n' "${symbols}" | sed 's/^GLIBC_//' | sort -Vu | tail -n1)"
+  if [[ ! "${libc_min}" =~ ^[0-9]+(\.[0-9]+)+$ ]]; then
+    echo "error: refused libc version '${libc_min}'" >&2
+    return 1
+  fi
+  printf '%s\n' "${libc_min}"
+}
+
+LIBC_MIN="$(libc6_min_version "${BINARY}")"
+
 WORKDIR="$(mktemp -d)"
 trap 'rm -rf "${WORKDIR}"' EXIT
 
@@ -39,7 +69,7 @@ Version: ${VERSION}
 Section: utils
 Priority: optional
 Architecture: amd64
-Depends: libc6, libstdc++6, libgomp1
+Depends: libc6 (>= ${LIBC_MIN}), libstdc++6, libgomp1
 Maintainer: Lorenzo Caprari <lorenzocaprari@users.noreply.github.com>
 Description: Local semantic search for unstructured text
  Nesso is a Linux CLI that searches .log, .json, and .jsonl files by meaning
