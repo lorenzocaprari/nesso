@@ -580,16 +580,12 @@ jobs:
           } >> "${GITHUB_STEP_SUMMARY}"
           exit "${status}"
 
-  # Experimental, not a required check. continue-on-error keeps Pipeline
-  # green until this job has stayed green long enough to require it.
   # Clang 21 compiles nesso against the gcc-built libstdc++ packages
   # already in nesso-build-env (see conan/profiles/clang-26). libc++ is
   # not used: it is a different ABI from those static archives.
-  build-clang-26:
-    name: "clang-26-release (experimental, not required)"
+  clang-26-release:
     needs: prepare-image
     runs-on: ubuntu-latest
-    continue-on-error: true
     timeout-minutes: 60
     container:
       image: ${{ needs.prepare-image.outputs.image }}
@@ -645,11 +641,10 @@ jobs:
           if-no-files-found: error
 
   unit-tests-clang:
-    name: "${{ matrix.label }}-tests-clang (experimental, not required)"
-    needs: [prepare-image, build-clang-26]
-    if: ${{ !cancelled() && needs.build-clang-26.result == 'success' }}
+    name: ${{ matrix.label }}-tests-clang
+    needs: [prepare-image, clang-26-release]
+    if: ${{ !cancelled() && needs.clang-26-release.result == 'success' }}
     runs-on: ubuntu-latest
-    continue-on-error: true
     timeout-minutes: 30
     strategy:
       fail-fast: false
@@ -686,12 +681,9 @@ jobs:
       - name: Run ${{ matrix.label }} tests
         run: ctest --test-dir build/Release -L ${{ matrix.label }} -V
 
-  # Experimental, not a required check. Native arm64 image; the amd64
-  # prepare-image job and its tag are unchanged. QEMU is not used.
+  # Native arm64 image. The amd64 prepare-image job and its tag are unchanged.
   prepare-image-arm64:
-    name: "prepare-image-arm64 (experimental, not required)"
     runs-on: ubuntu-24.04-arm
-    continue-on-error: true
     timeout-minutes: 360
     permissions:
       contents: read
@@ -765,12 +757,10 @@ jobs:
           docker buildx imagetools inspect '${{ steps.select.outputs.image }}' | tee /tmp/image-inspect.txt
           grep -Eiq 'arm64|aarch64' /tmp/image-inspect.txt
 
-  build-gcc-26-arm64:
-    name: "gcc-26-arm64-release (experimental, not required)"
+  gcc-26-arm64-release:
     needs: prepare-image-arm64
     if: ${{ !cancelled() && needs.prepare-image-arm64.result == 'success' }}
     runs-on: ubuntu-24.04-arm
-    continue-on-error: true
     timeout-minutes: 90
     container:
       image: ${{ needs.prepare-image-arm64.outputs.image }}
@@ -815,11 +805,10 @@ jobs:
           if-no-files-found: error
 
   unit-tests-arm64:
-    name: "${{ matrix.label }}-tests-arm64 (experimental, not required)"
-    needs: [prepare-image-arm64, build-gcc-26-arm64]
-    if: ${{ !cancelled() && needs.prepare-image-arm64.result == 'success' && needs.build-gcc-26-arm64.result == 'success' }}
+    name: ${{ matrix.label }}-tests-arm64
+    needs: [prepare-image-arm64, gcc-26-arm64-release]
+    if: ${{ !cancelled() && needs.prepare-image-arm64.result == 'success' && needs.gcc-26-arm64-release.result == 'success' }}
     runs-on: ubuntu-24.04-arm
-    continue-on-error: true
     timeout-minutes: 30
     strategy:
       fail-fast: false
