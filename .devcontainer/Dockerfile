@@ -1,4 +1,4 @@
-FROM ubuntu:26.04
+FROM ubuntu:26.04@sha256:f144425ff09be612d6d9ad965196e9cdc23dae1f42110a8a11a3e9a8198759f7
 
 # Avoid interactive prompts
 ENV DEBIAN_FRONTEND=noninteractive
@@ -42,9 +42,13 @@ RUN rt_lib="/usr/lib/llvm-21/lib/clang/21/lib" \
             done; \
        fi
 
-# Install Conan 2 and pre-commit
-RUN pip install conan pre-commit --break-system-packages \
-    && rm -rf /root/.cache/pip
+# Install Conan 2 and pre-commit. Hashes are required; Dependabot updates them.
+COPY .devcontainer/requirements.txt /tmp/nesso-pip-requirements.txt
+# --ignore-installed: Ubuntu's python3-pip ships Debian packaging without a
+# pip RECORD, so upgrading it fails unless pip overlays instead of uninstalling.
+RUN pip install --require-hashes --break-system-packages --ignore-installed \
+      -r /tmp/nesso-pip-requirements.txt \
+    && rm -rf /root/.cache/pip /tmp/nesso-pip-requirements.txt
 
 # Fixed path: GitHub Actions container jobs override HOME to /github/home, so a
 # cache under ~/.conan2 is invisible to CI. Bake and consume from CONAN_HOME.

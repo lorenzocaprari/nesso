@@ -1,4 +1,6 @@
 # Runtime image: no compiler. Build with --build-arg BUILD_IMAGE=<nesso-build-env>.
+# BUILD_IMAGE is the CI-published nesso-build-env tag (deps-<content hash>).
+# It is not an upstream image and has no stable digest to pin.
 ARG BUILD_IMAGE
 FROM ${BUILD_IMAGE} AS build
 
@@ -11,7 +13,7 @@ RUN conan profile detect --force \
 
 RUN ./scripts/fetch-model /opt/nesso/models
 
-FROM ubuntu:26.04
+FROM ubuntu:26.04@sha256:f144425ff09be612d6d9ad965196e9cdc23dae1f42110a8a11a3e9a8198759f7
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates libstdc++6 libgomp1 \
