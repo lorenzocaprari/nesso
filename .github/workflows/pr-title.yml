@@ -1,0 +1,30 @@
+name: PR title
+
+on:
+  pull_request:
+    types: [opened, edited, reopened, synchronize]
+
+permissions:
+  contents: read
+
+jobs:
+  conventional:
+    name: conventional commit
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check title
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          set -euo pipefail
+          pattern='^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)(\([A-Za-z0-9._/-]+\))?!?: [^ ].+'
+          if printf '%s\n' "$PR_TITLE" | grep -Eq "$pattern"; then
+            printf 'ok: %s\n' "$PR_TITLE"
+            exit 0
+          fi
+          echo "Title does not match a conventional commit:" >&2
+          printf '  %s\n' "$PR_TITLE" >&2
+          echo "Expected: type(scope): subject" >&2
+          echo "Types: feat, fix, docs, style, refactor, perf, test, build, ci, chore, revert" >&2
+          echo "Optional scope. '!' before ':' marks a breaking change." >&2
+          exit 1
