@@ -1,0 +1,107 @@
+name-template: "v$RESOLVED_VERSION"
+tag-template: "v$RESOLVED_VERSION"
+filter-by-commitish: true
+change-template: "- $TITLE (#$NUMBER)"
+change-title-escapes: '\<*_&'
+exclude-labels:
+  - "duplicate"
+  - "invalid"
+  - "wontfix"
+  - "question"
+categories:
+  - title: "Breaking"
+    exclusive: true
+    semver-increment: major
+    when:
+      - conventional:
+          breaking: true
+      - label: "breaking"
+  - title: "Security"
+    exclusive: true
+    semver-increment: patch
+    when:
+      - label: "security"
+  - title: "Removed"
+    exclusive: true
+    semver-increment: major
+    when:
+      - label: "removed"
+  - title: "Deprecated"
+    exclusive: true
+    semver-increment: patch
+    when:
+      - label: "deprecated"
+  - title: "Added"
+    exclusive: true
+    semver-increment: minor
+    when:
+      - conventional:
+          type: feat
+      - label: "enhancement"
+  - title: "Fixed"
+    exclusive: true
+    semver-increment: patch
+    when:
+      - conventional:
+          type: fix
+      - label: "bug"
+  - title: "Changed"
+    exclusive: true
+    semver-increment: patch
+    when:
+      - conventional:
+          types:
+            - refactor
+            - perf
+      - label: "changed"
+  - title: "Documentation"
+    exclusive: true
+    semver-increment: patch
+    when:
+      - conventional:
+          type: docs
+      - label: "documentation"
+  - title: "Internal"
+    exclusive: true
+    semver-increment: patch
+    when:
+      - conventional:
+          types:
+            - chore
+            - ci
+            - build
+            - test
+            - style
+            - revert
+      - label: "chore"
+template: |
+  ## Changes
+
+  $CHANGES
+sync-labels: true
+autolabeler:
+  - labels:
+      - "breaking"
+    stop-on-match: true
+    title:
+      - '/^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)(\([A-Za-z0-9._/-]+\))?!: /'
+  - labels:
+      - "enhancement"
+    title:
+      - '/^feat(\([A-Za-z0-9._/-]+\))?: /'
+  - labels:
+      - "bug"
+    title:
+      - '/^fix(\([A-Za-z0-9._/-]+\))?: /'
+  - labels:
+      - "changed"
+    title:
+      - '/^(refactor|perf)(\([A-Za-z0-9._/-]+\))?: /'
+  - labels:
+      - "documentation"
+    title:
+      - '/^docs(\([A-Za-z0-9._/-]+\))?: /'
+  - labels:
+      - "chore"
+    title:
+      - '/^(chore|ci|build|test|style|revert)(\([A-Za-z0-9._/-]+\))?: /'
