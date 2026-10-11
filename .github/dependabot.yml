@@ -22,16 +22,30 @@ updates:
     cooldown:
       default-days: 7
 
-  # Dockerfile.runtime (repo root) and .devcontainer/Dockerfile.
-  # FROM ${BUILD_IMAGE} in the runtime image is not a pinned upstream image.
+  # Dockerfile.runtime (repo root), .devcontainer/Dockerfile, and
+  # .clusterfuzzlite/Dockerfile. FROM ${BUILD_IMAGE} in the runtime image is
+  # the CI-published nesso-build-env tag, not a pinnable upstream image.
   - package-ecosystem: docker
     directories:
       - /
       - /.devcontainer
+      - /.clusterfuzzlite
     schedule:
       interval: weekly
     groups:
       docker:
+        patterns:
+          - "*"
+    cooldown:
+      default-days: 7
+
+  - package-ecosystem: pip
+    directories:
+      - /.devcontainer
+    schedule:
+      interval: weekly
+    groups:
+      pip:
         patterns:
           - "*"
     cooldown:
