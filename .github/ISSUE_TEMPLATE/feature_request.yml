@@ -1,0 +1,29 @@
+name: Feature request
+description: A change to local grep, index, or search.
+labels:
+  - enhancement
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Nesso is an offline Linux CLI. It is not a hosted vector database.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What local text you cannot search or index today.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposal
+      description: Command shape, file format, exit behavior, or ranking change.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives
+    validations:
+      required: false
