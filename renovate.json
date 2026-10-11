@@ -1,0 +1,19 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "description": "Conan only. requirements() and build_requirements() in conanfile.py, plus the sibling conan.lock. GitHub Actions, Go modules, and Dockerfiles are updated by Dependabot.",
+  "extends": ["config:recommended"],
+  "enabledManagers": ["conan"],
+  "dependencyDashboard": false,
+  "lockFileMaintenance": {
+    "enabled": false
+  },
+  "schedule": ["before 5am on Monday"],
+  "packageRules": [
+    {
+      "matchManagers": ["conan"],
+      "groupName": "conan dependencies",
+      "groupSlug": "conan",
+      "matchUpdateTypes": ["major", "minor", "patch", "pin", "digest"]
+    }
+  ]
+}
