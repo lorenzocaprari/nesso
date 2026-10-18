@@ -38,6 +38,9 @@ bash scripts/clang-tidy
 
 # End-to-end bench. Report only: the bench job does not gate a merge.
 python3 scripts/bench
+
+# Skill-eval dry-run. No model call. Live runs are local (`--run`, `CURSOR_API_KEY`, `--sandbox enabled` unless `--unsafe-no-sandbox`).
+python3 scripts/eval-skills --dry-run
 ```
 
 ## Misreads

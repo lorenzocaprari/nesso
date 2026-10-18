@@ -1,0 +1,887 @@
+#!/usr/bin/env python3
+"""Evaluate agent skills with deterministic graders.
+
+--dry-run grades recorded transcripts and does not call a model.
+--run calls the Cursor CLI locally (CURSOR_API_KEY). See evals/README.md.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import re
+import shutil
+import subprocess
+import sys
+import tempfile
+from dataclasses import dataclass, field
+from pathlib import Path
+
+try:
+    import yaml
+except ImportError:
+    sys.exit(
+        "error: PyYAML is required (import yaml). "
+        "It is installed in the nesso-build-env image via .devcontainer/requirements.txt."
+    )
+
+ROOT = Path(__file__).resolve().parent.parent
+SCHEMA_VERSION = 1
+EXAMPLE_SKILL = "_example"
+MIN_CASES = 10
+MAX_CASES = 20
+MIN_TRIALS = 3
+MAX_TRIALS = 5
+SKILL_ROOTS = (
+    Path(".agents/skills"),
+    Path(".cursor/skills"),
+    Path(".claude/skills"),
+    Path(".codex/skills"),
+    Path(".github/skills"),
+)
+# writeToolCall is documented. editToolCall and deleteToolCall use the same
+# <name>ToolCall.args.path shape; they count when present.
+FILE_CHANGE_TOOLS = ("writeToolCall", "editToolCall", "deleteToolCall")
+SHELL_TOOL = "shellToolCall"
+SHELL_FUNCTION_NAMES = {"shell", "bash"}
+SET_KEYS = {"schema_version", "skill", "cases", "description"}
+CASE_KEYS = {"id", "prompt", "should_trigger", "graders", "trials"}
+ID_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,63}$")
+SKILL_RE = re.compile(r"^[a-z0-9][a-z0-9-]*$")
+
+
+class EvalError(Exception):
+    pass
+
+
+@dataclass
+class Grader:
+    type: str
+    target: str | None = None
+    pattern: re.Pattern[str] | None = None
+    paths: list[str] = field(default_factory=list)
+    label: str = ""
+
+
+@dataclass
+class Case:
+    id: str
+    prompt: str
+    should_trigger: bool
+    trials: int
+    graders: list[Grader]
+
+
+@dataclass
+class EvalSet:
+    skill: str
+    path: Path
+    cases: list[Case]
+    description: str = ""
+
+
+@dataclass
+class Grade:
+    trigger: bool
+    outcomes_pass: bool
+    combined: bool
+    output: str
+    files: list[str]
+    commands: list[str]
+    grader_results: list[tuple[str, bool]]
+
+
+def fail(message: str) -> None:
+    raise EvalError(message)
+
+
+def rate(passed: int, total: int) -> str:
+    if total == 0:
+        return "0/0"
+    return f"{passed}/{total} ({100.0 * passed / total:.1f}%)"
+
+
+def load_yaml(path: Path) -> object:
+    try:
+        return yaml.safe_load(path.read_text(encoding="utf-8"))
+    except yaml.YAMLError as exc:
+        fail(f"{path}: {exc}")
+
+
+def require_keys(obj: dict, allowed: set[str], where: str) -> None:
+    extra = set(obj) - allowed
+    if extra:
+        fail(f"{where}: unknown keys {sorted(extra)}")
+
+
+def compile_pattern(pattern: object, where: str) -> re.Pattern[str]:
+    if not isinstance(pattern, str) or pattern == "":
+        fail(f"{where}: pattern must be a non-empty string")
+    try:
+        return re.compile(pattern)
+    except re.error as exc:
+        fail(f"{where}: invalid regex {pattern!r}: {exc}")
+
+
+def parse_grader(raw: object, where: str) -> Grader:
+    if not isinstance(raw, dict):
+        fail(f"{where}: grader must be a mapping")
+    gtype = raw.get("type")
+    if gtype == "regex":
+        require_keys(raw, {"type", "target", "pattern"}, where)
+        target = raw.get("target")
+        if target not in ("output", "transcript"):
+            fail(f"{where}: regex target must be output or transcript")
+        pattern = compile_pattern(raw.get("pattern"), where)
+        return Grader(type="regex", target=target, pattern=pattern, label=f"regex:{target}")
+    if gtype == "files_changed":
+        require_keys(raw, {"type", "paths"}, where)
+        paths = raw.get("paths")
+        if not isinstance(paths, list) or not paths:
+            fail(f"{where}: files_changed.paths must be a non-empty list")
+        cleaned: list[str] = []
+        for path in paths:
+            if not isinstance(path, str) or path == "":
+                fail(f"{where}: files_changed path must be a non-empty string")
+            pure = Path(path)
+            if pure.is_absolute() or ".." in pure.parts:
+                fail(f"{where}: files_changed path must be relative and not contain '..': {path}")
+            cleaned.append(path.replace("\\", "/"))
+        return Grader(type="files_changed", paths=cleaned, label="files_changed")
+    if gtype == "commands_run":
+        require_keys(raw, {"type", "pattern"}, where)
+        pattern = compile_pattern(raw.get("pattern"), where)
+        return Grader(type="commands_run", pattern=pattern, label="commands_run")
+    fail(f"{where}: unknown grader type {gtype!r}")
+
+
+def parse_case(raw: object, where: str) -> Case:
+    if not isinstance(raw, dict):
+        fail(f"{where}: case must be a mapping")
+    require_keys(raw, CASE_KEYS, where)
+    case_id = raw.get("id")
+    if not isinstance(case_id, str) or ID_RE.fullmatch(case_id) is None:
+        fail(f"{where}: id must match {ID_RE.pattern}")
+    prompt = raw.get("prompt")
+    if not isinstance(prompt, str) or prompt.strip() == "":
+        fail(f"{where}: prompt must be a non-empty string")
+    should = raw.get("should_trigger")
+    if not isinstance(should, bool):
+        fail(f"{where}: should_trigger must be a boolean")
+    trials = raw.get("trials", MIN_TRIALS)
+    if isinstance(trials, bool) or not isinstance(trials, int) or not MIN_TRIALS <= trials <= MAX_TRIALS:
+        fail(f"{where}: trials must be an integer from {MIN_TRIALS} to {MAX_TRIALS}")
+    graders_raw = raw.get("graders")
+    if not isinstance(graders_raw, list):
+        fail(f"{where}: graders must be a list")
+    graders = [parse_grader(item, f"{where} grader {index}") for index, item in enumerate(graders_raw, 1)]
+    return Case(id=case_id, prompt=prompt, should_trigger=should, trials=trials, graders=graders)
+
+
+def parse_set(path: Path) -> EvalSet:
+    raw = load_yaml(path)
+    if not isinstance(raw, dict):
+        fail(f"{path}: document must be a mapping")
+    require_keys(raw, SET_KEYS, str(path))
+    if raw.get("schema_version") != SCHEMA_VERSION:
+        fail(f"{path}: schema_version must be {SCHEMA_VERSION}")
+    skill = raw.get("skill")
+    if not isinstance(skill, str):
+        fail(f"{path}: skill must be a string")
+    if skill != EXAMPLE_SKILL and SKILL_RE.fullmatch(skill) is None:
+        fail(f"{path}: skill must match {SKILL_RE.pattern}")
+    if path.parent.name != skill:
+        fail(f"{path}: skill {skill!r} must match directory {path.parent.name!r}")
+    description = raw.get("description", "")
+    if not isinstance(description, str):
+        fail(f"{path}: description must be a string")
+    cases_raw = raw.get("cases")
+    if not isinstance(cases_raw, list) or not cases_raw:
+        fail(f"{path}: cases must be a non-empty list")
+    low = 1 if skill == EXAMPLE_SKILL else MIN_CASES
+    if not low <= len(cases_raw) <= MAX_CASES:
+        fail(f"{path}: expected {low}-{MAX_CASES} cases, found {len(cases_raw)}")
+    cases = [parse_case(item, f"{path} case {index}") for index, item in enumerate(cases_raw, 1)]
+    ids = [case.id for case in cases]
+    if len(ids) != len(set(ids)):
+        fail(f"{path}: duplicate case id")
+    return EvalSet(skill=skill, path=path, cases=cases, description=description)
+
+
+def discover_sets(root: Path) -> list[EvalSet]:
+    evals = root / "evals"
+    if not evals.is_dir():
+        fail(f"{evals} does not exist")
+    paths = sorted(path for path in evals.glob("*/cases.yaml") if path.is_file())
+    if not paths:
+        fail(f"no evals/*/cases.yaml under {root}")
+    return [parse_set(path) for path in paths]
+
+
+def skill_files(root: Path) -> dict[str, Path]:
+    base = root / ".agents" / "skills"
+    found: dict[str, Path] = {}
+    if not base.is_dir():
+        return found
+    for child in sorted(base.iterdir()):
+        markdown = child / "SKILL.md"
+        if child.is_dir() and markdown.is_file():
+            found[child.name] = markdown
+    return found
+
+
+def check_skill_pairing(root: Path, sets: list[EvalSet]) -> None:
+    by_name = {item.skill: item for item in sets}
+    for name in skill_files(root):
+        if name not in by_name:
+            fail(f".agents/skills/{name}/SKILL.md has no evals/{name}/cases.yaml")
+
+
+def assistant_text(event: dict) -> str:
+    message = event.get("message")
+    if not isinstance(message, dict):
+        return ""
+    content = message.get("content")
+    if not isinstance(content, list):
+        return ""
+    parts: list[str] = []
+    for block in content:
+        if isinstance(block, dict) and isinstance(block.get("text"), str):
+            parts.append(block["text"])
+    return "\n".join(parts)
+
+
+def output_text(events: list[dict]) -> str:
+    result = ""
+    for event in events:
+        if event.get("type") == "result" and isinstance(event.get("result"), str):
+            result = event["result"]
+    return result
+
+
+def transcript_text(events: list[dict]) -> str:
+    chunks: list[str] = []
+    for event in events:
+        if event.get("type") == "assistant":
+            text = assistant_text(event)
+            if text:
+                chunks.append(text)
+        tool_call = event.get("tool_call")
+        if isinstance(tool_call, dict):
+            chunks.append(json.dumps(tool_call, sort_keys=True))
+    text = output_text(events)
+    if text:
+        chunks.append(text)
+    return "\n".join(chunks)
+
+
+def path_matches(candidate: str, expected: str) -> bool:
+    cand = [part for part in candidate.replace("\\", "/").split("/") if part not in ("", ".")]
+    exp = [part for part in expected.replace("\\", "/").split("/") if part not in ("", ".")]
+    return bool(exp) and len(cand) >= len(exp) and cand[-len(exp) :] == exp
+
+
+def tool_path_strings(tool: dict) -> list[str]:
+    found: list[str] = []
+    args = tool.get("args")
+    if isinstance(args, dict) and isinstance(args.get("path"), str):
+        found.append(args["path"])
+    result = tool.get("result")
+    if isinstance(result, dict):
+        success = result.get("success")
+        if isinstance(success, dict) and isinstance(success.get("path"), str):
+            found.append(success["path"])
+    return found
+
+
+def command_from_value(value: object) -> str | None:
+    if isinstance(value, str) and value.strip():
+        stripped = value.strip()
+        if stripped.startswith("{"):
+            try:
+                parsed = json.loads(stripped)
+            except json.JSONDecodeError:
+                return stripped
+            return command_from_value(parsed)
+        return stripped
+    if isinstance(value, list) and value and all(isinstance(item, str) for item in value):
+        return " ".join(value)
+    if isinstance(value, dict):
+        for key in ("command", "cmd"):
+            if key in value:
+                return command_from_value(value[key])
+    return None
+
+
+def completed_tools(events: list[dict]) -> list[dict]:
+    tools: list[dict] = []
+    for event in events:
+        if event.get("type") != "tool_call":
+            continue
+        if event.get("subtype") == "started":
+            continue
+        tool_call = event.get("tool_call")
+        if isinstance(tool_call, dict):
+            tools.append(tool_call)
+    return tools
+
+
+def changed_files(events: list[dict]) -> list[str]:
+    paths: list[str] = []
+    for tool_call in completed_tools(events):
+        for name in FILE_CHANGE_TOOLS:
+            tool = tool_call.get(name)
+            if isinstance(tool, dict):
+                paths.extend(tool_path_strings(tool))
+    return paths
+
+
+def shell_commands(events: list[dict]) -> list[str]:
+    commands: list[str] = []
+    for tool_call in completed_tools(events):
+        shell = tool_call.get(SHELL_TOOL)
+        if isinstance(shell, dict):
+            text = command_from_value(shell.get("args"))
+            if text:
+                commands.append(text)
+        function = tool_call.get("function")
+        if isinstance(function, dict) and function.get("name") in SHELL_FUNCTION_NAMES:
+            text = command_from_value(function.get("arguments"))
+            if text:
+                commands.append(text)
+    return commands
+
+
+def skill_triggered(events: list[dict], skill: str) -> bool:
+    needle = ("skills", skill, "SKILL.md")
+    for event in events:
+        if event.get("type") != "tool_call":
+            continue
+        tool_call = event.get("tool_call")
+        if not isinstance(tool_call, dict):
+            continue
+        read = tool_call.get("readToolCall")
+        if not isinstance(read, dict):
+            continue
+        for path in tool_path_strings(read):
+            parts = [part for part in path.replace("\\", "/").split("/") if part not in ("", ".")]
+            if len(parts) >= 3 and tuple(parts[-3:]) == needle:
+                return True
+    return False
+
+
+def grade_case(case: Case, skill: str, events: list[dict]) -> Grade:
+    output = output_text(events)
+    transcript = transcript_text(events)
+    files = changed_files(events)
+    commands = shell_commands(events)
+    results: list[tuple[str, bool]] = []
+    for grader in case.graders:
+        if grader.type == "regex":
+            text = output if grader.target == "output" else transcript
+            ok = grader.pattern is not None and grader.pattern.search(text) is not None
+        elif grader.type == "files_changed":
+            ok = all(any(path_matches(candidate, expected) for candidate in files) for expected in grader.paths)
+        else:
+            ok = grader.pattern is not None and any(grader.pattern.search(command) for command in commands)
+        results.append((grader.label, ok))
+    outcomes = all(ok for _, ok in results)
+    trigger = skill_triggered(events, skill)
+    return Grade(
+        trigger=trigger,
+        outcomes_pass=outcomes,
+        combined=outcomes and trigger == case.should_trigger,
+        output=output,
+        files=files,
+        commands=commands,
+        grader_results=results,
+    )
+
+
+def load_events(path: Path) -> list[dict]:
+    events: list[dict] = []
+    text = path.read_text(encoding="utf-8")
+    for lineno, line in enumerate(text.splitlines(), 1):
+        if line.strip() == "":
+            continue
+        try:
+            event = json.loads(line)
+        except json.JSONDecodeError as exc:
+            fail(f"{path}:{lineno}: {exc}")
+        if not isinstance(event, dict):
+            fail(f"{path}:{lineno}: event must be a JSON object")
+        events.append(event)
+    if not events:
+        fail(f"{path}: empty transcript")
+    return events
+
+
+def expect_from_name(path: Path) -> bool:
+    stem = path.stem
+    if stem == "pass" or stem.startswith("pass-"):
+        return True
+    if stem == "fail" or stem.startswith("fail-"):
+        return False
+    fail(f"{path}: fixture name must start with pass or fail")
+
+
+def grade_fixtures(eval_set: EvalSet) -> list[str]:
+    lines: list[str] = []
+    fixture_root = eval_set.path.parent / "fixtures"
+    if not fixture_root.is_dir():
+        fail(f"{eval_set.skill}: missing {fixture_root}")
+    case_ids = {case.id for case in eval_set.cases}
+    extra = sorted(path.name for path in fixture_root.iterdir() if path.is_dir() and path.name not in case_ids)
+    if extra:
+        fail(f"{eval_set.skill}: fixture dirs with no case: {extra}")
+    for case in eval_set.cases:
+        directory = fixture_root / case.id
+        if not directory.is_dir():
+            fail(f"{eval_set.skill}/{case.id}: missing fixtures directory")
+        files = sorted(path for path in directory.glob("*.jsonl") if path.is_file())
+        if not files:
+            fail(f"{directory}: no .jsonl fixtures")
+        expectations = [expect_from_name(path) for path in files]
+        if True not in expectations or False not in expectations:
+            fail(f"{directory}: need at least one pass*.jsonl and one fail*.jsonl")
+        matched = 0
+        for path, expected in zip(files, expectations, strict=True):
+            grade = grade_case(case, eval_set.skill, load_events(path))
+            if grade.combined != expected:
+                detail = ", ".join(f"{label}={'pass' if ok else 'fail'}" for label, ok in grade.grader_results)
+                fail(
+                    f"{path}: expected {'pass' if expected else 'fail'}, "
+                    f"got {'pass' if grade.combined else 'fail'} "
+                    f"(trigger={grade.trigger}, {detail})"
+                )
+            matched += 1
+        lines.append(f"  {eval_set.skill}/{case.id}  fixtures {matched}/{matched}")
+    return lines
+
+
+def event(kind: str, **payload: object) -> dict:
+    body = {"type": kind}
+    body.update(payload)
+    return body
+
+
+def self_check_extractors() -> None:
+    case = Case(
+        id="self-check",
+        prompt="USER_ONLY_MARKER",
+        should_trigger=True,
+        trials=3,
+        graders=[
+            Grader(type="regex", target="output", pattern=re.compile("ONLY_IN_USER"), label="regex:output"),
+            Grader(type="commands_run", pattern=re.compile("from-function"), label="commands_run"),
+            Grader(type="files_changed", paths=["out.txt"], label="files_changed"),
+        ],
+    )
+    events = [
+        event(
+            "user",
+            message={"role": "user", "content": [{"type": "text", "text": "ONLY_IN_USER"}]},
+        ),
+        event(
+            "tool_call",
+            subtype="started",
+            tool_call={"shellToolCall": {"args": {"command": "echo started-only"}}},
+        ),
+        event(
+            "tool_call",
+            subtype="completed",
+            tool_call={"readToolCall": {"args": {"path": ".agents/skills/self-check/SKILL.md"}}},
+        ),
+        event(
+            "tool_call",
+            subtype="completed",
+            tool_call={"function": {"name": "shell", "arguments": "{\"command\": \"echo from-function\"}"}},
+        ),
+        event(
+            "tool_call",
+            subtype="completed",
+            tool_call={
+                "writeToolCall": {
+                    "args": {"path": "out.txt"},
+                    "result": {"success": {"path": "/work/out.txt"}},
+                }
+            },
+        ),
+        event("result", subtype="success", result="done"),
+    ]
+    grade = grade_case(case, "self-check", events)
+    if grade.trigger is not True:
+        fail("extractor self-check: skill read was not detected")
+    if "ONLY_IN_USER" in grade.output or any(ok for label, ok in grade.grader_results if label == "regex:output"):
+        fail("extractor self-check: user prompt leaked into output")
+    if any("started-only" in command for command in grade.commands):
+        fail("extractor self-check: started tool call was counted")
+    if not any("from-function" in command for command in grade.commands):
+        fail("extractor self-check: function shell command was missed")
+    if not any(path_matches(path, "out.txt") for path in grade.files):
+        fail("extractor self-check: write path was missed")
+    file_ok = next(ok for label, ok in grade.grader_results if label == "files_changed")
+    cmd_ok = next(ok for label, ok in grade.grader_results if label == "commands_run")
+    if not file_ok or not cmd_ok:
+        fail("extractor self-check: graders did not pass the synthetic transcript")
+    missed = grade_case(
+        Case(
+            id="self-check",
+            prompt="x",
+            should_trigger=False,
+            trials=3,
+            graders=[Grader(type="commands_run", pattern=re.compile("missing"), label="commands_run")],
+        ),
+        "self-check",
+        [event("result", subtype="success", result="no command")],
+    )
+    if missed.outcomes_pass or missed.trigger:
+        fail("extractor self-check: empty transcript graded as a pass")
+
+
+def remove_path(path: Path) -> None:
+    if path.is_symlink():
+        path.unlink()
+    elif path.is_dir():
+        shutil.rmtree(path)
+
+
+def hide_skill(workspace: Path, skill: str) -> None:
+    for root in SKILL_ROOTS:
+        remove_path(workspace / root / skill)
+
+
+def overlay_skill(repo: Path, workspace: Path, skill: str) -> None:
+    # HEAD may not contain an uncommitted skill edit. The working tree copy is what --run should see.
+    source = repo / ".agents" / "skills" / skill
+    if not source.is_dir():
+        return
+    destination = workspace / ".agents" / "skills" / skill
+    remove_path(destination)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copytree(source, destination, symlinks=False)
+
+
+def self_check_worktree(repo: Path) -> None:
+    parent = Path(tempfile.mkdtemp(prefix="nesso-eval-wt-"))
+    worktree = parent / "wt"
+    try:
+        added = subprocess.run(
+            ["git", "-C", str(repo), "worktree", "add", "--detach", str(worktree), "HEAD"],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        if added.returncode != 0:
+            fail(f"git worktree add failed: {added.stderr.strip() or added.stdout.strip()}")
+        probe = worktree / ".agents" / "skills" / "worktree-probe"
+        probe.mkdir(parents=True)
+        (probe / "SKILL.md").write_text("probe\n", encoding="utf-8")
+        hide_skill(worktree, "worktree-probe")
+        if probe.exists():
+            fail("hide_skill left the probe skill in the worktree")
+        if (repo / ".agents" / "skills" / "worktree-probe").exists():
+            fail("worktree probe leaked into the main checkout")
+    finally:
+        subprocess.run(
+            ["git", "-C", str(repo), "worktree", "remove", "--force", str(worktree)],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        shutil.rmtree(parent, ignore_errors=True)
+
+
+def dry_run(root: Path, repo: Path, check_worktree: bool) -> int:
+    try:
+        sets = discover_sets(root)
+        check_skill_pairing(root, sets)
+        print("skill-eval dry-run")
+        for eval_set in sets:
+            for line in grade_fixtures(eval_set):
+                print(line)
+        self_check_extractors()
+        print("  extractor self-check  ok")
+        if check_worktree:
+            self_check_worktree(repo)
+            print("  worktree self-check   ok")
+    except EvalError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+    print("pass")
+    return 0
+
+
+def resolve_cursor_bin(explicit: str | None) -> str:
+    if explicit:
+        return explicit
+    env = os.environ.get("CURSOR_AGENT_BIN", "").strip()
+    if env:
+        return env
+    for name in ("cursor-agent", "agent"):
+        found = shutil.which(name)
+        if found:
+            return found
+    fail("cursor-agent (or agent) not on PATH; set CURSOR_AGENT_BIN. See https://cursor.com/docs/cli/headless")
+
+
+def cursor_command(binary: str, workspace: Path, prompt: str, model: str | None, sandbox: str) -> list[str]:
+    if sandbox not in ("enabled", "disabled"):
+        fail(f"sandbox must be enabled or disabled, not {sandbox!r}")
+    command = [
+        binary,
+        "-p",
+        "--output-format",
+        "stream-json",
+        "--force",
+        "--trust",
+        "--sandbox",
+        sandbox,
+        "--workspace",
+        str(workspace),
+    ]
+    if model:
+        command.extend(["--model", model])
+    command.append(prompt)
+    return command
+
+
+class CursorCliBackend:
+    name = "cursor"
+
+    def __init__(self, binary: str, model: str | None, sandbox: str) -> None:
+        self.binary = binary
+        self.model = model
+        self.sandbox = sandbox
+
+    def run(self, prompt: str, workspace: Path, timeout: float) -> tuple[list[dict], str, int]:
+        command = cursor_command(self.binary, workspace, prompt, self.model, self.sandbox)
+        try:
+            completed = subprocess.run(
+                command,
+                cwd=workspace,
+                capture_output=True,
+                text=True,
+                timeout=timeout,
+                check=False,
+            )
+        except subprocess.TimeoutExpired as exc:
+            stderr = exc.stderr.decode("utf-8", "replace") if isinstance(exc.stderr, bytes) else (exc.stderr or "")
+            fail(f"cursor-agent timed out after {timeout}s. {stderr.strip()}")
+        events: list[dict] = []
+        for lineno, line in enumerate(completed.stdout.splitlines(), 1):
+            if line.strip() == "":
+                continue
+            try:
+                event_obj = json.loads(line)
+            except json.JSONDecodeError as exc:
+                fail(f"cursor-agent stdout line {lineno} is not JSON: {exc}. stderr: {completed.stderr.strip()}")
+            if not isinstance(event_obj, dict):
+                fail(f"cursor-agent stdout line {lineno} is not an object")
+            events.append(event_obj)
+        if completed.returncode != 0:
+            fail(f"cursor-agent exited {completed.returncode}. stderr: {completed.stderr.strip()}")
+        if not events:
+            fail(f"cursor-agent produced no stream-json events. stderr: {completed.stderr.strip()}")
+        return events, completed.stderr, completed.returncode
+
+
+def build_backend(name: str, binary: str | None, model: str | None, sandbox: str) -> CursorCliBackend:
+    if name != "cursor":
+        fail(f"backend {name!r} is not implemented (implemented: cursor)")
+    if not os.environ.get("CURSOR_API_KEY", "").strip():
+        fail("CURSOR_API_KEY is required for --run")
+    return CursorCliBackend(resolve_cursor_bin(binary), model, sandbox)
+
+
+def add_worktree(repo: Path, destination: Path) -> None:
+    added = subprocess.run(
+        ["git", "-C", str(repo), "worktree", "add", "--detach", str(destination), "HEAD"],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if added.returncode != 0:
+        fail(f"git worktree add failed: {added.stderr.strip() or added.stdout.strip()}")
+
+
+def remove_worktree(repo: Path, destination: Path) -> None:
+    subprocess.run(
+        ["git", "-C", str(repo), "worktree", "remove", "--force", str(destination)],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+
+def write_jsonl(path: Path, events: list[dict]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("".join(json.dumps(event) + "\n" for event in events), encoding="utf-8")
+
+
+def live_run(
+    repo: Path,
+    backend: CursorCliBackend,
+    skill_filter: str | None,
+    trials_override: int | None,
+    timeout: float,
+    save_dir: Path,
+) -> int:
+    try:
+        sets = discover_sets(repo)
+        check_skill_pairing(repo, sets)
+    except EvalError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+    selected = []
+    for eval_set in sets:
+        if eval_set.skill == EXAMPLE_SKILL:
+            print(f"skip {EXAMPLE_SKILL} (fixture-only)")
+            continue
+        if skill_filter and eval_set.skill != skill_filter:
+            continue
+        markdown = repo / ".agents" / "skills" / eval_set.skill / "SKILL.md"
+        if not markdown.is_file():
+            print(f"error: missing {markdown}", file=sys.stderr)
+            return 1
+        selected.append(eval_set)
+    if skill_filter and not selected and skill_filter != EXAMPLE_SKILL:
+        print(f"error: no eval set named {skill_filter}", file=sys.stderr)
+        return 1
+    if not selected:
+        print("no live skills to evaluate")
+        return 0
+
+    save_dir.mkdir(parents=True, exist_ok=True)
+    report: dict = {"backend": backend.name, "sandbox": backend.sandbox, "skills": []}
+    infra_error = False
+    print(f"skill-eval {backend.name} sandbox={backend.sandbox}")
+    for eval_set in selected:
+        skill_report: dict = {"skill": eval_set.skill, "cases": []}
+        totals = {
+            "with_skill": {"trigger": [0, 0], "outcomes": [0, 0], "combined": [0, 0]},
+            "without_skill": {"outcomes": [0, 0]},
+        }
+        for case in eval_set.cases:
+            trial_count = trials_override if trials_override is not None else case.trials
+            case_report: dict = {"id": case.id, "trials": []}
+            for condition in ("with_skill", "without_skill"):
+                for trial in range(1, trial_count + 1):
+                    parent = Path(tempfile.mkdtemp(prefix="nesso-eval-run-"))
+                    workspace = parent / "wt"
+                    record: dict = {"condition": condition, "trial": trial}
+                    try:
+                        add_worktree(repo, workspace)
+                        overlay_skill(repo, workspace, eval_set.skill)
+                        if condition == "without_skill":
+                            hide_skill(workspace, eval_set.skill)
+                        events, stderr, _code = backend.run(case.prompt, workspace, timeout)
+                        grade = grade_case(case, eval_set.skill, events)
+                        dest = save_dir / eval_set.skill / case.id / condition
+                        write_jsonl(dest / f"trial-{trial}.jsonl", events)
+                        (dest / f"trial-{trial}.stderr").write_text(stderr, encoding="utf-8")
+                        record.update(
+                            {
+                                "trigger": grade.trigger,
+                                "outcomes_pass": grade.outcomes_pass,
+                                "combined": grade.combined,
+                                "graders": [{"name": label, "pass": ok} for label, ok in grade.grader_results],
+                            }
+                        )
+                        bucket = totals[condition]
+                        if condition == "with_skill":
+                            bucket["trigger"][1] += 1
+                            bucket["trigger"][0] += int(grade.trigger == case.should_trigger)
+                            bucket["combined"][1] += 1
+                            bucket["combined"][0] += int(grade.combined)
+                        bucket["outcomes"][1] += 1
+                        bucket["outcomes"][0] += int(grade.outcomes_pass)
+                    except EvalError as exc:
+                        infra_error = True
+                        record["error"] = str(exc)
+                        print(f"error: {eval_set.skill}/{case.id} {condition} trial {trial}: {exc}", file=sys.stderr)
+                        bucket = totals[condition]
+                        if condition == "with_skill":
+                            bucket["trigger"][1] += 1
+                            bucket["combined"][1] += 1
+                        bucket["outcomes"][1] += 1
+                    finally:
+                        remove_worktree(repo, workspace)
+                        shutil.rmtree(parent, ignore_errors=True)
+                    case_report["trials"].append(record)
+            skill_report["cases"].append(case_report)
+        with_skill = totals["with_skill"]
+        without = totals["without_skill"]
+        print(f"skill {eval_set.skill}")
+        print(f"  with_skill     trigger {rate(*with_skill['trigger'])}")
+        print(f"  with_skill     outcomes {rate(*with_skill['outcomes'])}")
+        print(f"  with_skill     combined {rate(*with_skill['combined'])}")
+        print(f"  without_skill  outcomes {rate(*without['outcomes'])}")
+        skill_report["with_skill"] = {
+            "trigger": with_skill["trigger"],
+            "outcomes": with_skill["outcomes"],
+            "combined": with_skill["combined"],
+        }
+        skill_report["without_skill"] = {"outcomes": without["outcomes"]}
+        report["skills"].append(skill_report)
+    report_path = save_dir / "report.json"
+    report_path.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
+    print(f"transcripts {save_dir}")
+    return 1 if infra_error else 0
+
+
+def parse_args(argv: list[str]) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Evaluate agent skills. See evals/README.md.")
+    mode = parser.add_mutually_exclusive_group(required=True)
+    mode.add_argument("--dry-run", "--self-test", action="store_true", help="validate cases and grade fixtures")
+    mode.add_argument("--run", action="store_true", help="run live trials with the Cursor CLI")
+    parser.add_argument("--root", type=Path, default=ROOT, help="repository root (default: this repo)")
+    parser.add_argument("--backend", default="cursor", help="agent backend (implemented: cursor)")
+    parser.add_argument("--skill", help="evaluate one skill")
+    parser.add_argument("--trials", type=int, help=f"override trials ({MIN_TRIALS}-{MAX_TRIALS})")
+    parser.add_argument("--timeout", type=float, default=900.0, help="seconds per live trial")
+    parser.add_argument("--model", help="Cursor --model value")
+    parser.add_argument("--cursor-bin", help="cursor-agent or agent binary")
+    parser.add_argument("--save-dir", type=Path, help="directory for live transcripts")
+    parser.add_argument(
+        "--unsafe-no-sandbox",
+        action="store_true",
+        help="pass --sandbox disabled (default is --sandbox enabled; --run only)",
+    )
+    return parser.parse_args(argv)
+
+
+def main(argv: list[str]) -> int:
+    args = parse_args(argv)
+    root = args.root.resolve()
+    if args.trials is not None and not MIN_TRIALS <= args.trials <= MAX_TRIALS:
+        print(f"error: --trials must be {MIN_TRIALS}-{MAX_TRIALS}", file=sys.stderr)
+        return 2
+    if args.dry_run:
+        if args.unsafe_no_sandbox:
+            print("error: --unsafe-no-sandbox applies only to --run", file=sys.stderr)
+            return 2
+        return dry_run(root, ROOT, check_worktree=root == ROOT)
+    if args.backend != "cursor":
+        print("error: backend {0!r} is not implemented (implemented: cursor)".format(args.backend), file=sys.stderr)
+        return 2
+    sandbox = "disabled" if args.unsafe_no_sandbox else "enabled"
+    if sandbox == "disabled":
+        print(
+            "warning: --unsafe-no-sandbox disables the Cursor command sandbox for this run",
+            file=sys.stderr,
+        )
+    try:
+        backend = build_backend(args.backend, args.cursor_bin, args.model, sandbox)
+    except EvalError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+    save_dir = args.save_dir
+    if save_dir is None:
+        save_dir = Path(tempfile.mkdtemp(prefix="nesso-skill-eval-"))
+    return live_run(root, backend, args.skill, args.trials, args.timeout, save_dir)
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

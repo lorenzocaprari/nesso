@@ -1,0 +1,5 @@
+{"type":"user","message":{"role":"user","content":[{"type":"text","text":"Follow the example skill and write example-marker.txt so that it contains the line EXAMPLE_MARKER."}]},"session_id":"s1"}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"I'll read the example skill."}]},"session_id":"s1"}
+{"type":"tool_call","subtype":"completed","call_id":"r1","tool_call":{"readToolCall":{"args":{"path":".agents/skills/_example/SKILL.md"},"result":{"success":{"content":"Write example-marker.txt containing EXAMPLE_MARKER.","isEmpty":false,"exceededLimit":false,"totalLines":1,"totalChars":52}}}},"session_id":"s1"}
+{"type":"tool_call","subtype":"completed","call_id":"h1","tool_call":{"shellToolCall":{"args":{"command":"printf 'EXAMPLE_MARKER\\n' > example-marker.txt"}}},"session_id":"s1"}
+{"type":"result","subtype":"success","is_error":false,"duration_ms":10,"duration_api_ms":10,"result":"Wrote EXAMPLE_MARKER to example-marker.txt","session_id":"s1"}

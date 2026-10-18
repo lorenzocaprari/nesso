@@ -1,0 +1,28 @@
+schema_version: 1
+skill: _example
+description: Fixture-only set for the harness. There is no SKILL.md.
+cases:
+  - id: writes-marker
+    prompt: Follow the example skill and write example-marker.txt so that it contains the line EXAMPLE_MARKER.
+    should_trigger: true
+    trials: 3
+    graders:
+      - type: regex
+        target: output
+        pattern: EXAMPLE_MARKER
+      - type: regex
+        target: transcript
+        pattern: example-marker\.txt
+      - type: files_changed
+        paths:
+          - example-marker.txt
+      - type: commands_run
+        pattern: printf
+  - id: unrelated-plot
+    prompt: Write a Python script that reads a CSV and plots a bar chart using matplotlib.
+    should_trigger: false
+    trials: 3
+    graders:
+      - type: regex
+        target: output
+        pattern: matplotlib

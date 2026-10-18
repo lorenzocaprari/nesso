@@ -1,0 +1,50 @@
+name: Skill evals
+
+on:
+  push:
+    branches: ["main"]
+    paths:
+      - "evals/**"
+      - ".agents/skills/**"
+      - "scripts/eval-skills"
+      - ".github/workflows/skill-evals.yml"
+  pull_request:
+    paths:
+      - "evals/**"
+      - ".agents/skills/**"
+      - "scripts/eval-skills"
+      - ".github/workflows/skill-evals.yml"
+
+# Cancel a PR run when a newer push supersedes it. Push runs are left running.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+# Schema and fixture check only. No API key and no model call.
+permissions:
+  contents: read
+
+jobs:
+  dry-run:
+    name: dry-run
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Dry-run skill evals
+        run: |
+          set -euo pipefail
+          # PyYAML is already in nesso-build-env (.devcontainer/requirements.txt).
+          # ubuntu-latest does not use that image; install the distro package if needed.
+          if ! python3 -c "import yaml" >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo apt-get install -y python3-yaml
+          fi
+          python3 scripts/eval-skills --dry-run
