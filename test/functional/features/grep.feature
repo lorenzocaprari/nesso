@@ -175,6 +175,68 @@ Feature: grep
     Then the exit code is 0
     And stdout contains "-:line 1:"
 
+  Scenario: two skip reasons are joined with and
+    Given a file "rows.jsonl" with:
+      """
+      {"message":"database connection refused"}
+
+      {not json
+      """
+    When I run nesso with arguments grep "database connection error" {dir}/rows.jsonl -k 2
+    Then the exit code is 0
+    And stderr contains "Skipped 1 empty line and 1 malformed line."
+
+  Scenario: three skip reasons name the plural and the comma
+    Given a file "rows.jsonl" with:
+      """
+      {"message":"database connection refused"}
+
+
+      {not json
+      {"nope":1}
+      {"nope":2}
+      """
+    When I run nesso with arguments grep "database connection error" {dir}/rows.jsonl
+    Then the exit code is 0
+    And stderr contains "Skipped 2 empty lines, 1 malformed line, and 2 lines missing the \"message\" field."
+
+  Scenario: stdin longer than the binary probe is read to the end
+    Given stdin is a line of 5000 "a"
+    When I run nesso with arguments grep a -
+    Then the exit code is 0
+    And stdout contains "a"
+
+  Scenario: binary stdin is rejected
+    Given stdin is hex:
+      """
+      610062
+      """
+    When I run nesso with arguments grep a -
+    Then the exit code is 2
+    And stderr contains "the file is binary"
+
+  Scenario: progress is reported on a terminal
+    Given a file "app.log" with:
+      """
+      database connection refused
+      """
+    And stderr is a terminal
+    When I run nesso with arguments grep "database connection error" {dir}/app.log
+    Then the exit code is 0
+    And stdout contains "database connection refused"
+    And stderr contains "Embedded"
+    And stderr contains "lines/s"
+
+  Scenario: an explicit thread count and quiet mode are accepted
+    Given a file "edges.jsonl" with:
+      """
+      {"message":"database\nconnection\rrefused { _ \uD840\uDC00 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"}
+      """
+    When I run nesso with arguments grep "database connection error" --threads 1 --quiet {dir}/edges.jsonl
+    Then the exit code is 0
+    And stdout contains "refused"
+    And stderr does not contain "Embedded"
+
   Scenario: the model directory comes from the environment
     Given a file "app.log" with:
       """

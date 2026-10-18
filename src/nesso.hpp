@@ -146,6 +146,8 @@ struct IndexSummary
 struct Config
 {
     std::optional<std::filesystem::path> modelDir;
+    // 0 selects the embedder default. A positive value is --threads or NESSO_THREADS.
+    size_t threads = 0;
 };
 
 namespace embed

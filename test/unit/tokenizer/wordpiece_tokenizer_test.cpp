@@ -64,6 +64,18 @@ TEST_CASE("WordPieceTokenizer splits subwords and replaces an unknown word", "[W
     REQUIRE(tokenizer->encode("\xE2")->inputIds == std::vector<int64_t>{2, 3});
 }
 
+TEST_CASE("WordPieceTokenizer decomposes a four-part character", "[WordPieceTokenizer][embed][Unit]")
+{
+    const std::filesystem::path vocabPath = std::filesystem::path(NESSO_TEST_FIXTURES) / "tiny_vocab.txt";
+    const auto tokenizer = nesso::embed::WordPieceTokenizer::fromVocabFile(vocabPath);
+    REQUIRE(tokenizer.has_value());
+    // U+1F82 decomposes into four parts, including two-byte UTF-8 scalars.
+    const auto encoded = tokenizer->encode("\xE1\xBE\x82");
+    REQUIRE(encoded.has_value());
+    REQUIRE(encoded->inputIds.front() == 2);
+    REQUIRE(encoded->inputIds.back() == 3);
+}
+
 TEST_CASE("WordPieceTokenizer matches BERT uncased token ids", "[WordPieceTokenizer][embed][Unit]")
 {
 #ifndef NESSO_MODELS_DIR

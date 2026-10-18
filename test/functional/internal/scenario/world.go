@@ -11,6 +11,8 @@ import "github.com/lorenzocaprari/nesso/test/functional/internal/runner"
 type World struct {
 	Dir         string
 	Stdin       string
+	Env         map[string]string
+	Terminal    bool
 	Ran         bool
 	CommandLine string
 	Result      runner.Result

@@ -254,6 +254,7 @@ std::expected<void, ParseError> Chunker::forEach(const std::filesystem::path &pa
     return readLogStream(*input, maxLineLength, stats, consume);
 }
 
+// cppcheck-suppress unusedFunction
 std::expected<std::vector<ParsedChunk>, ParseError> Chunker::fromFile(const std::filesystem::path &path,
                                                                       size_t maxLineLength, ParseStats *stats,
                                                                       std::string_view jsonField)
@@ -268,6 +269,7 @@ std::expected<std::vector<ParsedChunk>, ParseError> Chunker::fromFile(const std:
     return chunks;
 }
 
+// cppcheck-suppress unusedFunction
 std::expected<std::vector<ParsedChunk>, ParseError> Chunker::fromLogFile(const std::filesystem::path &path,
                                                                          size_t maxLineLength, ParseStats *stats)
 {
@@ -286,6 +288,7 @@ std::expected<std::vector<ParsedChunk>, ParseError> Chunker::fromLogFile(const s
     return chunks;
 }
 
+// cppcheck-suppress unusedFunction
 std::expected<std::vector<ParsedChunk>, ParseError> Chunker::fromJsonFile(const std::filesystem::path &path,
                                                                           ParseStats *stats, std::string_view jsonField,
                                                                           size_t maxLineLength)

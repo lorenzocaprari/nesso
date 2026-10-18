@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 	"unicode"
 
 	"github.com/cucumber/godog"
@@ -31,6 +32,36 @@ func (b *bindings) setStdin(content *godog.DocString) error {
 	return nil
 }
 
+func (b *bindings) setStdinLine(count int, character string) error {
+	if count <= 0 {
+		return fmt.Errorf("line count must be positive")
+	}
+	b.world.Stdin = strings.Repeat(character, count) + "\n"
+	return nil
+}
+
+func (b *bindings) setStdinHex(content *godog.DocString) error {
+	raw, err := decodeHex(content.Content)
+	if err != nil {
+		return err
+	}
+	b.world.Stdin = string(raw)
+	return nil
+}
+
+func (b *bindings) setTerminal() error {
+	b.world.Terminal = true
+	return nil
+}
+
+func (b *bindings) setEnv(name, value string) error {
+	if b.world.Env == nil {
+		b.world.Env = map[string]string{}
+	}
+	b.world.Env[name] = value
+	return nil
+}
+
 func (b *bindings) writeFile(name string, content *godog.DocString) error {
 	target, err := b.scenarioPath(name)
 	if err != nil {
@@ -45,6 +76,16 @@ func (b *bindings) writeEmptyFile(name string) error {
 		return err
 	}
 	return os.WriteFile(target, nil, 0o644)
+}
+
+func (b *bindings) touchFile(name string) error {
+	target, err := b.scenarioPath(name)
+	if err != nil {
+		return err
+	}
+	// A later mtime with the same size takes the modified-time side of the staleness check.
+	later := time.Now().Add(time.Second)
+	return os.Chtimes(target, later, later)
 }
 
 func (b *bindings) removeFile(name string) error {
