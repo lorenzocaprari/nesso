@@ -1,0 +1,4 @@
+{"type":"user","message":{"role":"user","content":[{"type":"text","text":"pre-commit failed on trailing whitespace in CONTRIBUTING.md. Fix the whitespace only."}]},"session_id":"trailing"}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"Strip the extra spaces."}]},"session_id":"trailing"}
+{"type":"tool_call","subtype":"completed","call_id":"ed","tool_call":{"editToolCall":{"args":{"path":"CONTRIBUTING.md"},"result":{"success":{"path":"/work/CONTRIBUTING.md"}}}},"session_id":"trailing"}
+{"type":"result","subtype":"success","is_error":false,"duration_ms":10,"duration_api_ms":10,"result":"Removed trailing whitespace from CONTRIBUTING.md.","session_id":"trailing"}

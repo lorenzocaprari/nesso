@@ -1,0 +1,4 @@
+{"type":"user","message":{"role":"user","content":[{"type":"text","text":"scripts/clang-tidy failed on src/core/distance.cpp with bugprone-use-after-move. Fix the diagnostic. This is not the coverage job."}]},"session_id":"clang-ti"}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"Fix bugprone-use-after-move in the distance helper."}]},"session_id":"clang-ti"}
+{"type":"tool_call","subtype":"completed","call_id":"ed","tool_call":{"editToolCall":{"args":{"path":"src/core/distance.cpp"},"result":{"success":{"path":"/work/src/core/distance.cpp"}}}},"session_id":"clang-ti"}
+{"type":"result","subtype":"success","is_error":false,"duration_ms":10,"duration_api_ms":10,"result":"Fixed bugprone-use-after-move in src/core/distance.cpp.","session_id":"clang-ti"}

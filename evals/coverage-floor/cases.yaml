@@ -1,0 +1,196 @@
+schema_version: 1
+skill: coverage-floor
+description: Floor misses from the CI coverage job or scripts/code-coverage, and changes that must stay at those floors.
+cases:
+  - id: ci-lines-floor
+    prompt: The CI coverage job failed. scripts/code-coverage printed ERROR for lines because the measured percent is below REQUIRED_LINES. Restore the floor.
+    should_trigger: true
+    trials: 3
+    graders:
+      - type: commands_run
+        pattern: "scripts/code-coverage conan/profiles/code-coverage"
+      - type: regex
+        target: output
+        pattern: "build/coverage/report/summary\\.txt"
+      - type: regex
+        target: transcript
+        pattern: "REQUIRED_LINES"
+  - id: ci-functions-floor
+    prompt: The coverage job failed its functions floor. scripts/code-coverage printed ERROR for functions under REQUIRED_FUNCTIONS. Fix it.
+    should_trigger: true
+    trials: 3
+    graders:
+      - type: commands_run
+        pattern: "scripts/code-coverage conan/profiles/code-coverage"
+      - type: regex
+        target: output
+        pattern: "REQUIRED_FUNCTIONS"
+      - type: regex
+        target: transcript
+        pattern: "scripts/code-coverage"
+  - id: ci-branches-floor
+    prompt: Branch coverage missed REQUIRED_BRANCHES after a change in src/core/distance.cpp. The coverage job printed ERROR for branches. Add coverage in the existing unit test and keep the floor.
+    should_trigger: true
+    trials: 3
+    graders:
+      - type: files_changed
+        paths:
+          - test/unit/core/distance_test.cpp
+      - type: regex
+        target: output
+        pattern: "build/coverage/report/summary\\.txt"
+      - type: regex
+        target: transcript
+        pattern: "REQUIRED_BRANCHES"
+  - id: local-exit-2
+    prompt: ./scripts/code-coverage conan/profiles/code-coverage exited 2 after printing ERROR for a metric. Fix the floor miss.
+    should_trigger: true
+    trials: 3
+    graders:
+      - type: commands_run
+        pattern: "scripts/code-coverage conan/profiles/code-coverage"
+      - type: regex
+        target: output
+        pattern: "exit 2"
+      - type: regex
+        target: transcript
+        pattern: "summary\\.txt"
+  - id: new-code-keep-floor
+    prompt: Add a helper in src/core/distance.cpp. Keep the REQUIRED_LINES, REQUIRED_FUNCTIONS, and REQUIRED_BRANCHES floors.
+    should_trigger: true
+    trials: 3
+    graders:
+      - type: files_changed
+        paths:
+          - test/unit/core/distance_test.cpp
+      - type: regex
+        target: output
+        pattern: "scripts/code-coverage"
+      - type: regex
+        target: transcript
+        pattern: "REQUIRED_"
+  - id: summary-path
+    prompt: The coverage job failed a floor. Where does ./scripts/code-coverage write the measured lines, functions, and branches?
+    should_trigger: true
+    trials: 3
+    graders:
+      - type: regex
+        target: output
+        pattern: "build/coverage/report/summary\\.txt"
+      - type: regex
+        target: transcript
+        pattern: "reference\\.md"
+  - id: negative-taken-count
+    prompt: The coverage job stopped with an lcov error, negative taken count. There was no ERROR line for lines, functions, or branches. What failed?
+    should_trigger: true
+    trials: 3
+    graders:
+      - type: regex
+        target: output
+        pattern: "capture"
+      - type: regex
+        target: transcript
+        pattern: "REQUIRED_"
+      - type: regex
+        target: transcript
+        pattern: "reference\\.md"
+  - id: add-unit-test
+    prompt: A new branch in src/core/distance.cpp is uncovered. Add the case to test/unit/core/distance_test.cpp and keep the ctest label that file's CMakeLists already sets.
+    should_trigger: true
+    trials: 3
+    graders:
+      - type: files_changed
+        paths:
+          - test/unit/core/distance_test.cpp
+      - type: regex
+        target: transcript
+        pattern: "LABELS unit"
+      - type: regex
+        target: output
+        pattern: "distance_test"
+  - id: clang-tidy-diagnostic
+    prompt: scripts/clang-tidy failed on src/core/distance.cpp with bugprone-use-after-move. Fix the diagnostic. This is not the coverage job.
+    should_trigger: false
+    trials: 3
+    graders:
+      - type: regex
+        target: output
+        pattern: "bugprone-use-after-move"
+      - type: files_changed
+        paths:
+          - src/core/distance.cpp
+  - id: cppcheck-unused-function
+    prompt: cppcheck reports unusedFunction on a new function in src/nesso.cpp. Fix that warning.
+    should_trigger: false
+    trials: 3
+    graders:
+      - type: regex
+        target: output
+        pattern: "unusedFunction"
+      - type: files_changed
+        paths:
+          - src/nesso.cpp
+  - id: unit-test-require
+    prompt: ctest --test-dir build/Debug -L unit failed in distance_test because a REQUIRE did not hold. Fix the unit test. The coverage job was not run.
+    should_trigger: false
+    trials: 3
+    graders:
+      - type: commands_run
+        pattern: "ctest --test-dir build/Debug -L unit"
+      - type: regex
+        target: output
+        pattern: "distance_test"
+  - id: dependency-bump
+    prompt: Bump the Catch2 version in conanfile.py and update conan.lock. Dependency change only.
+    should_trigger: false
+    trials: 3
+    graders:
+      - type: files_changed
+        paths:
+          - conanfile.py
+      - type: regex
+        target: output
+        pattern: "conan\\.lock"
+  - id: docs-only-readme
+    prompt: Correct a typo in README.md. Documentation only, no code and no coverage change.
+    should_trigger: false
+    trials: 3
+    graders:
+      - type: files_changed
+        paths:
+          - README.md
+      - type: regex
+        target: output
+        pattern: "README\\.md"
+  - id: determinism-mismatch
+    prompt: scripts/check-determinism disagreed on the fp32 model. The coverage job was green. Fix the determinism mismatch.
+    should_trigger: false
+    trials: 3
+    graders:
+      - type: commands_run
+        pattern: "scripts/check-determinism"
+      - type: regex
+        target: output
+        pattern: "fp32"
+  - id: fuzz-parser-crash
+    prompt: nesso_fuzz_parser crashed under afl-fuzz. Triage the parser crash. Coverage floors are unrelated.
+    should_trigger: false
+    trials: 3
+    graders:
+      - type: regex
+        target: output
+        pattern: "nesso_fuzz_parser"
+      - type: regex
+        target: transcript
+        pattern: "scripts/fuzz-test"
+  - id: trailing-whitespace
+    prompt: pre-commit failed on trailing whitespace in CONTRIBUTING.md. Fix the whitespace only.
+    should_trigger: false
+    trials: 3
+    graders:
+      - type: files_changed
+        paths:
+          - CONTRIBUTING.md
+      - type: regex
+        target: output
+        pattern: "trailing whitespace"
