@@ -10,3 +10,4 @@
 
 - [ ] Title is `type(scope): subject` (`feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `build`, `ci`, `chore`, `revert`; `!` before `:` for a breaking change)
 - [ ] User-facing changes are under `## [Unreleased]` in `CHANGELOG.md`
+- [ ] Updated AGENTS.md if commands, profiles or gates changed
