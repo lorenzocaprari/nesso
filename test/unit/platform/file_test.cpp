@@ -1,5 +1,5 @@
 // Copyright (c) 2026 Lorenzo Caprari
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 
 #include <catch2/catch_all.hpp>
 #include <platform/file.hpp>

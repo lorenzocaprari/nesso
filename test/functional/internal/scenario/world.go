@@ -1,5 +1,5 @@
 // Copyright (c) 2026 Lorenzo Caprari
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 
 // Package scenario holds the state shared by the steps of one scenario.
 package scenario

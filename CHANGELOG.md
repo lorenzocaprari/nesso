@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- The project license is Apache 2.0.
+
 ## [0.1.0] - 2026-10-11
 
 First release. Items below are commits reachable from tag `v0.1.0` and the auto-generated [GitHub release notes](https://github.com/lorenzocaprari/nesso/releases/tag/v0.1.0). History before pull request #41 is included where it is still what the tag ships.

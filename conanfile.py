@@ -5,6 +5,7 @@ from conan.tools.cmake import CMake, CMakeToolchain, CMakeDeps, cmake_layout
 class Nesso(ConanFile):
     name = "nesso"
     version = "0.1.0"
+    license = "Apache-2.0"
     package_type = "application"
 
     settings = "os", "compiler", "build_type", "arch"
