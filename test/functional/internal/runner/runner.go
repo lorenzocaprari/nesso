@@ -1,5 +1,5 @@
 // Copyright (c) 2026 Lorenzo Caprari
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 
 // Package runner executes the nesso binary and captures its observable
 // behaviour.

@@ -1,5 +1,5 @@
 // Copyright (c) 2026 Lorenzo Caprari
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 
 #ifndef CORE_CORPUS_INDEX_HPP
 #define CORE_CORPUS_INDEX_HPP

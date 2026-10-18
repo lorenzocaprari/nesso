@@ -1,5 +1,5 @@
 // Copyright (c) 2026 Lorenzo Caprari
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 
 // Package steps binds Gherkin steps to the nesso binary. Scenarios observe only
 // files, arguments, exit code, stdout and stderr.

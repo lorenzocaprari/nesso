@@ -1,6 +1,6 @@
 // Copyright (c) 2026 Lorenzo Caprari
-// SPDX-License-Identifier: MIT
-// Licensed under the MIT License. See LICENSE for details.
+// SPDX-License-Identifier: Apache-2.0
+// Licensed under the Apache License, Version 2.0. See LICENSE for details.
 
 #include <parser/log_chunker.hpp>
 
