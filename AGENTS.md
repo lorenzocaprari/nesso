@@ -56,7 +56,7 @@ python3 scripts/bench
 - Author and committer are only Lorenzo Caprari <caprarilorenzo5@gmail.com>. No `Co-authored-by`, `Signed-off-by`, or any other trailer.
 - The pull request title matches the pattern in `.github/workflows/pr-title.yml`. [CONTRIBUTING.md](CONTRIBUTING.md) says pull requests are squash-merged and that title becomes the commit on `main`.
 - Do not merge, tag, push to `main`, force-push a shared branch, or change repository settings. Lorenzo merges after the Pipeline workflow (`.github/workflows/ci.yml`) is fully green.
-- Do not lower the `REQUIRED_*` floors in `scripts/code-coverage`. New code comes with tests. Read the numbers from that file so this doc does not go stale.
+- Never lower the `REQUIRED_*` coverage floors in `scripts/code-coverage`, not even to get CI green. If coverage falls below them, add tests. Read the numbers from that file so this doc does not go stale.
 - Run `scripts/clang-tidy` and `scripts/lint` on new code before pushing.
 - One pull request per agreed scope. Anything outside that scope is a note or a follow-up, not extra commits.
 - When told to push to an existing branch or pull request, fetch first and push there. Do not open another pull request, and do not overwrite commits you did not author.
