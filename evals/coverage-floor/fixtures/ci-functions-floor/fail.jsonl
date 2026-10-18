@@ -1,0 +1,4 @@
+{"type":"user","message":{"role":"user","content":[{"type":"text","text":"The coverage job failed its functions floor. scripts/code-coverage printed ERROR for functions under REQUIRED_FUNCTIONS. Fix it."}]},"session_id":"ci-funct"}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"Open scripts/code-coverage and keep the functions floor."}]},"session_id":"ci-funct"}
+{"type":"tool_call","subtype":"completed","call_id":"sh","tool_call":{"shellToolCall":{"args":{"command":"./scripts/code-coverage conan/profiles/code-coverage"}}},"session_id":"ci-funct"}
+{"type":"result","subtype":"success","is_error":false,"duration_ms":10,"duration_api_ms":10,"result":"Do not lower REQUIRED_FUNCTIONS. Re-run the coverage script after the new tests.","session_id":"ci-funct"}
