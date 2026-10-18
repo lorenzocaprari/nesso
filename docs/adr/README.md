@@ -38,3 +38,4 @@ record.
 | 0000 | Use MADR for architecture decisions | accepted | 2026-10-18 |
 | 0001 | Exact brute-force search without an ANN index | accepted | 2026-10-07 |
 | 0002 | Run embeddings on CPU only | accepted | 2026-10-11 |
+| 0004 | Stream parse, embed, and score in fixed-size batches | accepted | 2026-10-13 |
