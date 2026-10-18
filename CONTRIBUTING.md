@@ -88,7 +88,7 @@ bash scripts/lint
 ./scripts/code-coverage conan/profiles/code-coverage
 ```
 
-Coverage floors are the `REQUIRED_*` values in `scripts/code-coverage`. The Pipeline workflow (`.github/workflows/ci.yml`) is the merge gate: lint, clang-tidy, cppcheck, Release and Debug builds, the Clang 21 and arm64 Release builds, unit, integration, and functional tests, fuzz, coverage, and `scripts/check-determinism` (the `determinism` job: fp32 gates, int8 is report-only). The `bench` job is report-only.
+Coverage floors are the `REQUIRED_*` values in `scripts/code-coverage`. The Pipeline workflow (`.github/workflows/ci.yml`) is the merge gate: lint, clang-tidy, cppcheck, Release and Debug builds, the Clang 21 and arm64 Release builds, unit, integration, and functional tests, fuzz, coverage, and `scripts/check-determinism` (the `determinism` job: fp32 and the default int8 policy gate; int8 with `NESSO_THREADS` set to the logical CPU count is report-only). The `bench` job is report-only.
 
 ## Pull requests
 

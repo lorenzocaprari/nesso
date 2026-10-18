@@ -15,6 +15,15 @@ from pathlib import Path
 DEFAULT_QUERY = "PAY-E1042"
 DEFAULT_RUNS = 10
 DEFAULT_TOP_K = 1_000_000
+DEFAULT_INPUT_LINES = 3_500
+# Four queries, not one, so an index that only disagrees on a later ranking
+# still fails. PAY-E1042 is the original gate query.
+INDEX_QUERIES = (
+    "PAY-E1042",
+    "connection refused",
+    "database connection error",
+    "payment timeout",
+)
 # --cpu-method all exits the only worker (and then stress-ng) when Apéry's
 # accuracy check fails or a target_clones method takes SIGILL. The default
 # LLC-sized cache mmap can also fail before the first nesso process.
@@ -48,13 +57,33 @@ def positive(value: str) -> int:
     return parsed
 
 
+def determinism_lines(count: int = DEFAULT_INPUT_LINES) -> list[str]:
+    patterns = (
+        "PAY-E1042 connection refused",
+        "database connection error after {n} retries",
+        "payment timeout after {n}s",
+        "INFO accepted connection from 10.1.0.{octet} user={n}",
+    )
+    return [patterns[n % len(patterns)].format(n=n, octet=n % 256) for n in range(count)]
+
+
 def arguments() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Compare fresh nesso processes under CPU load.")
-    parser.add_argument("--binary", default=os.environ.get("NESSO_BINARY", "nesso"), type=command_path)
+    parser.add_argument("--binary", default=os.environ.get("NESSO_BINARY", "nesso"))
     parser.add_argument("--model-dir", default=os.environ.get("NESSO_MODEL_DIR"), required=False, type=Path)
-    parser.add_argument("--input", required=True, type=Path)
+    parser.add_argument("--input", type=Path)
+    parser.add_argument(
+        "--emit-input",
+        type=Path,
+        help=f"Write a {DEFAULT_INPUT_LINES}-line determinism input and exit",
+    )
     parser.add_argument("--query", default=DEFAULT_QUERY)
     parser.add_argument("--runs", default=DEFAULT_RUNS, type=positive)
+    parser.add_argument(
+        "--index-runs",
+        type=positive,
+        help="Index this many times and compare corpus bytes plus rankings for four queries",
+    )
     parser.add_argument("--top-k", default=DEFAULT_TOP_K, type=positive)
     parser.add_argument(
         "--stress-command",
@@ -62,14 +91,24 @@ def arguments() -> argparse.Namespace:
         help=f"Command to run while the gate executes; default: {DEFAULT_STRESS_COMMAND}",
     )
     parsed = parser.parse_args()
+    if parsed.emit_input is not None:
+        return parsed
+    try:
+        parsed.binary = command_path(parsed.binary)
+    except argparse.ArgumentTypeError as error:
+        parser.error(str(error))
     if parsed.model_dir is None:
         parser.error("--model-dir or NESSO_MODEL_DIR is required")
     if not parsed.model_dir.is_dir():
         parser.error(f"model directory does not exist: {parsed.model_dir}")
+    if parsed.input is None:
+        parser.error("--input is required")
     if not parsed.input.is_file():
         parser.error(f"input does not exist: {parsed.input}")
     if parsed.runs < 2:
         parser.error("--runs must be at least 2")
+    if parsed.index_runs is not None and parsed.index_runs < 2:
+        parser.error("--index-runs must be at least 2")
     return parsed
 
 
@@ -165,44 +204,52 @@ def refresh_stress(
     return process, stderr_path
 
 
+def index_corpus(options: argparse.Namespace, corpus: Path, name: str) -> bytes:
+    run_process(
+        [
+            options.binary,
+            "index",
+            "-o",
+            str(corpus),
+            "--model-dir",
+            str(options.model_dir),
+            str(options.input),
+        ],
+        name,
+    )
+    return corpus.read_bytes()
+
+
+def search_corpus(options: argparse.Namespace, corpus: Path, query: str, name: str) -> str:
+    return run_process(
+        [
+            options.binary,
+            "search",
+            query,
+            "-i",
+            str(corpus),
+            "-k",
+            str(options.top_k),
+            "--model-dir",
+            str(options.model_dir),
+        ],
+        name,
+    ).stdout
+
+
 def check_determinism(options: argparse.Namespace) -> None:
     stress, stderr_path = ensure_stress(options.stress_command)
-    baseline_corpus: bytes | None = None
-    baseline_ranking: str | None = None
     try:
         with tempfile.TemporaryDirectory(prefix="nesso-determinism-") as temp:
             output_dir = Path(temp)
+            baseline_corpus: bytes | None = None
+            baseline_ranking: str | None = None
             for run in range(options.runs):
                 stress, stderr_path = refresh_stress(stress, stderr_path, options.stress_command)
                 corpus = output_dir / f"corpus-{run}.nesso"
-                run_process(
-                    [
-                        options.binary,
-                        "index",
-                        "-o",
-                        str(corpus),
-                        "--model-dir",
-                        str(options.model_dir),
-                        str(options.input),
-                    ],
-                    f"index run {run + 1}",
-                )
-                corpus_bytes = corpus.read_bytes()
+                corpus_bytes = index_corpus(options, corpus, f"index run {run + 1}")
                 stress, stderr_path = refresh_stress(stress, stderr_path, options.stress_command)
-                ranking = run_process(
-                    [
-                        options.binary,
-                        "search",
-                        options.query,
-                        "-i",
-                        str(corpus),
-                        "-k",
-                        str(options.top_k),
-                        "--model-dir",
-                        str(options.model_dir),
-                    ],
-                    f"search run {run + 1}",
-                ).stdout
+                ranking = search_corpus(options, corpus, options.query, f"search run {run + 1}")
 
                 if baseline_corpus is None:
                     baseline_corpus = corpus_bytes
@@ -214,14 +261,50 @@ def check_determinism(options: argparse.Namespace) -> None:
                     )
                 if ranking != baseline_ranking:
                     raise GateFailure(f"ranking differs on run {run + 1}")
+
+            if options.index_runs is not None:
+                indexed_corpus: bytes | None = None
+                indexed_rankings: dict[str, str] | None = None
+                for run in range(options.index_runs):
+                    stress, stderr_path = refresh_stress(stress, stderr_path, options.stress_command)
+                    corpus = output_dir / f"index-run-{run}.nesso"
+                    corpus_bytes = index_corpus(options, corpus, f"index-run {run + 1}")
+                    rankings: dict[str, str] = {}
+                    for query in INDEX_QUERIES:
+                        stress, stderr_path = refresh_stress(stress, stderr_path, options.stress_command)
+                        rankings[query] = search_corpus(
+                            options,
+                            corpus,
+                            query,
+                            f"index-run {run + 1} query {query}",
+                        )
+                    if indexed_corpus is None:
+                        indexed_corpus = corpus_bytes
+                        indexed_rankings = rankings
+                        continue
+                    if corpus_bytes != indexed_corpus:
+                        raise GateFailure(
+                            f"corpus differs on index run {run + 1}: "
+                            f"{digest(corpus_bytes)} != {digest(indexed_corpus)}"
+                        )
+                    assert indexed_rankings is not None
+                    for query, ranking in rankings.items():
+                        if ranking != indexed_rankings[query]:
+                            raise GateFailure(f"ranking for {query!r} differs on index run {run + 1}")
     finally:
         stop_stress(stress)
         stderr_path.unlink(missing_ok=True)
-    print(f"determinism OK: {options.runs} runs, corpus and rankings identical")
+    message = f"determinism OK: {options.runs} runs, corpus and rankings identical"
+    if options.index_runs is not None:
+        message += f"; index-runs {options.index_runs}, {len(INDEX_QUERIES)} queries identical"
+    print(message)
 
 
 def main() -> int:
     options = arguments()
+    if options.emit_input is not None:
+        options.emit_input.write_text("".join(f"{line}\n" for line in determinism_lines()))
+        return 0
     try:
         check_determinism(options)
     except GateFailure as error:

@@ -103,6 +103,41 @@ jobs:
             -t '${{ steps.select.outputs.runtime_image }}:${{ steps.ver.outputs.ver }}' \
             .
 
+      - name: Write determinism input
+        run: ./scripts/check-determinism --emit-input determinism-input.log
+
+      - name: Fetch fp32 MiniLM
+        run: ./scripts/fetch-model models-fp32 fp32
+
+      # The published binary needs the runtime image's glibc. A failure here
+      # stops the job before the image push and the GitHub release.
+      - name: Gate int8 and fp32 determinism
+        run: |
+          set -euo pipefail
+          img='${{ steps.select.outputs.runtime_image }}:${{ steps.ver.outputs.tag }}'
+          docker run --rm \
+            --entrypoint bash \
+            -v "${PWD}/scripts/check-determinism:/opt/check-determinism:ro" \
+            -v "${PWD}/determinism-input.log:/opt/determinism-input.log:ro" \
+            -v "${PWD}/models-fp32:/opt/models-fp32:ro" \
+            "${img}" \
+            -c '
+              set -euo pipefail
+              apt-get update
+              apt-get install -y --no-install-recommends python3 stress-ng
+              rm -rf /var/lib/apt/lists/*
+              gate() {
+                python3 /opt/check-determinism \
+                  --binary /usr/local/bin/nesso \
+                  --model-dir "$1" \
+                  --input /opt/determinism-input.log \
+                  --runs 10 \
+                  --index-runs 3
+              }
+              gate /usr/share/nesso
+              gate /opt/models-fp32
+            '
+
       - name: Push runtime image
         id: push
         if: startsWith(github.ref, 'refs/tags/')
