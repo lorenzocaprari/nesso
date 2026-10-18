@@ -7,9 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `--threads` and `NESSO_THREADS` set the int8 session count and the fp32 intra-op thread count. `nesso --version --verbose` prints that policy.
+
 ### Changed
 
 - The project license is Apache 2.0.
+
+### Fixed
+
+- int8 embeddings use one intra-op thread per session so repeated runs agree under CPU load.
 
 ## [0.1.0] - 2026-10-11
 

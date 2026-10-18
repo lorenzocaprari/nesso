@@ -482,7 +482,7 @@ std::expected<const nesso::embed::OnnxEmbedder *, Error> Nesso::embedder() const
             tried = modelDirCandidates();
             modelDir = resolveDefaultModelDir();
         }
-        auto created = nesso::embed::OnnxEmbedder::create(modelDir);
+        auto created = nesso::embed::OnnxEmbedder::create(modelDir, config_.threads);
         if (!created)
         {
             Error error{.kind = ErrorKind::EmbedderLoad,

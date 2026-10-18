@@ -622,6 +622,7 @@ std::expected<void, EngineError> CorpusWriter::finish()
     return {};
 }
 
+// cppcheck-suppress unusedFunction
 std::expected<void, EngineError> writeCorpusFile(const std::filesystem::path &path, std::span<const CorpusChunk> chunks,
                                                  std::string_view modelId)
 {

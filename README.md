@@ -162,7 +162,7 @@ NESSO_MODEL_DIR=models \
 
 Use the same input, model, and gate in Release and Debug ASan builds before tagging. The default stress command is `stress-ng --cpu 1 --cpu-method loop --timeout 0 --cache-size 2M`: one integer busy-loop worker until the gate stops it. Pass `--stress-command` when the machine needs a different load generator. If that process exits, the gate restarts it and records its exit status and stderr; the fp32 comparison does not run unless a load process is alive.
 
-`scripts/fetch-model` downloads the int8 MiniLM. Pass `fp32` as the second argument for the float model (`./scripts/fetch-model models-fp32 fp32`). CI fails the job when this gate disagrees on the fp32 model. The same check against the int8 model is report-only: quantized inference is not deterministic under CPU load.
+`scripts/fetch-model` downloads the int8 MiniLM. Pass `fp32` as the second argument for the float model (`./scripts/fetch-model models-fp32 fp32`). int8 runs one intra-op thread per session so repeated runs agree; `--threads` or `NESSO_THREADS` sets that session count. fp32 keeps one session, and the same option sets its intra-op threads. CI fails the job when this gate disagrees on the fp32 model. The int8 check is still report-only.
 
 When `grep` or `index` runs in a terminal, embedding progress is shown on stderr. Redirected output stays quiet; pass `--quiet` to suppress progress explicitly.
 

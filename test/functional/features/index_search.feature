@@ -48,6 +48,18 @@ Feature: index and search
     And stderr contains "changed since indexing"
     And stderr contains "{dir}/app.log"
 
+  Scenario: search warns when only the source mtime changes
+    Given a file "app.log" with:
+      """
+      database connection refused
+      """
+    When I run nesso with arguments index -o {dir}/corpus.nesso {dir}/app.log
+    Then the exit code is 0
+    Given the file "app.log" is touched
+    When I run nesso with arguments search "database connection error" -i {dir}/corpus.nesso
+    Then the exit code is 0
+    And stderr contains "changed since indexing"
+
   Scenario: search warns when an indexed source is missing
     Given a file "app.log" with:
       """

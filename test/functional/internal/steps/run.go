@@ -33,7 +33,7 @@ func (b *bindings) runNesso(commandLine string) error {
 		args[i] = normalize.ExpandDir(args[i], dir, fixture)
 	}
 
-	result, err := runner.Run(binary, args, dir, b.world.Stdin)
+	result, err := runner.Run(binary, args, dir, b.world.Stdin, b.world.Env, b.world.Terminal)
 	if err != nil {
 		return err
 	}

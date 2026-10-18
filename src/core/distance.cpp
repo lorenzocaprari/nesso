@@ -86,8 +86,8 @@ template double l2SquaredDistanceScalar<double>(std::span<const double>, std::sp
 
 } // namespace detail
 
-// cppcheck-suppress unusedFunction
 template <SupportedScalar T>
+// cppcheck-suppress unusedFunction
 std::expected<T, EngineError> CosineSimilarity::calculate(std::span<const T> a, std::span<const T> b) noexcept
 {
     if (a.size() != b.size()) [[unlikely]]
@@ -147,8 +147,8 @@ template std::expected<float, EngineError> DistanceMetrics::dotProduct<float>(st
 template std::expected<double, EngineError> DistanceMetrics::dotProduct<double>(std::span<const double>,
                                                                                 std::span<const double>) noexcept;
 
-// cppcheck-suppress unusedFunction
 template <SupportedScalar T>
+// cppcheck-suppress unusedFunction
 std::expected<T, EngineError> DistanceMetrics::l2SquaredDistance(std::span<const T> a, std::span<const T> b) noexcept
 {
     if (a.size() != b.size()) [[unlikely]]

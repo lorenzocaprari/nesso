@@ -11,7 +11,7 @@ target_include_directories(nesso_lib PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
 target_link_libraries(nesso_lib PRIVATE nesso_core nesso_embed nesso_parser)
 
 add_executable(nesso main.cpp cli_parser.cpp cli.cpp)
-target_link_libraries(nesso PRIVATE nesso_lib CLI11::CLI11)
+target_link_libraries(nesso PRIVATE nesso_lib nesso_embed CLI11::CLI11)
 if(NESSO_VERSION)
   target_compile_definitions(nesso PRIVATE "NESSO_VERSION=\"${NESSO_VERSION}\"")
 endif()

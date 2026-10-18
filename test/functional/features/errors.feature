@@ -86,6 +86,47 @@ Feature: command errors
     And stdout is empty
     And stderr contains "the file is empty"
 
+  Scenario: a missing model directory names the directory it tried
+    Given an empty file "app.log"
+    And a directory "nomodel"
+    When I run nesso with arguments grep "database connection error" --model-dir {dir}/nomodel {dir}/app.log
+    Then the exit code is 2
+    And stderr contains "failed to load the embedder"
+    And stderr contains "Tried"
+
+  Scenario: a log of only blank lines has nothing to index
+    Given a file "blank.log" with hex:
+      """
+      0a0a
+      """
+    When I run nesso with arguments grep "database connection error" {dir}/blank.log
+    Then the exit code is 1
+    And stderr contains "no indexable lines"
+
+  Scenario: a malformed JSON document is skipped
+    Given a file "bad.json" with:
+      """
+      {not json
+      """
+    When I run nesso with arguments grep "database connection error" {dir}/bad.json
+    Then the exit code is 1
+    And stderr contains "no indexable lines"
+
+  Scenario: a missing file is rejected
+    When I run nesso with arguments grep "database connection error" {dir}/missing.log
+    Then the exit code is 2
+    And stderr contains "file does not exist"
+
+  Scenario: NESSO_THREADS must be a positive integer
+    Given a file "app.log" with:
+      """
+      database connection refused
+      """
+    And the environment variable "NESSO_THREADS" is "abc"
+    When I run nesso with arguments grep "database connection error" {dir}/app.log
+    Then the exit code is 2
+    And stderr contains "NESSO_THREADS must be a positive integer"
+
   Scenario: a zero result limit is a failure
     Given a file "app.log" with:
       """
