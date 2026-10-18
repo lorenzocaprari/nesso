@@ -1,0 +1,4 @@
+{"type":"user","message":{"role":"user","content":[{"type":"text","text":"nesso_fuzz_parser crashed under afl-fuzz. Triage the parser crash. Coverage floors are unrelated."}]},"session_id":"fuzz-par"}
+{"type":"tool_call","subtype":"completed","call_id":"skill","tool_call":{"readToolCall":{"args":{"path":".agents/skills/coverage-floor/SKILL.md"},"result":{"success":{"content":"skill","isEmpty":false,"exceededLimit":false,"totalLines":1,"totalChars":5}}}},"session_id":"fuzz-par"}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"Triage the crash with scripts/fuzz-test and the parser harness."}]},"session_id":"fuzz-par"}
+{"type":"result","subtype":"success","is_error":false,"duration_ms":10,"duration_api_ms":10,"result":"nesso_fuzz_parser crashed. The parser harness is the target.","session_id":"fuzz-par"}
