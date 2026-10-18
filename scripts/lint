@@ -3,6 +3,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 pre-commit run --all-files "$@"
 bash "${ROOT}/scripts/check-versions"
+python3 "${ROOT}/scripts/check-agent-docs"
 if [[ -f "${ROOT}/build/Release/compile_commands.json" || -f "${ROOT}/build/Debug/compile_commands.json" ]]; then
   bash "${ROOT}/scripts/cppcheck"
 else

@@ -1,0 +1,410 @@
+#!/usr/bin/env python3
+"""Fail when agent guidance drifts from the files in this repository."""
+
+import argparse
+import re
+import sys
+from collections import namedtuple
+from pathlib import Path
+
+
+FENCE = re.compile(r"```[^\n]*\n(.*?)```", re.S)
+INLINE = re.compile(r"`([^`\n]+)`")
+LINK = re.compile(r"(?<!!)\[[^\]]*\]\(([^)\s]+)")
+PROFILE_PATH = re.compile(r"(?<![A-Za-z0-9_./-])(?:\./)?conan/profiles/([A-Za-z0-9_.-]+)")
+ADR_NAME = re.compile(r"^(\d{4})-.+\.md$")
+HEADING = re.compile(r"^#\s+(.+?)\s*$", re.M)
+SEPARATOR = re.compile(r":?-{3,}:?")
+IndexEntry = namedtuple("IndexEntry", ["title", "status", "date"])
+# Bare filenames are only repo paths when the extension is one this repo cites.
+# Versions such as vX.Y.Z stay out of the check.
+BARE_EXTENSIONS = {"cmake", "feature", "json", "lock", "log", "md", "mod", "py", "txt", "yaml", "yml"}
+
+
+def blank_fences(text: str) -> str:
+    return FENCE.sub(lambda match: "\n" * match.group(0).count("\n"), text)
+
+
+def unquote(value: str) -> str:
+    if len(value) >= 2 and value[0] == value[-1] and value[0] in {'"', "'"}:
+        return value[1:-1]
+    return value
+
+
+def ignored(path: str) -> bool:
+    # Generated files the docs name on purpose. They are not committed.
+    # Placeholders such as <owner> or <Config> never reach this function.
+    bare = path.rstrip("/")
+    if bare in {"CMakeUserPresets.json", "compile_commands.json", "determinism-input.log"}:
+        return True
+    if bare == "build" or bare.startswith("build/"):
+        return True
+    if bare == "models" or bare.startswith("models/"):
+        return True
+    if bare == "models-fp32" or bare.startswith("models-fp32/"):
+        return True
+    return False
+
+
+def candidate_from_token(token: str) -> str | None:
+    # Fence comments keep sentence punctuation on the token: "(conan/profiles/gcc-26-fuzz)."
+    token = token.strip().strip("\"'").lstrip("(").rstrip(".,);")
+    if not token or any(char in token for char in "<>{}*$=:"):
+        return None
+    if token.startswith(("/", "#")) or "://" in token:
+        return None
+    if token.startswith("./"):
+        token = token[2:]
+    if not token or token.startswith("../"):
+        return None
+    if "/" in token:
+        first = token.split("/", 1)[0]
+        if first.startswith("."):
+            if re.fullmatch(r"\.[A-Za-z0-9][A-Za-z0-9_-]*", first):
+                return token
+            return None
+        if "." in first:
+            return None
+        return token
+    # `.pre-commit-config.yaml` is a path. `.gitignore` is a path. `.deb` and `...` are not.
+    if token.startswith("."):
+        if re.fullmatch(r"\.[A-Za-z0-9][A-Za-z0-9_.-]*\.[A-Za-z0-9]+", token):
+            return token
+        if re.fullmatch(r"\.[A-Za-z][A-Za-z0-9_-]{3,}", token):
+            return token
+        return None
+    extension = token.rsplit(".", 1)[-1] if "." in token else ""
+    if extension in BARE_EXTENSIONS:
+        return token
+    return None
+
+
+def referenced_paths(text: str) -> list[str]:
+    blanked = blank_fences(text)
+    found: list[str] = []
+    seen: set[str] = set()
+
+    def add(path: str | None) -> None:
+        if path is None:
+            return
+        path = path.rstrip("/")
+        if not path or ignored(path) or path in seen:
+            return
+        seen.add(path)
+        found.append(path)
+
+    for match in INLINE.finditer(blanked):
+        prefix = blanked[max(0, match.start() - 24) : match.start()]
+        if re.search(r"\bno\s+$", prefix):
+            continue
+        for token in match.group(1).split():
+            add(candidate_from_token(token))
+    for match in FENCE.finditer(text):
+        for token in match.group(1).split():
+            add(candidate_from_token(token))
+    for match in LINK.finditer(blanked):
+        target = match.group(1).strip()
+        if target.startswith(("#", "http://", "https://", "mailto:")):
+            continue
+        target = target.split("#", 1)[0].split("?", 1)[0]
+        add(candidate_from_token(target))
+    return found
+
+
+def exists_in_repo(root: Path, relative: str) -> bool:
+    candidate = (root / relative).resolve()
+    try:
+        candidate.relative_to(root.resolve())
+    except ValueError:
+        return False
+    return candidate.exists()
+
+
+def named_profiles(text: str) -> set[str]:
+    names: set[str] = set()
+    for match in PROFILE_PATH.finditer(text):
+        name = match.group(1).rstrip(".")
+        if name:
+            names.add(name)
+    for line in blank_fences(text).splitlines():
+        if "Profiles:" not in line:
+            continue
+        after = line.split("Profiles:", 1)[1]
+        for span in re.findall(r"`([^`\n]+)`", after):
+            if re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]*", span):
+                names.add(span)
+    return names
+
+
+def check_profiles(root: Path, agents: str, errors: list[str]) -> None:
+    directory = root / "conan" / "profiles"
+    on_disk = set()
+    if directory.is_dir():
+        on_disk = {entry.name for entry in directory.iterdir() if entry.is_file()}
+    named = named_profiles(agents)
+    for name in sorted(on_disk - named):
+        errors.append(f"conan profile {name} is not named in AGENTS.md")
+    for name in sorted(named - on_disk):
+        errors.append(f"conan profile {name} is named in AGENTS.md but does not exist")
+
+
+def check_paths(root: Path, doc_name: str, text: str, errors: list[str]) -> None:
+    for path in referenced_paths(text):
+        if not exists_in_repo(root, path):
+            errors.append(f"{doc_name} references missing path {path}")
+
+
+def front_matter_block(text: str) -> str | None:
+    lines = text.splitlines()
+    if not lines or lines[0].strip() != "---":
+        return None
+    for index in range(1, len(lines)):
+        if lines[index].strip() == "---":
+            return "\n".join(lines[1:index])
+    return None
+
+
+def body_below_front_matter(text: str) -> str:
+    lines = text.splitlines()
+    if not lines or lines[0].strip() != "---":
+        return "\n".join(lines)
+    for index in range(1, len(lines)):
+        if lines[index].strip() == "---":
+            return "\n".join(lines[index + 1 :])
+    return "\n".join(lines)
+
+
+def first_heading(text: str) -> str:
+    match = HEADING.search(body_below_front_matter(text))
+    return match.group(1).strip() if match else ""
+
+
+def parse_yaml_scalars(block: str) -> dict[str, str]:
+    values: dict[str, str] = {}
+    for line in block.splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith(("#", "-")) or ":" not in stripped:
+            continue
+        key, value = stripped.split(":", 1)
+        key = key.strip()
+        if not key or " " in key:
+            continue
+        values[key] = unquote(value.strip())
+    return values
+
+
+def split_row(line: str) -> list[str] | None:
+    if not line.strip().startswith("|"):
+        return None
+    return [cell.strip() for cell in line.strip().strip("|").split("|")]
+
+
+def parse_index(text: str) -> tuple[dict[str, list[IndexEntry]], str | None]:
+    lines = text.splitlines()
+    header_at = None
+    columns: dict[str, int] = {}
+    for index, line in enumerate(lines):
+        cells = split_row(line)
+        if cells is None:
+            continue
+        lowered = [cell.lower() for cell in cells]
+        if "number" in lowered and "status" in lowered:
+            header_at = index
+            columns = {name: lowered.index(name) for name in ("number", "title", "status", "date") if name in lowered}
+            break
+    if header_at is None or "number" not in columns or "status" not in columns:
+        return {}, "docs/adr/README.md has no ADR index table"
+    if "title" not in columns or "date" not in columns:
+        return {}, "docs/adr/README.md index is missing a Title or Date column"
+    rows: dict[str, list[IndexEntry]] = {}
+    for line in lines[header_at + 1 :]:
+        cells = split_row(line)
+        if cells is None:
+            break
+        if cells and all(not cell or SEPARATOR.fullmatch(cell) for cell in cells):
+            continue
+        if any(column >= len(cells) for column in columns.values()):
+            continue
+        number = cells[columns["number"]]
+        if not re.fullmatch(r"\d{4}", number):
+            continue
+        rows.setdefault(number, []).append(
+            IndexEntry(
+                unquote(cells[columns["title"]]),
+                unquote(cells[columns["status"]]),
+                unquote(cells[columns["date"]]),
+            )
+        )
+    return rows, None
+
+
+def check_adrs(root: Path, errors: list[str]) -> None:
+    directory = root / "docs" / "adr"
+    if not directory.is_dir():
+        return
+    by_number: dict[str, list[Path]] = {}
+    for path in sorted(directory.glob("[0-9][0-9][0-9][0-9]-*.md")):
+        match = ADR_NAME.match(path.name)
+        if match:
+            by_number.setdefault(match.group(1), []).append(path)
+    readme = directory / "README.md"
+    if not by_number and not readme.is_file():
+        return
+    if not readme.is_file():
+        errors.append("docs/adr/README.md has no ADR index table")
+        return
+    rows, error = parse_index(readme.read_text())
+    if error:
+        if by_number or error != "docs/adr/README.md has no ADR index table":
+            errors.append(error)
+        return
+    for number, paths in sorted(by_number.items()):
+        if len(paths) > 1:
+            listed = ", ".join(path.relative_to(root).as_posix() for path in paths)
+            errors.append(f"duplicate ADR number {number} in {listed}")
+    for number, entries in sorted(rows.items()):
+        if len(entries) > 1:
+            errors.append(f"duplicate ADR number {number} in the docs/adr/README.md index")
+        if number not in by_number:
+            errors.append(f"docs/adr/README.md index lists {number} but no matching ADR file exists")
+    for number, paths in sorted(by_number.items()):
+        if number not in rows:
+            for path in paths:
+                rel = path.relative_to(root).as_posix()
+                errors.append(f"{rel} is missing from the docs/adr/README.md index")
+            continue
+        if len(paths) != 1 or len(rows[number]) != 1:
+            continue
+        path = paths[0]
+        rel = path.relative_to(root).as_posix()
+        text = path.read_text()
+        block = front_matter_block(text)
+        values = parse_yaml_scalars(block) if block is not None else {}
+        entry = rows[number][0]
+        status = values.get("status", "")
+        if not status:
+            errors.append(f"ADR {number} is missing status in {rel}")
+        elif status != entry.status:
+            errors.append(
+                f"ADR {number} status differs: {rel} has {status!r}, "
+                f"docs/adr/README.md has {entry.status!r}"
+            )
+        title = first_heading(text)
+        if not title:
+            errors.append(f"ADR {number} is missing a title in {rel}")
+        elif title != entry.title:
+            errors.append(
+                f"ADR {number} title differs: {rel} has {title!r}, "
+                f"docs/adr/README.md has {entry.title!r}"
+            )
+        date = values.get("date", "")
+        if not date:
+            errors.append(f"ADR {number} is missing a date in {rel}")
+        elif date != entry.date:
+            errors.append(
+                f"ADR {number} date differs: {rel} has {date!r}, "
+                f"docs/adr/README.md has {entry.date!r}"
+            )
+
+
+def check_skills(root: Path, errors: list[str]) -> None:
+    directory = root / ".agents" / "skills"
+    if not directory.is_dir():
+        return
+    for path in sorted(directory.glob("*/SKILL.md")):
+        rel = path.relative_to(root).as_posix()
+        block = front_matter_block(path.read_text())
+        if block is None:
+            errors.append(f"{rel} is missing YAML front matter")
+            continue
+        values = parse_yaml_scalars(block)
+        name = values.get("name", "")
+        expected = path.parent.name
+        if not name:
+            errors.append(f"{rel} front matter is missing name")
+        elif name != expected:
+            errors.append(f'{rel} front matter name is "{name}", expected "{expected}"')
+        if not values.get("description", ""):
+            errors.append(f"{rel} front matter is missing description")
+
+
+def instruction_stem(path: Path) -> str | None:
+    suffix = ".instructions.md"
+    if path.name.endswith(suffix):
+        return path.name[: -len(suffix)]
+    return None
+
+
+def check_rules(root: Path, errors: list[str]) -> None:
+    rules: dict[str, Path] = {}
+    instructions: dict[str, Path] = {}
+    rules_dir = root / ".cursor" / "rules"
+    if rules_dir.is_dir():
+        for path in sorted(rules_dir.glob("*.mdc")):
+            rel = path.relative_to(root).as_posix()
+            text = path.read_text()
+            block = front_matter_block(text)
+            if block is None:
+                errors.append(f"{rel} is missing YAML front matter")
+            else:
+                values = parse_yaml_scalars(block)
+                if not values.get("globs", "") and not values.get("alwaysApply", ""):
+                    errors.append(f"{rel} has neither globs nor alwaysApply")
+            rules[path.stem] = path
+    instructions_dir = root / ".github" / "instructions"
+    if instructions_dir.is_dir():
+        for path in sorted(instructions_dir.glob("*.instructions.md")):
+            stem = instruction_stem(path)
+            if stem is None:
+                continue
+            rel = path.relative_to(root).as_posix()
+            block = front_matter_block(path.read_text())
+            if block is None or not parse_yaml_scalars(block).get("applyTo", ""):
+                errors.append(f"{rel} is missing applyTo")
+            instructions[stem] = path
+    for stem in sorted(set(rules) & set(instructions)):
+        rule = rules[stem]
+        instruction = instructions[stem]
+        if body_below_front_matter(rule.read_text()) != body_below_front_matter(instruction.read_text()):
+            errors.append(
+                f"{rule.relative_to(root).as_posix()} and "
+                f"{instruction.relative_to(root).as_posix()} differ below the front matter"
+            )
+
+
+def check(root: Path) -> list[str]:
+    errors: list[str] = []
+    agents_path = root / "AGENTS.md"
+    contributing_path = root / "CONTRIBUTING.md"
+    agents = agents_path.read_text() if agents_path.is_file() else None
+    contributing = contributing_path.read_text() if contributing_path.is_file() else None
+    if agents is None:
+        errors.append("AGENTS.md is missing")
+    else:
+        check_profiles(root, agents, errors)
+        check_paths(root, "AGENTS.md", agents, errors)
+    if contributing is None:
+        errors.append("CONTRIBUTING.md is missing")
+    else:
+        check_paths(root, "CONTRIBUTING.md", contributing, errors)
+    check_adrs(root, errors)
+    check_skills(root, errors)
+    check_rules(root, errors)
+    return errors
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description="Check agent docs against the repository tree.")
+    parser.add_argument("--root", type=Path, default=Path(__file__).resolve().parent.parent)
+    args = parser.parse_args(argv)
+    errors = check(args.root.resolve())
+    if errors:
+        for error in errors:
+            print(f"error: {error}", file=sys.stderr)
+        return 1
+    print("check-agent-docs: ok")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
