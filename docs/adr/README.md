@@ -36,3 +36,4 @@ record.
 | Number | Title | Status | Date |
 | ------ | ----- | ------ | ---- |
 | 0000 | Use MADR for architecture decisions | accepted | 2026-10-18 |
+| 0002 | Run embeddings on CPU only | accepted | 2026-10-11 |
