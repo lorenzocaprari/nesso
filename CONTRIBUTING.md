@@ -14,11 +14,11 @@ Bugs and feature requests use the issue forms. Vulnerabilities follow [SECURITY.
 - Conan 2 (`conanfile.py`, `conan.lock`)
 - Python 3 for pre-commit, `scripts/bench`, and `scripts/bench-compare`
 - Go 1.24+ only for the godog specs (`test/functional/go.mod`)
-- AFL++, Clang 21, lld 21, and llvm-21 only for `scripts/fuzz-test`
+- AFL++, lld 21, and llvm-21 only for `scripts/fuzz-test`. Clang 21 is that toolchain and `conan/profiles/clang-26`
 
 ## Devcontainer image
 
-CI builds `.devcontainer/Dockerfile` (Ubuntu 26.04, GCC 15, Clang 21, AFL++, Go, Conan 2, pre-commit) and pushes `ghcr.io/lorenzocaprari/nesso-build-env:deps-<hash>`. The hash covers that Dockerfile, `conanfile.py`, `conan.lock`, and `conan/profiles/gcc-26` plus `gcc-26-debug`. There is no `devcontainer.json`. The image sets `CONAN_HOME=/opt/conan2` with the locked dependencies already installed; CI configures with `--no-remote`.
+CI builds `.devcontainer/Dockerfile` (Ubuntu 26.04, GCC 15, Clang 21, AFL++, Go, Conan 2, pre-commit) and pushes `ghcr.io/lorenzocaprari/nesso-build-env:deps-<hash>`. `scripts/build-env-hash amd64` covers that Dockerfile, `.devcontainer/requirements.txt`, `conan.lock`, and `conan/profiles/gcc-26` plus `gcc-26-debug`. It includes `conanfile.py` as the resolved dependency spec, not the recipe text. There is no `devcontainer.json`. The image sets `CONAN_HOME=/opt/conan2` with the locked dependencies already installed; CI configures with `--no-remote`.
 
 ```bash
 docker build -f .devcontainer/Dockerfile -t nesso-build-env .
@@ -34,6 +34,8 @@ Profiles in `conan/profiles/`:
 | `gcc-26` | Release (`-O3`, `-march=x86-64-v2`, LTO) |
 | `gcc-26-debug` | Debug with ASan and UBSan |
 | `gcc-26-fuzz` | AFL++ library harnesses |
+| `gcc-26-armv8` | arm64 Release (`-O3`, `-march=armv8-a`, LTO) |
+| `clang-26` | Clang 21 Release with libstdc++, no LTO (`-O3`, `-march=x86-64-v2`) |
 | `code-coverage` | Debug plus `--coverage` |
 
 `conanfile.py` uses Conan `cmake_layout` and `CMakeToolchain` and sets the generator to Ninja. `conan install` writes `CMakeUserPresets.json` at the repo root; that file includes `build/<Config>/generators/CMakePresets.json`. Both are generated and should stay uncommitted. `cmake --list-presets` prints the names (Conan uses `conan-<build type>` in lowercase, so `conan-debug` and `conan-release` for these two profiles). `cmake --preset` and `cmake --build --preset` drive those presets. CI and the README call `conan build`, which configures and builds through the same toolchain.
@@ -86,16 +88,20 @@ bash scripts/lint
 ./scripts/code-coverage conan/profiles/code-coverage
 ```
 
-Coverage floors are the `REQUIRED_*` values in `scripts/code-coverage`. The Pipeline workflow (`.github/workflows/ci.yml`) is the merge gate: lint, clang-tidy, cppcheck, Release and Debug builds, unit, integration, and functional tests, fuzz, and coverage. The `bench` job is report-only.
+Coverage floors are the `REQUIRED_*` values in `scripts/code-coverage`. The Pipeline workflow (`.github/workflows/ci.yml`) is the merge gate: lint, clang-tidy, cppcheck, Release and Debug builds, the Clang 21 and arm64 Release builds, unit, integration, and functional tests, fuzz, coverage, and `scripts/check-determinism` (the `determinism` job: fp32 gates, int8 is report-only). The `bench` job is report-only.
 
 ## Pull requests
 
 Title format: `type(scope): subject` or `type: subject`. Types: `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `build`, `ci`, `chore`, `revert`. A `!` immediately before `:` is a breaking change (`feat(core)!: ...`). `.github/workflows/pr-title.yml` enforces this.
 
+The only author on commits and pull requests is Lorenzo Caprari <caprarilorenzo5@gmail.com>. No `Co-authored-by`, `Signed-off-by`, or other agent or tool trailers.
+
+Every GitHub Action is pinned to a commit SHA with a `# vX.Y.Z` comment. New or bumped actions keep that.
+
 Put user-facing notes under `## [Unreleased]` in [CHANGELOG.md](CHANGELOG.md). On release, move that section to `## [X.Y.Z] - YYYY-MM-DD`.
 
-`.github/release-drafter.yml` maps labels to changelog sections. The Release Drafter workflow applies those labels from the PR title. It does not create labels. These already exist: `enhancement` (`feat`), `bug` (`fix`), `documentation` (`docs`). The maintainer still has to create `breaking`, `changed`, `chore`, `deprecated`, `removed`, and `security` or autolabel fails when a title needs one of them. On push to `main`, the same workflow updates the draft release `v$RESOLVED_VERSION`. Copy that draft into `CHANGELOG.md` before tagging.
+`.github/release-drafter.yml` maps labels to changelog sections. The Release Drafter workflow applies those labels from the PR title. It does not create labels. These already exist: `enhancement` (`feat`), `bug` (`fix`), `documentation` (`docs`), `breaking`, `changed`, `chore`, `deprecated`, `removed`, and `security`. On push to `main`, the same workflow updates the draft release `v$RESOLVED_VERSION`. Copy that draft into `CHANGELOG.md` before tagging.
 
 `version` in `conanfile.py` is the version (`scripts/check-versions`). Pushing a `vX.Y.Z` tag that matches it runs `.github/workflows/release.yml`, which publishes the `.deb`, `ghcr.io/lorenzocaprari/nesso`, and the GitHub Release. CI must already have published `nesso-build-env`.
 
-`CODEOWNERS` requests a review from `@lorenzocaprari`.
+`.github/CODEOWNERS` requests a review from `@lorenzocaprari`.
