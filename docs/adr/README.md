@@ -36,3 +36,4 @@ record.
 | Number | Title | Status | Date |
 | ------ | ----- | ------ | ---- |
 | 0000 | Use MADR for architecture decisions | accepted | 2026-10-18 |
+| 0004 | Stream parse, embed, and score in fixed-size batches | accepted | 2026-10-13 |
