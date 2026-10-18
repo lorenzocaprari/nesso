@@ -10,10 +10,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - `--threads` and `NESSO_THREADS` set the int8 session count and the fp32 intra-op thread count. `nesso --version --verbose` prints that policy.
+- `scripts/check-determinism --index-runs` compares corpus bytes and the rankings for four queries, including `PAY-E1042`. `--emit-input` writes the 3500-line input the gate uses.
 
 ### Changed
 
 - The project license is Apache 2.0.
+- CI and the release workflow block when int8 embeddings disagree across processes. The run that sets `NESSO_THREADS` to the logical CPU count stays report-only.
 
 ### Fixed
 

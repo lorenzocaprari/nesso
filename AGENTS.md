@@ -43,7 +43,7 @@ python3 scripts/bench
 ## Misreads
 
 - `NESSO_REQUIRE_MODEL=1` fails model-backed tests instead of skipping them, and drops Catch2 `--allow-running-no-tests` (`test/CMakeLists.txt`). `NESSO_REQUIRE_BDD=1` turns a missing Go toolchain into a configure error (`test/functional/CMakeLists.txt`). CI sets both. Unset, missing `models/` or a missing `go` binary skips those tests.
-- The fp32 `determinism` step gates the job. The int8 step is `continue-on-error` and report-only (`.github/workflows/ci.yml`). Quantized inference is not a merge gate under CPU load.
+- The fp32 step and the default int8 policy gate the `determinism` job. The int8 step with `NESSO_THREADS=$(nproc)` is `continue-on-error` and report-only (`.github/workflows/ci.yml`).
 - `conan install` writes `CMakeUserPresets.json` at the repository root. It is generated, `.gitignore` does not list it, and it stays uncommitted. `build/` is ignored, which covers `build/<Config>/generators/CMakePresets.json`.
 - `scripts/build-env-hash` hashes each Dockerfile and every path it copies. `conanfile.py` enters the hash as the resolved dependency spec, not as raw text. The amd64 image copies `conan.lock`, `.devcontainer/requirements.txt`, `conan/profiles/gcc-26`, and `conan/profiles/gcc-26-debug`. The arm64 image copies `conan.lock` and `conan/profiles/gcc-26-armv8`. Changing one of those makes `prepare-image` rebuild `ghcr.io/<owner>/nesso-build-env:deps-<hash>`. That job's timeout is 360 minutes. `clang-26`, `code-coverage`, and `gcc-26-fuzz` are not copied, so editing only those profiles does not rebuild the image.
 - `conan/profiles/clang-26` keeps `compiler=gcc` and `compiler.version=15` so `--no-remote` reuses the `gcc-26` packages baked into the image. `compiler=clang` changes package ids and rebuilds dependencies from source.
@@ -70,7 +70,7 @@ python3 scripts/bench
 | `NESSO_REQUIRE_BDD is set but no go toolchain was found` | `NESSO_REQUIRE_BDD=1` and `go` is missing (`test/functional/go.mod` is Go 1.24) | Install Go, or unset the variable outside CI |
 | Model tests skipped while ctest is green | `NESSO_REQUIRE_MODEL` is off, so CMake adds `--allow-running-no-tests` and skips when `models/` is absent | `./scripts/fetch-model`, then configure with `NESSO_REQUIRE_MODEL=1` |
 | `ctest -L bdd` runs nothing | `bdd` is the test name; the label is `functional` | `ctest --test-dir build/Debug -L functional` |
-| int8 `check-determinism` fails and Pipeline stays green | The int8 step is `continue-on-error: true` | Gate with `--model-dir models-fp32` after `./scripts/fetch-model models-fp32 fp32` |
+| int8 `check-determinism` with `NESSO_THREADS=$(nproc)` fails and Pipeline stays green | That step is `continue-on-error: true`. The default int8 policy blocks | Drop `NESSO_THREADS` and rerun. fp32 is `--model-dir models-fp32` after `./scripts/fetch-model models-fp32 fp32` |
 | `python3 scripts/bench` exits on `/usr/bin/time` or a missing binary | It requires GNU time and a built `nesso` (default `build/Release/src/nesso`) | Install time and build Release. The CI `bench` job is `continue-on-error: true` |
 | `conan install --no-remote` misses lockfile packages | The baked cache is `CONAN_HOME=/opt/conan2` inside `nesso-build-env` | Drop `--no-remote` outside that image; keep `--lockfile=conan.lock` |
 | `CMakeUserPresets.json` shows in `git status` | `conan install` writes it and `.gitignore` does not list it | Leave it uncommitted |

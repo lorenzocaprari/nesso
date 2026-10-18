@@ -11,7 +11,11 @@ onnxruntime/*:build_type=Release
 
 [conf]
 # Consumer-only (other deps reuse the same Debug package ID as gcc-26-debug)
-user.nesso:cxxflags=["-g", "-O0", "-fno-omit-frame-pointer", "-Wall", "-Wextra", "-Wpedantic", "-Wshadow", "-Wconversion", "-Wsign-conversion", "-D_GLIBCXX_DEBUG", "-D_GLIBCXX_DEBUG_PEDANTIC", "--coverage"]
-user.nesso:cflags=["-g", "-O0", "-fno-omit-frame-pointer", "-Wall", "-Wextra", "--coverage"]
+# inferAll runs infer on one thread per int8 session. Plain --coverage increments
+# gcov arcs with a non-atomic add, so those threads lose updates and lcov aborts
+# on a negative branch count in onnx_embedder.cpp.gcda. Atomic increments keep
+# the arc totals consistent. The flag is consumer-only, same as --coverage.
+user.nesso:cxxflags=["-g", "-O0", "-fno-omit-frame-pointer", "-Wall", "-Wextra", "-Wpedantic", "-Wshadow", "-Wconversion", "-Wsign-conversion", "-D_GLIBCXX_DEBUG", "-D_GLIBCXX_DEBUG_PEDANTIC", "--coverage", "-fprofile-update=atomic"]
+user.nesso:cflags=["-g", "-O0", "-fno-omit-frame-pointer", "-Wall", "-Wextra", "--coverage", "-fprofile-update=atomic"]
 user.nesso:sharedlinkflags=["--coverage"]
 user.nesso:exelinkflags=["--coverage"]
