@@ -36,3 +36,4 @@ record.
 | Number | Title | Status | Date |
 | ------ | ----- | ------ | ---- |
 | 0000 | Use MADR for architecture decisions | accepted | 2026-10-18 |
+| 0006 | Release x86_64 Linux; gate arm64 and Clang in CI | accepted | 2026-10-24 |
