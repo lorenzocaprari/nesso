@@ -41,3 +41,4 @@ record.
 | 0003 | Byte-identical determinism | accepted | 2026-10-18 |
 | 0004 | Stream parse, embed, and score in fixed-size batches | accepted | 2026-10-13 |
 | 0005 | Keep operation offline and data on the machine | accepted | 2026-10-11 |
+| 0006 | Release x86_64 Linux; gate arm64 and Clang in CI | accepted | 2026-10-24 |
