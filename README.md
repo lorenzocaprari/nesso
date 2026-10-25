@@ -43,7 +43,37 @@ docker run --rm -v "$PWD:/data" -w /data ghcr.io/lorenzocaprari/nesso:latest \
   grep "database connection error" app.log
 ```
 
-A release pull request bumps `version` in `conanfile.py`. After that commit is on `main`, publish the `vX.Y.Z` draft. Publishing creates the tag. `.github/workflows/release.yml` checks the tag against `conanfile.py`, then publishes the image, the `.deb`, and the GitHub Release. CI must already have published `nesso-build-env`.
+A release pull request bumps `version` in `conanfile.py`. After that commit is on `main`, publish the `vX.Y.Z` draft. Publishing creates the tag. `.github/workflows/release.yml` checks the tag against `conanfile.py`, then publishes the image, the `.deb`, and the GitHub Release. CI must already have published `nesso-build-env`. Checking the signature and provenance is [below](#verifying-a-release).
+
+## Verifying a release
+
+A `vX.Y.Z` tag signs `ghcr.io/lorenzocaprari/nesso` by digest with keyless cosign. The certificate identity is this repository's release workflow at that tag. The GitHub Release carries SLSA Build Level 3 provenance: `nesso_<version>_amd64.intoto.jsonl` covers the `.deb` and `nesso_<version>.spdx.json`, and `nesso_<version>_ghcr.intoto.jsonl` is the image attestation copied from GHCR. `SHA256SUMS` lists those four files.
+
+`v0.1.0` was published before these signatures. Set `version` to the release you are checking, without the leading `v`. `digest` is the image manifest digest.
+
+```bash
+version=1.2.3
+digest="$(docker buildx imagetools inspect --format '{{index .Manifest.Digest}}' "ghcr.io/lorenzocaprari/nesso:v${version}")"
+
+cosign verify \
+  --certificate-identity "https://github.com/lorenzocaprari/nesso/.github/workflows/release.yml@refs/tags/v${version}" \
+  --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+  "ghcr.io/lorenzocaprari/nesso@${digest}"
+
+slsa-verifier verify-artifact \
+  "nesso_${version}_amd64.deb" \
+  "nesso_${version}.spdx.json" \
+  --provenance-path "nesso_${version}_amd64.intoto.jsonl" \
+  --source-uri github.com/lorenzocaprari/nesso \
+  --source-tag "v${version}"
+
+slsa-verifier verify-image \
+  "ghcr.io/lorenzocaprari/nesso@${digest}" \
+  --source-uri github.com/lorenzocaprari/nesso \
+  --source-tag "v${version}"
+```
+
+`cosign` 2.x checks the signature. `slsa-verifier` v2.7.1 or later checks the provenance. `verify-image` reads the attestation from GHCR. When the registry asks for credentials, set `GH_TOKEN` for that command.
 
 ## Prerequisites
 
