@@ -28,7 +28,7 @@ conan build . -of build/coverage -pr:h "${1:-conan/profiles/code-coverage}" -pr:
 if [[ ! -s "${ROOT}/models/model.onnx" || ! -s "${ROOT}/models/vocab.txt" ]]; then
   "${ROOT}/scripts/fetch-model" "${ROOT}/models"
 fi
-ctest --test-dir build/coverage/build/Debug --output-on-failure
+ctest --test-dir build/coverage/build/Debug --output-on-failure -j "$(nproc)"
 
 # Local default: ~/.conan2. CI: CONAN_HOME=/opt/conan2 (GHA overrides HOME).
 conan_cache="${CONAN_HOME:-${HOME}/.conan2}"

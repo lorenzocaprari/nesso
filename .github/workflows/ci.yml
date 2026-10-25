@@ -283,7 +283,7 @@ jobs:
         run: tar -xzf release-build.tar.gz
 
       - name: Run ${{ matrix.label }} tests
-        run: ctest --test-dir build/Release -L ${{ matrix.label }} -V
+        run: ctest --test-dir build/Release --output-on-failure -j "$(nproc)" -L ${{ matrix.label }} -V
 
   unit-tests-debug:
     name: ${{ matrix.label }}-tests-debug
@@ -325,7 +325,7 @@ jobs:
         run: tar -xzf debug-build.tar.gz
 
       - name: Run ${{ matrix.label }} tests
-        run: ctest --test-dir build/Debug -L ${{ matrix.label }} -V
+        run: ctest --test-dir build/Debug --output-on-failure -j "$(nproc)" -L ${{ matrix.label }} -V
 
   fuzz-test:
     needs: prepare-image
@@ -691,7 +691,7 @@ jobs:
         run: tar -xzf release-build-clang.tar.gz
 
       - name: Run ${{ matrix.label }} tests
-        run: ctest --test-dir build/Release -L ${{ matrix.label }} -V
+        run: ctest --test-dir build/Release --output-on-failure -j "$(nproc)" -L ${{ matrix.label }} -V
 
   # Native arm64 image. The amd64 prepare-image job and its tag are unchanged.
   prepare-image-arm64:
@@ -854,4 +854,4 @@ jobs:
         run: tar -xzf release-build-arm64.tar.gz
 
       - name: Run ${{ matrix.label }} tests
-        run: ctest --test-dir build/Release -L ${{ matrix.label }} -V
+        run: ctest --test-dir build/Release --output-on-failure -j "$(nproc)" -L ${{ matrix.label }} -V
