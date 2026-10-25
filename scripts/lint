@@ -1,11 +1,54 @@
 #!/usr/bin/env bash
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-pre-commit run --all-files "$@"
-bash "${ROOT}/scripts/check-versions"
-python3 "${ROOT}/scripts/check-agent-docs"
-if [[ -f "${ROOT}/build/Release/compile_commands.json" || -f "${ROOT}/build/Debug/compile_commands.json" ]]; then
-  bash "${ROOT}/scripts/cppcheck"
-else
-  echo "cppcheck: skipped (no compile_commands.json; CI configures a Release build first)"
+
+# The lint job calls the flags as separate steps. A local run with no flag
+# still runs every hook plus the two scripts, and does not run cppcheck.
+mode=all
+if [[ $# -gt 0 ]]; then
+  case "$1" in
+    --format-only)
+      mode=format
+      shift
+      ;;
+    --hygiene-only)
+      mode=hygiene
+      shift
+      ;;
+  esac
 fi
+
+run_hook() {
+  pre-commit run "$1" --all-files
+}
+
+run_format() {
+  local status=0
+  run_hook clang-format || status=1
+  run_hook cmake-format || status=1
+  return "${status}"
+}
+
+run_hygiene() {
+  local status=0
+  local hook
+  for hook in trailing-whitespace end-of-file-fixer mixed-line-ending \
+    check-merge-conflict check-added-large-files check-yaml; do
+    run_hook "${hook}" || status=1
+  done
+  return "${status}"
+}
+
+case "${mode}" in
+  format)
+    run_format
+    ;;
+  hygiene)
+    run_hygiene
+    ;;
+  all)
+    pre-commit run --all-files "$@"
+    bash "${ROOT}/scripts/check-versions"
+    python3 "${ROOT}/scripts/check-agent-docs"
+    ;;
+esac
