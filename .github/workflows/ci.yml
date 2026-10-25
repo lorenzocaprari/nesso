@@ -425,8 +425,10 @@ jobs:
   # check, so a failed build still enters the job and fails under the
   # expanded name. Clang and arm64 still require a successful build, as on
   # main, and expand for a docs-only pull request anyway. A docs-only pull
-  # request only echoes. It still uses the build-env image so the registry
-  # login stays valid.
+  # request only echoes. Release, debug, and Clang still use the amd64
+  # build-env image for that echo. The arm64 checks do not depend on
+  # prepare-image-amd64. An empty container image runs their echo on the
+  # runner, so they do not pull an image.
   unit-tests-release:
     name: ${{ matrix.label }}-tests-release
     needs: [prepare-image-amd64, build-gcc-26, changes]
@@ -533,7 +535,8 @@ jobs:
     # ClusterFuzzLite already fuzzes every pull request. This AFL++ job is
     # about three minutes and runs beside the other jobs, so keep it on main
     # pushes and the nightly schedule. It builds the LTO harnesses
-    # ClusterFuzzLite does not. The job id stays fuzz-test.
+    # ClusterFuzzLite does not. The job id stays fuzz-test. The amd64 image
+    # already has afl++, Clang 21, the compiler-rt symlinks, lld-21, and llvm-21.
     if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -545,29 +548,6 @@ jobs:
     steps:
       - name: Checkout Repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - name: Install AFL++ toolchain (idempotent if baked into image)
-        run: |
-          apt-get update
-          apt-get install -y --no-install-recommends \
-            clang-21 libclang-rt-21-dev lld-21 llvm-21 afl++
-          rm -rf /var/lib/apt/lists/*
-          # Bridge Ubuntu linux/*-x86_64.a layout ? triple-dir names AFL/Clang may request.
-          rt_lib="/usr/lib/llvm-21/lib/clang/21/lib"
-          if [ -d "${rt_lib}/linux" ] && [ ! -e "${rt_lib}/x86_64-pc-linux-gnu" ]; then
-            mkdir -p "${rt_lib}/x86_64-pc-linux-gnu"
-            for kind in asan asan_cxx asan_static asan-preinit \
-              ubsan_standalone ubsan_standalone_cxx fuzzer fuzzer_no_main; do
-              for src in \
-                "${rt_lib}/linux/libclang_rt.${kind}-x86_64.a" \
-                "${rt_lib}/linux/libclang_rt.${kind}.a"; do
-                if [ -f "${src}" ]; then
-                  ln -sfn "${src}" "${rt_lib}/x86_64-pc-linux-gnu/libclang_rt.${kind}.a"
-                  break
-                fi
-              done
-            done
-          fi
 
       - name: Ensure Conan default profile
         run: conan profile detect --force
@@ -671,12 +651,6 @@ jobs:
     steps:
       - name: Checkout Repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - name: Install GNU time
-        run: |
-          apt-get update
-          apt-get install -y --no-install-recommends time
-          rm -rf /var/lib/apt/lists/*
 
       - name: Restore MiniLM models
         id: models
@@ -1215,9 +1189,11 @@ jobs:
           if-no-files-found: error
           compression-level: 0
 
+  # No prepare-image-amd64 dependency. A docs-only run leaves the image
+  # empty, and the runner treats an empty image as no container.
   unit-tests-arm64:
     name: ${{ matrix.label }}-tests-arm64
-    needs: [prepare-image-amd64, prepare-image-arm64, gcc-26-arm64-release, changes]
+    needs: [prepare-image-arm64, gcc-26-arm64-release, changes]
     if: >-
       ${{ always() && !cancelled() && needs.changes.result == 'success' &&
       (needs.changes.outputs.code != 'true' ||
@@ -1229,7 +1205,7 @@ jobs:
       matrix:
         label: [unit, integration, functional]
     container:
-      image: ${{ needs.changes.outputs.code == 'true' && needs.prepare-image-arm64.outputs.image || needs.prepare-image-amd64.outputs.image }}
+      image: ${{ needs.changes.outputs.code == 'true' && needs.prepare-image-arm64.outputs.image || '' }}
       credentials:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}

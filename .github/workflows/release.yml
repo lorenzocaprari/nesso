@@ -111,6 +111,10 @@ jobs:
 
       # The published binary needs the runtime image's glibc. A failure here
       # stops the job before the image push and the GitHub release.
+      # stress-ng stays. scripts/check-determinism defaults to it for CPU load.
+      # The slim runtime image does not ship it. This install is inside the
+      # throwaway gate container, not the image that gets pushed. The smoke
+      # test does not use stress-ng.
       - name: Gate int8 and fp32 determinism
         run: |
           set -euo pipefail
