@@ -72,7 +72,7 @@ Debug ctest in CI also sets `ASAN_OPTIONS` and `UBSAN_OPTIONS` so sanitizer find
 
 ## Fuzz
 
-`./scripts/fuzz-test` builds AFL++ LTO and ASan harnesses `nesso_fuzz_parser` and `nesso_fuzz_tokenizer` with `conan/profiles/gcc-26-fuzz`, then runs `afl-fuzz`. Seeds live in `test/fuzz/seeds/parser` and `test/fuzz/seeds/tokenizer`. `NESSO_FUZZ_MAX_TOTAL_TIME` defaults to 60 seconds per target; CI uses 60. The script needs `afl-clang-lto++`, `llvm-ar`, and `llvm-ranlib`.
+`./scripts/fuzz-test` builds AFL++ LTO and ASan harnesses `nesso_fuzz_parser` and `nesso_fuzz_tokenizer` with `conan/profiles/gcc-26-fuzz`, then runs `afl-fuzz`. Seeds live in `test/fuzz/seeds/parser` and `test/fuzz/seeds/tokenizer`. `NESSO_FUZZ_MAX_TOTAL_TIME` defaults to 60 seconds per target; CI uses 60. The script needs `afl-clang-lto++`, `llvm-ar`, and `llvm-ranlib`. The Pipeline job runs on pushes to `main` and on the nightly schedule. Pull requests are fuzzed by ClusterFuzzLite (`.github/workflows/cifuzz.yml`).
 
 ## Lint and the local gate
 
@@ -90,7 +90,7 @@ bash scripts/lint
 ./scripts/code-coverage conan/profiles/code-coverage
 ```
 
-Coverage floors are the `REQUIRED_*` values in `scripts/code-coverage`. The Pipeline workflow (`.github/workflows/ci.yml`) is the merge gate: lint, clang-tidy, cppcheck, Release and Debug builds, the Clang 21 and arm64 Release builds, unit, integration, and functional tests, fuzz, coverage, and `scripts/check-determinism` (the `determinism` job: fp32 and the default int8 policy gate; int8 with `NESSO_THREADS` set to the logical CPU count is report-only). The `bench` job is report-only.
+Coverage floors are the `REQUIRED_*` values in `scripts/code-coverage`. The Pipeline workflow (`.github/workflows/ci.yml`) is the merge gate: lint, clang-tidy, cppcheck, Release and Debug builds, the Clang 21 and arm64 Release builds, unit, integration, and functional tests, coverage, and `scripts/check-determinism` (the `determinism` job: fp32 and the default int8 policy gate; int8 with `NESSO_THREADS` set to the logical CPU count is report-only). The `bench` job fails when a tier regresses against the latest baseline saved from `main`. Pull requests run the 1k and 10k tiers. Pushes to `main` and the nightly schedule also run 100k. `fuzz-test` runs on pushes to `main` and nightly.
 
 ## Pull requests
 

@@ -25,7 +25,9 @@ TEMPLATES = (
     "tls handshake failed with upstream",
     "query cancelled after deadline",
 )
-TRACE_STAGES = ("parse", "embed", "rank")
+# grep records parse, then the query embedding, then the batched embed flush.
+# Ranking happens inside that flush, so the trace has no separate rank stage.
+TRACE_STAGES = ("parse", "query-embed", "embed")
 
 
 def git_sha() -> str:
@@ -185,7 +187,7 @@ def run_case(binary: Path, model_dir: Path, lines: int, timeout: float | None) -
             elif return_code not in (0, None):
                 case["error"] = f"nesso exited {return_code}"
             elif not trace_ok(trace):
-                case["error"] = "missing parse/embed/rank trace"
+                case["error"] = f"missing {'/'.join(TRACE_STAGES)} trace"
             elif not stdout:
                 case["error"] = "no matches on stdout"
             else:
@@ -238,6 +240,8 @@ def main() -> None:
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
     print(f"bench: wrote {output}")
+    if any(not case.get("ok") for case in cases):
+        raise SystemExit(1)
 
 
 if __name__ == "__main__":

@@ -14,6 +14,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Pull-request benchmarks run the 1k and 10k tiers. Pushes to `main` and the nightly schedule still run the 100k tier. The benchmark job fails when a tier regresses against the latest baseline saved from `main`.
+- AFL++ `scripts/fuzz-test` runs on pushes to `main` and in the nightly Pipeline. Pull requests stay on ClusterFuzzLite.
 - Debug builds scan an ONNX model for its quantization marker in chunks. Copying the whole file through checked iterators took about five seconds per embedder load under ASan.
 - CI runs ctest with `-j "$(nproc)"`. The godog suite runs scenarios concurrently, up to one per logical CPU.
 - The project license is Apache 2.0.
@@ -21,6 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `scripts/bench` treats the current grep trace (`parse`, `query-embed`, `embed`) as a completed run. The old `parse`/`embed`/`rank` check marked every CI run failed, and `continue-on-error` hid that result.
 - int8 embeddings use one intra-op thread per session so repeated runs agree under CPU load.
 
 ## [0.1.0] - 2026-10-11
