@@ -33,6 +33,58 @@ permissions:
   packages: read
 
 jobs:
+  # Docs-only pull requests skip heavy jobs via this output. Job-level if,
+  # not on.paths: a workflow that never starts leaves required checks pending,
+  # and GitHub treats a skipped job as success. An explicit false is the only
+  # skip. Push, schedule, workflow_dispatch, and a tag push run every heavy
+  # job. Paths outside *.md, docs/, LICENSE, and .github/ISSUE_TEMPLATE count
+  # as code.
+  changes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      code: ${{ steps.gate.outputs.code }}
+    steps:
+      - name: Checkout Repository
+        if: github.event_name == 'pull_request'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Filter paths
+        id: filter
+        if: github.event_name == 'pull_request'
+        uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+        with:
+          predicate-quantifier: some-with-excludes
+          filters: |
+            code:
+              - '**'
+              - '!**/*.md'
+              - '!docs/**'
+              - '!LICENSE'
+              - '!.github/ISSUE_TEMPLATE/**'
+
+      - name: Decide whether heavy jobs run
+        id: gate
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          FILTER_CODE: ${{ steps.filter.outputs.code }}
+        run: |
+          set -euo pipefail
+          if [ "${EVENT_NAME}" != "pull_request" ]; then
+            code=true
+          elif [ "${FILTER_CODE}" = "false" ]; then
+            code=false
+          else
+            code=true
+          fi
+          echo "code=${code}" >> "${GITHUB_OUTPUT}"
+          echo "heavy_jobs=${code}"
+
   prepare-image:
     runs-on: ubuntu-latest
     timeout-minutes: 360
@@ -121,7 +173,8 @@ jobs:
         run: bash scripts/lint
 
   clang-tidy:
-    needs: prepare-image
+    needs: [prepare-image, changes]
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     container:
       image: ${{ needs.prepare-image.outputs.image }}
@@ -150,7 +203,8 @@ jobs:
         run: bash scripts/clang-tidy
 
   cppcheck:
-    needs: prepare-image
+    needs: [prepare-image, changes]
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     container:
       image: ${{ needs.prepare-image.outputs.image }}
@@ -177,7 +231,8 @@ jobs:
         run: bash scripts/cppcheck
 
   build-gcc-26:
-    needs: prepare-image
+    needs: [prepare-image, changes]
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     container:
       image: ${{ needs.prepare-image.outputs.image }}
@@ -202,18 +257,22 @@ jobs:
         run: conan build . -pr:h ./conan/profiles/gcc-26 -pr:b default --lockfile=conan.lock --build=missing --no-remote
 
       - name: Archive Release build
-        run: tar -czf release-build.tar.gz build/Release
+        id: archive
+        run: ./scripts/ci-build-archive pack build/Release release-build
 
       - name: Upload Release build
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: release-build
-          path: release-build.tar.gz
+          path: ${{ steps.archive.outputs.archive }}
           retention-days: 1
           if-no-files-found: error
+          # The tar is already gzip (or zstd). Skip a second zlib pass.
+          compression-level: 0
 
   build-gcc-26-debug:
-    needs: prepare-image
+    needs: [prepare-image, changes]
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     container:
       image: ${{ needs.prepare-image.outputs.image }}
@@ -236,19 +295,22 @@ jobs:
         run: conan build . -pr:h ./conan/profiles/gcc-26-debug -pr:b default --lockfile=conan.lock --build=missing --no-remote
 
       - name: Archive Debug build
-        run: tar -czf debug-build.tar.gz build/Debug
+        id: archive
+        run: ./scripts/ci-build-archive pack build/Debug debug-build
 
       - name: Upload Debug build
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: debug-build
-          path: debug-build.tar.gz
+          path: ${{ steps.archive.outputs.archive }}
           retention-days: 1
           if-no-files-found: error
+          compression-level: 0
 
   unit-tests-release:
     name: ${{ matrix.label }}-tests-release
-    needs: [prepare-image, build-gcc-26]
+    needs: [prepare-image, build-gcc-26, changes]
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -280,14 +342,34 @@ jobs:
           name: release-build
 
       - name: Extract Release build
-        run: tar -xzf release-build.tar.gz
+        run: ./scripts/ci-build-archive unpack release-build
 
       - name: Run ${{ matrix.label }} tests
         run: ctest --test-dir build/Release --output-on-failure -j "$(nproc)" -L ${{ matrix.label }} -V
 
+  # A skipped matrix job is not expanded, so its check name stays the literal
+  # "${{ matrix.label }}" template. Required checks are the expanded names
+  # (unit-tests-release and the rest). This job runs only for a docs-only
+  # pull request and reports those names as success. It does not start the
+  # build-env container.
+  unit-tests-release-docs:
+    name: ${{ matrix.label }}-tests-release
+    needs: changes
+    if: needs.changes.outputs.code != 'true'
+    runs-on: ubuntu-latest
+    permissions: {}
+    strategy:
+      fail-fast: false
+      matrix:
+        label: [unit, integration, functional]
+    steps:
+      - name: Docs-only
+        run: echo "docs-only pull request; ${{ matrix.label }} release tests not run"
+
   unit-tests-debug:
     name: ${{ matrix.label }}-tests-debug
-    needs: [prepare-image, build-gcc-26-debug]
+    needs: [prepare-image, build-gcc-26-debug, changes]
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -322,10 +404,24 @@ jobs:
           name: debug-build
 
       - name: Extract Debug build
-        run: tar -xzf debug-build.tar.gz
+        run: ./scripts/ci-build-archive unpack debug-build
 
       - name: Run ${{ matrix.label }} tests
         run: ctest --test-dir build/Debug --output-on-failure -j "$(nproc)" -L ${{ matrix.label }} -V
+
+  unit-tests-debug-docs:
+    name: ${{ matrix.label }}-tests-debug
+    needs: changes
+    if: needs.changes.outputs.code != 'true'
+    runs-on: ubuntu-latest
+    permissions: {}
+    strategy:
+      fail-fast: false
+      matrix:
+        label: [unit, integration, functional]
+    steps:
+      - name: Docs-only
+        run: echo "docs-only pull request; ${{ matrix.label }} debug tests not run"
 
   fuzz-test:
     needs: prepare-image
@@ -396,7 +492,8 @@ jobs:
           if-no-files-found: warn
 
   coverage:
-    needs: prepare-image
+    needs: [prepare-image, changes]
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     container:
       image: ${{ needs.prepare-image.outputs.image }}
@@ -445,7 +542,8 @@ jobs:
   # (two runner speed classes) while peak RSS stayed within 1.05x. Wall limit
   # is 5.50x so that spread passes; RSS limit is 1.20x. A missing baseline warns.
   bench:
-    needs: [prepare-image, build-gcc-26]
+    needs: [prepare-image, build-gcc-26, changes]
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
@@ -488,7 +586,7 @@ jobs:
           name: release-build
 
       - name: Extract Release build
-        run: tar -xzf release-build.tar.gz
+        run: ./scripts/ci-build-archive unpack release-build
 
       - name: Restore main benchmark baseline
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -552,7 +650,8 @@ jobs:
   # NESSO_THREADS=$(nproc) stays report-only: that override is one
   # single-thread session per logical CPU and skips the RAM cap.
   determinism:
-    needs: [prepare-image, build-gcc-26]
+    needs: [prepare-image, build-gcc-26, changes]
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     container:
@@ -598,7 +697,7 @@ jobs:
           name: release-build
 
       - name: Extract Release build
-        run: tar -xzf release-build.tar.gz
+        run: ./scripts/ci-build-archive unpack release-build
 
       - name: Write determinism input
         run: ./scripts/check-determinism --emit-input determinism-input.log
@@ -641,7 +740,8 @@ jobs:
   # already in nesso-build-env (see conan/profiles/clang-26). libc++ is
   # not used: it is a different ABI from those static archives.
   clang-26-release:
-    needs: prepare-image
+    needs: [prepare-image, changes]
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 60
     container:
@@ -687,20 +787,22 @@ jobs:
           fi
 
       - name: Archive Release build
-        run: tar -czf release-build-clang.tar.gz build/Release
+        id: archive
+        run: ./scripts/ci-build-archive pack build/Release release-build-clang
 
       - name: Upload Release build
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: release-build-clang
-          path: release-build-clang.tar.gz
+          path: ${{ steps.archive.outputs.archive }}
           retention-days: 1
           if-no-files-found: error
+          compression-level: 0
 
   unit-tests-clang:
     name: ${{ matrix.label }}-tests-clang
-    needs: [prepare-image, clang-26-release]
-    if: ${{ !cancelled() && needs.clang-26-release.result == 'success' }}
+    needs: [prepare-image, clang-26-release, changes]
+    if: ${{ needs.changes.outputs.code == 'true' && !cancelled() && needs.clang-26-release.result == 'success' }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     strategy:
@@ -733,13 +835,29 @@ jobs:
           name: release-build-clang
 
       - name: Extract Release build
-        run: tar -xzf release-build-clang.tar.gz
+        run: ./scripts/ci-build-archive unpack release-build-clang
 
       - name: Run ${{ matrix.label }} tests
         run: ctest --test-dir build/Release --output-on-failure -j "$(nproc)" -L ${{ matrix.label }} -V
 
+  unit-tests-clang-docs:
+    name: ${{ matrix.label }}-tests-clang
+    needs: changes
+    if: needs.changes.outputs.code != 'true'
+    runs-on: ubuntu-latest
+    permissions: {}
+    strategy:
+      fail-fast: false
+      matrix:
+        label: [unit, integration, functional]
+    steps:
+      - name: Docs-only
+        run: echo "docs-only pull request; ${{ matrix.label }} clang tests not run"
+
   # Native arm64 image. The amd64 prepare-image job and its tag are unchanged.
   prepare-image-arm64:
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 360
     permissions:
@@ -814,8 +932,8 @@ jobs:
           grep -Eiq 'arm64|aarch64' /tmp/image-inspect.txt
 
   gcc-26-arm64-release:
-    needs: prepare-image-arm64
-    if: ${{ !cancelled() && needs.prepare-image-arm64.result == 'success' }}
+    needs: [prepare-image-arm64, changes]
+    if: ${{ needs.changes.outputs.code == 'true' && !cancelled() && needs.prepare-image-arm64.result == 'success' }}
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 90
     container:
@@ -850,20 +968,22 @@ jobs:
           readelf -h build/Release/src/nesso | grep -q 'Machine:.*AArch64'
 
       - name: Archive Release build
-        run: tar -czf release-build-arm64.tar.gz build/Release
+        id: archive
+        run: ./scripts/ci-build-archive pack build/Release release-build-arm64
 
       - name: Upload Release build
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: release-build-arm64
-          path: release-build-arm64.tar.gz
+          path: ${{ steps.archive.outputs.archive }}
           retention-days: 1
           if-no-files-found: error
+          compression-level: 0
 
   unit-tests-arm64:
     name: ${{ matrix.label }}-tests-arm64
-    needs: [prepare-image-arm64, gcc-26-arm64-release]
-    if: ${{ !cancelled() && needs.prepare-image-arm64.result == 'success' && needs.gcc-26-arm64-release.result == 'success' }}
+    needs: [prepare-image-arm64, gcc-26-arm64-release, changes]
+    if: ${{ needs.changes.outputs.code == 'true' && !cancelled() && needs.prepare-image-arm64.result == 'success' && needs.gcc-26-arm64-release.result == 'success' }}
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 30
     strategy:
@@ -896,7 +1016,21 @@ jobs:
           name: release-build-arm64
 
       - name: Extract Release build
-        run: tar -xzf release-build-arm64.tar.gz
+        run: ./scripts/ci-build-archive unpack release-build-arm64
 
       - name: Run ${{ matrix.label }} tests
         run: ctest --test-dir build/Release --output-on-failure -j "$(nproc)" -L ${{ matrix.label }} -V
+
+  unit-tests-arm64-docs:
+    name: ${{ matrix.label }}-tests-arm64
+    needs: changes
+    if: needs.changes.outputs.code != 'true'
+    runs-on: ubuntu-latest
+    permissions: {}
+    strategy:
+      fail-fast: false
+      matrix:
+        label: [unit, integration, functional]
+    steps:
+      - name: Docs-only
+        run: echo "docs-only pull request; ${{ matrix.label }} arm64 tests not run"

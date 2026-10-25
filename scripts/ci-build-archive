@@ -1,0 +1,159 @@
+#!/usr/bin/env bash
+# Pack or unpack the build-tree files downstream Pipeline jobs execute.
+#
+# Coverage does not download this archive. scripts/code-coverage configures
+# build/coverage in that job and lcov reads the .gcno/.gcda written there.
+# gcov needs those notes plus the sources at the paths stored in the notes
+# (the checkout). Object files are not inputs to that capture.
+#
+# Test and bench binaries NEEDED only libstdc++, libgcc, and libc. Their
+# RUNPATH points at the Conan cache baked into nesso-build-env (/opt/conan2),
+# which the downstream jobs already use. Shared objects that do land in the
+# build tree are packed. Intermediate objects, static archives, and CMake's
+# scanner output are not.
+set -euo pipefail
+
+usage() {
+  echo "usage: ci-build-archive pack <build-dir> <archive-prefix>" >&2
+  echo "       ci-build-archive unpack <archive-prefix>" >&2
+  exit 2
+}
+
+# nesso-build-env does not install zstd (PR 4 bakes it in). Prefer it when the
+# job can see it; otherwise gzip, which the image already has. The suffix is
+# the contract unpack understands. Permissions stay in the tar header.
+compressor() {
+  if command -v zstd >/dev/null 2>&1; then
+    echo zstd
+  else
+    echo gzip
+  fi
+}
+
+archive_path_for() {
+  local prefix=$1
+  if [[ "$(compressor)" == "zstd" ]]; then
+    echo "${prefix}.tar.zst"
+  else
+    echo "${prefix}.tar.gz"
+  fi
+}
+
+write_meta() {
+  local archive=$1
+  local file_count=$2
+  local uncompressed_bytes=$3
+  local archive_bytes=$4
+  local kind
+  kind="$(compressor)"
+  echo "compressor=${kind}"
+  echo "files=${file_count}"
+  echo "uncompressed_bytes=${uncompressed_bytes}"
+  echo "archive_bytes=${archive_bytes}"
+  echo "archive=${archive}"
+  if [[ -n "${GITHUB_OUTPUT:-}" ]]; then
+    {
+      echo "compressor=${kind}"
+      echo "files=${file_count}"
+      echo "uncompressed_bytes=${uncompressed_bytes}"
+      echo "archive_bytes=${archive_bytes}"
+      echo "archive=${archive}"
+    } >> "${GITHUB_OUTPUT}"
+  fi
+  if [[ -n "${GITHUB_STEP_SUMMARY:-}" ]]; then
+    {
+      echo "### $(basename "${archive}")"
+      echo
+      echo "| | |"
+      echo "| --- | --- |"
+      echo "| compressor | ${kind} |"
+      echo "| files | ${file_count} |"
+      echo "| uncompressed bytes | ${uncompressed_bytes} |"
+      echo "| archive bytes | ${archive_bytes} |"
+    } >> "${GITHUB_STEP_SUMMARY}"
+  fi
+}
+
+pack() {
+  local build_dir=$1
+  local prefix=$2
+  build_dir=${build_dir#./}
+  build_dir=${build_dir%/}
+  if [[ ! -d "${build_dir}" ]]; then
+    echo "build dir not found: ${build_dir}" >&2
+    exit 1
+  fi
+
+  local list
+  list="$(mktemp)"
+  trap 'rm -f "${list}"' RETURN
+  # CTestTestfile.cmake stores absolute paths to these executables and to
+  # test/fixtures. Keep that layout. Drop CMakeFiles (scanner temps, .o).
+  find "${build_dir}" \
+    \( -type f -o -type l \) \
+    ! -path '*/CMakeFiles/*' \
+    \( \
+      -name 'CTestTestfile.cmake' \
+      -o -name 'CTestCustom.cmake' \
+      -o -name 'DartConfiguration.tcl' \
+      -o -path '*/test/fixtures/*' \
+      -o -name '*.so' \
+      -o -name '*.so.*' \
+      -o -perm -u+x \
+    \) \
+    -print | LC_ALL=C sort > "${list}"
+
+  if [[ ! -s "${list}" ]]; then
+    echo "no runtime files under ${build_dir}" >&2
+    exit 1
+  fi
+
+  local archive file_count uncompressed_bytes archive_bytes
+  archive="$(archive_path_for "${prefix}")"
+  rm -f "${archive}"
+  if [[ "$(compressor)" == "zstd" ]]; then
+    tar -I zstd -cf "${archive}" -T "${list}"
+  else
+    tar -czf "${archive}" -T "${list}"
+  fi
+
+  file_count="$(wc -l < "${list}" | tr -d ' ')"
+  uncompressed_bytes=0
+  local path size
+  while IFS= read -r path; do
+    size="$(stat -c%s "${path}")"
+    uncompressed_bytes=$((uncompressed_bytes + size))
+  done < "${list}"
+  archive_bytes="$(stat -c%s "${archive}")"
+  write_meta "${archive}" "${file_count}" "${uncompressed_bytes}" "${archive_bytes}"
+}
+
+unpack() {
+  local prefix=$1
+  if [[ -f "${prefix}.tar.zst" ]]; then
+    tar -I zstd -xf "${prefix}.tar.zst"
+  elif [[ -f "${prefix}.tar.gz" ]]; then
+    tar -xzf "${prefix}.tar.gz"
+  else
+    echo "archive not found for prefix ${prefix}" >&2
+    exit 1
+  fi
+}
+
+if [[ $# -lt 1 ]]; then
+  usage
+fi
+
+case "$1" in
+  pack)
+    [[ $# -eq 3 ]] || usage
+    pack "$2" "$3"
+    ;;
+  unpack)
+    [[ $# -eq 2 ]] || usage
+    unpack "$2"
+    ;;
+  *)
+    usage
+    ;;
+esac
