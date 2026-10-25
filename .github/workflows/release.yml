@@ -16,6 +16,11 @@ name: Release
 # workflow_dispatch builds, gates, and uploads workflow artifacts. Push,
 # cosign, provenance, and the GitHub Release run only for a vX.Y.Z tag.
 # That dispatch is the dry run: it cannot publish.
+#
+# deploy waits on Package (.github/workflows/package.yml). That workflow
+# builds the .deb twice and installs it on Ubuntu 26.04 and 26.10. A failed
+# check does not push the image or publish the GitHub Release. Package also
+# runs on its own nightly schedule and when its packaging files change.
 
 # Tag releases sign ghcr.io/<owner>/nesso by digest with keyless cosign
 # (cosign 2.6.1). SLSA Build Level 3 provenance comes from
@@ -42,7 +47,15 @@ env:
 permissions: {}
 
 jobs:
+  verify-package:
+    uses: ./.github/workflows/package.yml
+    permissions:
+      contents: read
+      packages: read
+      actions: write
+
   deploy:
+    needs: verify-package
     runs-on: ubuntu-latest
     timeout-minutes: 90
     permissions:
@@ -79,8 +92,16 @@ jobs:
           fi
           chmod +x scripts/check-versions
           scripts/check-versions "${ver}"
-          echo "ver=${ver}" >> "${GITHUB_OUTPUT}"
-          echo "tag=v${ver}" >> "${GITHUB_OUTPUT}"
+          epoch="$(git log -1 --format=%ct)"
+          if [[ ! "${epoch}" =~ ^[0-9]+$ ]]; then
+            echo "error: could not read the commit timestamp" >&2
+            exit 1
+          fi
+          {
+            echo "ver=${ver}"
+            echo "tag=v${ver}"
+            echo "epoch=${epoch}"
+          } >> "${GITHUB_OUTPUT}"
 
       - name: Resolve build-env image
         id: select
@@ -114,6 +135,7 @@ jobs:
           set -euo pipefail
           docker build -f Dockerfile.runtime \
             --build-arg BUILD_IMAGE='${{ steps.select.outputs.build_image }}' \
+            --build-arg SOURCE_DATE_EPOCH='${{ steps.ver.outputs.epoch }}' \
             -t '${{ steps.select.outputs.runtime_image }}:${{ steps.ver.outputs.tag }}' \
             -t '${{ steps.select.outputs.runtime_image }}:${{ steps.ver.outputs.ver }}' \
             .
@@ -203,6 +225,7 @@ jobs:
             sudo apt-get install -y --no-install-recommends binutils
           fi
           chmod +x scripts/package-deb
+          export SOURCE_DATE_EPOCH='${{ steps.ver.outputs.epoch }}'
           scripts/package-deb '${{ steps.ver.outputs.ver }}' ./nesso ./models .
 
       - name: Smoke-test image and .deb

@@ -25,3 +25,12 @@ if(NESSO_PYTHON_EXECUTABLE)
                    "${CMAKE_CURRENT_SOURCE_DIR}/build_env_hash_test.py")
   set_tests_properties(build_env_hash_test PROPERTIES LABELS unit)
 endif()
+
+find_program(NESSO_GO_EXECUTABLE go)
+if(NESSO_GO_EXECUTABLE)
+  add_test(
+    NAME deb_repro_test
+    COMMAND "${NESSO_GO_EXECUTABLE}" test -count=1 .
+    WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}")
+  set_tests_properties(deb_repro_test PROPERTIES LABELS unit)
+endif()
