@@ -1,0 +1,103 @@
+#!/usr/bin/env bash
+# Build the Release binary the .deb and the runtime image ship.
+# Runs inside nesso-build-env: CONAN_HOME=/opt/conan2 and --no-remote.
+set -euo pipefail
+
+if [[ $# -ne 1 ]]; then
+  echo "usage: build-release-binary OUT_BIN" >&2
+  exit 2
+fi
+
+OUT_BIN="$1"
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "${ROOT}"
+
+export LC_ALL=C
+export TZ=UTC
+export NESSO_REPRODUCIBLE=1
+
+if [[ -z "${SOURCE_DATE_EPOCH:-}" ]]; then
+  if command -v git >/dev/null 2>&1 && git -C "${ROOT}" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    SOURCE_DATE_EPOCH="$(git -C "${ROOT}" log -1 --format=%ct)"
+  fi
+fi
+if [[ ! "${SOURCE_DATE_EPOCH:-}" =~ ^[0-9]+$ ]]; then
+  echo "error: set SOURCE_DATE_EPOCH to the commit timestamp" >&2
+  exit 2
+fi
+export SOURCE_DATE_EPOCH
+
+# Under the source tree so -ffile-prefix-map covers the compiler's temp files.
+mkdir -p "${ROOT}/tmp"
+export TMPDIR="${ROOT}/tmp"
+
+if [[ -n "${CMAKE_CXX_COMPILER_LAUNCHER:-}" ]]; then
+  export CCACHE_BASEDIR="${CCACHE_BASEDIR:-${ROOT}}"
+  export CCACHE_MAXSIZE="${CCACHE_MAXSIZE:-150M}"
+  export CCACHE_COMPRESS="${CCACHE_COMPRESS:-true}"
+fi
+
+echo "build-release-binary: SOURCE_DATE_EPOCH=${SOURCE_DATE_EPOCH} ROOT=${ROOT}"
+
+conan profile detect --force
+conan install . -pr:h ./conan/profiles/gcc-26 -pr:b default --lockfile=conan.lock --build=missing --no-remote
+conan build . -pr:h ./conan/profiles/gcc-26 -pr:b default --lockfile=conan.lock --build=missing --no-remote
+
+install -D -m 0755 "${ROOT}/build/Release/src/nesso" "${OUT_BIN}"
+
+# Unix Makefiles write CMakeFiles/nesso.dir/link.txt. Ninja keeps the link
+# command in build.ninja, so ask ninja for that command. @rsp arguments are
+# expanded once so a -flto flag stored in a response file still counts.
+link_file="$(find "${ROOT}/build/Release" -path '*/CMakeFiles/nesso.dir/link.txt' -print -quit)"
+if [[ -n "${link_file}" ]]; then
+  link_text="$(cat "${link_file}")"
+else
+  if ! command -v ninja >/dev/null 2>&1; then
+    echo "error: ninja is required to read the nesso link line" >&2
+    exit 1
+  fi
+  if ! ninja_cmds="$(ninja -C "${ROOT}/build/Release" -t commands src/nesso)"; then
+    echo "error: ninja -t commands src/nesso failed" >&2
+    exit 1
+  fi
+  link_text="$(printf '%s\n' "${ninja_cmds}" | grep -E '(^|[[:space:]])-o[[:space:]]+[^[:space:]]*src/nesso([[:space:]]|$)' | tail -n1 || true)"
+fi
+if [[ -z "${link_text}" ]]; then
+  echo "error: could not find the nesso link command under ${ROOT}/build/Release" >&2
+  exit 1
+fi
+expanded=""
+read -r -a link_words <<< "${link_text}"
+for word in "${link_words[@]}"; do
+  if [[ "${word}" == @* ]]; then
+    rsp="${word#@}"
+    if [[ "${rsp}" != /* ]]; then
+      rsp="${ROOT}/build/Release/${rsp}"
+    fi
+    if [[ -f "${rsp}" ]]; then
+      expanded+=" $(tr '\n' ' ' < "${rsp}")"
+      continue
+    fi
+  fi
+  expanded+=" ${word}"
+done
+link_text="${expanded}"
+last_lto="$(printf '%s\n' "${link_text}" | grep -oE -- '-flto(=[^[:space:]]*)?' | tail -n1 || true)"
+if [[ "${last_lto}" != "-flto=1" ]]; then
+  echo "error: nesso link line last LTO flag is '${last_lto}', want -flto=1" >&2
+  printf '%s\n' "${link_text}" | grep -oE -- '-flto(=[^[:space:]]*)?' >&2 || true
+  exit 1
+fi
+
+if ! command -v strings >/dev/null 2>&1; then
+  echo "error: strings is required to check for build-path leaks" >&2
+  exit 1
+fi
+escaped="$(printf '%s\n' "${ROOT}" | sed 's/[][\.^$*+?{}|()]/\\&/g')"
+strings -a "${OUT_BIN}" >"${TMPDIR}/nesso-strings.txt"
+if grep -E "(^|[^A-Za-z0-9_])${escaped}(/|$)" "${TMPDIR}/nesso-strings.txt"; then
+  echo "error: ${ROOT} leaked into ${OUT_BIN}" >&2
+  exit 1
+fi
+rm -f "${TMPDIR}/nesso-strings.txt"
+echo "${OUT_BIN}"

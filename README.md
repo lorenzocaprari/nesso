@@ -33,6 +33,8 @@ sudo apt install ./nesso_*_amd64.deb
 nesso grep "database connection error" app.log
 ```
 
+Two builds of the same commit produce the same `.deb`. Install is checked on Ubuntu 26.04 and Ubuntu 26.10.
+
 The package ships the MiniLM files in `/usr/share/nesso`. An omitted `--model-dir` uses `NESSO_MODEL_DIR`, then `./models` when both files are present, then `$XDG_DATA_HOME/nesso` (or `~/.local/share/nesso`), then `/usr/share/nesso`.
 
 Anywhere with Docker:

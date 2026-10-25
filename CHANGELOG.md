@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- The Package workflow builds the release `.deb` twice from a clean tree and requires the bytes to match. It then installs that package with apt on Ubuntu 26.04 and Ubuntu 26.10, runs the release smoke command, and checks `apt-get remove` and `apt-get purge`. It runs nightly and before a tag publish.
 - Tag releases sign `ghcr.io/lorenzocaprari/nesso` by digest with keyless cosign, and attach SLSA Build Level 3 provenance for the `.deb`, the SPDX SBOM, and the image. Verification commands are in the README.
 - `--threads` and `NESSO_THREADS` set the int8 session count and the fp32 intra-op thread count. `nesso --version --verbose` prints that policy.
 - `scripts/check-determinism --index-runs` compares corpus bytes and the rankings for four queries, including `PAY-E1042`. `--emit-input` writes the 3500-line input the gate uses.
@@ -30,6 +31,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Release builds rewrite source and build paths, pin LTO to one job, and archive the `.deb` with the commit timestamp, fixed ownership, and single-threaded zstd. Two clean builds of the same commit produce the same package bytes.
 - `scripts/bench` treats the current grep trace (`parse`, `query-embed`, `embed`) as a completed run. The old `parse`/`embed`/`rank` check marked every CI run failed, and `continue-on-error` hid that result.
 - int8 embeddings use one intra-op thread per session so repeated runs agree under CPU load.
 

@@ -1,0 +1,59 @@
+#!/usr/bin/env bash
+# Exit 0 when two .debs are the same bytes. On a mismatch, write a diffoscope
+# report and fail. The report is the diagnosis; the bytes are not normalized.
+set -euo pipefail
+
+if [[ $# -lt 2 || $# -gt 3 ]]; then
+  echo "usage: compare-deb LEFT RIGHT [REPORT_DIR]" >&2
+  exit 2
+fi
+
+LEFT="$1"
+RIGHT="$2"
+REPORT="${3:-}"
+
+if [[ ! -f "${LEFT}" || ! -f "${RIGHT}" ]]; then
+  echo "error: both arguments must be files" >&2
+  exit 2
+fi
+
+if cmp -s "${LEFT}" "${RIGHT}"; then
+  echo "compare-deb: identical"
+  sha256sum "${LEFT}" "${RIGHT}"
+  if [[ -n "${GITHUB_STEP_SUMMARY:-}" ]]; then
+    {
+      echo "### reproducible .deb"
+      echo '```'
+      sha256sum "${LEFT}"
+      echo '```'
+    } >>"${GITHUB_STEP_SUMMARY}"
+  fi
+  exit 0
+fi
+
+echo "compare-deb: mismatch" >&2
+sha256sum "${LEFT}" "${RIGHT}" >&2
+
+if [[ -z "${REPORT}" ]]; then
+  exit 1
+fi
+mkdir -p "${REPORT}"
+sha256sum "${LEFT}" "${RIGHT}" >"${REPORT}/sha256.txt"
+
+if ! command -v diffoscope >/dev/null 2>&1; then
+  echo "error: diffoscope is required to explain a mismatch" | tee "${REPORT}/diffoscope.txt" >&2
+  exit 1
+fi
+
+diffoscope --text-color=never --max-text-report-size 400000 \
+  "${LEFT}" "${RIGHT}" >"${REPORT}/diffoscope.txt" || true
+
+if [[ -n "${GITHUB_STEP_SUMMARY:-}" ]]; then
+  {
+    echo "### .deb mismatch"
+    echo '```'
+    head -n 200 "${REPORT}/diffoscope.txt"
+    echo '```'
+  } >>"${GITHUB_STEP_SUMMARY}"
+fi
+exit 1
