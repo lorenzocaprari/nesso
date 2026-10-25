@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Pull requests run a shorter determinism pass (`scripts/check-determinism --mode pr`: 256-line input, 2 runs, 2 index runs) for fp32, the default int8 policy, and the report-only `NESSO_THREADS` step. Pushes to `main`, the nightly schedule, manual runs, and the release gate keep the 3500-line input, 10 runs, and `--index-runs 3`.
 - CI uploads the binaries, ctest manifests, and test fixtures instead of the whole build tree. A pull request that only changes documentation skips the build, test, coverage, bench, and determinism jobs. Lint still runs.
 - Pull-request benchmarks run the 1k and 10k tiers. Pushes to `main` and the nightly schedule still run the 100k tier. The benchmark job fails when a tier regresses against the latest baseline saved from `main`.
 - AFL++ `scripts/fuzz-test` runs on pushes to `main` and in the nightly Pipeline. Pull requests stay on ClusterFuzzLite.

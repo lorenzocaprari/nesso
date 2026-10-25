@@ -16,6 +16,14 @@ DEFAULT_QUERY = "PAY-E1042"
 DEFAULT_RUNS = 10
 DEFAULT_TOP_K = 1_000_000
 DEFAULT_INPUT_LINES = 3_500
+# Pull requests compare two fresh processes. Eight embed batches (the runtime
+# window is 32) is two waves on a 4-session int8 pool, so the short corpus
+# still crosses a batch boundary and a second pool wave. Main, nightly, and
+# the release gate keep DEFAULT_INPUT_LINES and DEFAULT_RUNS.
+PR_RUNS = 2
+PR_INDEX_RUNS = 2
+PR_INPUT_LINES = 256
+MODES = ("full", "pr")
 # Four queries, not one, so an index that only disagrees on a later ranking
 # still fails. PAY-E1042 is the original gate query.
 INDEX_QUERIES = (
@@ -78,7 +86,17 @@ def arguments() -> argparse.Namespace:
         help=f"Write a {DEFAULT_INPUT_LINES}-line determinism input and exit",
     )
     parser.add_argument("--query", default=DEFAULT_QUERY)
-    parser.add_argument("--runs", default=DEFAULT_RUNS, type=positive)
+    parser.add_argument(
+        "--mode",
+        choices=MODES,
+        default=os.environ.get("NESSO_DETERMINISM_MODE", "full"),
+        help=(
+            "full: 10 runs and a 3500-line --emit-input (index runs only when --index-runs is set). "
+            f"pr: {PR_RUNS} runs, {PR_INDEX_RUNS} index runs, and a {PR_INPUT_LINES}-line --emit-input. "
+            "NESSO_DETERMINISM_MODE sets the default"
+        ),
+    )
+    parser.add_argument("--runs", default=None, type=positive)
     parser.add_argument(
         "--index-runs",
         type=positive,
@@ -91,6 +109,12 @@ def arguments() -> argparse.Namespace:
         help=f"Command to run while the gate executes; default: {DEFAULT_STRESS_COMMAND}",
     )
     parsed = parser.parse_args()
+    if parsed.mode not in MODES:
+        parser.error(f"--mode must be full or pr, got {parsed.mode}")
+    if parsed.runs is None:
+        parsed.runs = PR_RUNS if parsed.mode == "pr" else DEFAULT_RUNS
+    if parsed.mode == "pr" and parsed.index_runs is None:
+        parsed.index_runs = PR_INDEX_RUNS
     if parsed.emit_input is not None:
         return parsed
     try:
@@ -110,6 +134,12 @@ def arguments() -> argparse.Namespace:
     if parsed.index_runs is not None and parsed.index_runs < 2:
         parser.error("--index-runs must be at least 2")
     return parsed
+
+
+def input_line_count(mode: str) -> int:
+    if mode == "pr":
+        return PR_INPUT_LINES
+    return DEFAULT_INPUT_LINES
 
 
 def digest(data: bytes) -> str:
@@ -294,7 +324,7 @@ def check_determinism(options: argparse.Namespace) -> None:
     finally:
         stop_stress(stress)
         stderr_path.unlink(missing_ok=True)
-    message = f"determinism OK: {options.runs} runs, corpus and rankings identical"
+    message = f"determinism OK ({options.mode}): {options.runs} runs, corpus and rankings identical"
     if options.index_runs is not None:
         message += f"; index-runs {options.index_runs}, {len(INDEX_QUERIES)} queries identical"
     print(message)
@@ -303,7 +333,9 @@ def check_determinism(options: argparse.Namespace) -> None:
 def main() -> int:
     options = arguments()
     if options.emit_input is not None:
-        options.emit_input.write_text("".join(f"{line}\n" for line in determinism_lines()))
+        options.emit_input.write_text(
+            "".join(f"{line}\n" for line in determinism_lines(input_line_count(options.mode)))
+        )
         return 0
     try:
         check_determinism(options)
