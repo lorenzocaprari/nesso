@@ -2,7 +2,17 @@ name: PR title
 
 on:
   pull_request:
+    # opened, synchronize, and reopened attach this check to the head commit.
+    # edited is required so a title change re-runs it on the same commit.
+    # GitHub has no title-only activity; a body edit uses edited too, and the
+    # check runs again so a skipped latest run cannot pass a bad title.
     types: [opened, edited, reopened, synchronize]
+
+# A newer event for this PR cancels an in-progress run. A finished run stays
+# on the commit; the title-edit run is the one branch protection reads next.
+concurrency:
+  group: pr-title-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
 
 permissions:
   contents: read

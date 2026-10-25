@@ -5,7 +5,16 @@ on:
     branches:
       - main
   pull_request:
+    # opened, synchronize, and reopened label the PR and report autolabel.
+    # edited refreshes the label after a title change. update-draft does not
+    # run on pull_request; it only drafts on push to main.
     types: [opened, reopened, synchronize, edited]
+
+# Pull request events for one PR share a group and cancel an in-progress run.
+# Push to main does not cancel a draft that is already running.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
