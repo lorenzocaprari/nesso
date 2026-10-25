@@ -90,7 +90,7 @@ bash scripts/lint
 ./scripts/code-coverage conan/profiles/code-coverage
 ```
 
-Coverage floors are the `REQUIRED_*` values in `scripts/code-coverage`. The Pipeline workflow (`.github/workflows/ci.yml`) is the merge gate: lint, clang-tidy, cppcheck, Release and Debug builds, the Clang 21 and arm64 Release builds, unit, integration, and functional tests, coverage, and `scripts/check-determinism` (the `determinism` job: fp32 and the default int8 policy gate; int8 with `NESSO_THREADS` set to the logical CPU count is report-only). The `bench` job fails when a tier regresses against the latest baseline saved from `main`. Pull requests run the 1k and 10k tiers. Pushes to `main` and the nightly schedule also run 100k. `fuzz-test` runs on pushes to `main` and nightly.
+Coverage floors are the `REQUIRED_*` values in `scripts/code-coverage`. The Pipeline workflow (`.github/workflows/ci.yml`) is the merge gate: lint, clang-tidy, cppcheck, Release and Debug builds, the Clang 21 and arm64 Release builds, unit, integration, and functional tests, coverage, and `scripts/check-determinism` (the `determinism` job: fp32 and the default int8 policy gate; int8 with `NESSO_THREADS` set to the logical CPU count is report-only). The `bench` job fails when a tier regresses against the latest baseline saved from `main`. Pull requests run the 1k and 10k tiers. Pushes to `main` and the nightly schedule also run 100k. `fuzz-test` runs on pushes to `main` and nightly. A pull request that changes only `*.md`, `docs/`, `LICENSE`, or `.github/ISSUE_TEMPLATE/` skips the build, test, coverage, bench, and determinism jobs. `lint` still runs. Pushes to `main`, the nightly schedule, and manual runs do not skip.
 
 ## Pull requests
 

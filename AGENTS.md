@@ -57,6 +57,7 @@ python3 scripts/bench-compare
 - `scripts/code-coverage` adds `--no-remote` and exports `NESSO_REQUIRE_MODEL=1` only when `CI=true`. The coverage job also sets `NESSO_REQUIRE_BDD=1`.
 - The `bench` job compares only tiers present in both the run and the latest baseline saved from `main`. Pull requests omit 100k. There is no baseline on the first run, and `scripts/bench-compare` warns and exits 0. CI allows wall time up to 5.5× and peak RSS up to 1.2× (`NESSO_BENCH_WALL_TOLERANCE`, `NESSO_BENCH_RSS_TOLERANCE`). Local compare stays at 15% against `bench/baseline.json`.
 - `fuzz-test` runs on pushes to `main` and on the nightly schedule. Pull requests are fuzzed by ClusterFuzzLite (`.github/workflows/cifuzz.yml`). The seeds stay in `test/fuzz/seeds/parser` and `test/fuzz/seeds/tokenizer`.
+- A pull request that changes only documentation skips the heavy jobs in `.github/workflows/ci.yml`. Documentation is `*.md`, `docs/`, `LICENSE`, and `.github/ISSUE_TEMPLATE/`. Any other path counts as code. `lint` still runs, and it runs `scripts/check-agent-docs`. Pushes to `main`, the nightly schedule, and `workflow_dispatch` run every job. `scripts/ci-build-archive` packs the build artifacts those jobs download.
 
 ## Hard rules
 
