@@ -72,7 +72,7 @@ python3 scripts/bench-compare
 - Run `scripts/clang-tidy` and `scripts/lint` on new code before pushing.
 - One pull request per agreed scope. Anything outside that scope is a note or a follow-up, not extra commits.
 - When told to push to an existing branch or pull request, fetch first and push there. Do not open another pull request, and do not overwrite commits you did not author.
-- New GitHub Actions use a full commit SHA and a trailing `# vX.Y.Z` comment, as in `.github/workflows/`.
+- New GitHub Actions use a full commit SHA and a trailing `# vX.Y.Z` comment, as in `.github/workflows/`. `.github/workflows/release.yml` is the exception: its SLSA provenance generators are called by a `vX.Y.Z` tag because those workflows check their own ref. Scorecard Pinned-Dependencies flags those two refs. Leave them on the tag.
 - User-facing notes go under `## [Unreleased]` in `CHANGELOG.md`. A release is one squash-merged pull request that bumps `version` in `conanfile.py` and moves that section to `## [X.Y.Z] - YYYY-MM-DD`. Do not bump `version` on any other pull request. After that commit is on `main`, publish the `vX.Y.Z` draft. Do not publish a draft named `Unreleased (bump conanfile.py to release)`: its tag name is `unreleased`, and `.github/workflows/release.yml` does not run for it. `.github/workflows/release-drafter.yml` sets the draft version from `scripts/check-versions`.
 
 ## Common pitfalls
@@ -87,5 +87,6 @@ python3 scripts/bench-compare
 | `conan install --no-remote` misses lockfile packages | The baked cache is `CONAN_HOME=/opt/conan2` inside `nesso-build-env` | Drop `--no-remote` outside that image; keep `--lockfile=conan.lock` |
 | `CMakeUserPresets.json` shows in `git status` | `conan install` writes it and `.gitignore` does not list it | Leave it uncommitted |
 | `prepare-image-amd64` or `prepare-image-arm64` rebuilds for a long time | `scripts/build-env-hash` inputs changed, including `test/functional/go.sum` | Expect that job; its timeout is 360 minutes |
+| SLSA provenance fails when the generator `uses` a commit SHA | `.github/workflows/release.yml` calls those workflows by tag | Keep the `vX.Y.Z` tag. The generator checks its own ref |
 | Draft release is named `v0.2.0` while `conanfile.py` is `0.1.0` | Release Drafter used to bump from labels. The only git tag is `v0.1.0`, and it matches `conanfile.py` | Delete that unpublished draft. Do not publish it. Publishing would create a `v0.2.0` tag that `scripts/check-versions` rejects |
 | Publishing the Unreleased draft did not publish nesso | That draft's tag name is `unreleased`, which is not `vX.Y.Z`, so `.github/workflows/release.yml` does not run | Bump `version` in `conanfile.py` on `main`, then publish the `vX.Y.Z` draft |

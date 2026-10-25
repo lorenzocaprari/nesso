@@ -1,7 +1,7 @@
 name: Release
 
 # arm64 CI blocks Pipeline. This workflow still publishes only the amd64
-# .deb, checksums, SBOM, and provenance bundles. Dockerfile.runtime and
+# .deb, checksums, SBOM, and provenance. Dockerfile.runtime and
 # scripts/package-deb are amd64-only (gcc-26's -march=x86-64-v2,
 # Architecture: amd64). A follow-up, behind a workflow_dispatch input that
 # defaults to false, should:
@@ -9,9 +9,20 @@ name: Release
 #     conan/profiles/gcc-26-armv8
 #   - push a multi-arch manifest (an arm image must not replace :latest)
 #   - emit an arm64 .deb instead of the hardcoded amd64 filename
-#   - cover that .deb with the same SBOM, checksum, and provenance
-#     attestations this workflow already attaches for amd64
+#   - cover that .deb with the same SBOM, checksum, signature, and
+#     provenance this workflow already attaches for amd64
 # Until that input exists, vX.Y.Z tags stay amd64-only.
+#
+# workflow_dispatch builds, gates, and uploads workflow artifacts. Push,
+# cosign, provenance, and the GitHub Release run only for a vX.Y.Z tag.
+# That dispatch is the dry run: it cannot publish.
+
+# Tag releases sign ghcr.io/<owner>/nesso by digest with keyless cosign
+# (cosign 2.6.1). SLSA Build Level 3 provenance comes from
+# slsa-github-generator v2.1.0: the generic generator for the .deb and
+# SPDX SBOM, the container generator for the image digest. Those two
+# reusable workflows are referenced by tag. They verify their own ref
+# and reject a commit SHA. Every other action stays pinned by SHA.
 
 on:
   push:
@@ -35,10 +46,14 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 90
     permissions:
-      contents: write
+      contents: read
       packages: write
-      id-token: write
-      attestations: write
+    outputs:
+      image: ${{ steps.select.outputs.runtime_image }}
+      digest: ${{ steps.push.outputs.digest }}
+      ver: ${{ steps.ver.outputs.ver }}
+      hashes: ${{ steps.subjects.outputs.hashes }}
+      provenance_name: ${{ steps.subjects.outputs.provenance_name }}
     steps:
       - name: Checkout Repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -207,49 +222,28 @@ jobs:
           upload-artifact: false
           upload-release-assets: false
 
-      - name: Attest .deb provenance
-        id: attest-deb
-        if: startsWith(github.ref, 'refs/tags/')
-        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
-        with:
-          subject-path: nesso_${{ steps.ver.outputs.ver }}_amd64.deb
-
-      - name: Attest runtime image provenance
-        id: attest-image
-        if: startsWith(github.ref, 'refs/tags/')
-        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
-        with:
-          subject-name: ${{ steps.push.outputs.image }}
-          subject-digest: ${{ steps.push.outputs.digest }}
-          push-to-registry: true
-
-      # Scorecard Signed-Releases ignores the attestation store. releasesHaveProvenance
-      # matches a release asset whose name ends in .intoto.jsonl (score 10).
-      - name: Attach provenance bundles
-        if: startsWith(github.ref, 'refs/tags/')
+      # sha256sum layout, then base64 one line. The generic generator decodes
+      # this into its subject list. The published checksum is recomputed
+      # after provenance exists; this file is the workflow artifact only.
+      - name: Hash release subjects
+        id: subjects
         run: |
           set -euo pipefail
           ver='${{ steps.ver.outputs.ver }}'
-          cp '${{ steps.attest-deb.outputs.bundle-path }}' "nesso_${ver}_amd64.deb.intoto.jsonl"
-          cp '${{ steps.attest-image.outputs.bundle-path }}' "nesso_${ver}_ghcr.intoto.jsonl"
+          deb="nesso_${ver}_amd64.deb"
+          sbom="nesso_${ver}.spdx.json"
+          hashes="$(sha256sum "${deb}" "${sbom}" | base64 -w0)"
+          echo "hashes=${hashes}" >> "${GITHUB_OUTPUT}"
+          echo "provenance_name=nesso_${ver}_amd64.intoto.jsonl" >> "${GITHUB_OUTPUT}"
 
       - name: Generate SHA256SUMS
         run: |
           set -euo pipefail
           ver='${{ steps.ver.outputs.ver }}'
-          files=(
-            "nesso_${ver}_amd64.deb"
-            "nesso_${ver}.spdx.json"
-          )
-          for extra in \
-            "nesso_${ver}_amd64.deb.intoto.jsonl" \
-            "nesso_${ver}_ghcr.intoto.jsonl"
-          do
-            if [[ -f "${extra}" ]]; then
-              files+=("${extra}")
-            fi
-          done
-          sha256sum "${files[@]}" > SHA256SUMS
+          sha256sum \
+            "nesso_${ver}_amd64.deb" \
+            "nesso_${ver}.spdx.json" \
+            > SHA256SUMS
           cat SHA256SUMS
 
       - name: Upload artifacts
@@ -263,14 +257,174 @@ jobs:
             nesso
           if-no-files-found: error
 
+  # Keyless signature over the manifest digest. The certificate SAN is
+  # https://github.com/<owner>/nesso/.github/workflows/release.yml@refs/tags/vX.Y.Z
+  sign:
+    needs: deploy
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      id-token: write
+      packages: write
+    steps:
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@7e8b541eb2e61bf99390e1afd4be13a184e9ebc5 # v3.10.1
+        with:
+          cosign-release: v2.6.1
+
+      - name: Log into ${{ env.REGISTRY }}
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Sign runtime image by digest
+        env:
+          IMAGE: ${{ needs.deploy.outputs.image }}
+          DIGEST: ${{ needs.deploy.outputs.digest }}
+        run: |
+          set -euo pipefail
+          if [[ ! "${DIGEST}" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+            echo "error: refusing to sign without a digest" >&2
+            exit 1
+          fi
+          cosign sign --yes "${IMAGE}@${DIGEST}"
+
+  # SLSA Build L3 for the .deb and the SPDX SBOM. upload-assets stays
+  # false so the release job can checksum the provenance before publishing.
+  # contents: write is declared because the called workflow's upload job
+  # requests it; that job does not run when upload-assets is false.
+  # Tag ref: the generator rejects a SHA pin. See CONTRIBUTING.md.
+  provenance:
+    needs: deploy
+    if: startsWith(github.ref, 'refs/tags/')
+    permissions:
+      actions: read
+      id-token: write
+      contents: write
+    # zizmor: ignore[unpinned-uses] generator verifies its own vX.Y.Z ref
+    uses: slsa-framework/slsa-github-generator/.github/workflows/generator_generic_slsa3.yml@v2.1.0
+    with:
+      base64-subjects: ${{ needs.deploy.outputs.hashes }}
+      provenance-name: ${{ needs.deploy.outputs.provenance_name }}
+      upload-assets: false
+
+  # SLSA Build L3 for the image. The attestation is stored on the digest
+  # in GHCR. slsa-verifier verify-image reads it from the registry.
+  # Tag ref: same generator constraint as the generic workflow.
+  image-provenance:
+    needs: deploy
+    if: startsWith(github.ref, 'refs/tags/')
+    permissions:
+      actions: read
+      id-token: write
+      packages: write
+    # zizmor: ignore[unpinned-uses] generator verifies its own vX.Y.Z ref
+    uses: slsa-framework/slsa-github-generator/.github/workflows/generator_container_slsa3.yml@v2.1.0
+    with:
+      image: ${{ needs.deploy.outputs.image }}
+      digest: ${{ needs.deploy.outputs.digest }}
+      registry-username: ${{ github.actor }}
+    secrets:
+      registry-password: ${{ secrets.GITHUB_TOKEN }}
+
+  # Scorecard Signed-Releases ignores the registry. releasesHaveProvenance
+  # matches a release asset whose name ends in .intoto.jsonl.
+  release:
+    needs: [deploy, sign, provenance, image-provenance]
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      actions: read
+      contents: write
+      packages: read
+    steps:
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@7e8b541eb2e61bf99390e1afd4be13a184e9ebc5 # v3.10.1
+        with:
+          cosign-release: v2.6.1
+
+      - name: Log into ${{ env.REGISTRY }}
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: nesso-${{ needs.deploy.outputs.ver }}-linux-amd64
+
+      - name: Download .deb provenance
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PROVENANCE_NAME: ${{ needs.provenance.outputs.provenance-name }}
+        run: |
+          set -euo pipefail
+          dest="${RUNNER_TEMP}/provenance"
+          mkdir -p "${dest}"
+          gh run download "${GITHUB_RUN_ID}" --name "${PROVENANCE_NAME}" --dir "${dest}"
+          found="$(find "${dest}" -type f -name "${PROVENANCE_NAME}" -print -quit)"
+          if [[ -z "${found}" ]]; then
+            echo "error: missing ${PROVENANCE_NAME} in the provenance artifact" >&2
+            find "${dest}" -print >&2
+            exit 1
+          fi
+          install -m 0644 "${found}" "./${PROVENANCE_NAME}"
+          test -s "./${PROVENANCE_NAME}"
+
+      - name: Download image provenance
+        env:
+          IMAGE: ${{ needs.deploy.outputs.image }}
+          DIGEST: ${{ needs.deploy.outputs.digest }}
+          VER: ${{ needs.deploy.outputs.ver }}
+        run: |
+          set -euo pipefail
+          out="nesso_${VER}_ghcr.intoto.jsonl"
+          tmp="$(mktemp)"
+          ok=0
+          for _ in 1 2 3 4 5 6; do
+            if cosign download attestation "${IMAGE}@${DIGEST}" > "${tmp}" && [[ -s "${tmp}" ]]; then
+              ok=1
+              break
+            fi
+            sleep 5
+          done
+          if [[ "${ok}" != 1 ]]; then
+            echo "error: image attestation was not readable" >&2
+            exit 1
+          fi
+          if [[ "$(head -c 1 "${tmp}")" != '{' ]]; then
+            echo "error: image attestation was not JSON" >&2
+            exit 1
+          fi
+          mv "${tmp}" "${out}"
+
+      - name: Generate SHA256SUMS
+        env:
+          VER: ${{ needs.deploy.outputs.ver }}
+          PROVENANCE_NAME: ${{ needs.provenance.outputs.provenance-name }}
+        run: |
+          set -euo pipefail
+          sha256sum \
+            "nesso_${VER}_amd64.deb" \
+            "nesso_${VER}.spdx.json" \
+            "${PROVENANCE_NAME}" \
+            "nesso_${VER}_ghcr.intoto.jsonl" \
+            > SHA256SUMS
+          cat SHA256SUMS
+
       - name: GitHub Release
-        if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
         with:
           files: |
-            nesso_${{ steps.ver.outputs.ver }}_amd64.deb
-            nesso_${{ steps.ver.outputs.ver }}_amd64.deb.intoto.jsonl
-            nesso_${{ steps.ver.outputs.ver }}_ghcr.intoto.jsonl
-            nesso_${{ steps.ver.outputs.ver }}.spdx.json
+            nesso_${{ needs.deploy.outputs.ver }}_amd64.deb
+            nesso_${{ needs.deploy.outputs.ver }}.spdx.json
+            ${{ needs.provenance.outputs.provenance-name }}
+            nesso_${{ needs.deploy.outputs.ver }}_ghcr.intoto.jsonl
             SHA256SUMS
           generate_release_notes: true

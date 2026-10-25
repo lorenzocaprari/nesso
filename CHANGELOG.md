@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Tag releases sign `ghcr.io/lorenzocaprari/nesso` by digest with keyless cosign, and attach SLSA Build Level 3 provenance for the `.deb`, the SPDX SBOM, and the image. Verification commands are in the README.
 - `--threads` and `NESSO_THREADS` set the int8 session count and the fp32 intra-op thread count. `nesso --version --verbose` prints that policy.
 - `scripts/check-determinism --index-runs` compares corpus bytes and the rankings for four queries, including `PAY-E1042`. `--emit-input` writes the 3500-line input the gate uses.
 

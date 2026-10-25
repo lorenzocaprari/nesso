@@ -98,7 +98,7 @@ Title format: `type(scope): subject` or `type: subject`. Types: `feat`, `fix`, `
 
 The only author on commits and pull requests is Lorenzo Caprari <caprarilorenzo5@gmail.com>. No `Co-authored-by`, `Signed-off-by`, or other agent or tool trailers.
 
-Every GitHub Action is pinned to a commit SHA with a `# vX.Y.Z` comment. New or bumped actions keep that.
+Every GitHub Action is pinned to a commit SHA with a `# vX.Y.Z` comment. New or bumped actions keep that. `.github/workflows/release.yml` calls the SLSA provenance generators by a `vX.Y.Z` tag. Those reusable workflows check their own ref, so a SHA pin fails the release. OpenSSF Scorecard's Pinned-Dependencies check flags the two tag refs. That is the documented exception. The Scorecard workflow uploads the result and does not fail the job on that finding.
 
 Put user-facing notes under `## [Unreleased]` in [CHANGELOG.md](CHANGELOG.md). On release, move that section to `## [X.Y.Z] - YYYY-MM-DD` in the same commit that bumps the version.
 
@@ -108,7 +108,7 @@ Put user-facing notes under `## [Unreleased]` in [CHANGELOG.md](CHANGELOG.md). O
 
 While the git tag for that version already exists, the draft name is `Unreleased (bump conanfile.py to release)` and its tag name is `unreleased`. GitHub requires a tag name on a draft. `unreleased` is not `vX.Y.Z`, so publishing that draft does not create a version tag and does not start `.github/workflows/release.yml`. Do not publish it. After a commit on `main` bumps `version` in `conanfile.py`, the same draft becomes name and tag `vX.Y.Z`.
 
-To release: open one pull request that bumps `version` in `conanfile.py`, moves `## [Unreleased]` in `CHANGELOG.md` to `## [X.Y.Z] - YYYY-MM-DD`, and updates any other file `scripts/check-versions` compares. Today that script only reads `conanfile.py`. Squash-merge it. The draft on `main` becomes `vX.Y.Z`. Publish that draft. Publishing creates the git tag `vX.Y.Z` from your account, so the tag push starts `.github/workflows/release.yml`. That workflow runs `scripts/check-versions` against the tag before it publishes the `.deb`, `ghcr.io/lorenzocaprari/nesso`, and the GitHub Release assets. A tag that does not match `conanfile.py` fails there. CI must already have published `nesso-build-env`.
+To release: open one pull request that bumps `version` in `conanfile.py`, moves `## [Unreleased]` in `CHANGELOG.md` to `## [X.Y.Z] - YYYY-MM-DD`, and updates any other file `scripts/check-versions` compares. Today that script only reads `conanfile.py`. Squash-merge it. The draft on `main` becomes `vX.Y.Z`. Publish that draft. Publishing creates the git tag `vX.Y.Z` from your account, so the tag push starts `.github/workflows/release.yml`. That workflow runs `scripts/check-versions` against the tag before it publishes the `.deb`, `ghcr.io/lorenzocaprari/nesso`, and the GitHub Release assets. On that tag it also signs the image by digest and attaches the SLSA provenance files. Verification commands are in [README.md](README.md). A tag that does not match `conanfile.py` fails there. CI must already have published `nesso-build-env`.
 
 The unpublished draft named `v0.2.0` was opened when Release Drafter bumped from labels. It has no git tag. `conanfile.py` is `0.1.0`, which matches the only tag, `v0.1.0`. Delete that `v0.2.0` draft. Do not publish it. Publishing would create a `v0.2.0` tag that `scripts/check-versions` rejects. The next push to `main` retargets whatever draft is still open to the unreleased name while `0.1.0` is current.
 
