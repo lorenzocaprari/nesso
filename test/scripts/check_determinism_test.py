@@ -1,3 +1,4 @@
+import os
 import pathlib
 import stat
 import subprocess
@@ -63,8 +64,10 @@ class CheckDeterminismTest(unittest.TestCase):
         binary: pathlib.Path,
         directory: pathlib.Path,
         stress: str = "python3 -c 'import time; time.sleep(60)'",
-        runs: str = "3",
+        runs: str | None = "3",
         index_runs: str | None = None,
+        mode: str | None = None,
+        env: dict[str, str] | None = None,
     ) -> subprocess.CompletedProcess[str]:
         model_dir = directory / "models"
         model_dir.mkdir()
@@ -78,18 +81,21 @@ class CheckDeterminismTest(unittest.TestCase):
             str(model_dir),
             "--input",
             str(input_file),
-            "--runs",
-            runs,
             "--stress-command",
             stress,
         ]
+        if runs is not None:
+            command.extend(["--runs", runs])
         if index_runs is not None:
             command.extend(["--index-runs", index_runs])
+        if mode is not None:
+            command.extend(["--mode", mode])
         return subprocess.run(
             command,
             capture_output=True,
             text=True,
             check=False,
+            env=env,
         )
 
     def test_accepts_identical_corpora_and_rankings(self) -> None:
@@ -187,6 +193,82 @@ class CheckDeterminismTest(unittest.TestCase):
         self.assertIn("payment timeout", result.stderr)
         self.assertIn("ranking", result.stderr)
 
+    def test_full_mode_defaults_to_ten_runs_without_index_runs(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            directory = pathlib.Path(temp)
+            result = self.run_gate(self.write_binary(directory, unstable=None), directory, runs=None)
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("determinism OK (full): 10 runs", result.stdout)
+        self.assertNotIn("index-runs", result.stdout)
+
+    def test_pr_mode_defaults_to_two_runs_and_two_index_runs(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            directory = pathlib.Path(temp)
+            binary = self.write_binary(directory, unstable=None)
+            result = self.run_gate(binary, directory, runs=None, mode="pr")
+            searches = (directory / "searches").read_text().splitlines()
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("determinism OK (pr): 2 runs", result.stdout)
+        self.assertIn("index-runs 2", result.stdout)
+        for query in (
+            "PAY-E1042",
+            "connection refused",
+            "database connection error",
+            "payment timeout",
+        ):
+            self.assertGreaterEqual(searches.count(query), 2, searches)
+
+    def test_explicit_runs_override_pr_mode_and_env(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            directory = pathlib.Path(temp)
+            env = dict(**os.environ)
+            env["NESSO_DETERMINISM_MODE"] = "pr"
+            result = self.run_gate(
+                self.write_binary(directory, unstable=None),
+                directory,
+                runs="4",
+                index_runs="3",
+                mode="full",
+                env=env,
+            )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("determinism OK (full): 4 runs", result.stdout)
+        self.assertIn("index-runs 3", result.stdout)
+
+    def test_pr_mode_still_reports_a_changed_corpus(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            directory = pathlib.Path(temp)
+            result = self.run_gate(
+                self.write_binary(directory, unstable="unstable"),
+                directory,
+                runs=None,
+                mode="pr",
+            )
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("corpus differs", result.stderr)
+        self.assertNotIn("determinism OK", result.stdout)
+
+    def test_rejects_an_unknown_mode_from_the_environment(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            path = pathlib.Path(temp) / "determinism-input.log"
+            env = dict(**os.environ)
+            env["NESSO_DETERMINISM_MODE"] = "weekly"
+            result = subprocess.run(
+                [str(GATE), "--emit-input", str(path)],
+                capture_output=True,
+                text=True,
+                check=False,
+                env=env,
+            )
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("mode", result.stderr)
+        self.assertFalse(path.exists())
+
     def test_emit_input_writes_at_least_3500_lines(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             path = pathlib.Path(temp) / "determinism-input.log"
@@ -201,6 +283,39 @@ class CheckDeterminismTest(unittest.TestCase):
 
         self.assertGreaterEqual(len(lines), 3500)
         self.assertTrue(any("PAY-E1042" in line for line in lines))
+
+    def test_pr_mode_emit_input_is_eight_batches(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            path = pathlib.Path(temp) / "determinism-input.log"
+            result = subprocess.run(
+                [str(GATE), "--mode", "pr", "--emit-input", str(path)],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            lines = path.read_text().splitlines()
+
+        self.assertEqual(len(lines), 256)
+        self.assertEqual(len(lines) % 32, 0)
+        self.assertTrue(any("PAY-E1042" in line for line in lines))
+
+    def test_full_flag_overrides_pr_environment_for_emit(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            path = pathlib.Path(temp) / "determinism-input.log"
+            env = dict(**os.environ)
+            env["NESSO_DETERMINISM_MODE"] = "pr"
+            result = subprocess.run(
+                [str(GATE), "--mode", "full", "--emit-input", str(path)],
+                capture_output=True,
+                text=True,
+                check=False,
+                env=env,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            lines = path.read_text().splitlines()
+
+        self.assertGreaterEqual(len(lines), 3500)
 
     def test_default_stress_command_pins_a_cpu_loop(self) -> None:
         result = subprocess.run([str(GATE), "--help"], capture_output=True, text=True, check=False)

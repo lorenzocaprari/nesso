@@ -646,7 +646,9 @@ jobs:
           path: bench/results/
           if-no-files-found: warn
 
-  # fp32 and the default int8 policy gate the job. int8 with
+  # fp32 and the default int8 policy gate the job. Pull requests set
+  # NESSO_DETERMINISM_MODE=pr (256-line input, 2 runs, 2 index runs).
+  # Push, schedule, and workflow_dispatch keep the full gate. int8 with
   # NESSO_THREADS=$(nproc) stays report-only: that override is one
   # single-thread session per logical CPU and skips the RAM cap.
   determinism:
@@ -654,6 +656,8 @@ jobs:
     if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    env:
+      NESSO_DETERMINISM_MODE: ${{ github.event_name == 'pull_request' && 'pr' || 'full' }}
     container:
       image: ${{ needs.prepare-image.outputs.image }}
       credentials:
@@ -703,30 +707,51 @@ jobs:
         run: ./scripts/check-determinism --emit-input determinism-input.log
 
       - name: Gate fp32 determinism
+        shell: bash
         run: |
-          ./scripts/check-determinism \
-            --binary build/Release/src/nesso \
-            --model-dir models-fp32 \
-            --input determinism-input.log \
-            --index-runs 3
+          set -euo pipefail
+          args=(
+            ./scripts/check-determinism
+            --binary build/Release/src/nesso
+            --model-dir models-fp32
+            --input determinism-input.log
+          )
+          if [[ "${NESSO_DETERMINISM_MODE}" == "full" ]]; then
+            args+=(--index-runs 3)
+          fi
+          "${args[@]}"
 
       - name: Gate int8 determinism
+        shell: bash
         run: |
-          ./scripts/check-determinism \
-            --binary build/Release/src/nesso \
-            --model-dir models \
-            --input determinism-input.log \
-            --index-runs 3
+          set -euo pipefail
+          args=(
+            ./scripts/check-determinism
+            --binary build/Release/src/nesso
+            --model-dir models
+            --input determinism-input.log
+          )
+          if [[ "${NESSO_DETERMINISM_MODE}" == "full" ]]; then
+            args+=(--index-runs 3)
+          fi
+          "${args[@]}"
 
       - name: Report int8 determinism at nproc sessions
         continue-on-error: true
+        shell: bash
         run: |
+          set -euo pipefail
           status=0
-          NESSO_THREADS="$(nproc)" ./scripts/check-determinism \
-            --binary build/Release/src/nesso \
-            --model-dir models \
-            --input determinism-input.log \
-            --index-runs 3 >int8-nproc-determinism.txt 2>&1 || status=$?
+          args=(
+            ./scripts/check-determinism
+            --binary build/Release/src/nesso
+            --model-dir models
+            --input determinism-input.log
+          )
+          if [[ "${NESSO_DETERMINISM_MODE}" == "full" ]]; then
+            args+=(--index-runs 3)
+          fi
+          NESSO_THREADS="$(nproc)" "${args[@]}" >int8-nproc-determinism.txt 2>&1 || status=$?
           cat int8-nproc-determinism.txt
           {
             echo '### int8 determinism, one single-thread session per logical CPU (report only)'
