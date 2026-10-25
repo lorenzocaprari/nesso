@@ -18,7 +18,7 @@ Bugs and feature requests use the issue forms. Vulnerabilities follow [SECURITY.
 
 ## Devcontainer image
 
-CI builds `.devcontainer/Dockerfile` (Ubuntu 26.04, GCC 15, Clang 21, AFL++, Go, Conan 2, pre-commit, ccache, stress-ng, zstd) and pushes `ghcr.io/lorenzocaprari/nesso-build-env:deps-<hash>`. The arm64 image is `.devcontainer/Dockerfile.arm64`, tagged `deps-<hash>-arm64`. The amd64 CI job is `prepare-image-amd64`. `scripts/build-env-hash amd64` covers that Dockerfile, `.devcontainer/requirements.txt`, `conan.lock`, `conan/profiles/gcc-26`, `conan/profiles/gcc-26-debug`, `test/functional/go.mod`, and `test/functional/go.sum`. It includes `conanfile.py` as the resolved dependency spec, not the recipe text. There is no `devcontainer.json`. The image sets `CONAN_HOME=/opt/conan2` with the locked dependencies already installed; CI configures with `--no-remote`. It sets `GOMODCACHE=/opt/go/pkg/mod` with the godog modules already downloaded.
+CI builds `.devcontainer/Dockerfile` (Ubuntu 26.04, GCC 15, Clang 21, AFL++, lld 21, llvm-21, GNU time, Go, Conan 2, pre-commit, ccache, stress-ng, zstd) and pushes `ghcr.io/lorenzocaprari/nesso-build-env:deps-<hash>`. AFL++, lld-21, llvm-21, and GNU time are installed again in the layer after the Conan installs. The compiler layer still has AFL++, Clang 21, and the compiler-rt symlinks. The arm64 image is `.devcontainer/Dockerfile.arm64`, tagged `deps-<hash>-arm64`. The amd64 CI job is `prepare-image-amd64`. `scripts/build-env-hash amd64` covers that Dockerfile, `.devcontainer/requirements.txt`, `conan.lock`, `conan/profiles/gcc-26`, `conan/profiles/gcc-26-debug`, `test/functional/go.mod`, and `test/functional/go.sum`. It includes `conanfile.py` as the resolved dependency spec, not the recipe text. There is no `devcontainer.json`. The image sets `CONAN_HOME=/opt/conan2` with the locked dependencies already installed; CI configures with `--no-remote`. It sets `GOMODCACHE=/opt/go/pkg/mod` with the godog modules already downloaded.
 
 ```bash
 docker build -f .devcontainer/Dockerfile -t nesso-build-env .
@@ -72,7 +72,7 @@ Debug ctest in CI also sets `ASAN_OPTIONS` and `UBSAN_OPTIONS` so sanitizer find
 
 ## Fuzz
 
-`./scripts/fuzz-test` builds AFL++ LTO and ASan harnesses `nesso_fuzz_parser` and `nesso_fuzz_tokenizer` with `conan/profiles/gcc-26-fuzz`, then runs `afl-fuzz`. Seeds live in `test/fuzz/seeds/parser` and `test/fuzz/seeds/tokenizer`. `NESSO_FUZZ_MAX_TOTAL_TIME` defaults to 60 seconds per target; CI uses 60. The script needs `afl-clang-lto++`, `llvm-ar`, and `llvm-ranlib`. The Pipeline job runs on pushes to `main` and on the nightly schedule. Pull requests are fuzzed by ClusterFuzzLite (`.github/workflows/cifuzz.yml`).
+`./scripts/fuzz-test` builds AFL++ LTO and ASan harnesses `nesso_fuzz_parser` and `nesso_fuzz_tokenizer` with `conan/profiles/gcc-26-fuzz`, then runs `afl-fuzz`. Seeds live in `test/fuzz/seeds/parser` and `test/fuzz/seeds/tokenizer`. `NESSO_FUZZ_MAX_TOTAL_TIME` defaults to 60 seconds per target; CI uses 60. The script needs `afl-clang-lto++`, `llvm-ar` (`llvm-ar-21`), and `llvm-ranlib` (`llvm-ranlib-21`), which the amd64 build-env image provides along with `ld.lld-21`. The Pipeline job does not install them. It runs on pushes to `main`, on the nightly schedule, and on `workflow_dispatch`. Pull requests are fuzzed by ClusterFuzzLite (`.github/workflows/cifuzz.yml`).
 
 ## Lint and the local gate
 

@@ -47,6 +47,11 @@ class BuildEnvHashTest(unittest.TestCase):
             conan_at = text.index("conan install .")
             for marker in ("golang-go", "stress-ng", "zstd", "GOMODCACHE=/opt/go/pkg/mod", "\n    ccache \\"):
                 self.assertLess(conan_at, text.index(marker), f"{dockerfile} places {marker!r} before Conan")
+            if arch == "amd64":
+                self.assertLess(text.index("afl++"), conan_at)
+                tail = text[conan_at:]
+                for marker in ("\n    afl++ \\", "lld-21", "llvm-21", "\n    time \\"):
+                    self.assertIn(marker, tail, f"{dockerfile} missing {marker!r} after Conan")
             labels = {label for label, _ in module.hashed_chunks(ROOT, arch)}
             self.assertIn(f"file:{dockerfile}", labels)
             self.assertIn("file:test/functional/go.mod", labels)

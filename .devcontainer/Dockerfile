@@ -73,13 +73,20 @@ RUN conan install . -pr:h=conan/profiles/gcc-26-debug -pr:b=default --lockfile=c
     && rm -rf /tmp/nesso /tmp/* /var/tmp/*
 WORKDIR /
 
-# After the Conan installs. A change to ccache, Go, stress-ng, or zstd must
-# not rebuild those layers. GitHub Actions sets HOME to /github/home, so the
+# After the Conan installs so this layer can change without rebuilding them.
+# afl++ is repeated from the compiler layer above. lld-21 and llvm-21 are not
+# dependencies of that install; scripts/fuzz-test needs ld.lld-21, llvm-ar-21,
+# and llvm-ranlib-21. GNU time is /usr/bin/time for scripts/bench. The arm64
+# image does not run that job. GitHub Actions sets HOME to /github/home, so the
 # godog module cache cannot live under /root.
 RUN apt-get update && apt-get install -y --no-install-recommends \
+    afl++ \
     ccache \
     golang-go \
+    lld-21 \
+    llvm-21 \
     stress-ng \
+    time \
     zstd \
     && rm -rf /var/lib/apt/lists/*
 
