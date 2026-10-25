@@ -66,7 +66,7 @@ Release profile: replace `gcc-26-debug` with `gcc-26`.
 
 The black-box specs in [test/functional/](test/functional/) run the `nesso` binary through [godog](https://github.com/cucumber/godog) as the `bdd` ctest case. Go 1.24+ is a test-only dependency. Without it CMake skips `bdd`, and `NESSO_REQUIRE_BDD=1` turns that into a configure error (CI sets it).
 
-Unit, integration, and functional tests are separate ctest labels. CI runs each label as its own Release job and its own Debug job:
+Unit, integration, and functional tests are separate ctest labels. CI runs unit and integration in one job per lane. Functional shares that job on gcc Release, Clang, and arm64, and has its own gcc Debug job:
 
 ```bash
 ctest --test-dir build/Debug -L unit
@@ -118,7 +118,7 @@ bash scripts/lint
 ./scripts/code-coverage conan/profiles/code-coverage
 ```
 
-See [.github/workflows/ci.yml](.github/workflows/ci.yml) for lint, clang-tidy, cppcheck, Release/Debug builds, unit, integration, and functional tests, coverage, and the fp32 determinism gate. AFL++ `fuzz-test` runs on pushes to `main` and nightly; pull requests are fuzzed by [ClusterFuzzLite](.github/workflows/cifuzz.yml). The pipeline runs on pull requests, on pushes to `main`, and nightly. Tag `v*` publishes via [.github/workflows/release.yml](.github/workflows/release.yml). Weekly [CodeQL](.github/workflows/codeql.yml) (`c-cpp`, `build-mode: none`) and [OpenSSF Scorecard](.github/workflows/scorecard.yml) run on `main`.
+See [.github/workflows/ci.yml](.github/workflows/ci.yml) for `lint`, `clang-tidy`, and `cppcheck`, the gcc Release, gcc Debug, Clang, and arm64 builds, unit, integration, and functional tests, coverage, and the fp32 determinism gate. AFL++ `fuzz-test` runs on pushes to `main` and nightly; pull requests are fuzzed by [ClusterFuzzLite](.github/workflows/cifuzz.yml). The pipeline runs on pull requests, on pushes to `main`, and nightly. Tag `v*` publishes via [.github/workflows/release.yml](.github/workflows/release.yml). Weekly [CodeQL](.github/workflows/codeql.yml) (`c-cpp`, `build-mode: none`) and [OpenSSF Scorecard](.github/workflows/scorecard.yml) run on `main`.
 
 ### Measuring performance
 

@@ -26,9 +26,10 @@ env:
   REGISTRY: ghcr.io
   CONAN_HOME: /opt/conan2
 
-# Read-only default. Every job checks out the repo and pulls nesso-build-env.
+# Read-only default. Jobs that pull nesso-build-env keep packages: read.
 # prepare-image-amd64 and prepare-image-arm64 override packages to write so a
 # same-repo rebuild can push deps-<hash> and the BuildKit registry cache.
+# lint overrides to contents: read. It does not pull the image.
 permissions:
   contents: read
   packages: read
@@ -136,15 +137,45 @@ jobs:
 
       - name: Free disk space
         if: steps.image.outputs.rebuild == 'true'
-        uses: jlumbroso/free-disk-space@ceedf095f4ec1a097402bc6bd80831f2e1a6fde6 # v2.0.0
-        with:
-          tool-cache: true
-          android: true
-          dotnet: true
-          haskell: true
-          large-packages: true
-          docker-images: true
-          swap-storage: true
+        run: |
+          set -euo pipefail
+          df -h /
+          avail_kb=$(df -Pk / | awk 'NR==2 {print $4}')
+          # 40 GiB covers a cold BuildKit build of this image. Pull request
+          # #120 (run 40221737043) started at 87 GiB free on a 145 GiB disk.
+          # The previous free-disk action then spent 359s freeing another 31 GiB
+          # the cached rebuild did not use. Below the floor, delete the three
+          # large preinstalled trees in parallel. Skip apt purge and docker
+          # image prune.
+          floor_kb=$((40 * 1024 * 1024))
+          echo "available_kib=${avail_kb} floor_kib=${floor_kb}"
+          if [ "${avail_kb}" -ge "${floor_kb}" ]; then
+            echo "free space already above 40GiB; not deleting"
+            exit 0
+          fi
+          echo "free space below 40GiB; removing android, dotnet, and ghc"
+          pids=()
+          sudo rm -rf /usr/local/lib/android &
+          pids+=("$!")
+          sudo rm -rf /usr/share/dotnet &
+          pids+=("$!")
+          sudo rm -rf /opt/ghc &
+          pids+=("$!")
+          status=0
+          for pid in "${pids[@]}"; do
+            wait "${pid}" || status=1
+          done
+          if [ "${status}" -ne 0 ]; then
+            echo "error: removing a preinstalled tree failed" >&2
+            exit 1
+          fi
+          df -h /
+          avail_kb=$(df -Pk / | awk 'NR==2 {print $4}')
+          echo "available_kib_after=${avail_kb}"
+          if [ "${avail_kb}" -lt "${floor_kb}" ]; then
+            echo "error: still under 40GiB after removing preinstalled trees" >&2
+            exit 1
+          fi
 
       - name: Build and push nesso-build-env
         if: steps.image.outputs.rebuild == 'true'
@@ -157,23 +188,58 @@ jobs:
           cache-from: type=registry,ref=${{ steps.select.outputs.cache_ref }}
           cache-to: type=registry,ref=${{ steps.select.outputs.cache_ref }},mode=max
 
+      - name: Report free disk
+        if: steps.image.outputs.rebuild == 'true'
+        run: |
+          set -euo pipefail
+          df -h /
+          avail_kb=$(df -Pk / | awk 'NR==2 {print $4}')
+          echo "available_kib_after_build=${avail_kb}"
+
+  # One job, off the image. pre-commit and python3 are enough, so it starts
+  # with the workflow instead of waiting on prepare-image-amd64. A docs-only
+  # pull request still runs it. Later steps use always() so the failed step
+  # name stays visible when an earlier step fails. clang-tidy and cppcheck
+  # stay separate jobs in the image.
   lint:
-    needs: prepare-image-amd64
     runs-on: ubuntu-latest
-    container:
-      image: ${{ needs.prepare-image-amd64.outputs.image }}
-      credentials:
-        username: ${{ github.actor }}
-        password: ${{ secrets.GITHUB_TOKEN }}
+    timeout-minutes: 15
+    permissions:
+      contents: read
     steps:
       - name: Checkout Repository
+        id: checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Mark repository safe for Git
-        run: git config --global --add safe.directory "$(pwd)"
+      - name: Cache pre-commit
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/pre-commit
+          key: pre-commit-${{ hashFiles('.pre-commit-config.yaml') }}
 
-      - name: Run Linter
-        run: bash scripts/lint
+      - name: Install pre-commit
+        id: install
+        run: |
+          set -euo pipefail
+          python3 -m venv "${RUNNER_TEMP}/pre-commit-venv"
+          "${RUNNER_TEMP}/pre-commit-venv/bin/pip" install pre-commit
+          echo "${RUNNER_TEMP}/pre-commit-venv/bin" >> "${GITHUB_PATH}"
+
+      - name: Format (clang-format, cmake-format)
+        if: steps.install.outcome == 'success'
+        run: bash scripts/lint --format-only
+
+      - name: Hygiene (whitespace, line endings, YAML, merge markers, large files)
+        if: always() && !cancelled() && steps.install.outcome == 'success'
+        run: bash scripts/lint --hygiene-only
+
+      - name: Versions (check-versions)
+        if: always() && !cancelled() && steps.checkout.outcome == 'success'
+        run: bash scripts/check-versions
+
+      - name: Agent docs (check-agent-docs)
+        if: always() && !cancelled() && steps.checkout.outcome == 'success'
+        run: python3 scripts/check-agent-docs
 
   clang-tidy:
     needs: [prepare-image-amd64, changes]
@@ -233,7 +299,7 @@ jobs:
       - name: Run Cppcheck
         run: bash scripts/cppcheck
 
-  build-gcc-26:
+  build-gcc-26-amd64:
     needs: [prepare-image-amd64, changes]
     if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
@@ -327,7 +393,7 @@ jobs:
           # The tar is already gzip (or zstd). Skip a second zlib pass.
           compression-level: 0
 
-  build-gcc-26-debug:
+  build-gcc-26-debug-amd64:
     needs: [prepare-image-amd64, changes]
     if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
@@ -418,26 +484,22 @@ jobs:
           if-no-files-found: error
           compression-level: 0
 
-  # A job-level skip is applied before the matrix expands, so a skipped
-  # matrix job checks in as the literal "${{ matrix.label }}" string. These
-  # jobs expand once `changes` has succeeded. Release and debug do not also
-  # require the build: the previous `if` replaced the default dependency
-  # check, so a failed build still enters the job and fails under the
-  # expanded name. Clang and arm64 still require a successful build, as on
-  # main, and expand for a docs-only pull request anyway. A docs-only pull
-  # request only echoes. Release, debug, and Clang still use the amd64
-  # build-env image for that echo. The arm64 checks do not depend on
-  # prepare-image-amd64. An empty container image runs their echo on the
-  # runner, so they do not pull an image.
-  unit-tests-release:
-    name: ${{ matrix.label }}-tests-release
-    needs: [prepare-image-amd64, build-gcc-26, changes]
-    if: ${{ always() && !cancelled() && needs.changes.result == 'success' }}
+  # The job id is the check name. There is no matrix, so a docs-only skip or
+  # a failed build still reports that name. GitHub counts the skip as success.
+  # functional is a step on gcc Release, Clang, and arm64. It stays its own
+  # gcc Debug job: on a no-image pull request that suite is the wall-clock
+  # tail (run 40200059245, +255s) and the bdd test already uses every logical
+  # CPU, so appending unit and integration would lengthen it. Those three
+  # lanes have slack against that tail and against coverage on the #120 image
+  # rebuild (run 40221737043, coverage at +643s).
+  test-gcc-26-amd64:
+    needs: [prepare-image-amd64, build-gcc-26-amd64, changes]
+    if: >-
+      ${{ always() && !cancelled() && needs.changes.result == 'success' &&
+      needs.changes.outputs.code == 'true' &&
+      needs.build-gcc-26-amd64.result == 'success' }}
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        label: [unit, integration, functional]
+    timeout-minutes: 30
     container:
       image: ${{ needs.prepare-image-amd64.outputs.image }}
       credentials:
@@ -445,90 +507,167 @@ jobs:
         password: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - name: Checkout Repository
-        if: needs.changes.outputs.code == 'true'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Restore MiniLM models
         id: models
-        if: needs.changes.outputs.code == 'true'
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: models
           key: minilm-${{ hashFiles('scripts/fetch-model') }}
 
       - name: Fetch MiniLM models
-        if: needs.changes.outputs.code == 'true' && steps.models.outputs.cache-hit != 'true'
+        if: steps.models.outputs.cache-hit != 'true'
         run: ./scripts/fetch-model models
 
       - name: Download Release build
-        if: needs.changes.outputs.code == 'true'
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: release-build
 
       - name: Extract Release build
-        if: needs.changes.outputs.code == 'true'
+        id: extract
         run: ./scripts/ci-build-archive unpack release-build
 
-      - name: Run ${{ matrix.label }} tests
-        if: needs.changes.outputs.code == 'true'
-        run: ctest --test-dir build/Release --output-on-failure -j "$(nproc)" -L ${{ matrix.label }} -V
+      - name: Run unit tests
+        id: unit
+        run: ctest --test-dir build/Release --output-on-failure -j "$(nproc)" -L unit -V
 
-      - name: Docs-only
-        if: needs.changes.outputs.code != 'true'
-        run: echo "docs-only pull request; ${{ matrix.label }} release tests not run"
+      - name: Run integration tests
+        id: integration
+        if: always() && !cancelled() && steps.extract.outcome == 'success'
+        run: ctest --test-dir build/Release --output-on-failure -j "$(nproc)" -L integration -V
 
-  unit-tests-debug:
-    name: ${{ matrix.label }}-tests-debug
-    needs: [prepare-image-amd64, build-gcc-26-debug, changes]
-    if: ${{ always() && !cancelled() && needs.changes.result == 'success' }}
+      - name: Run functional tests
+        id: functional
+        if: always() && !cancelled() && steps.extract.outcome == 'success'
+        run: ctest --test-dir build/Release --output-on-failure -j "$(nproc)" -L functional -V
+
+      - name: Summarize test suites
+        if: always() && !cancelled()
+        run: |
+          {
+            echo '### test-gcc-26-amd64'
+            echo '| suite | result |'
+            echo '| --- | --- |'
+            echo "| unit | ${{ steps.unit.outcome }} |"
+            echo "| integration | ${{ steps.integration.outcome }} |"
+            echo "| functional | ${{ steps.functional.outcome }} |"
+          } >> "${GITHUB_STEP_SUMMARY}"
+
+  test-gcc-26-debug-amd64:
+    needs: [prepare-image-amd64, build-gcc-26-debug-amd64, changes]
+    if: >-
+      ${{ always() && !cancelled() && needs.changes.result == 'success' &&
+      needs.changes.outputs.code == 'true' &&
+      needs.build-gcc-26-debug-amd64.result == 'success' }}
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        label: [unit, integration, functional]
+    timeout-minutes: 30
+    env:
+      ASAN_OPTIONS: halt_on_error=1:detect_leaks=1:abort_on_error=1
+      UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
     container:
       image: ${{ needs.prepare-image-amd64.outputs.image }}
       credentials:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
-    env:
-      ASAN_OPTIONS: halt_on_error=1:detect_leaks=1:abort_on_error=1
-      UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
     steps:
       - name: Checkout Repository
-        if: needs.changes.outputs.code == 'true'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Restore MiniLM models
         id: models
-        if: needs.changes.outputs.code == 'true'
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: models
           key: minilm-${{ hashFiles('scripts/fetch-model') }}
 
       - name: Fetch MiniLM models
-        if: needs.changes.outputs.code == 'true' && steps.models.outputs.cache-hit != 'true'
+        if: steps.models.outputs.cache-hit != 'true'
         run: ./scripts/fetch-model models
 
       - name: Download Debug build
-        if: needs.changes.outputs.code == 'true'
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: debug-build
 
       - name: Extract Debug build
-        if: needs.changes.outputs.code == 'true'
+        id: extract
         run: ./scripts/ci-build-archive unpack debug-build
 
-      - name: Run ${{ matrix.label }} tests
-        if: needs.changes.outputs.code == 'true'
-        run: ctest --test-dir build/Debug --output-on-failure -j "$(nproc)" -L ${{ matrix.label }} -V
+      - name: Run unit tests
+        id: unit
+        run: ctest --test-dir build/Debug --output-on-failure -j "$(nproc)" -L unit -V
 
-      - name: Docs-only
-        if: needs.changes.outputs.code != 'true'
-        run: echo "docs-only pull request; ${{ matrix.label }} debug tests not run"
+      - name: Run integration tests
+        id: integration
+        if: always() && !cancelled() && steps.extract.outcome == 'success'
+        run: ctest --test-dir build/Debug --output-on-failure -j "$(nproc)" -L integration -V
+
+      - name: Summarize test suites
+        if: always() && !cancelled()
+        run: |
+          {
+            echo '### test-gcc-26-debug-amd64'
+            echo '| suite | result |'
+            echo '| --- | --- |'
+            echo "| unit | ${{ steps.unit.outcome }} |"
+            echo "| integration | ${{ steps.integration.outcome }} |"
+          } >> "${GITHUB_STEP_SUMMARY}"
+
+  test-gcc-26-debug-amd64-functional:
+    needs: [prepare-image-amd64, build-gcc-26-debug-amd64, changes]
+    if: >-
+      ${{ always() && !cancelled() && needs.changes.result == 'success' &&
+      needs.changes.outputs.code == 'true' &&
+      needs.build-gcc-26-debug-amd64.result == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      ASAN_OPTIONS: halt_on_error=1:detect_leaks=1:abort_on_error=1
+      UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
+    container:
+      image: ${{ needs.prepare-image-amd64.outputs.image }}
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Restore MiniLM models
+        id: models
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: models
+          key: minilm-${{ hashFiles('scripts/fetch-model') }}
+
+      - name: Fetch MiniLM models
+        if: steps.models.outputs.cache-hit != 'true'
+        run: ./scripts/fetch-model models
+
+      - name: Download Debug build
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: debug-build
+
+      - name: Extract Debug build
+        id: extract
+        run: ./scripts/ci-build-archive unpack debug-build
+
+      - name: Run functional tests
+        id: functional
+        run: ctest --test-dir build/Debug --output-on-failure -j "$(nproc)" -L functional -V
+
+      - name: Summarize test suites
+        if: always() && !cancelled()
+        run: |
+          {
+            echo '### test-gcc-26-debug-amd64-functional'
+            echo '| suite | result |'
+            echo '| --- | --- |'
+            echo "| functional | ${{ steps.functional.outcome }} |"
+          } >> "${GITHUB_STEP_SUMMARY}"
 
   fuzz-test:
     needs: prepare-image-amd64
@@ -631,7 +770,7 @@ jobs:
   # (two runner speed classes) while peak RSS stayed within 1.05x. Wall limit
   # is 5.50x so that spread passes; RSS limit is 1.20x. A missing baseline warns.
   bench:
-    needs: [prepare-image-amd64, build-gcc-26, changes]
+    needs: [prepare-image-amd64, build-gcc-26-amd64, changes]
     if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -735,7 +874,7 @@ jobs:
   # NESSO_THREADS=$(nproc) stays report-only: that override is one
   # single-thread session per logical CPU and skips the RAM cap.
   determinism:
-    needs: [prepare-image-amd64, build-gcc-26, changes]
+    needs: [prepare-image-amd64, build-gcc-26-amd64, changes]
     if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -841,7 +980,7 @@ jobs:
   # Clang 21 compiles nesso against the gcc-built libstdc++ packages
   # already in nesso-build-env (see conan/profiles/clang-26). libc++ is
   # not used: it is a different ABI from those static archives.
-  clang-26-release:
+  build-clang-26-amd64:
     needs: [prepare-image-amd64, changes]
     if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
@@ -955,18 +1094,14 @@ jobs:
           if-no-files-found: error
           compression-level: 0
 
-  unit-tests-clang:
-    name: ${{ matrix.label }}-tests-clang
-    needs: [prepare-image-amd64, clang-26-release, changes]
+  test-clang-26-amd64:
+    needs: [prepare-image-amd64, build-clang-26-amd64, changes]
     if: >-
       ${{ always() && !cancelled() && needs.changes.result == 'success' &&
-      (needs.changes.outputs.code != 'true' || needs.clang-26-release.result == 'success') }}
+      needs.changes.outputs.code == 'true' &&
+      needs.build-clang-26-amd64.result == 'success' }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    strategy:
-      fail-fast: false
-      matrix:
-        label: [unit, integration, functional]
     container:
       image: ${{ needs.prepare-image-amd64.outputs.image }}
       credentials:
@@ -974,38 +1109,54 @@ jobs:
         password: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - name: Checkout Repository
-        if: needs.changes.outputs.code == 'true'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Restore MiniLM models
         id: models
-        if: needs.changes.outputs.code == 'true'
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: models
           key: minilm-${{ hashFiles('scripts/fetch-model') }}
 
       - name: Fetch MiniLM models
-        if: needs.changes.outputs.code == 'true' && steps.models.outputs.cache-hit != 'true'
+        if: steps.models.outputs.cache-hit != 'true'
         run: ./scripts/fetch-model models
 
       - name: Download Release build
-        if: needs.changes.outputs.code == 'true'
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: release-build-clang
 
       - name: Extract Release build
-        if: needs.changes.outputs.code == 'true'
+        id: extract
         run: ./scripts/ci-build-archive unpack release-build-clang
 
-      - name: Run ${{ matrix.label }} tests
-        if: needs.changes.outputs.code == 'true'
-        run: ctest --test-dir build/Release --output-on-failure -j "$(nproc)" -L ${{ matrix.label }} -V
+      - name: Run unit tests
+        id: unit
+        run: ctest --test-dir build/Release --output-on-failure -j "$(nproc)" -L unit -V
 
-      - name: Docs-only
-        if: needs.changes.outputs.code != 'true'
-        run: echo "docs-only pull request; ${{ matrix.label }} clang tests not run"
+      - name: Run integration tests
+        id: integration
+        if: always() && !cancelled() && steps.extract.outcome == 'success'
+        run: ctest --test-dir build/Release --output-on-failure -j "$(nproc)" -L integration -V
+
+      - name: Run functional tests
+        id: functional
+        if: always() && !cancelled() && steps.extract.outcome == 'success'
+        run: ctest --test-dir build/Release --output-on-failure -j "$(nproc)" -L functional -V
+
+      - name: Summarize test suites
+        if: always() && !cancelled()
+        run: |
+          {
+            echo '### test-clang-26-amd64'
+            echo '| suite | result |'
+            echo '| --- | --- |'
+            echo "| unit | ${{ steps.unit.outcome }} |"
+            echo "| integration | ${{ steps.integration.outcome }} |"
+            echo "| functional | ${{ steps.functional.outcome }} |"
+          } >> "${GITHUB_STEP_SUMMARY}"
+
 
   # Native arm64 image. The image name stays nesso-build-env. The amd64
   # tag stays deps-<hash>; the arm64 tag appends -arm64. The amd64 job id
@@ -1058,15 +1209,45 @@ jobs:
 
       - name: Free disk space
         if: steps.image.outputs.rebuild == 'true'
-        uses: jlumbroso/free-disk-space@ceedf095f4ec1a097402bc6bd80831f2e1a6fde6 # v2.0.0
-        with:
-          tool-cache: true
-          android: true
-          dotnet: true
-          haskell: true
-          large-packages: true
-          docker-images: true
-          swap-storage: true
+        run: |
+          set -euo pipefail
+          df -h /
+          avail_kb=$(df -Pk / | awk 'NR==2 {print $4}')
+          # 40 GiB covers a cold BuildKit build of this image. Pull request
+          # #120 (run 40221737043) started at 87 GiB free on a 145 GiB disk.
+          # The previous free-disk action then spent 359s freeing another 31 GiB
+          # the cached rebuild did not use. Below the floor, delete the three
+          # large preinstalled trees in parallel. Skip apt purge and docker
+          # image prune.
+          floor_kb=$((40 * 1024 * 1024))
+          echo "available_kib=${avail_kb} floor_kib=${floor_kb}"
+          if [ "${avail_kb}" -ge "${floor_kb}" ]; then
+            echo "free space already above 40GiB; not deleting"
+            exit 0
+          fi
+          echo "free space below 40GiB; removing android, dotnet, and ghc"
+          pids=()
+          sudo rm -rf /usr/local/lib/android &
+          pids+=("$!")
+          sudo rm -rf /usr/share/dotnet &
+          pids+=("$!")
+          sudo rm -rf /opt/ghc &
+          pids+=("$!")
+          status=0
+          for pid in "${pids[@]}"; do
+            wait "${pid}" || status=1
+          done
+          if [ "${status}" -ne 0 ]; then
+            echo "error: removing a preinstalled tree failed" >&2
+            exit 1
+          fi
+          df -h /
+          avail_kb=$(df -Pk / | awk 'NR==2 {print $4}')
+          echo "available_kib_after=${avail_kb}"
+          if [ "${avail_kb}" -lt "${floor_kb}" ]; then
+            echo "error: still under 40GiB after removing preinstalled trees" >&2
+            exit 1
+          fi
 
       - name: Build and push nesso-build-env arm64
         if: steps.image.outputs.rebuild == 'true'
@@ -1086,7 +1267,15 @@ jobs:
           docker buildx imagetools inspect '${{ steps.select.outputs.image }}' | tee /tmp/image-inspect.txt
           grep -Eiq 'arm64|aarch64' /tmp/image-inspect.txt
 
-  gcc-26-arm64-release:
+      - name: Report free disk
+        if: steps.image.outputs.rebuild == 'true'
+        run: |
+          set -euo pipefail
+          df -h /
+          avail_kb=$(df -Pk / | awk 'NR==2 {print $4}')
+          echo "available_kib_after_build=${avail_kb}"
+
+  build-gcc-26-arm64:
     needs: [prepare-image-arm64, changes]
     if: ${{ needs.changes.outputs.code == 'true' && !cancelled() && needs.prepare-image-arm64.result == 'success' }}
     runs-on: ubuntu-24.04-arm
@@ -1189,57 +1378,65 @@ jobs:
           if-no-files-found: error
           compression-level: 0
 
-  # No prepare-image-amd64 dependency. A docs-only run leaves the image
-  # empty, and the runner treats an empty image as no container.
-  unit-tests-arm64:
-    name: ${{ matrix.label }}-tests-arm64
-    needs: [prepare-image-arm64, gcc-26-arm64-release, changes]
+  test-gcc-26-arm64:
+    needs: [prepare-image-arm64, build-gcc-26-arm64, changes]
     if: >-
       ${{ always() && !cancelled() && needs.changes.result == 'success' &&
-      (needs.changes.outputs.code != 'true' ||
-      (needs.prepare-image-arm64.result == 'success' && needs.gcc-26-arm64-release.result == 'success')) }}
-    runs-on: ${{ needs.changes.outputs.code == 'true' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
+      needs.changes.outputs.code == 'true' &&
+      needs.build-gcc-26-arm64.result == 'success' }}
+    runs-on: ubuntu-24.04-arm
     timeout-minutes: 30
-    strategy:
-      fail-fast: false
-      matrix:
-        label: [unit, integration, functional]
     container:
-      image: ${{ needs.changes.outputs.code == 'true' && needs.prepare-image-arm64.outputs.image || '' }}
+      image: ${{ needs.prepare-image-arm64.outputs.image }}
       credentials:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - name: Checkout Repository
-        if: needs.changes.outputs.code == 'true'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Restore MiniLM models
         id: models
-        if: needs.changes.outputs.code == 'true'
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: models
           key: minilm-${{ hashFiles('scripts/fetch-model') }}
 
       - name: Fetch MiniLM models
-        if: needs.changes.outputs.code == 'true' && steps.models.outputs.cache-hit != 'true'
+        if: steps.models.outputs.cache-hit != 'true'
         run: ./scripts/fetch-model models
 
       - name: Download Release build
-        if: needs.changes.outputs.code == 'true'
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: release-build-arm64
 
       - name: Extract Release build
-        if: needs.changes.outputs.code == 'true'
+        id: extract
         run: ./scripts/ci-build-archive unpack release-build-arm64
 
-      - name: Run ${{ matrix.label }} tests
-        if: needs.changes.outputs.code == 'true'
-        run: ctest --test-dir build/Release --output-on-failure -j "$(nproc)" -L ${{ matrix.label }} -V
+      - name: Run unit tests
+        id: unit
+        run: ctest --test-dir build/Release --output-on-failure -j "$(nproc)" -L unit -V
 
-      - name: Docs-only
-        if: needs.changes.outputs.code != 'true'
-        run: echo "docs-only pull request; ${{ matrix.label }} arm64 tests not run"
+      - name: Run integration tests
+        id: integration
+        if: always() && !cancelled() && steps.extract.outcome == 'success'
+        run: ctest --test-dir build/Release --output-on-failure -j "$(nproc)" -L integration -V
+
+      - name: Run functional tests
+        id: functional
+        if: always() && !cancelled() && steps.extract.outcome == 'success'
+        run: ctest --test-dir build/Release --output-on-failure -j "$(nproc)" -L functional -V
+
+      - name: Summarize test suites
+        if: always() && !cancelled()
+        run: |
+          {
+            echo '### test-gcc-26-arm64'
+            echo '| suite | result |'
+            echo '| --- | --- |'
+            echo "| unit | ${{ steps.unit.outcome }} |"
+            echo "| integration | ${{ steps.integration.outcome }} |"
+            echo "| functional | ${{ steps.functional.outcome }} |"
+          } >> "${GITHUB_STEP_SUMMARY}"
