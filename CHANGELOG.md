@@ -14,6 +14,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Debug builds scan an ONNX model for its quantization marker in chunks. Copying the whole file through checked iterators took about five seconds per embedder load under ASan.
+- CI runs ctest with `-j "$(nproc)"`. The godog suite runs scenarios concurrently, up to one per logical CPU.
 - The project license is Apache 2.0.
 - CI and the release workflow block when int8 embeddings disagree across processes. The run that sets `NESSO_THREADS` to the logical CPU count stays report-only.
 

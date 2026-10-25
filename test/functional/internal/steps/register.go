@@ -18,8 +18,19 @@ type bindings struct {
 	world *scenario.World
 }
 
-// InitializeScenario registers every step. Each scenario runs in its own
-// temporary directory, which is also the working directory of nesso.
+type scenarioDirKey struct{}
+
+func scenarioDir(ctx context.Context) (string, bool) {
+	dir, ok := ctx.Value(scenarioDirKey{}).(string)
+	return dir, ok
+}
+
+// InitializeScenario registers every step. Godog calls it once per scenario,
+// including when scenarios run concurrently, so this bindings value stays
+// local to the call. Each scenario runs in its own temporary directory, which
+// is also the working directory of nesso. Index paths, environment, and the
+// pty live on that scenario's world; the model and fixture directories are
+// only read.
 func InitializeScenario(sc *godog.ScenarioContext) {
 	b := &bindings{world: &scenario.World{}}
 
@@ -29,7 +40,7 @@ func InitializeScenario(sc *godog.ScenarioContext) {
 			return ctx, err
 		}
 		*b.world = scenario.World{Dir: dir}
-		return ctx, nil
+		return context.WithValue(ctx, scenarioDirKey{}, dir), nil
 	})
 	sc.After(func(ctx context.Context, _ *godog.Scenario, _ error) (context.Context, error) {
 		return ctx, os.RemoveAll(b.world.Dir)

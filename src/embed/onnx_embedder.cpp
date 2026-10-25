@@ -4,8 +4,10 @@
 #include <embed/onnx_embedder.hpp>
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdint>
+#include <cstring>
 #include <format>
 #include <fstream>
 #include <functional>
@@ -155,11 +157,39 @@ std::string sessionPolicyText(size_t requestedThreads, const MachineResources &m
     return text;
 }
 
+// Debug builds define _GLIBCXX_DEBUG. Copying the model through
+// istreambuf_iterator checks every byte, which takes about five seconds under
+// ASan for the 22 MiB int8 MiniLM. grep, index, and search each load the model,
+// so that copy dominated the Debug BDD suite. The overlap keeps a marker that
+// straddles two reads.
 static bool modelIsQuantized(const std::filesystem::path &modelPath)
 {
+    constexpr std::string_view kMatMulInteger = "MatMulInteger";
+    constexpr std::string_view kDynamicQuantizeLinear = "DynamicQuantizeLinear";
+    constexpr std::size_t kOverlap = kDynamicQuantizeLinear.size() - 1;
+    constexpr std::size_t kChunk = std::size_t{64} * std::size_t{1024};
+
     std::ifstream input(modelPath, std::ios::binary);
-    const std::string bytes{std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>()};
-    return bytes.find("MatMulInteger") != std::string::npos || bytes.find("DynamicQuantizeLinear") != std::string::npos;
+    std::array<char, kOverlap + kChunk> buffer{};
+    std::size_t kept = 0;
+    while (input)
+    {
+        input.read(buffer.data() + kept, static_cast<std::streamsize>(kChunk));
+        const auto got = static_cast<std::size_t>(input.gcount());
+        const std::string_view window(buffer.data(), kept + got);
+        if (window.find(kMatMulInteger) != std::string_view::npos ||
+            window.find(kDynamicQuantizeLinear) != std::string_view::npos)
+        {
+            return true;
+        }
+        if (got < kChunk)
+        {
+            return false;
+        }
+        std::memmove(buffer.data(), window.data() + window.size() - kOverlap, kOverlap);
+        kept = kOverlap;
+    }
+    return false;
 }
 
 static Ort::SessionOptions makeSessionOptions(int intraOpThreads)

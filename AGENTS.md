@@ -25,6 +25,9 @@ ctest --test-dir build/Debug -L unit
 ctest --test-dir build/Debug -L integration
 ctest --test-dir build/Debug -L functional
 
+# CI adds --output-on-failure and -j "$(nproc)" on every ctest invocation, including scripts/code-coverage.
+# The bdd test runs godog scenarios concurrently, one per logical CPU (runtime.NumCPU()).
+
 # Local gate. clang-tidy needs compile_commands.json. Coverage floors are REQUIRED_* in scripts/code-coverage.
 bash scripts/lint
 bash scripts/clang-tidy

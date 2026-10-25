@@ -66,6 +66,8 @@ ctest --test-dir build/Debug -L functional
 
 The functional label includes the `bdd` test. It runs `go test` in `test/functional/` (godog v0.16.0). Specs are `test/functional/features/*.feature`. Without Go, CMake skips `bdd`. `NESSO_REQUIRE_BDD=1` turns a missing Go toolchain into a configure error; CI sets it. `NESSO_REQUIRE_MODEL=1` fails model-backed tests instead of skipping them; CI sets that too.
 
+`bdd` runs godog scenarios concurrently, one per logical CPU. Each scenario has its own temporary directory, environment, and pty. CI passes `-j "$(nproc)"` and `--output-on-failure` to every ctest invocation.
+
 Debug ctest in CI also sets `ASAN_OPTIONS` and `UBSAN_OPTIONS` so sanitizer findings abort the job.
 
 ## Fuzz
