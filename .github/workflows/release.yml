@@ -73,7 +73,7 @@ jobs:
           set -euo pipefail
           owner_lc="$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')"
           reg="${{ env.REGISTRY }}/${owner_lc}/nesso-build-env"
-          # Same script as both prepare-image jobs.
+          # Same script as prepare-image-amd64 and prepare-image-arm64.
           deps_hash="$(./scripts/build-env-hash amd64)"
           echo "build_image=${reg}:deps-${deps_hash}" >> "${GITHUB_OUTPUT}"
           echo "runtime_image=${{ env.REGISTRY }}/${owner_lc}/nesso" >> "${GITHUB_OUTPUT}"

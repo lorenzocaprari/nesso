@@ -1,5 +1,5 @@
 # Native arm64 build-env. Kept separate from Dockerfile so the amd64
-# image tag and prepare-image job stay untouched.
+# image name and deps-<hash> tag stay unchanged.
 # Build only on arm64 (ubuntu-24.04-arm). The host profile is
 # conan/profiles/gcc-26-armv8; the x86-64 profile will not compile here.
 #
@@ -16,7 +16,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     wget curl git python3-pip \
     cmake ninja-build \
     gcc-15 g++-15 \
-    golang-go \
     && rm -rf /var/lib/apt/lists/*
 
 RUN update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-15 100 \
@@ -38,5 +37,23 @@ RUN conan profile detect --force \
     && conan cache clean "*" --build --source --download --temp \
     && rm -rf /tmp/nesso /tmp/* /var/tmp/*
 WORKDIR /
+
+# After the Conan install. A change to ccache, Go, stress-ng, or zstd must
+# not rebuild that layer. GitHub Actions sets HOME to /github/home, so the
+# godog module cache cannot live under /root.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ccache \
+    golang-go \
+    stress-ng \
+    zstd \
+    && rm -rf /var/lib/apt/lists/*
+
+ENV GOPATH=/opt/go
+ENV GOMODCACHE=/opt/go/pkg/mod
+COPY test/functional/go.mod test/functional/go.sum /tmp/nesso-go/
+RUN cd /tmp/nesso-go \
+    && GOTOOLCHAIN=local GOPROXY=https://proxy.golang.org,direct go mod download \
+    && chmod -R a+rwX /opt/go \
+    && rm -rf /tmp/nesso-go
 
 LABEL org.opencontainers.image.source=https://github.com/lorenzocaprari/nesso

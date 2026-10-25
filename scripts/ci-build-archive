@@ -19,9 +19,9 @@ usage() {
   exit 2
 }
 
-# nesso-build-env does not install zstd (PR 4 bakes it in). Prefer it when the
-# job can see it; otherwise gzip, which the image already has. The suffix is
-# the contract unpack understands. Permissions stay in the tar header.
+# nesso-build-env installs zstd. Prefer it when the job can see it; otherwise
+# gzip, which is always available. The suffix is the contract unpack understands.
+# Permissions stay in the tar header.
 compressor() {
   if command -v zstd >/dev/null 2>&1; then
     echo zstd

@@ -27,7 +27,8 @@ env:
   CONAN_HOME: /opt/conan2
 
 # Read-only default. Every job checks out the repo and pulls nesso-build-env.
-# prepare-image overrides packages to write so it can push that image.
+# prepare-image-amd64 and prepare-image-arm64 override packages to write so a
+# same-repo rebuild can push deps-<hash> and the BuildKit registry cache.
 permissions:
   contents: read
   packages: read
@@ -85,7 +86,7 @@ jobs:
           echo "code=${code}" >> "${GITHUB_OUTPUT}"
           echo "heavy_jobs=${code}"
 
-  prepare-image:
+  prepare-image-amd64:
     runs-on: ubuntu-latest
     timeout-minutes: 360
     permissions:
@@ -105,6 +106,8 @@ jobs:
           reg="${{ env.REGISTRY }}/${owner_lc}/nesso-build-env"
           # Shared with prepare-image-arm64 and release.yml.
           deps_hash="$(./scripts/build-env-hash amd64)"
+          # Existing tag. buildcache-arm64 is the arm64 twin. Renaming this
+          # would orphan the populated amd64 registry cache.
           cache_ref="${reg}:buildcache"
           {
             echo "image=${reg}:deps-${deps_hash}"
@@ -155,10 +158,10 @@ jobs:
           cache-to: type=registry,ref=${{ steps.select.outputs.cache_ref }},mode=max
 
   lint:
-    needs: prepare-image
+    needs: prepare-image-amd64
     runs-on: ubuntu-latest
     container:
-      image: ${{ needs.prepare-image.outputs.image }}
+      image: ${{ needs.prepare-image-amd64.outputs.image }}
       credentials:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
@@ -173,11 +176,11 @@ jobs:
         run: bash scripts/lint
 
   clang-tidy:
-    needs: [prepare-image, changes]
+    needs: [prepare-image-amd64, changes]
     if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     container:
-      image: ${{ needs.prepare-image.outputs.image }}
+      image: ${{ needs.prepare-image-amd64.outputs.image }}
       credentials:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
@@ -203,11 +206,11 @@ jobs:
         run: bash scripts/clang-tidy
 
   cppcheck:
-    needs: [prepare-image, changes]
+    needs: [prepare-image-amd64, changes]
     if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     container:
-      image: ${{ needs.prepare-image.outputs.image }}
+      image: ${{ needs.prepare-image-amd64.outputs.image }}
       credentials:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
@@ -231,17 +234,39 @@ jobs:
         run: bash scripts/cppcheck
 
   build-gcc-26:
-    needs: [prepare-image, changes]
+    needs: [prepare-image-amd64, changes]
     if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+      actions: write
+    env:
+      CCACHE_DIR: ${{ github.workspace }}/.ccache
+      CCACHE_BASEDIR: ${{ github.workspace }}
+      CCACHE_MAXSIZE: 150M
+      CCACHE_COMPRESS: "true"
+      CMAKE_C_COMPILER_LAUNCHER: ccache
+      CMAKE_CXX_COMPILER_LAUNCHER: ccache
     container:
-      image: ${{ needs.prepare-image.outputs.image }}
+      image: ${{ needs.prepare-image-amd64.outputs.image }}
       credentials:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - name: Checkout Repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Restore ccache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ github.workspace }}/.ccache
+          key: ccache-${{ runner.arch }}-gcc-15-Release-${{ github.sha }}
+          restore-keys: |
+            ccache-${{ runner.arch }}-gcc-15-Release-
+
+      - name: Zero ccache statistics
+        run: ccache --zero-stats
 
       - name: Install Dependencies (Conan)
         run: |
@@ -255,6 +280,38 @@ jobs:
           NESSO_REQUIRE_MODEL: "1"
           NESSO_REQUIRE_BDD: "1"
         run: conan build . -pr:h ./conan/profiles/gcc-26 -pr:b default --lockfile=conan.lock --build=missing --no-remote
+
+      - name: ccache statistics
+        if: always() && !cancelled()
+        shell: bash
+        run: |
+          set -euo pipefail
+          ccache --version
+          ccache -s | tee /tmp/ccache-stats.txt
+          ccache -sv
+          cacheable=$(awk '/^Cacheable calls:/ {print $3; found=1} END {if (!found) print 0}' /tmp/ccache-stats.txt)
+          uncacheable=$(awk '/^Uncacheable calls:/ {print $3; found=1} END {if (!found) print 0}' /tmp/ccache-stats.txt)
+          echo "ccache cacheable calls: ${cacheable}"
+          echo "ccache uncacheable calls: ${uncacheable}"
+          if [[ "${cacheable}" -eq 0 || "${uncacheable}" -gt 0 ]]; then
+            echo "error: ccache recorded ${cacheable} cacheable and ${uncacheable} uncacheable compilations" >&2
+            exit 1
+          fi
+          if [[ -n "${GITHUB_STEP_SUMMARY:-}" ]]; then
+            {
+              echo '### ccache'
+              echo '```'
+              cat /tmp/ccache-stats.txt
+              echo '```'
+            } >> "${GITHUB_STEP_SUMMARY}"
+          fi
+
+      - name: Save ccache
+        if: success() && github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ github.workspace }}/.ccache
+          key: ccache-${{ runner.arch }}-gcc-15-Release-${{ github.sha }}
 
       - name: Archive Release build
         id: archive
@@ -271,17 +328,39 @@ jobs:
           compression-level: 0
 
   build-gcc-26-debug:
-    needs: [prepare-image, changes]
+    needs: [prepare-image-amd64, changes]
     if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+      actions: write
+    env:
+      CCACHE_DIR: ${{ github.workspace }}/.ccache
+      CCACHE_BASEDIR: ${{ github.workspace }}
+      CCACHE_MAXSIZE: 150M
+      CCACHE_COMPRESS: "true"
+      CMAKE_C_COMPILER_LAUNCHER: ccache
+      CMAKE_CXX_COMPILER_LAUNCHER: ccache
     container:
-      image: ${{ needs.prepare-image.outputs.image }}
+      image: ${{ needs.prepare-image-amd64.outputs.image }}
       credentials:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - name: Checkout Repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Restore ccache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ github.workspace }}/.ccache
+          key: ccache-${{ runner.arch }}-gcc-15-Debug-${{ github.sha }}
+          restore-keys: |
+            ccache-${{ runner.arch }}-gcc-15-Debug-
+
+      - name: Zero ccache statistics
+        run: ccache --zero-stats
 
       - name: Install Dependencies (Conan)
         run: |
@@ -293,6 +372,38 @@ jobs:
           NESSO_REQUIRE_MODEL: "1"
           NESSO_REQUIRE_BDD: "1"
         run: conan build . -pr:h ./conan/profiles/gcc-26-debug -pr:b default --lockfile=conan.lock --build=missing --no-remote
+
+      - name: ccache statistics
+        if: always() && !cancelled()
+        shell: bash
+        run: |
+          set -euo pipefail
+          ccache --version
+          ccache -s | tee /tmp/ccache-stats.txt
+          ccache -sv
+          cacheable=$(awk '/^Cacheable calls:/ {print $3; found=1} END {if (!found) print 0}' /tmp/ccache-stats.txt)
+          uncacheable=$(awk '/^Uncacheable calls:/ {print $3; found=1} END {if (!found) print 0}' /tmp/ccache-stats.txt)
+          echo "ccache cacheable calls: ${cacheable}"
+          echo "ccache uncacheable calls: ${uncacheable}"
+          if [[ "${cacheable}" -eq 0 || "${uncacheable}" -gt 0 ]]; then
+            echo "error: ccache recorded ${cacheable} cacheable and ${uncacheable} uncacheable compilations" >&2
+            exit 1
+          fi
+          if [[ -n "${GITHUB_STEP_SUMMARY:-}" ]]; then
+            {
+              echo '### ccache'
+              echo '```'
+              cat /tmp/ccache-stats.txt
+              echo '```'
+            } >> "${GITHUB_STEP_SUMMARY}"
+          fi
+
+      - name: Save ccache
+        if: success() && github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ github.workspace }}/.ccache
+          key: ccache-${{ runner.arch }}-gcc-15-Debug-${{ github.sha }}
 
       - name: Archive Debug build
         id: archive
@@ -318,7 +429,7 @@ jobs:
   # login stays valid.
   unit-tests-release:
     name: ${{ matrix.label }}-tests-release
-    needs: [prepare-image, build-gcc-26, changes]
+    needs: [prepare-image-amd64, build-gcc-26, changes]
     if: ${{ always() && !cancelled() && needs.changes.result == 'success' }}
     runs-on: ubuntu-latest
     strategy:
@@ -326,7 +437,7 @@ jobs:
       matrix:
         label: [unit, integration, functional]
     container:
-      image: ${{ needs.prepare-image.outputs.image }}
+      image: ${{ needs.prepare-image-amd64.outputs.image }}
       credentials:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
@@ -367,7 +478,7 @@ jobs:
 
   unit-tests-debug:
     name: ${{ matrix.label }}-tests-debug
-    needs: [prepare-image, build-gcc-26-debug, changes]
+    needs: [prepare-image-amd64, build-gcc-26-debug, changes]
     if: ${{ always() && !cancelled() && needs.changes.result == 'success' }}
     runs-on: ubuntu-latest
     strategy:
@@ -375,7 +486,7 @@ jobs:
       matrix:
         label: [unit, integration, functional]
     container:
-      image: ${{ needs.prepare-image.outputs.image }}
+      image: ${{ needs.prepare-image-amd64.outputs.image }}
       credentials:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
@@ -418,7 +529,7 @@ jobs:
         run: echo "docs-only pull request; ${{ matrix.label }} debug tests not run"
 
   fuzz-test:
-    needs: prepare-image
+    needs: prepare-image-amd64
     # ClusterFuzzLite already fuzzes every pull request. This AFL++ job is
     # about three minutes and runs beside the other jobs, so keep it on main
     # pushes and the nightly schedule. It builds the LTO harnesses
@@ -427,7 +538,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     container:
-      image: ${{ needs.prepare-image.outputs.image }}
+      image: ${{ needs.prepare-image-amd64.outputs.image }}
       credentials:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
@@ -486,11 +597,15 @@ jobs:
           if-no-files-found: warn
 
   coverage:
-    needs: [prepare-image, changes]
+    needs: [prepare-image-amd64, changes]
     if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+      actions: write
     container:
-      image: ${{ needs.prepare-image.outputs.image }}
+      image: ${{ needs.prepare-image-amd64.outputs.image }}
       credentials:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
@@ -536,7 +651,7 @@ jobs:
   # (two runner speed classes) while peak RSS stayed within 1.05x. Wall limit
   # is 5.50x so that spread passes; RSS limit is 1.20x. A missing baseline warns.
   bench:
-    needs: [prepare-image, build-gcc-26, changes]
+    needs: [prepare-image-amd64, build-gcc-26, changes]
     if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -549,7 +664,7 @@ jobs:
       NESSO_BENCH_RSS_TOLERANCE: "0.20"
       NESSO_BENCH_SIZES: ${{ github.event_name == 'pull_request' && '1000,10000' || '1000,10000,100000' }}
     container:
-      image: ${{ needs.prepare-image.outputs.image }}
+      image: ${{ needs.prepare-image-amd64.outputs.image }}
       credentials:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
@@ -646,26 +761,20 @@ jobs:
   # NESSO_THREADS=$(nproc) stays report-only: that override is one
   # single-thread session per logical CPU and skips the RAM cap.
   determinism:
-    needs: [prepare-image, build-gcc-26, changes]
+    needs: [prepare-image-amd64, build-gcc-26, changes]
     if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
       NESSO_DETERMINISM_MODE: ${{ github.event_name == 'pull_request' && 'pr' || 'full' }}
     container:
-      image: ${{ needs.prepare-image.outputs.image }}
+      image: ${{ needs.prepare-image-amd64.outputs.image }}
       credentials:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - name: Checkout Repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - name: Install stress-ng
-        run: |
-          apt-get update
-          apt-get install -y --no-install-recommends stress-ng
-          rm -rf /var/lib/apt/lists/*
 
       - name: Restore int8 MiniLM
         id: int8
@@ -759,18 +868,40 @@ jobs:
   # already in nesso-build-env (see conan/profiles/clang-26). libc++ is
   # not used: it is a different ABI from those static archives.
   clang-26-release:
-    needs: [prepare-image, changes]
+    needs: [prepare-image-amd64, changes]
     if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    permissions:
+      contents: read
+      packages: read
+      actions: write
+    env:
+      CCACHE_DIR: ${{ github.workspace }}/.ccache
+      CCACHE_BASEDIR: ${{ github.workspace }}
+      CCACHE_MAXSIZE: 150M
+      CCACHE_COMPRESS: "true"
+      CMAKE_C_COMPILER_LAUNCHER: ccache
+      CMAKE_CXX_COMPILER_LAUNCHER: ccache
     container:
-      image: ${{ needs.prepare-image.outputs.image }}
+      image: ${{ needs.prepare-image-amd64.outputs.image }}
       credentials:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - name: Checkout Repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Restore ccache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ github.workspace }}/.ccache
+          key: ccache-${{ runner.arch }}-clang-21-Release-${{ github.sha }}
+          restore-keys: |
+            ccache-${{ runner.arch }}-clang-21-Release-
+
+      - name: Zero ccache statistics
+        run: ccache --zero-stats
 
       - name: Show Clang
         run: clang++-21 --version
@@ -805,6 +936,38 @@ jobs:
             exit 1
           fi
 
+      - name: ccache statistics
+        if: always() && !cancelled()
+        shell: bash
+        run: |
+          set -euo pipefail
+          ccache --version
+          ccache -s | tee /tmp/ccache-stats.txt
+          ccache -sv
+          cacheable=$(awk '/^Cacheable calls:/ {print $3; found=1} END {if (!found) print 0}' /tmp/ccache-stats.txt)
+          uncacheable=$(awk '/^Uncacheable calls:/ {print $3; found=1} END {if (!found) print 0}' /tmp/ccache-stats.txt)
+          echo "ccache cacheable calls: ${cacheable}"
+          echo "ccache uncacheable calls: ${uncacheable}"
+          if [[ "${cacheable}" -eq 0 || "${uncacheable}" -gt 0 ]]; then
+            echo "error: ccache recorded ${cacheable} cacheable and ${uncacheable} uncacheable compilations" >&2
+            exit 1
+          fi
+          if [[ -n "${GITHUB_STEP_SUMMARY:-}" ]]; then
+            {
+              echo '### ccache'
+              echo '```'
+              cat /tmp/ccache-stats.txt
+              echo '```'
+            } >> "${GITHUB_STEP_SUMMARY}"
+          fi
+
+      - name: Save ccache
+        if: success() && github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ github.workspace }}/.ccache
+          key: ccache-${{ runner.arch }}-clang-21-Release-${{ github.sha }}
+
       - name: Archive Release build
         id: archive
         run: ./scripts/ci-build-archive pack build/Release release-build-clang
@@ -820,7 +983,7 @@ jobs:
 
   unit-tests-clang:
     name: ${{ matrix.label }}-tests-clang
-    needs: [prepare-image, clang-26-release, changes]
+    needs: [prepare-image-amd64, clang-26-release, changes]
     if: >-
       ${{ always() && !cancelled() && needs.changes.result == 'success' &&
       (needs.changes.outputs.code != 'true' || needs.clang-26-release.result == 'success') }}
@@ -831,7 +994,7 @@ jobs:
       matrix:
         label: [unit, integration, functional]
     container:
-      image: ${{ needs.prepare-image.outputs.image }}
+      image: ${{ needs.prepare-image-amd64.outputs.image }}
       credentials:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
@@ -870,7 +1033,9 @@ jobs:
         if: needs.changes.outputs.code != 'true'
         run: echo "docs-only pull request; ${{ matrix.label }} clang tests not run"
 
-  # Native arm64 image. The amd64 prepare-image job and its tag are unchanged.
+  # Native arm64 image. The image name stays nesso-build-env. The amd64
+  # tag stays deps-<hash>; the arm64 tag appends -arm64. The amd64 job id
+  # is prepare-image-amd64.
   prepare-image-arm64:
     needs: changes
     if: needs.changes.outputs.code == 'true'
@@ -952,6 +1117,17 @@ jobs:
     if: ${{ needs.changes.outputs.code == 'true' && !cancelled() && needs.prepare-image-arm64.result == 'success' }}
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 90
+    permissions:
+      contents: read
+      packages: read
+      actions: write
+    env:
+      CCACHE_DIR: ${{ github.workspace }}/.ccache
+      CCACHE_BASEDIR: ${{ github.workspace }}
+      CCACHE_MAXSIZE: 150M
+      CCACHE_COMPRESS: "true"
+      CMAKE_C_COMPILER_LAUNCHER: ccache
+      CMAKE_CXX_COMPILER_LAUNCHER: ccache
     container:
       image: ${{ needs.prepare-image-arm64.outputs.image }}
       credentials:
@@ -960,6 +1136,17 @@ jobs:
     steps:
       - name: Checkout Repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Restore ccache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ github.workspace }}/.ccache
+          key: ccache-${{ runner.arch }}-gcc-15-Release-${{ github.sha }}
+          restore-keys: |
+            ccache-${{ runner.arch }}-gcc-15-Release-
+
+      - name: Zero ccache statistics
+        run: ccache --zero-stats
 
       - name: Require an aarch64 compiler
         run: |
@@ -983,6 +1170,38 @@ jobs:
           set -euo pipefail
           readelf -h build/Release/src/nesso | grep -q 'Machine:.*AArch64'
 
+      - name: ccache statistics
+        if: always() && !cancelled()
+        shell: bash
+        run: |
+          set -euo pipefail
+          ccache --version
+          ccache -s | tee /tmp/ccache-stats.txt
+          ccache -sv
+          cacheable=$(awk '/^Cacheable calls:/ {print $3; found=1} END {if (!found) print 0}' /tmp/ccache-stats.txt)
+          uncacheable=$(awk '/^Uncacheable calls:/ {print $3; found=1} END {if (!found) print 0}' /tmp/ccache-stats.txt)
+          echo "ccache cacheable calls: ${cacheable}"
+          echo "ccache uncacheable calls: ${uncacheable}"
+          if [[ "${cacheable}" -eq 0 || "${uncacheable}" -gt 0 ]]; then
+            echo "error: ccache recorded ${cacheable} cacheable and ${uncacheable} uncacheable compilations" >&2
+            exit 1
+          fi
+          if [[ -n "${GITHUB_STEP_SUMMARY:-}" ]]; then
+            {
+              echo '### ccache'
+              echo '```'
+              cat /tmp/ccache-stats.txt
+              echo '```'
+            } >> "${GITHUB_STEP_SUMMARY}"
+          fi
+
+      - name: Save ccache
+        if: success() && github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ github.workspace }}/.ccache
+          key: ccache-${{ runner.arch }}-gcc-15-Release-${{ github.sha }}
+
       - name: Archive Release build
         id: archive
         run: ./scripts/ci-build-archive pack build/Release release-build-arm64
@@ -998,7 +1217,7 @@ jobs:
 
   unit-tests-arm64:
     name: ${{ matrix.label }}-tests-arm64
-    needs: [prepare-image, prepare-image-arm64, gcc-26-arm64-release, changes]
+    needs: [prepare-image-amd64, prepare-image-arm64, gcc-26-arm64-release, changes]
     if: >-
       ${{ always() && !cancelled() && needs.changes.result == 'success' &&
       (needs.changes.outputs.code != 'true' ||
@@ -1010,7 +1229,7 @@ jobs:
       matrix:
         label: [unit, integration, functional]
     container:
-      image: ${{ needs.changes.outputs.code == 'true' && needs.prepare-image-arm64.outputs.image || needs.prepare-image.outputs.image }}
+      image: ${{ needs.changes.outputs.code == 'true' && needs.prepare-image-arm64.outputs.image || needs.prepare-image-amd64.outputs.image }}
       credentials:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
