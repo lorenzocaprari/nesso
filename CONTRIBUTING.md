@@ -100,10 +100,16 @@ The only author on commits and pull requests is Lorenzo Caprari <caprarilorenzo5
 
 Every GitHub Action is pinned to a commit SHA with a `# vX.Y.Z` comment. New or bumped actions keep that.
 
-Put user-facing notes under `## [Unreleased]` in [CHANGELOG.md](CHANGELOG.md). On release, move that section to `## [X.Y.Z] - YYYY-MM-DD`.
+Put user-facing notes under `## [Unreleased]` in [CHANGELOG.md](CHANGELOG.md). On release, move that section to `## [X.Y.Z] - YYYY-MM-DD` in the same commit that bumps the version.
 
-`.github/release-drafter.yml` maps labels to changelog sections. The Release Drafter workflow applies those labels from the PR title. It does not create labels. These already exist: `enhancement` (`feat`), `bug` (`fix`), `documentation` (`docs`), `breaking`, `changed`, `chore`, `deprecated`, `removed`, and `security`. On push to `main`, the same workflow updates the draft release `v$RESOLVED_VERSION`. Copy that draft into `CHANGELOG.md` before tagging.
+`.github/release-drafter.yml` maps labels to changelog sections. The Release Drafter workflow applies those labels from the PR title. It does not create labels. These already exist: `enhancement` (`feat`), `bug` (`fix`), `documentation` (`docs`), `breaking`, `changed`, `chore`, `deprecated`, `removed`, and `security`. Categories do not choose the version. Do not set `semver-increment` there. On push to `main`, `.github/workflows/release-drafter.yml` reads `version` from [conanfile.py](conanfile.py) with `scripts/check-versions` and passes it as the release-drafter `version` input, so `$RESOLVED_VERSION` is that field.
 
-`version` in `conanfile.py` is the version (`scripts/check-versions`). Pushing a `vX.Y.Z` tag that matches it runs `.github/workflows/release.yml`, which publishes the `.deb`, `ghcr.io/lorenzocaprari/nesso`, and the GitHub Release. CI must already have published `nesso-build-env`.
+`scripts/check-versions` reads only `version` in `conanfile.py`. CMake has no project version. `NESSO_VERSION` is copied from that field when the toolchain is generated.
+
+While the git tag for that version already exists, the draft name is `Unreleased (bump conanfile.py to release)` and its tag name is `unreleased`. GitHub requires a tag name on a draft. `unreleased` is not `vX.Y.Z`, so publishing that draft does not create a version tag and does not start `.github/workflows/release.yml`. Do not publish it. After a commit on `main` bumps `version` in `conanfile.py`, the same draft becomes name and tag `vX.Y.Z`.
+
+To release: open one pull request that bumps `version` in `conanfile.py`, moves `## [Unreleased]` in `CHANGELOG.md` to `## [X.Y.Z] - YYYY-MM-DD`, and updates any other file `scripts/check-versions` compares. Today that script only reads `conanfile.py`. Squash-merge it. The draft on `main` becomes `vX.Y.Z`. Publish that draft. Publishing creates the git tag `vX.Y.Z` from your account, so the tag push starts `.github/workflows/release.yml`. That workflow runs `scripts/check-versions` against the tag before it publishes the `.deb`, `ghcr.io/lorenzocaprari/nesso`, and the GitHub Release assets. A tag that does not match `conanfile.py` fails there. CI must already have published `nesso-build-env`.
+
+The unpublished draft named `v0.2.0` was opened when Release Drafter bumped from labels. It has no git tag. `conanfile.py` is `0.1.0`, which matches the only tag, `v0.1.0`. Delete that `v0.2.0` draft. Do not publish it. Publishing would create a `v0.2.0` tag that `scripts/check-versions` rejects. The next push to `main` retargets whatever draft is still open to the unreleased name while `0.1.0` is current.
 
 `.github/CODEOWNERS` requests a review from `@lorenzocaprari`.

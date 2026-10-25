@@ -23,11 +23,46 @@ jobs:
   update-draft:
     if: github.event_name == 'push'
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: write
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # scripts/check-versions prints the conanfile.py version. A tag that
+      # already exists must not be the draft tag: publishing would try to
+      # recreate it, and release.yml would reject the mismatch. GitHub still
+      # requires a tag name, so that draft uses `unreleased`, which is not
+      # vX.Y.Z and does not start the release workflow.
+      - name: Read conanfile.py version
+        id: ver
+        run: |
+          set -euo pipefail
+          ver="$(bash scripts/check-versions)"
+          if [[ ! "${ver}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "error: conanfile.py version must be X.Y.Z, got ${ver}" >&2
+            exit 1
+          fi
+          tag="v${ver}"
+          remote="$(git ls-remote --tags origin "refs/tags/${tag}")"
+          exists=false
+          if printf '%s\n' "${remote}" | awk '{print $2}' | grep -Fxq "refs/tags/${tag}"; then
+            exists=true
+          fi
+          {
+            echo "ver=${ver}"
+            echo "tag=${tag}"
+            echo "exists=${exists}"
+          } >> "${GITHUB_OUTPUT}"
+
       - name: Draft the next release
         uses: release-drafter/release-drafter@978bb0b30c5ee8cdd332ced253758157150d43f0 # v7.10.0
+        with:
+          version: ${{ steps.ver.outputs.ver }}
+          name: ${{ steps.ver.outputs.exists == 'true' && 'Unreleased (bump conanfile.py to release)' || '' }}
+          tag: ${{ steps.ver.outputs.exists == 'true' && 'unreleased' || '' }}
+          header: ${{ steps.ver.outputs.exists == 'true' && 'Do not publish this draft. Bump version in conanfile.py and merge that to main. This draft is not a release tag.' || '' }}
 
   autolabel:
     if: github.event_name == 'pull_request'

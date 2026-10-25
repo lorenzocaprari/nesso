@@ -43,7 +43,7 @@ docker run --rm -v "$PWD:/data" -w /data ghcr.io/lorenzocaprari/nesso:latest \
   grep "database connection error" app.log
 ```
 
-Push a `vX.Y.Z` tag that matches `version` in `conanfile.py` to publish the image, the `.deb`, and the GitHub Release. CI must already have published `nesso-build-env`.
+A release pull request bumps `version` in `conanfile.py`. After that commit is on `main`, publish the `vX.Y.Z` draft. Publishing creates the tag. `.github/workflows/release.yml` checks the tag against `conanfile.py`, then publishes the image, the `.deb`, and the GitHub Release. CI must already have published `nesso-build-env`.
 
 ## Prerequisites
 
@@ -118,7 +118,7 @@ bash scripts/lint
 ./scripts/code-coverage conan/profiles/code-coverage
 ```
 
-See [.github/workflows/ci.yml](.github/workflows/ci.yml) for `lint`, `clang-tidy`, and `cppcheck`, the gcc Release, gcc Debug, Clang, and arm64 builds, unit, integration, and functional tests, coverage, and the fp32 determinism gate. AFL++ `fuzz-test` runs on pushes to `main` and nightly; pull requests are fuzzed by [ClusterFuzzLite](.github/workflows/cifuzz.yml). The pipeline runs on pull requests, on pushes to `main`, and nightly. Tag `v*` publishes via [.github/workflows/release.yml](.github/workflows/release.yml). Weekly [CodeQL](.github/workflows/codeql.yml) (`c-cpp`, `build-mode: none`) and [OpenSSF Scorecard](.github/workflows/scorecard.yml) run on `main`.
+See [.github/workflows/ci.yml](.github/workflows/ci.yml) for `lint`, `clang-tidy`, and `cppcheck`, the gcc Release, gcc Debug, Clang, and arm64 builds, unit, integration, and functional tests, coverage, and the fp32 determinism gate. AFL++ `fuzz-test` runs on pushes to `main` and nightly; pull requests are fuzzed by [ClusterFuzzLite](.github/workflows/cifuzz.yml). The pipeline runs on pull requests, on pushes to `main`, and nightly. [.github/workflows/release-drafter.yml](.github/workflows/release-drafter.yml) drafts the next release from `version` in `conanfile.py`. Publishing the `vX.Y.Z` draft creates the tag, and tag `v*` publishes via [.github/workflows/release.yml](.github/workflows/release.yml). Weekly [CodeQL](.github/workflows/codeql.yml) (`c-cpp`, `build-mode: none`) and [OpenSSF Scorecard](.github/workflows/scorecard.yml) run on `main`.
 
 ### Measuring performance
 
