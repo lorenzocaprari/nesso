@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The build-env image includes stress-ng, zstd, and the godog module cache, in Dockerfile layers after the Conan installs. CI compiles the Release, Debug, Clang, and arm64 builds with ccache (150M per lane) and disables C++ module scanning on those builds so GCC's `-fmodules-ts` does not bypass the cache. Coverage does not use ccache. The amd64 image job is `prepare-image-amd64`. The image name and `deps-<hash>` tag are unchanged. The BuildKit registry cache tags are `buildcache` and `buildcache-arm64` (`mode=max`).
 - Pull requests run a shorter determinism pass (`scripts/check-determinism --mode pr`: 256-line input, 2 runs, 2 index runs) for fp32, the default int8 policy, and the report-only `NESSO_THREADS` step. Pushes to `main`, the nightly schedule, manual runs, and the release gate keep the 3500-line input, 10 runs, and `--index-runs 3`.
 - CI uploads the binaries, ctest manifests, and test fixtures instead of the whole build tree. A pull request that only changes documentation skips the build, test, coverage, bench, and determinism jobs. Lint still runs.
 - Pull-request benchmarks run the 1k and 10k tiers. Pushes to `main` and the nightly schedule still run the 100k tier. The benchmark job fails when a tier regresses against the latest baseline saved from `main`.

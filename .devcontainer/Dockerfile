@@ -6,14 +6,13 @@ ENV DEBIAN_FRONTEND=noninteractive
 # Install dependencies, GCC 15, Clang 21 (+ compiler-rt for ASan/AFL), tidy, cppcheck, lcov
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
-    software-properties-common wget curl git jq ccache python3-pip \
+    software-properties-common wget curl git jq python3-pip \
     cmake ninja-build lcov cppcheck \
     && add-apt-repository ppa:ubuntu-toolchain-r/test -y \
     && apt-get update && apt-get install -y --no-install-recommends \
     gcc-15 g++-15 \
     clang-21 clang-tidy-21 libclang-rt-21-dev \
     afl++ \
-    golang-go \
     && rm -rf /var/lib/apt/lists/*
 
 # Set GCC 15 and LLVM 21 as defaults
@@ -73,5 +72,23 @@ RUN conan install . -pr:h=conan/profiles/gcc-26-debug -pr:b=default --lockfile=c
     && conan cache clean "*" --build --source --download --temp \
     && rm -rf /tmp/nesso /tmp/* /var/tmp/*
 WORKDIR /
+
+# After the Conan installs. A change to ccache, Go, stress-ng, or zstd must
+# not rebuild those layers. GitHub Actions sets HOME to /github/home, so the
+# godog module cache cannot live under /root.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ccache \
+    golang-go \
+    stress-ng \
+    zstd \
+    && rm -rf /var/lib/apt/lists/*
+
+ENV GOPATH=/opt/go
+ENV GOMODCACHE=/opt/go/pkg/mod
+COPY test/functional/go.mod test/functional/go.sum /tmp/nesso-go/
+RUN cd /tmp/nesso-go \
+    && GOTOOLCHAIN=local GOPROXY=https://proxy.golang.org,direct go mod download \
+    && chmod -R a+rwX /opt/go \
+    && rm -rf /tmp/nesso-go
 
 LABEL org.opencontainers.image.source=https://github.com/lorenzocaprari/nesso

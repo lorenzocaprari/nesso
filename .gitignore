@@ -1,4 +1,5 @@
 build/
+.ccache/
 bench/results/
 bench/main-baseline/
 __pycache__/

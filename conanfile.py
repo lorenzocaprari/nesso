@@ -1,3 +1,5 @@
+import os
+
 from conan import ConanFile
 from conan.tools.cmake import CMake, CMakeToolchain, CMakeDeps, cmake_layout
 
@@ -47,6 +49,15 @@ class Nesso(ConanFile):
         tc.extra_sharedlinkflags = list(
             self.conf.get("user.nesso:sharedlinkflags", check_type=list, default=[])
         )
+        # GCC 14+ injects -fmodules-ts into every compile while module scanning
+        # is on. ccache refuses that flag, and this tree has no C++ modules.
+        cxx_launcher = os.environ.get("CMAKE_CXX_COMPILER_LAUNCHER")
+        if cxx_launcher:
+            tc.cache_variables["CMAKE_C_COMPILER_LAUNCHER"] = os.environ.get(
+                "CMAKE_C_COMPILER_LAUNCHER", cxx_launcher
+            )
+            tc.cache_variables["CMAKE_CXX_COMPILER_LAUNCHER"] = cxx_launcher
+            tc.cache_variables["CMAKE_CXX_SCAN_FOR_MODULES"] = False
         tc.generate()
         deps = CMakeDeps(self)
         deps.generate()

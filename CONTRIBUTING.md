@@ -18,7 +18,7 @@ Bugs and feature requests use the issue forms. Vulnerabilities follow [SECURITY.
 
 ## Devcontainer image
 
-CI builds `.devcontainer/Dockerfile` (Ubuntu 26.04, GCC 15, Clang 21, AFL++, Go, Conan 2, pre-commit) and pushes `ghcr.io/lorenzocaprari/nesso-build-env:deps-<hash>`. `scripts/build-env-hash amd64` covers that Dockerfile, `.devcontainer/requirements.txt`, `conan.lock`, and `conan/profiles/gcc-26` plus `gcc-26-debug`. It includes `conanfile.py` as the resolved dependency spec, not the recipe text. There is no `devcontainer.json`. The image sets `CONAN_HOME=/opt/conan2` with the locked dependencies already installed; CI configures with `--no-remote`.
+CI builds `.devcontainer/Dockerfile` (Ubuntu 26.04, GCC 15, Clang 21, AFL++, Go, Conan 2, pre-commit, ccache, stress-ng, zstd) and pushes `ghcr.io/lorenzocaprari/nesso-build-env:deps-<hash>`. The arm64 image is `.devcontainer/Dockerfile.arm64`, tagged `deps-<hash>-arm64`. The amd64 CI job is `prepare-image-amd64`. `scripts/build-env-hash amd64` covers that Dockerfile, `.devcontainer/requirements.txt`, `conan.lock`, `conan/profiles/gcc-26`, `conan/profiles/gcc-26-debug`, `test/functional/go.mod`, and `test/functional/go.sum`. It includes `conanfile.py` as the resolved dependency spec, not the recipe text. There is no `devcontainer.json`. The image sets `CONAN_HOME=/opt/conan2` with the locked dependencies already installed; CI configures with `--no-remote`. It sets `GOMODCACHE=/opt/go/pkg/mod` with the godog modules already downloaded.
 
 ```bash
 docker build -f .devcontainer/Dockerfile -t nesso-build-env .
