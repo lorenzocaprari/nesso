@@ -1,3 +1,6 @@
+# The workflow passes `version` from conanfile.py. That input is the draft
+# version, with no label bump. Categories only sort the changelog. Do not
+# set semver-increment here.
 name-template: "v$RESOLVED_VERSION"
 tag-template: "v$RESOLVED_VERSION"
 filter-by-commitish: true
@@ -11,43 +14,36 @@ exclude-labels:
 categories:
   - title: "Breaking"
     exclusive: true
-    semver-increment: major
     when:
       - conventional:
           breaking: true
       - label: "breaking"
   - title: "Security"
     exclusive: true
-    semver-increment: patch
     when:
       - label: "security"
   - title: "Removed"
     exclusive: true
-    semver-increment: major
     when:
       - label: "removed"
   - title: "Deprecated"
     exclusive: true
-    semver-increment: patch
     when:
       - label: "deprecated"
   - title: "Added"
     exclusive: true
-    semver-increment: minor
     when:
       - conventional:
           type: feat
       - label: "enhancement"
   - title: "Fixed"
     exclusive: true
-    semver-increment: patch
     when:
       - conventional:
           type: fix
       - label: "bug"
   - title: "Changed"
     exclusive: true
-    semver-increment: patch
     when:
       - conventional:
           types:
@@ -56,14 +52,12 @@ categories:
       - label: "changed"
   - title: "Documentation"
     exclusive: true
-    semver-increment: patch
     when:
       - conventional:
           type: docs
       - label: "documentation"
   - title: "Internal"
     exclusive: true
-    semver-increment: patch
     when:
       - conventional:
           types:
