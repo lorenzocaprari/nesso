@@ -39,8 +39,10 @@ bash scripts/clang-tidy
 # fp32 determinism gate. --input must already exist. CI writes determinism-input.log for this command.
 ./scripts/check-determinism --binary build/Release/src/nesso --model-dir models-fp32 --input determinism-input.log
 
-# End-to-end bench. Report only: the bench job does not gate a merge.
+# End-to-end bench. CI pull requests run 1k and 10k and fail the bench job on a regression
+# against the latest main baseline. Pushes to main and the nightly schedule also run 100k.
 python3 scripts/bench
+python3 scripts/bench-compare
 ```
 
 ## Misreads
@@ -53,6 +55,8 @@ python3 scripts/bench
 - The godog test is named `bdd` and its label is `functional`. `ctest -L bdd` selects nothing. CI's label matrix is `unit`, `integration`, and `functional`.
 - `scripts/lint` runs cppcheck only when `build/Release/compile_commands.json` or `build/Debug/compile_commands.json` exists. Otherwise it prints a skip line and still exits 0.
 - `scripts/code-coverage` adds `--no-remote` and exports `NESSO_REQUIRE_MODEL=1` only when `CI=true`. The coverage job also sets `NESSO_REQUIRE_BDD=1`.
+- The `bench` job compares only tiers present in both the run and the latest baseline saved from `main`. Pull requests omit 100k. There is no baseline on the first run, and `scripts/bench-compare` warns and exits 0. CI allows wall time up to 5.5× and peak RSS up to 1.2× (`NESSO_BENCH_WALL_TOLERANCE`, `NESSO_BENCH_RSS_TOLERANCE`). Local compare stays at 15% against `bench/baseline.json`.
+- `fuzz-test` runs on pushes to `main` and on the nightly schedule. Pull requests are fuzzed by ClusterFuzzLite (`.github/workflows/cifuzz.yml`). The seeds stay in `test/fuzz/seeds/parser` and `test/fuzz/seeds/tokenizer`.
 
 ## Hard rules
 
@@ -74,7 +78,7 @@ python3 scripts/bench
 | Model tests skipped while ctest is green | `NESSO_REQUIRE_MODEL` is off, so CMake adds `--allow-running-no-tests` and skips when `models/` is absent | `./scripts/fetch-model`, then configure with `NESSO_REQUIRE_MODEL=1` |
 | `ctest -L bdd` runs nothing | `bdd` is the test name; the label is `functional` | `ctest --test-dir build/Debug -L functional` |
 | int8 `check-determinism` with `NESSO_THREADS=$(nproc)` fails and Pipeline stays green | That step is `continue-on-error: true`. The default int8 policy blocks | Drop `NESSO_THREADS` and rerun. fp32 is `--model-dir models-fp32` after `./scripts/fetch-model models-fp32 fp32` |
-| `python3 scripts/bench` exits on `/usr/bin/time` or a missing binary | It requires GNU time and a built `nesso` (default `build/Release/src/nesso`) | Install time and build Release. The CI `bench` job is `continue-on-error: true` |
+| `python3 scripts/bench` exits on `/usr/bin/time` or a missing binary | It requires GNU time and a built `nesso` (default `build/Release/src/nesso`) | Install time and build Release. A tier that does not finish also exits 1 |
 | `conan install --no-remote` misses lockfile packages | The baked cache is `CONAN_HOME=/opt/conan2` inside `nesso-build-env` | Drop `--no-remote` outside that image; keep `--lockfile=conan.lock` |
 | `CMakeUserPresets.json` shows in `git status` | `conan install` writes it and `.gitignore` does not list it | Leave it uncommitted |
 | `prepare-image` rebuilds for a long time | `scripts/build-env-hash` inputs changed | Expect that job; its timeout is 360 minutes |

@@ -329,6 +329,11 @@ jobs:
 
   fuzz-test:
     needs: prepare-image
+    # ClusterFuzzLite already fuzzes every pull request. This AFL++ job is
+    # about three minutes and runs beside the other jobs, so keep it on main
+    # pushes and the nightly schedule. It builds the LTO harnesses
+    # ClusterFuzzLite does not. The job id stays fuzz-test.
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     container:
@@ -432,12 +437,25 @@ jobs:
           path: build/coverage/report
           if-no-files-found: warn
 
-  # Report-only: shared-runner timings are noisy, so this job never gates a merge.
+  # Gates a merge. Pull requests run 1k and 10k. Pushes to main, the nightly
+  # schedule, and workflow_dispatch also run 100k. The baseline is the latest
+  # result saved from a non-PR run of this workflow.
+  #
+  # Across 13 PR runs on 2026-10-25, one tier's wall time varied by up to 4.51x
+  # (two runner speed classes) while peak RSS stayed within 1.05x. Wall limit
+  # is 5.50x so that spread passes; RSS limit is 1.20x. A missing baseline warns.
   bench:
     needs: [prepare-image, build-gcc-26]
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    continue-on-error: true
+    permissions:
+      contents: read
+      packages: read
+      actions: write
+    env:
+      NESSO_BENCH_WALL_TOLERANCE: "4.5"
+      NESSO_BENCH_RSS_TOLERANCE: "0.20"
+      NESSO_BENCH_SIZES: ${{ github.event_name == 'pull_request' && '1000,10000' || '1000,10000,100000' }}
     container:
       image: ${{ needs.prepare-image.outputs.image }}
       credentials:
@@ -472,6 +490,16 @@ jobs:
       - name: Extract Release build
         run: tar -xzf release-build.tar.gz
 
+      - name: Restore main benchmark baseline
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: bench/main-baseline
+          # Unique primary key so each non-PR run can save. Restore picks the
+          # newest bench-baseline-* entry, which non-PR runs write below.
+          key: bench-baseline-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            bench-baseline-
+
       - name: Run end-to-end benchmark
         run: |
           # Cap address space at 3/4 of RAM so an oversized embed batch fails
@@ -479,21 +507,38 @@ jobs:
           mem_kb=$(awk '/^MemTotal:/ {print $2}' /proc/meminfo)
           export NESSO_BENCH_AS_LIMIT_KB=$((mem_kb * 3 / 4))
           python3 scripts/bench --binary build/Release/src/nesso --timeout 300 \
+            --sizes "${NESSO_BENCH_SIZES}" \
             --output bench/results/ci.json
 
-      - name: Compare against baseline
-        continue-on-error: true
+      - name: Compare against main baseline
         shell: bash
         run: |
+          set -euo pipefail
           status=0
-          python3 scripts/bench-compare --result bench/results/ci.json >bench/results/compare.txt || status=$?
+          python3 scripts/bench-compare \
+            --baseline bench/main-baseline/baseline.json \
+            --result bench/results/ci.json | tee bench/results/compare.txt || status=$?
           cat bench/results/compare.txt
           {
+            echo '### Benchmark versus main baseline'
             echo '```'
             cat bench/results/compare.txt
             echo '```'
           } >>"${GITHUB_STEP_SUMMARY}"
           exit "${status}"
+
+      - name: Stage main benchmark baseline
+        if: github.event_name != 'pull_request'
+        run: |
+          mkdir -p bench/main-baseline
+          cp bench/results/ci.json bench/main-baseline/baseline.json
+
+      - name: Save main benchmark baseline
+        if: github.event_name != 'pull_request'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: bench/main-baseline
+          key: bench-baseline-${{ github.run_id }}-${{ github.run_attempt }}
 
       - name: Upload benchmark results
         if: always()

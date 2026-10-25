@@ -1,9 +1,13 @@
 #!/usr/bin/env python3
-"""Compare a bench result against bench/baseline.json.
+"""Compare a bench result against a baseline.
+
+Tiers present in both files are compared. A tier only in the baseline was not
+run (pull requests skip 100k) and is skipped. A tier only in the result has no
+baseline yet and warns. A missing baseline file warns and exits 0.
 
 A completed case regresses when wall time or peak RSS exceeds the baseline by
-more than the tolerance. A baseline case that did not complete still passes
-when the new run also fails, and passes when the new run completes.
+more than that field's tolerance. A baseline case that did not complete still
+passes when the new run also fails, and passes when the new run completes.
 """
 
 import argparse
@@ -38,19 +42,51 @@ def percent(actual: float, baseline: float) -> float:
     return (actual - baseline) / baseline * 100.0
 
 
-def main() -> None:
+def resolve_tolerance(explicit: float | None, env_name: str, shared: float) -> float:
+    if explicit is not None:
+        return explicit
+    raw = os.environ.get(env_name)
+    if raw is not None and raw != "":
+        return float(raw)
+    return shared
+
+
+def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--baseline", type=Path, default=ROOT / "bench" / "baseline.json")
     parser.add_argument("--result", type=Path, help="Result JSON (default: bench/results/<sha>.json)")
     parser.add_argument(
         "--tolerance",
         type=float,
-        default=float(os.environ.get("NESSO_BENCH_TOLERANCE", "0.15")),
-        help="Allowed fractional increase in wall time and peak RSS (default: 0.15)",
+        default=None,
+        help="Fractional increase allowed for both wall time and peak RSS (overrides the per-field defaults)",
     )
+    parser.add_argument("--wall-tolerance", type=float, default=None, help="Fractional wall-time increase allowed")
+    parser.add_argument("--rss-tolerance", type=float, default=None, help="Fractional peak-RSS increase allowed")
     args = parser.parse_args()
 
+    # Local default stays 15%. CI sets the per-field variables: shared-runner
+    # wall times for one tier vary by about 4.5x, while peak RSS stays within 5%.
+    shared_raw = os.environ.get("NESSO_BENCH_TOLERANCE", "0.15")
+    try:
+        shared = float(shared_raw)
+        wall = resolve_tolerance(args.wall_tolerance, "NESSO_BENCH_WALL_TOLERANCE", shared)
+        rss = resolve_tolerance(args.rss_tolerance, "NESSO_BENCH_RSS_TOLERANCE", shared)
+    except ValueError as exc:
+        raise SystemExit(f"error: invalid tolerance: {exc}") from exc
+    if args.tolerance is not None:
+        if args.wall_tolerance is None:
+            wall = args.tolerance
+        if args.rss_tolerance is None:
+            rss = args.tolerance
+    if wall < 0 or rss < 0:
+        raise SystemExit("error: tolerances must be >= 0")
+
     result_path = args.result or (ROOT / "bench" / "results" / f"{git_sha()}.json")
+    if not args.baseline.is_file():
+        print(f"bench-compare: warning: no baseline at {args.baseline}; skipping")
+        return 0
+
     baseline = load_json(args.baseline)
     result = load_json(result_path)
     baseline_cases = cases_by_lines(baseline)
@@ -58,13 +94,18 @@ def main() -> None:
     if not baseline_cases:
         raise SystemExit(f"error: no cases in {args.baseline}")
 
+    print(f"bench-compare: wall limit {1.0 + wall:.2f}x, rss limit {1.0 + rss:.2f}x")
     failed = False
-    for lines in sorted(baseline_cases):
-        expected = baseline_cases[lines]
+    compared = 0
+    tolerances = {"wallSeconds": wall, "peakRssBytes": rss}
+    for lines in sorted(set(baseline_cases) | set(result_cases)):
+        expected = baseline_cases.get(lines)
         actual = result_cases.get(lines)
+        if expected is None:
+            print(f"{lines} lines: warning: no baseline for this tier")
+            continue
         if actual is None:
-            print(f"{lines} lines: missing from {result_path}")
-            failed = True
+            print(f"{lines} lines: skipped (not in this run)")
             continue
         if not expected.get("ok"):
             if actual.get("ok"):
@@ -76,7 +117,8 @@ def main() -> None:
             print(f"{lines} lines: FAILED ({actual.get('error', 'failed')}); baseline completed")
             failed = True
             continue
-        for field in ("wallSeconds", "peakRssBytes"):
+        compared += 1
+        for field, tolerance in tolerances.items():
             base = expected[field]
             got = actual[field]
             if base is None or base <= 0 or got is None:
@@ -84,16 +126,20 @@ def main() -> None:
                 failed = True
                 continue
             delta = percent(got, base)
-            limit = base * (1.0 + args.tolerance)
+            limit = base * (1.0 + tolerance)
             status = "ok" if got <= limit else "REGRESSION"
             if got > limit:
                 failed = True
             print(f"{lines} lines: {field} {got} vs {base} ({delta:+.1f}%) {status}")
 
+    if compared == 0 and not failed:
+        print("bench-compare: warning: no overlapping completed tiers")
+        return 0
     if failed:
-        sys.exit(1)
+        return 1
     print("bench-compare: ok")
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

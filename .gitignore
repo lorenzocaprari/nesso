@@ -1,5 +1,6 @@
 build/
 bench/results/
+bench/main-baseline/
 __pycache__/
 coverage-report/
 coverage.info
