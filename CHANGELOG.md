@@ -43,6 +43,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A manual release dry run uploads the `nesso-<version>-release` workflow artifact (both `.deb` files, both SBOMs, and `SHA256SUMS`). The `subjects` job runs when `image` succeeds, including when `approve-release` is skipped. Push, signing, provenance, and the GitHub Release still wait for `approve-release`.
 - An out-of-range `NESSO_THREADS` value is a usage error. A digit string that does not fit in `size_t` used to throw from `std::stoull` and print `Unhandled Runtime Exception: stoull`. It now exits 2 with `NESSO_THREADS must be a positive integer`, the same as any other value that is not a positive integer.
 - The trace peak resident size is `getrusage`'s `ru_maxrss`, in bytes. The previous helper placement-newed `rusage` into a byte array aligned to one byte.
 - A tag release can call Package. `verify-package` grants `security-events: write`, which `scan-runtime` declares, because GitHub checks that permission before the job's `if`. Release passes `scan_runtime: false`. The Release `image` job still scans the image it built. Package's nightly run, manual run, and packaging pull requests still scan.
