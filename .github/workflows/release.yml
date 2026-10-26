@@ -9,8 +9,20 @@ name: Release
 # addressable; they are not the tags users pull.
 #
 # workflow_dispatch builds, gates, packages, and uploads workflow artifacts.
-# Push, cosign, provenance, and the GitHub Release run only for a vX.Y.Z tag.
-# That dispatch is the dry run: it cannot publish.
+# It does not run approve-release. The release environment allows only v*
+# tags, so that job on a branch would fail the run before any step. Dispatch
+# still runs verify-package, image (build, scan, determinism, smoke, and
+# workflow artifacts), and subjects. Push, cosign, provenance, and the
+# GitHub Release stay off, including when the dispatch ref is a tag: those
+# steps and jobs run only after approve-release succeeds, and that job runs
+# only on a tag push.
+#
+# A tag push runs approve-release after verify-package. The job uses the
+# release environment and an empty token. The reviewer approves once the
+# package gate is green, and a failed package check skips the approval.
+# image needs that job. image is what pushes each arch image, so the push
+# cannot start earlier. index, sign, the SLSA jobs, and release need
+# approve-release too.
 #
 # The image jobs wait on Package (.github/workflows/package.yml). That
 # workflow builds each .deb twice and installs it on Ubuntu 26.04 and 26.10
@@ -65,9 +77,30 @@ jobs:
       actions: write
       security-events: write
 
+  # Empty token on purpose. The environment is the gate. A branch dispatch
+  # must not select it: the v* deployment rule would reject the run.
+  approve-release:
+    needs: verify-package
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/') && needs.verify-package.result == 'success'
+    runs-on: ubuntu-latest
+    environment: release
+    timeout-minutes: 15
+    permissions: {}
+    steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
+        with:
+          egress-policy: audit
+
+      - name: Record approval
+        run: echo "release environment approved"
+
   image:
     name: image (${{ matrix.arch }})
-    needs: verify-package
+    needs: [verify-package, approve-release]
+    # success() is false when approve-release is skipped, which would drop
+    # the dry run. Dispatch still builds. A tag push waits for approval.
+    if: ${{ !cancelled() && needs.verify-package.result == 'success' && (github.event_name == 'workflow_dispatch' || needs.approve-release.result == 'success') }}
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 120
     permissions:
@@ -359,7 +392,7 @@ jobs:
 
       - name: Push arch image
         id: push
-        if: startsWith(github.ref, 'refs/tags/')
+        if: github.event_name == 'push' && needs.approve-release.result == 'success'
         env:
           RUNTIME_IMAGE: ${{ steps.select.outputs.runtime_image }}
           TAG: ${{ steps.ver.outputs.tag }}
@@ -386,7 +419,7 @@ jobs:
           cat runtime-digest.txt
 
       - name: Upload digest
-        if: startsWith(github.ref, 'refs/tags/')
+        if: github.event_name == 'push' && needs.approve-release.result == 'success'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: runtime-digest-${{ matrix.arch }}
@@ -473,8 +506,8 @@ jobs:
           if-no-files-found: error
 
   index:
-    needs: image
-    if: startsWith(github.ref, 'refs/tags/')
+    needs: [image, approve-release]
+    if: success() && needs.approve-release.result == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
@@ -561,8 +594,8 @@ jobs:
   # The tag resolves to the index digest. Platform digests are signed as well:
   # cosign does not treat an index signature as a signature of a child manifest.
   sign:
-    needs: index
-    if: startsWith(github.ref, 'refs/tags/')
+    needs: [index, approve-release]
+    if: success() && needs.approve-release.result == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
@@ -608,8 +641,8 @@ jobs:
   # requests it; that job does not run when upload-assets is false.
   # Tag ref: the generator rejects a SHA pin. See CONTRIBUTING.md.
   provenance:
-    needs: subjects
-    if: startsWith(github.ref, 'refs/tags/')
+    needs: [subjects, approve-release]
+    if: success() && needs.approve-release.result == 'success'
     permissions:
       actions: read
       id-token: write
@@ -626,8 +659,8 @@ jobs:
   # Tag ref: same generator constraint as the generic workflow.
   image-provenance:
     name: image-provenance (index)
-    needs: index
-    if: startsWith(github.ref, 'refs/tags/')
+    needs: [index, approve-release]
+    if: success() && needs.approve-release.result == 'success'
     permissions:
       actions: read
       id-token: write
@@ -643,8 +676,8 @@ jobs:
 
   image-provenance-amd64:
     name: image-provenance (amd64)
-    needs: index
-    if: startsWith(github.ref, 'refs/tags/')
+    needs: [index, approve-release]
+    if: success() && needs.approve-release.result == 'success'
     permissions:
       actions: read
       id-token: write
@@ -660,8 +693,8 @@ jobs:
 
   image-provenance-arm64:
     name: image-provenance (arm64)
-    needs: index
-    if: startsWith(github.ref, 'refs/tags/')
+    needs: [index, approve-release]
+    if: success() && needs.approve-release.result == 'success'
     permissions:
       actions: read
       id-token: write
@@ -678,8 +711,8 @@ jobs:
   # Scorecard Signed-Releases ignores the registry. releasesHaveProvenance
   # matches a release asset whose name ends in .intoto.jsonl.
   release:
-    needs: [subjects, index, sign, provenance, image-provenance, image-provenance-amd64, image-provenance-arm64]
-    if: startsWith(github.ref, 'refs/tags/')
+    needs: [subjects, index, sign, provenance, image-provenance, image-provenance-amd64, image-provenance-arm64, approve-release]
+    if: success() && needs.approve-release.result == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
