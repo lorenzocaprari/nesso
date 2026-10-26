@@ -29,7 +29,7 @@ env:
 # Read-only default. Jobs that pull nesso-build-env keep packages: read.
 # prepare-image-amd64 and prepare-image-arm64 override packages to write so a
 # same-repo rebuild can push deps-<hash> and the BuildKit registry cache.
-# lint overrides to contents: read. It does not pull the image.
+# lint and ci-gate override to contents: read. They do not pull the image.
 # bench-history overrides to contents: write. It runs only on a push to main.
 # step-security/harden-runner v2.22.2 (egress-policy: audit) is the first step
 # of every job that runs on the host. Jobs that set container: do not get it:
@@ -42,7 +42,8 @@ jobs:
   # Docs-only pull requests skip heavy jobs via this output. Job-level if,
   # not on.paths: a workflow that never starts leaves required checks pending,
   # and GitHub treats a skipped job as success. An explicit false is the only
-  # skip. Push, schedule, workflow_dispatch, and a tag push run every heavy
+  # skip. ci-gate accepts a skip of those heavy jobs only when this output is
+  # false. Push, schedule, workflow_dispatch, and a tag push run every heavy
   # job. Paths outside *.md, docs/, LICENSE, and .github/ISSUE_TEMPLATE count
   # as code.
   changes:
@@ -216,9 +217,9 @@ jobs:
 
   # One job, off the image, so it starts with the workflow instead of waiting
   # on prepare-image-amd64. A docs-only pull request still runs it.
-  # actionlint, zizmor, and pull-request dependency review are steps here,
-  # not new jobs, so the check name stays lint. Later steps use always() so
-  # the failed step name stays visible when an earlier step fails.
+  # actionlint, zizmor, ci-gate-needs, and pull-request dependency review are
+  # steps here, not new jobs, so the check name stays lint. Later steps use
+  # always() so the failed step name stays visible when an earlier step fails.
   # clang-tidy and cppcheck stay separate jobs in the image.
   lint:
     runs-on: ubuntu-latest
@@ -274,6 +275,14 @@ jobs:
       - name: Workflow security (zizmor)
         if: always() && !cancelled() && steps.checkout.outcome == 'success'
         run: bash scripts/zizmor
+
+      - name: Pipeline gate needs (ci-gate)
+        if: always() && !cancelled() && steps.checkout.outcome == 'success'
+        env:
+          GOPROXY: "off"
+          GOTOOLCHAIN: local
+          GOFLAGS: "-mod=readonly -buildvcs=false"
+        run: go run -C scripts/ci . ci-gate-needs
 
       - name: Dependency review
         if: always() && !cancelled() && steps.checkout.outcome == 'success' && github.event_name == 'pull_request'
@@ -1861,3 +1870,79 @@ jobs:
           path: build/junit
           if-no-files-found: warn
           retention-days: 14
+
+  # Single status check for a ruleset on main. The check run name is the job
+  # name, CI gate. needs is every other job in this file. The lint step
+  # ci-gate-needs fails when a job is missing from needs or from JOB_RESULTS,
+  # or when a job's if is not one of the known skip shapes. always() runs
+  # this job after failures, cancellations, and skips. The result check fails
+  # on failure and cancelled. A skip passes only for the docs-only path
+  # filter, fuzz-test on a pull request, and bench-history off a push to
+  # main. A skip caused by a failed or cancelled dependency does not pass.
+  ci-gate:
+    name: CI gate
+    needs:
+      - changes
+      - prepare-image-amd64
+      - lint
+      - clang-tidy
+      - cppcheck
+      - build-gcc-26-amd64
+      - build-gcc-26-debug-amd64
+      - test-gcc-26-amd64
+      - test-gcc-26-debug-amd64
+      - test-gcc-26-debug-amd64-functional
+      - fuzz-test
+      - coverage
+      - bench
+      - bench-history
+      - determinism
+      - build-clang-26-amd64
+      - test-clang-26-amd64
+      - prepare-image-arm64
+      - build-gcc-26-arm64
+      - test-gcc-26-arm64
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
+        with:
+          egress-policy: audit
+
+      - name: Checkout Repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Require Pipeline jobs
+        env:
+          GOPROXY: "off"
+          GOTOOLCHAIN: local
+          GOFLAGS: "-mod=readonly -buildvcs=false"
+          CHANGES_CODE: ${{ needs.changes.outputs.code }}
+          JOB_RESULTS: |
+            changes=${{ needs.changes.result }}
+            prepare-image-amd64=${{ needs.prepare-image-amd64.result }}
+            lint=${{ needs.lint.result }}
+            clang-tidy=${{ needs.clang-tidy.result }}
+            cppcheck=${{ needs.cppcheck.result }}
+            build-gcc-26-amd64=${{ needs.build-gcc-26-amd64.result }}
+            build-gcc-26-debug-amd64=${{ needs.build-gcc-26-debug-amd64.result }}
+            test-gcc-26-amd64=${{ needs.test-gcc-26-amd64.result }}
+            test-gcc-26-debug-amd64=${{ needs.test-gcc-26-debug-amd64.result }}
+            test-gcc-26-debug-amd64-functional=${{ needs.test-gcc-26-debug-amd64-functional.result }}
+            fuzz-test=${{ needs.fuzz-test.result }}
+            coverage=${{ needs.coverage.result }}
+            bench=${{ needs.bench.result }}
+            bench-history=${{ needs.bench-history.result }}
+            determinism=${{ needs.determinism.result }}
+            build-clang-26-amd64=${{ needs.build-clang-26-amd64.result }}
+            test-clang-26-amd64=${{ needs.test-clang-26-amd64.result }}
+            prepare-image-arm64=${{ needs.prepare-image-arm64.result }}
+            build-gcc-26-arm64=${{ needs.build-gcc-26-arm64.result }}
+            test-gcc-26-arm64=${{ needs.test-gcc-26-arm64.result }}
+        run: go run -C scripts/ci . ci-gate
