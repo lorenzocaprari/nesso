@@ -100,7 +100,7 @@ Coverage floors are the `REQUIRED_*` values in `scripts/code-coverage`. On a pul
 
 Title format: `type(scope): subject` or `type: subject`. Types: `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `build`, `ci`, `chore`, `revert`. A `!` immediately before `:` is a breaking change (`feat(core)!: ...`). `.github/workflows/pr-title.yml` enforces this.
 
-The only author on commits and pull requests is Lorenzo Caprari <caprarilorenzo5@gmail.com>. No `Co-authored-by`, `Signed-off-by`, or other agent or tool trailers.
+Outside contributions are welcome. Author your own commits under your own name. Do not add an AI-agent or tool trailer. A DCO `Signed-off-by` is not required. A commit a coding agent or tool writes on Lorenzo Caprari's behalf has Lorenzo Caprari <caprarilorenzo5@gmail.com> as its only author and committer, and no `Co-authored-by`, `Signed-off-by`, or other trailer.
 
 Every GitHub Action is pinned to a commit SHA with a `# vX.Y.Z` comment. New or bumped actions keep that. `.github/workflows/release.yml` calls the SLSA provenance generators by a `vX.Y.Z` tag. Those reusable workflows check their own ref, so a SHA pin fails the release. OpenSSF Scorecard's Pinned-Dependencies check flags the two tag refs. That is the documented exception. The Scorecard workflow uploads the result and does not fail the job on that finding. zizmor keeps the `unpinned-uses` rule on and ignores those four `uses:` lines. The same-repo call `uses: ./.github/workflows/package.yml` stays in that form: actionlint 1.7.12 rejects the `$/` self-repository syntax.
 
