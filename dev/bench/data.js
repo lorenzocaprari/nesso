@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793042110400,
+  "lastUpdate": 1793043159936,
   "repoUrl": "https://github.com/lorenzocaprari/nesso",
   "entries": {
     "nesso": [
@@ -701,6 +701,60 @@ window.BENCHMARK_DATA = {
           {
             "name": "grep-100000-rss",
             "value": 131772416,
+            "unit": "bytes"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "caprarilorenzo5@gmail.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "committer": {
+            "email": "85455384+lorenzocaprari@users.noreply.github.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "distinct": true,
+          "id": "882ced5322dfa8223c37eb75f94490fd837ff1e6",
+          "message": "ci(release): require approval before publishing\n\nTag pushes wait on the release environment after verify-package. Jobs that\npush, sign, attest, or upload release assets need that approval. A manual\ndry run skips the environment and still does not publish.",
+          "timestamp": "2026-10-26T15:27:57-04:00",
+          "tree_id": "0c8b22aa453e8d3d38bd9d80dd022234f1181b50",
+          "url": "https://github.com/lorenzocaprari/nesso/commit/882ced5322dfa8223c37eb75f94490fd837ff1e6"
+        },
+        "date": 1793043159366,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "grep-1000-wall",
+            "value": 0.88,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-1000-rss",
+            "value": 131923968,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-10000-wall",
+            "value": 7.8,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-10000-rss",
+            "value": 132317184,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-100000-wall",
+            "value": 74.25,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-100000-rss",
+            "value": 132456448,
             "unit": "bytes"
           }
         ]
