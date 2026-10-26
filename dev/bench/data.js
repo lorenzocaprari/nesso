@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793054897015,
+  "lastUpdate": 1793055216761,
   "repoUrl": "https://github.com/lorenzocaprari/nesso",
   "entries": {
     "nesso": [
@@ -1187,6 +1187,60 @@ window.BENCHMARK_DATA = {
           {
             "name": "grep-100000-rss",
             "value": 137433088,
+            "unit": "bytes"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "caprarilorenzo5@gmail.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "committer": {
+            "email": "85455384+lorenzocaprari@users.noreply.github.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "distinct": true,
+          "id": "0284f5c0b9a765da7deb1314c6481aeaa8bceb78",
+          "message": "chore: move renovate.json, .cppcheck-suppressions, and Dockerfile.runtime out of root",
+          "timestamp": "2026-10-26T18:41:17-04:00",
+          "tree_id": "6a7281f4d205f994604927c2fd378757e2a57a4d",
+          "url": "https://github.com/lorenzocaprari/nesso/commit/0284f5c0b9a765da7deb1314c6481aeaa8bceb78"
+        },
+        "date": 1793055215871,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "grep-1000-wall",
+            "value": 0.82,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-1000-rss",
+            "value": 132968448,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-10000-wall",
+            "value": 7.28,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-10000-rss",
+            "value": 135344128,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-100000-wall",
+            "value": 72,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-100000-rss",
+            "value": 131960832,
             "unit": "bytes"
           }
         ]
