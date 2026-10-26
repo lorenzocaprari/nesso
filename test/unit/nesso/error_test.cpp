@@ -22,6 +22,8 @@ TEST_CASE("layer errors map onto a cause", "[nesso][error]")
     REQUIRE(nesso::causeOf(nesso::core::EngineError::MismatchedDimensions) == nesso::ErrorCause::MismatchedDimensions);
     REQUIRE(nesso::causeOf(nesso::core::EngineError::DatabaseNotInitialized) == nesso::ErrorCause::EmptyEmbedding);
     REQUIRE(nesso::causeOf(nesso::core::EngineError::CorruptDatabase) == nesso::ErrorCause::CorruptFile);
+    REQUIRE(nesso::causeOf(nesso::core::EngineError::UnsupportedVersion) ==
+            nesso::ErrorCause::UnsupportedCorpusVersion);
 }
 
 TEST_CASE("each cause has a readable phrase", "[nesso][error]")
@@ -38,6 +40,10 @@ TEST_CASE("each cause has a readable phrase", "[nesso][error]")
     REQUIRE(nesso::describe(nesso::ErrorCause::MismatchedDimensions) == "the embedding width does not match");
     REQUIRE(nesso::describe(nesso::ErrorCause::EmptyEmbedding) == "the embedding is empty");
     REQUIRE(nesso::describe(nesso::ErrorCause::CorruptFile) == "the file is corrupt");
+    REQUIRE(nesso::describe(nesso::ErrorCause::UnsupportedCorpusVersion) ==
+            "the corpus format is not supported by this nesso; re-run nesso index");
+    REQUIRE(nesso::describe(nesso::ErrorCause::ModelMismatch) ==
+            "the corpus was built with a different model; re-run nesso index");
     REQUIRE(nesso::describe(nesso::ErrorCause::EmptyFile) == "the file is empty");
     REQUIRE(nesso::describe(nesso::ErrorCause::NothingIndexable) == "no indexable lines");
     REQUIRE(nesso::describe(nesso::ErrorCause::EmptyCorpus) == "the corpus is empty");

@@ -11,6 +11,7 @@
 #include <filesystem>
 #include <fstream>
 #include <optional>
+#include <span>
 #include <string>
 #include <unistd.h>
 #include <utility>
@@ -68,9 +69,24 @@ TEST_CASE("text operations report model and corpus failures", "[nesso][text]")
     const auto log = std::filesystem::path(NESSO_TEST_FIXTURES) / "grep_sample.log";
     const auto corrupt = dir.path() / "corrupt.nesso";
     const auto empty = dir.path() / "empty.nesso";
+    const auto otherModel = dir.path() / "other-model.nesso";
+    const auto futureVersion = dir.path() / "future-version.nesso";
     const std::array<char, 4> junk{'b', 'a', 'd', '!'};
     writeBytes(corrupt, junk.data(), junk.size());
     writeEmptyCorpus(empty);
+    const nesso::core::CorpusChunk chunk{.chunk = {.text = "alpha", .lineNumber = 1, .source = "a.log"},
+                                         .embedding = {1.F}};
+    REQUIRE(
+        nesso::core::writeCorpusFile(otherModel, std::span<const nesso::core::CorpusChunk>(&chunk, 1), "other/model"));
+    REQUIRE(nesso::core::writeCorpusFile(futureVersion, std::span<const nesso::core::CorpusChunk>(&chunk, 1), "model"));
+    {
+        std::fstream patch(futureVersion, std::ios::binary | std::ios::in | std::ios::out);
+        REQUIRE(patch);
+        patch.seekp(4);
+        const std::array<char, 4> version{3, 0, 0, 0};
+        patch.write(version.data(), version.size());
+        REQUIRE(patch);
+    }
 
     const nesso::Nesso app = withMissingModel(dir.path());
 
@@ -94,6 +110,18 @@ TEST_CASE("text operations report model and corpus failures", "[nesso][text]")
     REQUIRE_FALSE(nothing.has_value());
     REQUIRE(nothing.error().kind == nesso::ErrorKind::EmptyInput);
     REQUIRE(nothing.error().cause == nesso::ErrorCause::EmptyCorpus);
+
+    const auto mismatched = app.search({.query = "database", .index = otherModel});
+    REQUIRE_FALSE(mismatched.has_value());
+    REQUIRE(mismatched.error().kind == nesso::ErrorKind::CorpusRead);
+    REQUIRE(mismatched.error().cause == nesso::ErrorCause::ModelMismatch);
+    REQUIRE(mismatched.error().path == otherModel);
+    REQUIRE(nesso::message(mismatched.error()).find("built with a different model") != std::string::npos);
+
+    const auto newer = app.search({.query = "database", .index = futureVersion});
+    REQUIRE_FALSE(newer.has_value());
+    REQUIRE(newer.error().kind == nesso::ErrorKind::CorpusRead);
+    REQUIRE(newer.error().cause == nesso::ErrorCause::UnsupportedCorpusVersion);
 }
 
 TEST_CASE("grep, index, and search run the text stages", "[nesso][text]")

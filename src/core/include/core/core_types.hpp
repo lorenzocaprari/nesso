@@ -18,7 +18,8 @@ enum class EngineError : uint8_t
     FileOpenFailure,
     MismatchedDimensions,
     DatabaseNotInitialized,
-    CorruptDatabase
+    CorruptDatabase,
+    UnsupportedVersion
 };
 
 } // namespace nesso::core

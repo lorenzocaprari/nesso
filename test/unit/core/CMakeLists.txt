@@ -11,6 +11,8 @@ target_compile_definitions(
   PRIVATE
     "NESSO_ONE_CHUNK_FIXTURE=\"${CMAKE_SOURCE_DIR}/test/functional/features/testdata/one-chunk.nesso\""
     "NESSO_MISMATCH_FIXTURE=\"${CMAKE_SOURCE_DIR}/test/functional/features/testdata/mismatch.nesso\""
+    "NESSO_OTHER_MODEL_FIXTURE=\"${CMAKE_SOURCE_DIR}/test/functional/features/testdata/other-model.nesso\""
+    "NESSO_FUTURE_VERSION_FIXTURE=\"${CMAKE_SOURCE_DIR}/test/functional/features/testdata/future-version.nesso\""
 )
 
 add_executable(top_k_test top_k_test.cpp)
