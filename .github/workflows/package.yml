@@ -9,6 +9,12 @@ name: Package
 # parallel with amd64. release.yml calls this workflow and its image jobs
 # wait for it: a tag does not push the image or publish the GitHub Release
 # when a job here fails. The same wait applies to a release workflow_dispatch.
+#
+# step-security/harden-runner v2.22.2 (egress-policy: audit) is the first
+# step of host jobs. repro-build sets container: and does not get it: those
+# steps run inside the container, and the agent has to install on the VM.
+# scan-runtime does not run on workflow_call. The Release image job scans the
+# image it is about to publish, so this caller does not grant security-events.
 
 on:
   schedule:
@@ -26,6 +32,10 @@ on:
       - "scripts/smoke-deb"
       - "scripts/fetch-model"
       - "scripts/publish-runtime-index"
+      - "scripts/trivy"
+      - "scripts/scan-runtime-image"
+      - "scripts/ci/trivy.go"
+      - "scripts/ci/runtime_scan.go"
   workflow_dispatch:
   workflow_call:
 
@@ -50,6 +60,11 @@ jobs:
       image_amd64: ${{ steps.select.outputs.image_amd64 }}
       image_arm64: ${{ steps.select.outputs.image_arm64 }}
     steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
+        with:
+          egress-policy: audit
+
       - name: Checkout Repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -302,6 +317,11 @@ jobs:
       contents: read
       actions: write
     steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
+        with:
+          egress-policy: audit
+
       - name: Checkout Repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -381,6 +401,11 @@ jobs:
             image: ubuntu:26.10
             runner: ubuntu-24.04-arm
     steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
+        with:
+          egress-policy: audit
+
       - name: Checkout Repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -422,3 +447,101 @@ jobs:
           if [[ -n "${GITHUB_STEP_SUMMARY:-}" ]]; then
             echo "Installed, removed, and purged \`${debs[0]}\` on \`${IMAGE}\` (${ARCH})." >> "${GITHUB_STEP_SUMMARY}"
           fi
+
+  # Final stage of Dockerfile.runtime plus the binary and models from the
+  # .deb repro-build just produced. The compiler stage is not published.
+  # Rebuilding it here would compile nesso again. ci runtime-scan-dockerfile
+  # fails if that final stage gains an instruction this plan does not copy.
+  # workflow_call is the Release caller: the image job scans the image it
+  # built, and this job stays skipped so the tag path does not compile twice.
+  # security-events: write is only on this job. Fork pull requests cannot
+  # upload SARIF; the summary still runs.
+  scan-runtime:
+    name: scan-runtime (${{ matrix.arch }})
+    needs: repro-build
+    if: github.event_name != 'workflow_call' && success()
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      actions: write
+      security-events: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-latest
+            platform: linux/amd64
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+            platform: linux/arm64
+    steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
+        with:
+          egress-policy: audit
+
+      - name: Checkout Repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Trivy cache day
+        id: trivy-day
+        run: echo "day=$(date -u +%Y%m%d)" >> "${GITHUB_OUTPUT}"
+
+      - name: Cache Trivy DB and binary
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ${{ runner.temp }}/trivy-db
+            ${{ runner.temp }}/nesso-cache/nesso/trivy
+          key: trivy-0.76.1-${{ runner.arch }}-${{ hashFiles('scripts/trivy') }}-${{ steps.trivy-day.outputs.day }}
+          restore-keys: |
+            trivy-0.76.1-${{ runner.arch }}-${{ hashFiles('scripts/trivy') }}-
+
+      - name: Download .deb
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: repro-deb-${{ matrix.arch }}-a
+          path: repro-deb
+
+      - name: Scan runtime image
+        env:
+          ARCH: ${{ matrix.arch }}
+          PLATFORM: ${{ matrix.platform }}
+          XDG_CACHE_HOME: ${{ runner.temp }}/nesso-cache
+          TRIVY_CACHE_DIR: ${{ runner.temp }}/trivy-db
+          GOPROXY: "off"
+          GOTOOLCHAIN: local
+          GOFLAGS: "-mod=readonly -buildvcs=false"
+        run: |
+          set -euo pipefail
+          if ! command -v go >/dev/null 2>&1 || ! go version | grep -Eq 'go1\.(2[2-9]|[3-9][0-9])'; then
+            sudo apt-get update
+            sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends golang-go
+          fi
+          go build -C scripts/ci -o /tmp/nesso-ci .
+          chmod +x scripts/scan-runtime-image scripts/trivy
+          mapfile -t debs < <(find repro-deb -type f -name "nesso_*_${ARCH}.deb" | sort)
+          if [[ "${#debs[@]}" -ne 1 ]]; then
+            echo "error: expected 1 ${ARCH} deb, found ${#debs[@]}" >&2
+            find repro-deb -type f -print >&2
+            exit 1
+          fi
+          ./scripts/scan-runtime-image \
+            --deb "${debs[0]}" \
+            --platform "${PLATFORM}" \
+            --runtime Dockerfile.runtime \
+            --sarif trivy.sarif \
+            --json trivy.json \
+            --ci /tmp/nesso-ci
+          /tmp/nesso-ci trivy-summary --json trivy.json --arch "${ARCH}"
+
+      - name: Upload Trivy SARIF
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+        uses: github/codeql-action/upload-sarif@24c54180a607b1449ed407dd24f251e4e9147c8d # v4.38.3
+        with:
+          sarif_file: trivy.sarif
+          category: trivy-runtime-${{ matrix.arch }}

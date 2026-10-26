@@ -17,11 +17,17 @@ concurrency:
 permissions:
   contents: read
 
+# Host job. First step is harden-runner audit.
 jobs:
   conventional:
     name: conventional commit
     runs-on: ubuntu-latest
     steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
+        with:
+          egress-policy: audit
+
       - name: Check title
         env:
           PR_TITLE: ${{ github.event.pull_request.title }}

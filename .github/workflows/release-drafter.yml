@@ -19,6 +19,7 @@ concurrency:
 permissions:
   contents: read
 
+# Host jobs. First step of each is harden-runner audit.
 jobs:
   update-draft:
     if: github.event_name == 'push'
@@ -27,6 +28,11 @@ jobs:
     permissions:
       contents: write
     steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
+        with:
+          egress-policy: audit
+
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -73,5 +79,10 @@ jobs:
       contents: read
       pull-requests: write
     steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
+        with:
+          egress-policy: audit
+
       - name: Label from the conventional commit title
         uses: release-drafter/release-drafter/autolabeler@978bb0b30c5ee8cdd332ced253758157150d43f0 # v7.10.0

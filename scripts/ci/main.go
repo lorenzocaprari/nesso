@@ -10,7 +10,7 @@ import (
 
 func main() {
 	if len(os.Args) < 2 {
-		fmt.Fprintln(os.Stderr, "usage: ci <patch-coverage|junit-summary|bench-external|bench-history> [flags]")
+		fmt.Fprintln(os.Stderr, "usage: ci <patch-coverage|junit-summary|bench-external|bench-history|trivy-summary|runtime-scan-dockerfile> [flags]")
 		os.Exit(1)
 	}
 	var code int
@@ -23,8 +23,12 @@ func main() {
 		code = benchExternalMain(os.Args[2:])
 	case "bench-history":
 		code = benchHistoryMain(os.Args[2:])
+	case "trivy-summary":
+		code = trivyMain(os.Args[2:])
+	case "runtime-scan-dockerfile":
+		code = runtimeScanMain(os.Args[2:])
 	case "-h", "--help", "help":
-		fmt.Fprintln(os.Stderr, "usage: ci <patch-coverage|junit-summary|bench-external|bench-history> [flags]")
+		fmt.Fprintln(os.Stderr, "usage: ci <patch-coverage|junit-summary|bench-external|bench-history|trivy-summary|runtime-scan-dockerfile> [flags]")
 	default:
 		fmt.Fprintf(os.Stderr, "unknown command %q\n", os.Args[1])
 		code = 1

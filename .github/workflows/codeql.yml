@@ -11,6 +11,7 @@ on:
 
 permissions: {}
 
+# Host job. First step is harden-runner audit. CodeQL stays after it.
 jobs:
   analyze:
     name: Analyze (${{ matrix.language }})
@@ -30,6 +31,11 @@ jobs:
           - language: c-cpp
             build-mode: none
     steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
+        with:
+          egress-policy: audit
+
       - name: Checkout Repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
