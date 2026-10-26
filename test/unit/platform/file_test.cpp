@@ -5,9 +5,11 @@
 #include <platform/file.hpp>
 
 #include <cstddef>
+#include <cstdint>
 #include <filesystem>
 #include <fstream>
 #include <unistd.h>
+#include <vector>
 
 TEST_CASE("a mapped file views its bytes", "[platform]")
 {
@@ -93,9 +95,22 @@ TEST_CASE("atomic replace keeps the destination name", "[platform]")
     std::filesystem::remove_all(directory);
 }
 
-TEST_CASE("peak resident bytes is a whole number of pages", "[platform]")
+TEST_CASE("peak resident bytes is positive and monotonic", "[platform]")
 {
-    const std::int64_t peak = nesso::platform::peakResidentBytes();
-    REQUIRE(peak >= 0);
-    REQUIRE(peak % 1024 == 0);
+    const std::int64_t before = nesso::platform::peakResidentBytes();
+    REQUIRE(before > 0);
+    REQUIRE(before % 1024 == 0);
+
+    std::vector<std::byte> block(8 * 1024 * 1024);
+    std::uint64_t dirty = 0;
+    for (std::size_t offset = 0; offset < block.size(); offset += 4096)
+    {
+        block[offset] = std::byte{1};
+        dirty += static_cast<unsigned char>(block[offset]);
+    }
+    REQUIRE(dirty == block.size() / 4096);
+
+    const std::int64_t after = nesso::platform::peakResidentBytes();
+    REQUIRE(after >= before);
+    REQUIRE(after % 1024 == 0);
 }
