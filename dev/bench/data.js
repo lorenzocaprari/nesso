@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793021510292,
+  "lastUpdate": 1793023019343,
   "repoUrl": "https://github.com/lorenzocaprari/nesso",
   "entries": {
     "nesso": [
@@ -215,6 +215,60 @@ window.BENCHMARK_DATA = {
           {
             "name": "grep-100000-rss",
             "value": 132874240,
+            "unit": "bytes"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "caprarilorenzo5@gmail.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "committer": {
+            "email": "85455384+lorenzocaprari@users.noreply.github.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "distinct": true,
+          "id": "1bec1f85e155d7d7fe25e5062cc8a9ddd8948e34",
+          "message": "chore(scripts): quote comma words in array literals\n\nshellcheck reads an unquoted comma inside an array literal as a likely\nmistake for an element separator (SC2054). scripts/cppcheck passes\n--enable=warning,performance,portability,unusedFunction and\nscripts/scan-runtime-image passes --pkg-types os,library that way.\nQuote both values. Each array keeps the same elements, so cppcheck and\nTrivy receive the same arguments.",
+          "timestamp": "2026-10-26T14:51:28+01:00",
+          "tree_id": "b03f46b07793c6dc8815a18713dbbd01ad9ed92c",
+          "url": "https://github.com/lorenzocaprari/nesso/commit/1bec1f85e155d7d7fe25e5062cc8a9ddd8948e34"
+        },
+        "date": 1793023019008,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "grep-1000-wall",
+            "value": 1.43,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-1000-rss",
+            "value": 137236480,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-10000-wall",
+            "value": 13.02,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-10000-rss",
+            "value": 137232384,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-100000-wall",
+            "value": 129.52,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-100000-rss",
+            "value": 132620288,
             "unit": "bytes"
           }
         ]
