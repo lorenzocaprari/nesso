@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793025222191,
+  "lastUpdate": 1793026617393,
   "repoUrl": "https://github.com/lorenzocaprari/nesso",
   "entries": {
     "nesso": [
@@ -431,6 +431,60 @@ window.BENCHMARK_DATA = {
           {
             "name": "grep-100000-rss",
             "value": 132136960,
+            "unit": "bytes"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "caprarilorenzo5@gmail.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "committer": {
+            "email": "85455384+lorenzocaprari@users.noreply.github.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "distinct": true,
+          "id": "705d574fe2328058a8a63f288572192feb695c3c",
+          "message": "build(release): fail when the release binary links networking code\n\ncurl and OpenSSL are in the Conan graph through date and are not linked\ninto the release binary. scripts/check-network-free fails that binary\nwhen readelf -d reports a denied NEEDED library, when an undefined\ndynamic symbol is a networking libc call that is not in\nscripts/check-network-free.allow, or when defined symbols or the\nversion strings libcurl/ and \"OpenSSL \" show curl or OpenSSL linked\nstatically. A missing tool or a readelf, nm, or strings failure exits 2.\n\nscripts/build-release-binary runs the check on the binary it produces,\nso the release build, the .deb, and the runtime image stay covered.\nTests put fake readelf, nm, and strings on PATH and cover a clean\nbinary, a denied NEEDED entry, a denied import, an allow-listed import,\na static curl_ or SSL_ symbol, version strings, and tool failure.",
+          "timestamp": "2026-10-26T15:51:06+01:00",
+          "tree_id": "fbbeae7391c4f2877221af839a3b62a66fd0f5f0",
+          "url": "https://github.com/lorenzocaprari/nesso/commit/705d574fe2328058a8a63f288572192feb695c3c"
+        },
+        "date": 1793026616830,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "grep-1000-wall",
+            "value": 1.67,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-1000-rss",
+            "value": 132341760,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-10000-wall",
+            "value": 14.88,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-10000-rss",
+            "value": 132308992,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-100000-wall",
+            "value": 149.19,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-100000-rss",
+            "value": 133115904,
             "unit": "bytes"
           }
         ]
