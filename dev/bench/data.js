@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793026617393,
+  "lastUpdate": 1793030693136,
   "repoUrl": "https://github.com/lorenzocaprari/nesso",
   "entries": {
     "nesso": [
@@ -485,6 +485,60 @@ window.BENCHMARK_DATA = {
           {
             "name": "grep-100000-rss",
             "value": 133115904,
+            "unit": "bytes"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "caprarilorenzo5@gmail.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "committer": {
+            "email": "85455384+lorenzocaprari@users.noreply.github.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "distinct": true,
+          "id": "ec8977ad5c936cd41d7e9b0816ccf8bfb9842014",
+          "message": "fix(embed): keep int8 embeddings off AMX tiles\n\nONNX Runtime 1.18 switches its int8 GEMM to the AMX kernel whenever\nLinux grants the process AMX tile permission. Some virtual machines\nadvertise AMX and grant that permission but do not restore tile\nregisters after a context switch. An int8 GEMM that is preempted then\nreturns wrong numbers, so the same text embedded twice under CPU load\ngave different vectors, from a small drift to a cosine near zero. One\nintra-op thread per session does not prevent it: a single thread is\nstill preempted. fp32 does not use AMX and was not affected.\n\nThe embedder now installs a seccomp filter before the first ONNX\nRuntime environment. It refuses arch_prctl(ARCH_REQ_XCOMP_PERM) with\nEPERM and allows every other call, so ONNX Runtime keeps the AVX-512\nVNNI or AVX2 int8 kernel. Integer GEMM is exact, so on a host that\npreserves tile state those kernels give the same bytes as AMX. The\nfilter sets no_new_privs for the process. If the permission was already\ngranted, or the filter cannot be installed, ONNX Runtime keeps its\ndefault.\n\nThe repeat test now requires byte equality. A new embedder test runs\ntwo batches on two sessions eleven times, requires identical bytes,\nand checks that the tile permission request is refused.",
+          "timestamp": "2026-10-26T17:00:11+01:00",
+          "tree_id": "242174939c63fac8c3b44eb7473bcd39e2857502",
+          "url": "https://github.com/lorenzocaprari/nesso/commit/ec8977ad5c936cd41d7e9b0816ccf8bfb9842014"
+        },
+        "date": 1793030692287,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "grep-1000-wall",
+            "value": 0.81,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-1000-rss",
+            "value": 132927488,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-10000-wall",
+            "value": 7.1,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-10000-rss",
+            "value": 127975424,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-100000-wall",
+            "value": 69.5,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-100000-rss",
+            "value": 132628480,
             "unit": "bytes"
           }
         ]
