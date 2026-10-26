@@ -46,7 +46,7 @@ docker run --rm -v "$PWD:/data" -w /data ghcr.io/lorenzocaprari/nesso:latest \
   grep "database connection error" app.log
 ```
 
-A release pull request bumps `version` in `conanfile.py`. After that commit is on `main`, publish the `vX.Y.Z` draft. Publishing creates the tag. `.github/workflows/release.yml` checks the tag against `conanfile.py`, then publishes the image, both `.deb` packages, and the GitHub Release. CI must already have published `nesso-build-env` for amd64 and arm64. Checking the signature and provenance is [below](#verifying-a-release).
+A release pull request bumps `version` in `conanfile.py`. After that commit is on `main`, publish the `vX.Y.Z` draft. Publishing creates the tag. `.github/workflows/release.yml` checks the tag against `conanfile.py`, waits for approval on the `release` environment, then publishes the image, both `.deb` packages, and the GitHub Release. CI must already have published `nesso-build-env` for amd64 and arm64. Checking the signature and provenance is [below](#verifying-a-release).
 
 ## Verifying a release
 
