@@ -61,10 +61,7 @@ representative at an online or offline event.
 Instances of abusive, harassing, or otherwise unacceptable behavior may be
 reported to the maintainer, [@lorenzocaprari](https://github.com/lorenzocaprari),
 through [GitHub private vulnerability reporting](https://github.com/lorenzocaprari/nesso/security/advisories/new).
-The maintainer has to enable private vulnerability reporting (repository
-**Settings → Advanced Security → Private vulnerability reporting**) before that
-form accepts reports. All complaints will be reviewed and investigated promptly
-and fairly.
+All complaints will be reviewed and investigated promptly and fairly.
 
 All community leaders are obligated to respect the privacy and security of the
 reporter of any incident.

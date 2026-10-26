@@ -2,4 +2,4 @@ blank_issues_enabled: false
 contact_links:
   - name: Security vulnerability
     url: https://github.com/lorenzocaprari/nesso/security/advisories/new
-    about: Private report. The maintainer must enable private vulnerability reporting before this form accepts submissions.
+    about: Report a security vulnerability privately through GitHub private vulnerability reporting.
