@@ -42,6 +42,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- An out-of-range `NESSO_THREADS` value is a usage error. A digit string that does not fit in `size_t` used to throw from `std::stoull` and print `Unhandled Runtime Exception: stoull`. It now exits 2 with `NESSO_THREADS must be a positive integer`, the same as any other value that is not a positive integer.
 - The trace peak resident size is `getrusage`'s `ru_maxrss`, in bytes. The previous helper placement-newed `rusage` into a byte array aligned to one byte.
 - A tag release can call Package. `verify-package` grants `security-events: write`, which `scan-runtime` declares, because GitHub checks that permission before the job's `if`. Release passes `scan_runtime: false`. The Release `image` job still scans the image it built. Package's nightly run, manual run, and packaging pull requests still scan.
 - Release builds rewrite source and build paths, pin LTO to one job, and archive the `.deb` with the commit timestamp, fixed ownership, and single-threaded zstd. Two clean builds of the same commit produce the same package bytes.

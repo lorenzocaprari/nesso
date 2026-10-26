@@ -7,10 +7,12 @@
 
 #include <CLI/CLI.hpp>
 
+#include <charconv>
 #include <cstdlib>
 #include <iostream>
 #include <string>
 #include <string_view>
+#include <system_error>
 #include <vector>
 
 #ifndef NESSO_VERSION
@@ -100,7 +102,15 @@ static std::expected<size_t, int> threadsFromEnvironment()
     {
         return std::unexpected(2);
     }
-    return static_cast<size_t>(std::stoull(text));
+    size_t parsed = 0;
+    const char *const first = text.data();
+    const char *const last = first + text.size();
+    const std::from_chars_result result = std::from_chars(first, last, parsed);
+    if (result.ec != std::errc{} || result.ptr != last)
+    {
+        return std::unexpected(2);
+    }
+    return parsed;
 }
 
 std::expected<ParsedCommand, int> parseCommandLine(int argc, char **argv)

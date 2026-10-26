@@ -127,6 +127,16 @@ Feature: command errors
     Then the exit code is 2
     And stderr contains "NESSO_THREADS must be a positive integer"
 
+  Scenario: an out-of-range NESSO_THREADS is a usage error
+    Given a file "app.log" with:
+      """
+      database connection refused
+      """
+    And the environment variable "NESSO_THREADS" is "99999999999999999999999"
+    When I run nesso with arguments grep "database connection error" {dir}/app.log
+    Then the exit code is 2
+    And stderr contains "NESSO_THREADS must be a positive integer"
+
   Scenario: a zero result limit is a failure
     Given a file "app.log" with:
       """
