@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793044066900,
+  "lastUpdate": 1793044411675,
   "repoUrl": "https://github.com/lorenzocaprari/nesso",
   "entries": {
     "nesso": [
@@ -809,6 +809,60 @@ window.BENCHMARK_DATA = {
           {
             "name": "grep-100000-rss",
             "value": 132501504,
+            "unit": "bytes"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "caprarilorenzo5@gmail.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "committer": {
+            "email": "85455384+lorenzocaprari@users.noreply.github.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "distinct": true,
+          "id": "37952fdbd86cafd3dbf34c829723d5f6c39d81ff",
+          "message": "docs(security): drop the enable-reporting note from the issue template\n\nPrivate vulnerability reporting is enabled. The issue template contact\nlink and the code of conduct now describe that form as the private route.",
+          "timestamp": "2026-10-26T15:42:38-04:00",
+          "tree_id": "6d7bd30960640d4ff2b7f06c0e0926e57b1e7e5f",
+          "url": "https://github.com/lorenzocaprari/nesso/commit/37952fdbd86cafd3dbf34c829723d5f6c39d81ff"
+        },
+        "date": 1793044411123,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "grep-1000-wall",
+            "value": 1.21,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-1000-rss",
+            "value": 132161536,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-10000-wall",
+            "value": 11.01,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-10000-rss",
+            "value": 132427776,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-100000-wall",
+            "value": 106.01,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-100000-rss",
+            "value": 132608000,
             "unit": "bytes"
           }
         ]
