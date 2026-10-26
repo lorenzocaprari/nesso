@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793038074532,
+  "lastUpdate": 1793041358936,
   "repoUrl": "https://github.com/lorenzocaprari/nesso",
   "entries": {
     "nesso": [
@@ -593,6 +593,60 @@ window.BENCHMARK_DATA = {
           {
             "name": "grep-100000-rss",
             "value": 137605120,
+            "unit": "bytes"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "49699333+dependabot[bot]@users.noreply.github.com",
+            "name": "dependabot[bot]",
+            "username": "dependabot[bot]"
+          },
+          "committer": {
+            "email": "85455384+lorenzocaprari@users.noreply.github.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "distinct": true,
+          "id": "e666c44043bb5f8d910540b6043693cf43c14f9b",
+          "message": "build(deps): bump virtualenv from 21.14.7 to 21.14.13 in /.devcontainer\n\nBumps [virtualenv](https://github.com/pypa/virtualenv) from 21.14.7 to 21.14.13.\n- [Release notes](https://github.com/pypa/virtualenv/releases)\n- [Changelog](https://github.com/pypa/virtualenv/blob/main/docs/changelog.rst)\n- [Commits](https://github.com/pypa/virtualenv/compare/21.14.7...21.14.13)\n\n---\nupdated-dependencies:\n- dependency-name: virtualenv\n  dependency-version: 21.14.13\n  dependency-type: direct:production\n...\n\nSigned-off-by: dependabot[bot] <support@github.com>",
+          "timestamp": "2026-10-26T14:00:50-04:00",
+          "tree_id": "dc797939011f063dced03d6e33dbc9b09160b822",
+          "url": "https://github.com/lorenzocaprari/nesso/commit/e666c44043bb5f8d910540b6043693cf43c14f9b"
+        },
+        "date": 1793041357464,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "grep-1000-wall",
+            "value": 1.21,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-1000-rss",
+            "value": 132091904,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-10000-wall",
+            "value": 11.04,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-10000-rss",
+            "value": 132599808,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-100000-wall",
+            "value": 109.69,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-100000-rss",
+            "value": 132059136,
             "unit": "bytes"
           }
         ]
