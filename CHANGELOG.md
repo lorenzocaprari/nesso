@@ -24,6 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The README demo shows `nesso grep` before `nesso index` and `nesso search`. The sample log is synthetic output from `scripts/demo-log`, and `docs/assets/demo.tape` builds it in the hidden setup.
 - A tag release waits for approval on the `release` environment after the package check passes. The manual dry run does not request that approval and does not publish.
 - The README is a short intro: what nesso is, a command demo with a short recording, and the v0.1.0 amd64 install. Usage, building, releases, verification, benchmarks, and determinism are under `docs/`. The benchmark history summary links to the chart file on the `gh-pages` branch.
 - Release Drafter takes the draft version from `version` in `conanfile.py`. While that git tag already exists, the draft is named `Unreleased (bump conanfile.py to release)` and is not a version tag. After the version is bumped on `main`, the draft is `vX.Y.Z`. Publishing that draft creates the tag, and the release workflow still checks the tag against `conanfile.py`.
