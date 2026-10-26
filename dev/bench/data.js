@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793024233330,
+  "lastUpdate": 1793025222191,
   "repoUrl": "https://github.com/lorenzocaprari/nesso",
   "entries": {
     "nesso": [
@@ -377,6 +377,60 @@ window.BENCHMARK_DATA = {
           {
             "name": "grep-100000-rss",
             "value": 132579328,
+            "unit": "bytes"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "caprarilorenzo5@gmail.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "committer": {
+            "email": "85455384+lorenzocaprari@users.noreply.github.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "distinct": true,
+          "id": "f5a82d10f0fa5fd5d7dc760c4ff9fcd85d402689",
+          "message": "fix(search): reject a corpus built with another model or format version\n\nA corpus whose header carries another format version was reported as\n\"the file is corrupt\", which sent users looking for disk damage instead\nof re-running nesso index. The reader now returns UnsupportedVersion\nfor a valid magic with an unknown version, and search reports \"the\ncorpus format is not supported by this nesso; re-run nesso index\". A\nshort or damaged header is still reported as corrupt.\n\nThe corpus stores the id of the model that embedded it, but nothing\nread it. search now compares it with the embedding model's id before\nthe model loads, and a different id fails with \"the corpus was built\nwith a different model; re-run nesso index\". An empty corpus is still\nreported as empty first. Both failures exit with status 2, as before.\n\nEvery corpus written today stores the same id for the int8 and fp32\nmodels, so this check does not tell those two apart.\n\nTests cover the reader's version handling, the new causes and messages,\nthe facade without a model, and two BDD scenarios with checked-in\nfixtures. other-model.nesso and future-version.nesso are one-chunk.nesso\nwith the model id's last character or the version field changed.",
+          "timestamp": "2026-10-26T15:25:41+01:00",
+          "tree_id": "2677a244e3f7405a74487fd46a65aea18532ed45",
+          "url": "https://github.com/lorenzocaprari/nesso/commit/f5a82d10f0fa5fd5d7dc760c4ff9fcd85d402689"
+        },
+        "date": 1793025221578,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "grep-1000-wall",
+            "value": 3.61,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-1000-rss",
+            "value": 131928064,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-10000-wall",
+            "value": 25.21,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-10000-rss",
+            "value": 136900608,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-100000-wall",
+            "value": 242.03,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-100000-rss",
+            "value": 132136960,
             "unit": "bytes"
           }
         ]
