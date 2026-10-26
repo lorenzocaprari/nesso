@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793052694785,
+  "lastUpdate": 1793053452611,
   "repoUrl": "https://github.com/lorenzocaprari/nesso",
   "entries": {
     "nesso": [
@@ -1079,6 +1079,60 @@ window.BENCHMARK_DATA = {
           {
             "name": "grep-100000-rss",
             "value": 137527296,
+            "unit": "bytes"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "caprarilorenzo5@gmail.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "committer": {
+            "email": "85455384+lorenzocaprari@users.noreply.github.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "distinct": true,
+          "id": "9d35c9408be61c879edcb57739e8a0e2404a3e06",
+          "message": "chore: clean up clang-tidy config, stale scripts, and docs",
+          "timestamp": "2026-10-26T18:16:00-04:00",
+          "tree_id": "6d56600f11dce5623d899010ea6426d2ec91d443",
+          "url": "https://github.com/lorenzocaprari/nesso/commit/9d35c9408be61c879edcb57739e8a0e2404a3e06"
+        },
+        "date": 1793053451808,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "grep-1000-wall",
+            "value": 3.6,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-1000-rss",
+            "value": 132300800,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-10000-wall",
+            "value": 25.34,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-10000-rss",
+            "value": 132911104,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-100000-wall",
+            "value": 241.81,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-100000-rss",
+            "value": 133210112,
             "unit": "bytes"
           }
         ]
