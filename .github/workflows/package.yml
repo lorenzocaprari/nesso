@@ -13,8 +13,10 @@ name: Package
 # step-security/harden-runner v2.22.2 (egress-policy: audit) is the first
 # step of host jobs. repro-build sets container: and does not get it: those
 # steps run inside the container, and the agent has to install on the VM.
-# scan-runtime does not run on workflow_call. The Release image job scans the
-# image it is about to publish, so this caller does not grant security-events.
+# scan-runtime runs on a direct Package run. Release passes scan_runtime:
+# false; its image job scans the image it is about to publish. GitHub checks
+# the called job's security-events: write before that if, so the caller
+# still grants the permission.
 
 on:
   schedule:
@@ -38,6 +40,12 @@ on:
       - "scripts/ci/runtime_scan.go"
   workflow_dispatch:
   workflow_call:
+    inputs:
+      scan_runtime:
+        description: Scan the runtime image built from the reproducible .deb
+        type: boolean
+        default: true
+        required: false
 
 concurrency:
   group: package-${{ github.workflow }}-${{ github.ref }}
@@ -452,14 +460,21 @@ jobs:
   # .deb repro-build just produced. The compiler stage is not published.
   # Rebuilding it here would compile nesso again. ci runtime-scan-dockerfile
   # fails if that final stage gains an instruction this plan does not copy.
-  # workflow_call is the Release caller: the image job scans the image it
-  # built, and this job stays skipped so the tag path does not compile twice.
-  # security-events: write is only on this job. Fork pull requests cannot
-  # upload SARIF; the summary still runs.
+  # scan_runtime defaults to true. Release passes false: its image job scans
+  # the image it built, and this job would build that final stage again.
+  # A direct schedule, workflow_dispatch, or pull_request leaves the input
+  # unset. null != false is false, because loose equality turns both into 0,
+  # so that comparison would skip those runs. format() compares strings:
+  # an unset input is '' and true is 'true', and neither is 'false'.
+  # github.event_name inside a called workflow is the caller's event, never
+  # workflow_call. security-events: write is on this job. Fork pull requests
+  # cannot upload SARIF; the summary still runs. A caller must grant
+  # security-events: write even when this job is skipped. GitHub checks
+  # that at startup.
   scan-runtime:
     name: scan-runtime (${{ matrix.arch }})
     needs: repro-build
-    if: github.event_name != 'workflow_call' && success()
+    if: success() && format('{0}', inputs.scan_runtime) != 'false'
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 30
     permissions:

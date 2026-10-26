@@ -31,9 +31,11 @@ name: Release
 # step-security/harden-runner v2.22.2 (egress-policy: audit) is the first
 # step of jobs that have steps. verify-package is the Package workflow.
 # The SLSA generator jobs are reusable workflows that check their own tag
-# and do not accept an added step. The image job scans the runtime image
-# it built, before the push, and is the only job here with
-# security-events: write.
+# and do not accept an added step. verify-package passes scan_runtime: false
+# so Package does not scan again. Package's scan-runtime job still declares
+# security-events: write, and GitHub checks nested permissions at startup,
+# before if, so this caller grants that scope. The image job scans the
+# runtime image it built, before the push, and uploads that SARIF.
 
 on:
   push:
@@ -55,10 +57,13 @@ permissions: {}
 jobs:
   verify-package:
     uses: ./.github/workflows/package.yml # zizmor: ignore[self-repository] same-commit reusable workflow; actionlint 1.7.12 rejects the self-repository form
+    with:
+      scan_runtime: false
     permissions:
       contents: read
       packages: read
       actions: write
+      security-events: write
 
   image:
     name: image (${{ matrix.arch }})
