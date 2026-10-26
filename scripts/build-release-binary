@@ -129,4 +129,6 @@ if grep -E "(^|[^A-Za-z0-9_])${escaped}(/|$)" "${TMPDIR}/nesso-strings.txt"; the
   exit 1
 fi
 rm -f "${TMPDIR}/nesso-strings.txt"
+# No RPATH or RUNPATH: an empty entry would make ld.so search the working directory.
+python3 "${ROOT}/scripts/check-no-runpath" "${OUT_BIN}"
 echo "${OUT_BIN}"

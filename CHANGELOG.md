@@ -44,6 +44,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `scripts/bench` treats the current grep trace (`parse`, `query-embed`, `embed`) as a completed run. The old `parse`/`embed`/`rank` check marked every CI run failed, and `continue-on-error` hid that result.
 - int8 embeddings use one intra-op thread per session so repeated runs agree under CPU load.
 
+### Security
+
+- The release binary no longer has a RUNPATH. Up to 0.1.0 it carried the Conan build-tree library directories followed by an empty entry, and the dynamic loader reads an empty entry as the current working directory. Running `nesso` from a directory that someone else can write, such as a directory of collected logs, could load a shared library planted there instead of the system `libstdc++`, `libm`, or `libgcc_s`. Every dependency is linked statically, so no search path is needed. `scripts/build-release-binary` now fails when the binary has an RPATH or RUNPATH (`scripts/check-no-runpath`).
+
 ## [0.1.0] - 2026-10-11
 
 First release. Items below are commits reachable from tag `v0.1.0` and the auto-generated [GitHub release notes](https://github.com/lorenzocaprari/nesso/releases/tag/v0.1.0). History before pull request #41 is included where it is still what the tag ships.
