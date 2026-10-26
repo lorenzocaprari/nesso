@@ -492,6 +492,8 @@ jobs:
   # CPU, so appending unit and integration would lengthen it. Those three
   # lanes have slack against that tail and against coverage on the #120 image
   # rebuild (run 40221737043, coverage at +643s).
+  # ctest --output-junit is an absolute path: ctest changes into --test-dir
+  # before it opens the file.
   test-gcc-26-amd64:
     needs: [prepare-image-amd64, build-gcc-26-amd64, changes]
     if: >-
@@ -500,6 +502,10 @@ jobs:
       needs.build-gcc-26-amd64.result == 'success' }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: read
+      actions: write
     container:
       image: ${{ needs.prepare-image-amd64.outputs.image }}
       credentials:
@@ -531,20 +537,33 @@ jobs:
 
       - name: Run unit tests
         id: unit
-        run: ctest --test-dir build/Release --output-on-failure -j "$(nproc)" -L unit -V
+        run: |
+          mkdir -p "${GITHUB_WORKSPACE}/build/junit"
+          ctest --test-dir build/Release --output-on-failure -j "$(nproc)" -L unit -V \
+            --output-junit "${GITHUB_WORKSPACE}/build/junit/unit.xml"
 
       - name: Run integration tests
         id: integration
         if: always() && !cancelled() && steps.extract.outcome == 'success'
-        run: ctest --test-dir build/Release --output-on-failure -j "$(nproc)" -L integration -V
+        run: |
+          mkdir -p "${GITHUB_WORKSPACE}/build/junit"
+          ctest --test-dir build/Release --output-on-failure -j "$(nproc)" -L integration -V \
+            --output-junit "${GITHUB_WORKSPACE}/build/junit/integration.xml"
 
       - name: Run functional tests
         id: functional
         if: always() && !cancelled() && steps.extract.outcome == 'success'
-        run: ctest --test-dir build/Release --output-on-failure -j "$(nproc)" -L functional -V
+        run: |
+          mkdir -p "${GITHUB_WORKSPACE}/build/junit"
+          ctest --test-dir build/Release --output-on-failure -j "$(nproc)" -L functional -V \
+            --output-junit "${GITHUB_WORKSPACE}/build/junit/functional.xml"
 
       - name: Summarize test suites
         if: always() && !cancelled()
+        env:
+          GOPROXY: "off"
+          GOTOOLCHAIN: local
+          GOFLAGS: "-mod=readonly -buildvcs=false"
         run: |
           {
             echo '### test-gcc-26-amd64'
@@ -554,6 +573,21 @@ jobs:
             echo "| integration | ${{ steps.integration.outcome }} |"
             echo "| functional | ${{ steps.functional.outcome }} |"
           } >> "${GITHUB_STEP_SUMMARY}"
+          go build -C scripts/ci -o /tmp/nesso-ci .
+          /tmp/nesso-ci junit-summary \
+            --summary "${GITHUB_STEP_SUMMARY}" \
+            unit="${GITHUB_WORKSPACE}/build/junit/unit.xml" \
+            integration="${GITHUB_WORKSPACE}/build/junit/integration.xml" \
+            functional="${GITHUB_WORKSPACE}/build/junit/functional.xml"
+
+      - name: Upload JUnit reports
+        if: always() && !cancelled()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: junit-test-gcc-26-amd64
+          path: build/junit
+          if-no-files-found: warn
+          retention-days: 14
 
   test-gcc-26-debug-amd64:
     needs: [prepare-image-amd64, build-gcc-26-debug-amd64, changes]
@@ -563,6 +597,10 @@ jobs:
       needs.build-gcc-26-debug-amd64.result == 'success' }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: read
+      actions: write
     env:
       ASAN_OPTIONS: halt_on_error=1:detect_leaks=1:abort_on_error=1
       UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
@@ -597,15 +635,25 @@ jobs:
 
       - name: Run unit tests
         id: unit
-        run: ctest --test-dir build/Debug --output-on-failure -j "$(nproc)" -L unit -V
+        run: |
+          mkdir -p "${GITHUB_WORKSPACE}/build/junit"
+          ctest --test-dir build/Debug --output-on-failure -j "$(nproc)" -L unit -V \
+            --output-junit "${GITHUB_WORKSPACE}/build/junit/unit.xml"
 
       - name: Run integration tests
         id: integration
         if: always() && !cancelled() && steps.extract.outcome == 'success'
-        run: ctest --test-dir build/Debug --output-on-failure -j "$(nproc)" -L integration -V
+        run: |
+          mkdir -p "${GITHUB_WORKSPACE}/build/junit"
+          ctest --test-dir build/Debug --output-on-failure -j "$(nproc)" -L integration -V \
+            --output-junit "${GITHUB_WORKSPACE}/build/junit/integration.xml"
 
       - name: Summarize test suites
         if: always() && !cancelled()
+        env:
+          GOPROXY: "off"
+          GOTOOLCHAIN: local
+          GOFLAGS: "-mod=readonly -buildvcs=false"
         run: |
           {
             echo '### test-gcc-26-debug-amd64'
@@ -614,6 +662,20 @@ jobs:
             echo "| unit | ${{ steps.unit.outcome }} |"
             echo "| integration | ${{ steps.integration.outcome }} |"
           } >> "${GITHUB_STEP_SUMMARY}"
+          go build -C scripts/ci -o /tmp/nesso-ci .
+          /tmp/nesso-ci junit-summary \
+            --summary "${GITHUB_STEP_SUMMARY}" \
+            unit="${GITHUB_WORKSPACE}/build/junit/unit.xml" \
+            integration="${GITHUB_WORKSPACE}/build/junit/integration.xml"
+
+      - name: Upload JUnit reports
+        if: always() && !cancelled()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: junit-test-gcc-26-debug-amd64
+          path: build/junit
+          if-no-files-found: warn
+          retention-days: 14
 
   test-gcc-26-debug-amd64-functional:
     needs: [prepare-image-amd64, build-gcc-26-debug-amd64, changes]
@@ -623,6 +685,10 @@ jobs:
       needs.build-gcc-26-debug-amd64.result == 'success' }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: read
+      actions: write
     env:
       ASAN_OPTIONS: halt_on_error=1:detect_leaks=1:abort_on_error=1
       UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
@@ -657,10 +723,17 @@ jobs:
 
       - name: Run functional tests
         id: functional
-        run: ctest --test-dir build/Debug --output-on-failure -j "$(nproc)" -L functional -V
+        run: |
+          mkdir -p "${GITHUB_WORKSPACE}/build/junit"
+          ctest --test-dir build/Debug --output-on-failure -j "$(nproc)" -L functional -V \
+            --output-junit "${GITHUB_WORKSPACE}/build/junit/functional.xml"
 
       - name: Summarize test suites
         if: always() && !cancelled()
+        env:
+          GOPROXY: "off"
+          GOTOOLCHAIN: local
+          GOFLAGS: "-mod=readonly -buildvcs=false"
         run: |
           {
             echo '### test-gcc-26-debug-amd64-functional'
@@ -668,6 +741,19 @@ jobs:
             echo '| --- | --- |'
             echo "| functional | ${{ steps.functional.outcome }} |"
           } >> "${GITHUB_STEP_SUMMARY}"
+          go build -C scripts/ci -o /tmp/nesso-ci .
+          /tmp/nesso-ci junit-summary \
+            --summary "${GITHUB_STEP_SUMMARY}" \
+            functional="${GITHUB_WORKSPACE}/build/junit/functional.xml"
+
+      - name: Upload JUnit reports
+        if: always() && !cancelled()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: junit-test-gcc-26-debug-amd64-functional
+          path: build/junit
+          if-no-files-found: warn
+          retention-days: 14
 
   fuzz-test:
     needs: prepare-image-amd64
@@ -731,6 +817,10 @@ jobs:
     steps:
       - name: Checkout Repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # The patch gate diffs the pull request base. History here is small,
+          # and depth 0 keeps that commit local without a second fetch.
+          fetch-depth: 0
 
       - name: Restore MiniLM models
         id: models
@@ -753,6 +843,49 @@ jobs:
         run: |
           chmod +x scripts/code-coverage
           ./scripts/code-coverage conan/profiles/code-coverage
+
+      # Pull requests only. Reuses the lcov trace from the floor step, so the
+      # added work is the checkout history plus a line lookup. The bar is 80%
+      # of changed executable lines under src/. That sits under the tree-wide
+      # line floor: an untested function fails here, and a change that pulls
+      # the whole tree under the floor still fails there. No executable src/
+      # lines (docs, CI, tests) passes. Other events skip this step.
+      - name: Patch coverage
+        if: always() && !cancelled() && github.event_name == 'pull_request'
+        shell: bash
+        env:
+          PATCH_BASE: ${{ github.event.pull_request.base.sha }}
+          GOPROXY: "off"
+          GOTOOLCHAIN: local
+          GOFLAGS: "-mod=readonly -buildvcs=false"
+        run: |
+          set -euo pipefail
+          # Checkout records safe.directory under a temporary HOME. Later steps
+          # use the job HOME, so mark the workspace before git diff.
+          git config --global --add safe.directory "${GITHUB_WORKSPACE}"
+          git config --global --add safe.directory /__w/nesso/nesso
+          if [[ ! -s build/coverage/coverage.cleaned ]]; then
+            echo "patch coverage skipped: coverage trace was not produced"
+            exit 0
+          fi
+          if [[ ! "$PATCH_BASE" =~ ^[0-9a-fA-F]{40}$ ]]; then
+            echo "patch coverage: base SHA is not 40 hex characters" >&2
+            exit 1
+          fi
+          if ! git cat-file -e "${PATCH_BASE}^{commit}"; then
+            git fetch --no-tags --depth=1 origin "$PATCH_BASE"
+            git cat-file -e "${PATCH_BASE}^{commit}"
+          fi
+          mkdir -p build/coverage/report
+          go build -C scripts/ci -o /tmp/nesso-ci .
+          /tmp/nesso-ci patch-coverage \
+            --lcov build/coverage/coverage.cleaned \
+            --repo "${GITHUB_WORKSPACE}" \
+            --base "$PATCH_BASE" \
+            --head HEAD \
+            --prefix src \
+            --threshold 80 \
+            | tee build/coverage/report/patch.md
 
       - name: Upload Coverage Report
         if: success() || failure()
@@ -1102,6 +1235,10 @@ jobs:
       needs.build-clang-26-amd64.result == 'success' }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: read
+      actions: write
     container:
       image: ${{ needs.prepare-image-amd64.outputs.image }}
       credentials:
@@ -1133,20 +1270,33 @@ jobs:
 
       - name: Run unit tests
         id: unit
-        run: ctest --test-dir build/Release --output-on-failure -j "$(nproc)" -L unit -V
+        run: |
+          mkdir -p "${GITHUB_WORKSPACE}/build/junit"
+          ctest --test-dir build/Release --output-on-failure -j "$(nproc)" -L unit -V \
+            --output-junit "${GITHUB_WORKSPACE}/build/junit/unit.xml"
 
       - name: Run integration tests
         id: integration
         if: always() && !cancelled() && steps.extract.outcome == 'success'
-        run: ctest --test-dir build/Release --output-on-failure -j "$(nproc)" -L integration -V
+        run: |
+          mkdir -p "${GITHUB_WORKSPACE}/build/junit"
+          ctest --test-dir build/Release --output-on-failure -j "$(nproc)" -L integration -V \
+            --output-junit "${GITHUB_WORKSPACE}/build/junit/integration.xml"
 
       - name: Run functional tests
         id: functional
         if: always() && !cancelled() && steps.extract.outcome == 'success'
-        run: ctest --test-dir build/Release --output-on-failure -j "$(nproc)" -L functional -V
+        run: |
+          mkdir -p "${GITHUB_WORKSPACE}/build/junit"
+          ctest --test-dir build/Release --output-on-failure -j "$(nproc)" -L functional -V \
+            --output-junit "${GITHUB_WORKSPACE}/build/junit/functional.xml"
 
       - name: Summarize test suites
         if: always() && !cancelled()
+        env:
+          GOPROXY: "off"
+          GOTOOLCHAIN: local
+          GOFLAGS: "-mod=readonly -buildvcs=false"
         run: |
           {
             echo '### test-clang-26-amd64'
@@ -1156,6 +1306,21 @@ jobs:
             echo "| integration | ${{ steps.integration.outcome }} |"
             echo "| functional | ${{ steps.functional.outcome }} |"
           } >> "${GITHUB_STEP_SUMMARY}"
+          go build -C scripts/ci -o /tmp/nesso-ci .
+          /tmp/nesso-ci junit-summary \
+            --summary "${GITHUB_STEP_SUMMARY}" \
+            unit="${GITHUB_WORKSPACE}/build/junit/unit.xml" \
+            integration="${GITHUB_WORKSPACE}/build/junit/integration.xml" \
+            functional="${GITHUB_WORKSPACE}/build/junit/functional.xml"
+
+      - name: Upload JUnit reports
+        if: always() && !cancelled()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: junit-test-clang-26-amd64
+          path: build/junit
+          if-no-files-found: warn
+          retention-days: 14
 
 
   # Native arm64 image. The image name stays nesso-build-env. The amd64
@@ -1386,6 +1551,10 @@ jobs:
       needs.build-gcc-26-arm64.result == 'success' }}
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: read
+      actions: write
     container:
       image: ${{ needs.prepare-image-arm64.outputs.image }}
       credentials:
@@ -1417,20 +1586,33 @@ jobs:
 
       - name: Run unit tests
         id: unit
-        run: ctest --test-dir build/Release --output-on-failure -j "$(nproc)" -L unit -V
+        run: |
+          mkdir -p "${GITHUB_WORKSPACE}/build/junit"
+          ctest --test-dir build/Release --output-on-failure -j "$(nproc)" -L unit -V \
+            --output-junit "${GITHUB_WORKSPACE}/build/junit/unit.xml"
 
       - name: Run integration tests
         id: integration
         if: always() && !cancelled() && steps.extract.outcome == 'success'
-        run: ctest --test-dir build/Release --output-on-failure -j "$(nproc)" -L integration -V
+        run: |
+          mkdir -p "${GITHUB_WORKSPACE}/build/junit"
+          ctest --test-dir build/Release --output-on-failure -j "$(nproc)" -L integration -V \
+            --output-junit "${GITHUB_WORKSPACE}/build/junit/integration.xml"
 
       - name: Run functional tests
         id: functional
         if: always() && !cancelled() && steps.extract.outcome == 'success'
-        run: ctest --test-dir build/Release --output-on-failure -j "$(nproc)" -L functional -V
+        run: |
+          mkdir -p "${GITHUB_WORKSPACE}/build/junit"
+          ctest --test-dir build/Release --output-on-failure -j "$(nproc)" -L functional -V \
+            --output-junit "${GITHUB_WORKSPACE}/build/junit/functional.xml"
 
       - name: Summarize test suites
         if: always() && !cancelled()
+        env:
+          GOPROXY: "off"
+          GOTOOLCHAIN: local
+          GOFLAGS: "-mod=readonly -buildvcs=false"
         run: |
           {
             echo '### test-gcc-26-arm64'
@@ -1440,3 +1622,18 @@ jobs:
             echo "| integration | ${{ steps.integration.outcome }} |"
             echo "| functional | ${{ steps.functional.outcome }} |"
           } >> "${GITHUB_STEP_SUMMARY}"
+          go build -C scripts/ci -o /tmp/nesso-ci .
+          /tmp/nesso-ci junit-summary \
+            --summary "${GITHUB_STEP_SUMMARY}" \
+            unit="${GITHUB_WORKSPACE}/build/junit/unit.xml" \
+            integration="${GITHUB_WORKSPACE}/build/junit/integration.xml" \
+            functional="${GITHUB_WORKSPACE}/build/junit/functional.xml"
+
+      - name: Upload JUnit reports
+        if: always() && !cancelled()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: junit-test-gcc-26-arm64
+          path: build/junit
+          if-no-files-found: warn
+          retention-days: 14
