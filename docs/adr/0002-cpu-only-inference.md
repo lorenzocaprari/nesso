@@ -37,8 +37,10 @@ so 1.18.1 adds the CPU execution provider.
   `vocab.txt` from disk.
 * Good, because every session is sequential, with one inter-op
   thread. A quantized model uses a pool of sessions and one intra-op
-  thread on each (physical cores by default, capped by half of RAM
-  over the model size when that size is known and RAM is larger).
+  thread on each (physical cores by default, capped by half of
+  available memory over the estimated 480 MiB per session from
+  [#134](https://github.com/lorenzocaprari/nesso/pull/134); #92 had
+  divided by the model file size).
   An fp32 model uses one session, with intra-op threads set to the
   requested count or `hardware_concurrency` (at least 1).
 * Bad, because throughput is that CPU provider. `embedBatch` submits

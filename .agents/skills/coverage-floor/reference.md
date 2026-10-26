@@ -32,7 +32,7 @@ Add tests under `test/unit`, `test/integration`, or `test/functional`. Copy the 
 The coverage script runs this, with no `-L` filter:
 
 ```bash
-ctest --test-dir build/coverage/build/Debug --output-on-failure
+ctest --test-dir build/coverage/build/Debug --output-on-failure -j "$(nproc)"
 ```
 
 Paths on the script's `lcov --remove` list are outside the percentage. Some of those tests are also compiled with `-fno-profile-arcs` (see the comments in `test/`). Read the remove list and those comments before extending one of those files. Library objects they call are still measured unless that `.cpp` is removed too.

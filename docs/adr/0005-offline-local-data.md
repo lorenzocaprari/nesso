@@ -36,9 +36,12 @@ download is allowed if one is added later.
   the command exits 2 and names `scripts/fetch-model`.
 * Bad, because there is no crash reporter. A failure is exit status 2
   and a line on stderr.
-* Bad, because no CI check enforces this yet. The follow-up is a
-  check that the built binary or `.deb` has no curl or ssl linkage
-  or strings, or that the test suite passes under `unshare -n`.
+* Bad, because no CI check enforced this when the record was written.
+  [#136](https://github.com/lorenzocaprari/nesso/pull/136) (`705d574`)
+  later added `scripts/check-network-free` to `scripts/build-release-binary`,
+  which fails the release build on a denied `NEEDED` library, an unallowed
+  networking libc import, or a statically linked curl or OpenSSL symbol or
+  version string.
 
 ## More Information
 
