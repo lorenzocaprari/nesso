@@ -120,7 +120,7 @@ args=(
   --db-repository ghcr.io/aquasecurity/trivy-db:2
   --skip-java-db-update
   --scanners vuln
-  --pkg-types os,library
+  --pkg-types "os,library"
   --no-progress
   --exit-code 0
 )

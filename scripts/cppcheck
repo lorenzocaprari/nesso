@@ -23,7 +23,7 @@ fi
 # unusedFunction is silently disabled when -j is greater than 1.
 common=(
   --project="${DB}"
-  --enable=warning,performance,portability,unusedFunction
+  "--enable=warning,performance,portability,unusedFunction"
   --library=std
   --inline-suppr
   --suppressions-list="${ROOT}/.cppcheck-suppressions"
