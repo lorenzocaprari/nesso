@@ -154,6 +154,8 @@ Local CI gate (run before pushing):
 
 ```bash
 bash scripts/lint
+bash scripts/actionlint
+bash scripts/zizmor
 ./scripts/code-coverage conan/profiles/code-coverage
 ```
 

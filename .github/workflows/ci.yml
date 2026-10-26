@@ -99,6 +99,8 @@ jobs:
     steps:
       - name: Checkout Repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Resolve image reference
         id: select
@@ -128,9 +130,11 @@ jobs:
 
       - name: Check dependency image
         id: image
+        env:
+          IMAGE: ${{ steps.select.outputs.image }}
         run: |
           if [ '${{ github.event_name == 'workflow_dispatch' && inputs.force_image_rebuild == true }}' != 'true' ] &&
-            docker buildx imagetools inspect '${{ steps.select.outputs.image }}' >/dev/null 2>&1; then
+            docker buildx imagetools inspect "${IMAGE}" >/dev/null 2>&1; then
             echo "rebuild=false" >> "${GITHUB_OUTPUT}"
           else
             echo "rebuild=true" >> "${GITHUB_OUTPUT}"
@@ -197,11 +201,12 @@ jobs:
           avail_kb=$(df -Pk / | awk 'NR==2 {print $4}')
           echo "available_kib_after_build=${avail_kb}"
 
-  # One job, off the image. pre-commit and python3 are enough, so it starts
-  # with the workflow instead of waiting on prepare-image-amd64. A docs-only
-  # pull request still runs it. Later steps use always() so the failed step
-  # name stays visible when an earlier step fails. clang-tidy and cppcheck
-  # stay separate jobs in the image.
+  # One job, off the image, so it starts with the workflow instead of waiting
+  # on prepare-image-amd64. A docs-only pull request still runs it.
+  # actionlint, zizmor, and pull-request dependency review are steps here,
+  # not new jobs, so the check name stays lint. Later steps use always() so
+  # the failed step name stays visible when an earlier step fails.
+  # clang-tidy and cppcheck stay separate jobs in the image.
   lint:
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -211,6 +216,8 @@ jobs:
       - name: Checkout Repository
         id: checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Cache pre-commit
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -242,18 +249,34 @@ jobs:
         if: always() && !cancelled() && steps.checkout.outcome == 'success'
         run: python3 scripts/check-agent-docs
 
+      - name: Workflow syntax (actionlint)
+        if: always() && !cancelled() && steps.checkout.outcome == 'success'
+        run: bash scripts/actionlint
+
+      - name: Workflow security (zizmor)
+        if: always() && !cancelled() && steps.checkout.outcome == 'success'
+        run: bash scripts/zizmor
+
+      - name: Dependency review
+        if: always() && !cancelled() && steps.checkout.outcome == 'success' && github.event_name == 'pull_request'
+        uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
+        with:
+          config-file: .github/dependency-review-config.yml
+
   clang-tidy:
     needs: [prepare-image-amd64, changes]
     if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     container:
-      image: ${{ needs.prepare-image-amd64.outputs.image }}
+      image: ${{ needs.prepare-image-amd64.outputs.image }} # zizmor: ignore[unpinned-images] deps-<hash> tag, not a digest
       credentials:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - name: Checkout Repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Install Dependencies (Conan)
         run: |
@@ -277,13 +300,15 @@ jobs:
     if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     container:
-      image: ${{ needs.prepare-image-amd64.outputs.image }}
+      image: ${{ needs.prepare-image-amd64.outputs.image }} # zizmor: ignore[unpinned-images] deps-<hash> tag, not a digest
       credentials:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - name: Checkout Repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Install Dependencies (Conan)
         run: |
@@ -316,13 +341,15 @@ jobs:
       CMAKE_C_COMPILER_LAUNCHER: ccache
       CMAKE_CXX_COMPILER_LAUNCHER: ccache
     container:
-      image: ${{ needs.prepare-image-amd64.outputs.image }}
+      image: ${{ needs.prepare-image-amd64.outputs.image }} # zizmor: ignore[unpinned-images] deps-<hash> tag, not a digest
       credentials:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - name: Checkout Repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Restore ccache
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -410,13 +437,15 @@ jobs:
       CMAKE_C_COMPILER_LAUNCHER: ccache
       CMAKE_CXX_COMPILER_LAUNCHER: ccache
     container:
-      image: ${{ needs.prepare-image-amd64.outputs.image }}
+      image: ${{ needs.prepare-image-amd64.outputs.image }} # zizmor: ignore[unpinned-images] deps-<hash> tag, not a digest
       credentials:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - name: Checkout Repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Restore ccache
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -508,13 +537,15 @@ jobs:
       packages: read
       actions: write
     container:
-      image: ${{ needs.prepare-image-amd64.outputs.image }}
+      image: ${{ needs.prepare-image-amd64.outputs.image }} # zizmor: ignore[unpinned-images] deps-<hash> tag, not a digest
       credentials:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - name: Checkout Repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Restore MiniLM models
         id: models
@@ -606,13 +637,15 @@ jobs:
       ASAN_OPTIONS: halt_on_error=1:detect_leaks=1:abort_on_error=1
       UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
     container:
-      image: ${{ needs.prepare-image-amd64.outputs.image }}
+      image: ${{ needs.prepare-image-amd64.outputs.image }} # zizmor: ignore[unpinned-images] deps-<hash> tag, not a digest
       credentials:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - name: Checkout Repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Restore MiniLM models
         id: models
@@ -694,13 +727,15 @@ jobs:
       ASAN_OPTIONS: halt_on_error=1:detect_leaks=1:abort_on_error=1
       UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
     container:
-      image: ${{ needs.prepare-image-amd64.outputs.image }}
+      image: ${{ needs.prepare-image-amd64.outputs.image }} # zizmor: ignore[unpinned-images] deps-<hash> tag, not a digest
       credentials:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - name: Checkout Repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Restore MiniLM models
         id: models
@@ -767,13 +802,15 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     container:
-      image: ${{ needs.prepare-image-amd64.outputs.image }}
+      image: ${{ needs.prepare-image-amd64.outputs.image }} # zizmor: ignore[unpinned-images] deps-<hash> tag, not a digest
       credentials:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - name: Checkout Repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Ensure Conan default profile
         run: conan profile detect --force
@@ -811,7 +848,7 @@ jobs:
       packages: read
       actions: write
     container:
-      image: ${{ needs.prepare-image-amd64.outputs.image }}
+      image: ${{ needs.prepare-image-amd64.outputs.image }} # zizmor: ignore[unpinned-images] deps-<hash> tag, not a digest
       credentials:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
@@ -822,6 +859,7 @@ jobs:
           # The patch gate diffs the pull request base. History here is small,
           # and depth 0 keeps that commit local without a second fetch.
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Restore MiniLM models
         id: models
@@ -921,13 +959,15 @@ jobs:
       NESSO_BENCH_RSS_TOLERANCE: "0.20"
       NESSO_BENCH_SIZES: ${{ github.event_name == 'pull_request' && '1000,10000' || '1000,10000,100000' }}
     container:
-      image: ${{ needs.prepare-image-amd64.outputs.image }}
+      image: ${{ needs.prepare-image-amd64.outputs.image }} # zizmor: ignore[unpinned-images] deps-<hash> tag, not a digest
       credentials:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - name: Checkout Repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Restore MiniLM models
         id: models
@@ -1154,13 +1194,15 @@ jobs:
     env:
       NESSO_DETERMINISM_MODE: ${{ github.event_name == 'pull_request' && 'pr' || 'full' }}
     container:
-      image: ${{ needs.prepare-image-amd64.outputs.image }}
+      image: ${{ needs.prepare-image-amd64.outputs.image }} # zizmor: ignore[unpinned-images] deps-<hash> tag, not a digest
       credentials:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - name: Checkout Repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Restore int8 MiniLM
         id: int8
@@ -1270,13 +1312,15 @@ jobs:
       CMAKE_C_COMPILER_LAUNCHER: ccache
       CMAKE_CXX_COMPILER_LAUNCHER: ccache
     container:
-      image: ${{ needs.prepare-image-amd64.outputs.image }}
+      image: ${{ needs.prepare-image-amd64.outputs.image }} # zizmor: ignore[unpinned-images] deps-<hash> tag, not a digest
       credentials:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - name: Checkout Repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Restore ccache
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -1380,13 +1424,15 @@ jobs:
       packages: read
       actions: write
     container:
-      image: ${{ needs.prepare-image-amd64.outputs.image }}
+      image: ${{ needs.prepare-image-amd64.outputs.image }} # zizmor: ignore[unpinned-images] deps-<hash> tag, not a digest
       credentials:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - name: Checkout Repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Restore MiniLM models
         id: models
@@ -1479,6 +1525,8 @@ jobs:
     steps:
       - name: Checkout Repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Resolve image reference
         id: select
@@ -1504,9 +1552,11 @@ jobs:
 
       - name: Check dependency image
         id: image
+        env:
+          IMAGE: ${{ steps.select.outputs.image }}
         run: |
           if [ '${{ github.event_name == 'workflow_dispatch' && inputs.force_image_rebuild == true }}' != 'true' ] &&
-            docker buildx imagetools inspect '${{ steps.select.outputs.image }}' >/dev/null 2>&1; then
+            docker buildx imagetools inspect "${IMAGE}" >/dev/null 2>&1; then
             echo "rebuild=false" >> "${GITHUB_OUTPUT}"
           else
             echo "rebuild=true" >> "${GITHUB_OUTPUT}"
@@ -1567,9 +1617,11 @@ jobs:
           cache-to: type=registry,ref=${{ steps.select.outputs.cache_ref }},mode=max
 
       - name: Verify image architecture
+        env:
+          IMAGE: ${{ steps.select.outputs.image }}
         run: |
           set -euo pipefail
-          docker buildx imagetools inspect '${{ steps.select.outputs.image }}' | tee /tmp/image-inspect.txt
+          docker buildx imagetools inspect "${IMAGE}" | tee /tmp/image-inspect.txt
           grep -Eiq 'arm64|aarch64' /tmp/image-inspect.txt
 
       - name: Report free disk
@@ -1597,13 +1649,15 @@ jobs:
       CMAKE_C_COMPILER_LAUNCHER: ccache
       CMAKE_CXX_COMPILER_LAUNCHER: ccache
     container:
-      image: ${{ needs.prepare-image-arm64.outputs.image }}
+      image: ${{ needs.prepare-image-arm64.outputs.image }} # zizmor: ignore[unpinned-images] deps-<hash> tag, not a digest
       credentials:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - name: Checkout Repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Restore ccache
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -1696,13 +1750,15 @@ jobs:
       packages: read
       actions: write
     container:
-      image: ${{ needs.prepare-image-arm64.outputs.image }}
+      image: ${{ needs.prepare-image-arm64.outputs.image }} # zizmor: ignore[unpinned-images] deps-<hash> tag, not a digest
       credentials:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - name: Checkout Repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Restore MiniLM models
         id: models

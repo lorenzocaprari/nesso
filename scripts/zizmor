@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+# zizmor 1.31.1, regular persona. Checksums are the GitHub release asset
+# digests for that tag. Online audits run when GH_TOKEN or GITHUB_TOKEN is
+# set (CI). A local run without a token stays offline.
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source=download-pinned
+source "${ROOT}/scripts/download-pinned"
+
+version="1.31.1"
+case "$(uname -m)" in
+  x86_64)
+    target="x86_64-unknown-linux-gnu"
+    sha256="d185f726bdaf92df78273217dfdd24ebcd6b0ef48cf3ce776ff5762b6e138c99"
+    ;;
+  aarch64 | arm64)
+    target="aarch64-unknown-linux-gnu"
+    sha256="37eebbd5762a44f262d94875431b14a6d2402991e90a685113ea97b8b41be833"
+    ;;
+  *)
+    echo "error: unsupported architecture $(uname -m)" >&2
+    exit 1
+    ;;
+esac
+
+cache="${XDG_CACHE_HOME:-${HOME}/.cache}/nesso/zizmor/${version}-${target}"
+url="https://github.com/zizmorcore/zizmor/releases/download/v${version}/zizmor-${target}.tar.gz"
+bin="$(download_pinned "${cache}" "${url}" "${sha256}" zizmor)"
+
+args=(--persona regular --no-progress --color never)
+if [[ "${GITHUB_ACTIONS:-}" == "true" ]]; then
+  args+=(--format github)
+else
+  args+=(--format plain)
+fi
+if [[ -z "${GH_TOKEN:-}" && -z "${GITHUB_TOKEN:-}" ]]; then
+  args+=(--offline)
+fi
+
+cd "${ROOT}"
+exec "${bin}" "${args[@]}" "$@" .github/workflows

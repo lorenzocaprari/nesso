@@ -47,7 +47,7 @@ permissions: {}
 
 jobs:
   verify-package:
-    uses: ./.github/workflows/package.yml
+    uses: ./.github/workflows/package.yml # zizmor: ignore[self-repository] same-commit reusable workflow; actionlint 1.7.12 rejects the self-repository form
     permissions:
       contents: read
       packages: read
@@ -698,6 +698,7 @@ jobs:
           cat SHA256SUMS
 
       - name: GitHub Release
+        # zizmor: ignore[superfluous-actions] tag publish keeps generate_release_notes and the fixed asset list
         uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
         with:
           files: |

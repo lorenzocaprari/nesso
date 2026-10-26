@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+# Sourced by scripts/actionlint and scripts/zizmor. Downloads one release
+# archive, checks the pinned sha256, and caches the binary under the version.
+
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+  echo "error: source scripts/download-pinned from another script" >&2
+  exit 1
+fi
+
+download_pinned() {
+  local dest_dir="$1"
+  local url="$2"
+  local sha256="$3"
+  local member="$4"
+  local bin="${dest_dir}/${member}"
+  local stamp="${dest_dir}/sha256"
+  local tmp=""
+
+  if [[ -x "${bin}" && -f "${stamp}" && "$(<"${stamp}")" == "${sha256}" ]]; then
+    printf '%s\n' "${bin}"
+    return 0
+  fi
+
+  tmp="$(mktemp -d)"
+  # shellcheck disable=SC2064
+  # RETURN runs on function exit, including a checksum or tar failure.
+  trap "rm -rf -- '${tmp}'" RETURN
+
+  curl --fail --silent --show-error --location --retry 3 --retry-delay 2 \
+    --proto '=https' --tlsv1.2 \
+    --output "${tmp}/archive.tar.gz" \
+    "${url}"
+
+  if ! echo "${sha256}  ${tmp}/archive.tar.gz" | sha256sum --check --status; then
+    echo "error: checksum mismatch downloading ${url}" >&2
+    return 1
+  fi
+
+  tar -xzf "${tmp}/archive.tar.gz" -C "${tmp}" "${member}"
+  chmod 755 "${tmp}/${member}"
+  mkdir -p "${dest_dir}"
+  mv "${tmp}/${member}" "${bin}"
+  printf '%s\n' "${sha256}" >"${stamp}"
+  printf '%s\n' "${bin}"
+}
