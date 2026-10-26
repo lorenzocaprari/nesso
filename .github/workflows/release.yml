@@ -308,6 +308,9 @@ jobs:
           docker cp "${cid}:/usr/local/bin/nesso" "nesso-${ARCH}"
           mkdir -p models
           docker cp "${cid}:/usr/share/nesso/." models/
+          # package-deb reads copyright and THIRD_PARTY_NOTICES from doc/ next to the binary.
+          mkdir -p doc
+          docker cp "${cid}:/usr/share/doc/nesso/." doc/
           docker rm "${cid}"
           chmod +x "nesso-${ARCH}"
 

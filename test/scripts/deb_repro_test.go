@@ -71,11 +71,29 @@ func writeModels(t *testing.T, dir string, body byte) string {
 	return models
 }
 
+// writeDoc puts copyright and THIRD_PARTY_NOTICES in doc/ next to the binary,
+// where package-deb looks by default.
+func writeDoc(t *testing.T, binary string) {
+	t.Helper()
+	doc := filepath.Join(filepath.Dir(binary), "doc")
+	if err := os.MkdirAll(doc, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for name, body := range map[string]string{
+		"copyright":           "nesso\n",
+		"THIRD_PARTY_NOTICES": "nesso third-party notices\n",
+	} {
+		if err := os.WriteFile(filepath.Join(doc, name), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
 func packageDeb(t *testing.T, epoch, binary, models string) []byte {
 	t.Helper()
 	outDir := t.TempDir()
 	cmd := exec.Command(filepath.Join(repoRoot(t), "scripts", "package-deb"), "0.1.0", binary, models, outDir)
-	cmd.Env = append(envWithout("SOURCE_DATE_EPOCH", "TZ", "LC_ALL"), "SOURCE_DATE_EPOCH="+epoch, "TZ=UTC", "LC_ALL=C")
+	cmd.Env = append(envWithout("SOURCE_DATE_EPOCH", "TZ", "LC_ALL", "DOC_DIR"), "SOURCE_DATE_EPOCH="+epoch, "TZ=UTC", "LC_ALL=C")
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("package-deb: %v\n%s", err, out)
@@ -154,6 +172,7 @@ func tarListing(t *testing.T, deb []byte, which string) string {
 func TestPackageDebBytesFollowTheEpoch(t *testing.T) {
 	dir := t.TempDir()
 	binary := compileHello(t, dir)
+	writeDoc(t, binary)
 	models := writeModels(t, dir, 'a')
 	old := time.Unix(1000, 0)
 	if err := os.Chtimes(filepath.Join(models, "model.onnx"), old, old); err != nil {
@@ -239,6 +258,7 @@ func TestPackageDebArchitectureFollowsTheElfMachine(t *testing.T) {
 			dir := t.TempDir()
 			binary := filepath.Join(dir, "nesso")
 			writeELF(t, binary, tc.machine)
+			writeDoc(t, binary)
 			models := writeModels(t, dir, 'a')
 			outDir := filepath.Join(dir, "out")
 			cmd := exec.Command(filepath.Join(root, "scripts", "package-deb"), "0.1.0", binary, models, outDir)

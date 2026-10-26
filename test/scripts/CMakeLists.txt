@@ -20,6 +20,10 @@ if(NESSO_PYTHON_EXECUTABLE)
            COMMAND "${NESSO_PYTHON_EXECUTABLE}"
                    "${CMAKE_CURRENT_SOURCE_DIR}/ci_build_archive_test.py")
   set_tests_properties(ci_build_archive_test PROPERTIES LABELS unit)
+  add_test(NAME third_party_notices_test
+           COMMAND "${NESSO_PYTHON_EXECUTABLE}"
+                   "${CMAKE_CURRENT_SOURCE_DIR}/third_party_notices_test.py")
+  set_tests_properties(third_party_notices_test PROPERTIES LABELS unit)
   add_test(NAME build_env_hash_test
            COMMAND "${NESSO_PYTHON_EXECUTABLE}"
                    "${CMAKE_CURRENT_SOURCE_DIR}/build_env_hash_test.py")

@@ -209,4 +209,4 @@ When `grep` or `index` runs in a terminal, embedding progress is shown on stderr
 
 ## License
 
-Apache 2.0 — see [LICENSE](LICENSE). Changes are in [CHANGELOG.md](CHANGELOG.md). Contributing, security reports, and the code of conduct: [CONTRIBUTING.md](CONTRIBUTING.md), [SECURITY.md](SECURITY.md), [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md).
+Apache 2.0 — see [LICENSE](LICENSE). The `.deb` and the container image include the licenses and notices of the bundled libraries, model, and Unicode data in `/usr/share/doc/nesso/THIRD_PARTY_NOTICES` (also appended to `/usr/share/doc/nesso/copyright`). Changes are in [CHANGELOG.md](CHANGELOG.md). Contributing, security reports, and the code of conduct: [CONTRIBUTING.md](CONTRIBUTING.md), [SECURITY.md](SECURITY.md), [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md).

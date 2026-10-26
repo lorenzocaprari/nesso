@@ -1,0 +1,282 @@
+#!/usr/bin/env python3
+"""Write THIRD_PARTY_NOTICES and copyright for the nesso package and image.
+
+Inputs: the JSON graph that `conan install -c tools.graph:skip_binaries=False
+--format=json` prints for the release profile, and the release binary.
+
+Inclusion rule. Only code that ships in the binary is listed:
+- A static library is listed when the binary defines at least one of the
+  strong (T, D, B, R) global symbols its archives define. Weak symbols are
+  template instantiations shared with every C++ archive and prove nothing.
+- Headers compiled into shipped code count too. Starting from nesso and every
+  listed package, a direct requirement with headers=True is listed when it is
+  a header-only package, or when HEADER_CODE names it.
+- A static library reached that way, not linked and not in HEADER_CODE, must
+  be in NO_HEADER_CODE. Anything else fails, so a new dependency is reviewed.
+- Build-context tools, test requirements, and packages reached only through
+  libraries that are not linked (for example libcurl through date's time-zone
+  library) are not listed.
+Every listed package must have a licenses/ folder.
+
+The model, the vocabulary, the Unicode tables in src/embed/unicode_bert.inc,
+and ONNX Runtime's own third-party notices are not Conan license folders.
+Their texts live in packaging/notices/.
+
+The output depends only on the input files: components are sorted by name and
+version, license files by relative path, line endings become LF, trailing
+spaces are dropped, and no path, date, or recipe revision is written.
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import subprocess
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+NOTICES = ROOT / "packaging" / "notices"
+RULE = "=" * 78
+
+# ONNX Runtime statically links code listed in its ThirdPartyNotices.txt.
+# The vendored copy matches this version; a version bump must refresh it.
+ONNXRUNTIME_NOTICES = {"1.18.1": "onnxruntime-1.18.1-ThirdPartyNotices.txt"}
+
+# Static libraries whose headers compile code into a shipped package even
+# though none of their archive members is linked. Keyed by exact version, so a
+# bump is reviewed again.
+HEADER_CODE = {
+    ("date", "3.0.1"): "onnxruntime's logging.h includes date/date.h; ostream_sink.cc formats time with it",
+    ("flatbuffers", "23.5.26"): "onnxruntime instantiates flatbuffers templates (weak flatbuffers:: symbols)",
+}
+# Static libraries reached through a header requirement that compile no code
+# into the binary. Same keying.
+NO_HEADER_CODE = {
+    ("boost", "1.83.0"): "onnxruntime uses only Boost.Mp11 type lists, which generate no code",
+    ("zlib", "1.3.2"): "protobuf includes zlib.h only in gzip_stream.cc, which is not linked",
+    ("libcurl", "8.21.0"): "only date's time-zone library includes curl, and it is not linked",
+}
+
+# Not Conan packages. Each entry: name, version, license, files under ROOT.
+EXTRA_COMPONENTS = [
+    {
+        "name": "all-MiniLM-L6-v2 model and vocabulary",
+        "version": "Xenova/all-MiniLM-L6-v2 (ONNX), sentence-transformers/all-MiniLM-L6-v2",
+        "license": "Apache-2.0",
+        "files": ["packaging/notices/all-MiniLM-L6-v2.txt", "LICENSE"],
+    },
+    {
+        "name": "MiniLM-L6-H384-uncased base model",
+        "version": "nreimers/MiniLM-L6-H384-uncased",
+        "license": "MIT",
+        "files": ["packaging/notices/MiniLM-MIT.txt"],
+    },
+    {
+        "name": "Unicode Character Database tables",
+        "version": "src/embed/unicode_bert.inc",
+        "license": "Unicode-3.0",
+        "files": ["packaging/notices/unicode-data.txt", "packaging/notices/Unicode-3.0.txt"],
+    },
+]
+
+
+class NoticeError(Exception):
+    pass
+
+
+def normalize(data: bytes) -> str:
+    text = data.decode("utf-8", errors="replace").replace("\r\n", "\n").replace("\r", "\n")
+    lines = [line.rstrip() for line in text.split("\n")]
+    while lines and not lines[-1]:
+        lines.pop()
+    while lines and not lines[0]:
+        lines.pop(0)
+    return "\n".join(lines) + "\n"
+
+
+def license_text(value: object) -> str:
+    if isinstance(value, str) and value:
+        return value
+    if isinstance(value, list) and value and all(isinstance(item, str) for item in value):
+        return ", ".join(sorted(value))
+    return "see license files"
+
+
+def split_ref(ref: str) -> tuple[str, str]:
+    base = ref.split("#", 1)[0].split("@", 1)[0]
+    name, sep, version = base.partition("/")
+    if not sep or not name or not version:
+        raise NoticeError(f"unexpected Conan reference {ref!r}")
+    return name, version
+
+
+def strong_symbols(path: Path, archive: bool) -> set[str]:
+    nm = os.environ.get("NM", "nm")
+    args = [nm, "--defined-only"] + (["-g"] if archive else []) + [str(path)]
+    result = subprocess.run(args, capture_output=True, text=True, check=False)
+    if result.returncode != 0:
+        raise NoticeError(f"{nm} failed on {path.name}: {result.stderr.strip()}")
+    symbols = set()
+    for line in result.stdout.splitlines():
+        fields = line.split()
+        if len(fields) == 3 and (not archive or fields[1] in "TDBR") and fields[2] != "main":
+            symbols.add(fields[2])
+    return symbols
+
+
+def is_linked(node: dict, binary_symbols: set[str]) -> bool:
+    folder = node.get("package_folder")
+    if not folder:
+        return False
+    for archive in sorted((Path(folder) / "lib").glob("*.a")):
+        if strong_symbols(archive, archive=True) & binary_symbols:
+            return True
+    return False
+
+
+def license_files(name: str, version: str, node: dict) -> list[tuple[str, bytes]]:
+    folder = node.get("package_folder")
+    if not folder:
+        raise NoticeError(
+            f"{name}/{version} has no package_folder; run conan install with -c tools.graph:skip_binaries=False"
+        )
+    licenses = Path(folder) / "licenses"
+    files = sorted(
+        (path for path in licenses.rglob("*") if path.is_file()),
+        key=lambda path: path.relative_to(licenses).as_posix(),
+    )
+    if not files:
+        raise NoticeError(f"{name}/{version} has no files in its licenses/ folder")
+    return [(f"licenses/{path.relative_to(licenses).as_posix()}", path.read_bytes()) for path in files]
+
+
+def shipped_nodes(nodes: dict, binary_symbols: set[str]) -> dict[str, dict]:
+    host = {key: node for key, node in nodes.items()
+            if key != "0" and node.get("context") == "host" and not node.get("test")}
+    shipped = {key for key, node in host.items()
+               if node.get("package_type") != "header-library" and is_linked(node, binary_symbols)}
+    carriers = ["0", *sorted(shipped)]
+    seen = set(carriers)
+    while carriers:
+        edges = (nodes.get(carriers.pop(0), {}).get("dependencies") or {})
+        for dep, edge in sorted(edges.items()):
+            if dep not in host or not edge.get("headers") or not edge.get("direct"):
+                continue
+            node = host[dep]
+            name, version = split_ref(str(node.get("ref", "")))
+            if dep not in shipped:
+                if node.get("package_type") == "header-library" or (name, version) in HEADER_CODE:
+                    shipped.add(dep)
+                elif (name, version) not in NO_HEADER_CODE:
+                    raise NoticeError(
+                        f"{name}/{version} is a header requirement of shipped code but is not linked; "
+                        "add it to HEADER_CODE or NO_HEADER_CODE in scripts/third-party-notices"
+                    )
+            if dep in shipped and dep not in seen:
+                seen.add(dep)
+                carriers.append(dep)
+    return {key: host[key] for key in shipped}
+
+
+def conan_components(graph: dict, binary_symbols: set[str]) -> list[dict]:
+    try:
+        nodes = graph["graph"]["nodes"]
+    except (KeyError, TypeError) as error:
+        raise NoticeError("input is not a Conan graph (missing graph.nodes)") from error
+    if not any(str(node.get("ref", "")).startswith("onnxruntime/") and is_linked(node, binary_symbols)
+               for key, node in nodes.items() if key != "0"):
+        raise NoticeError("onnxruntime is not linked into the binary")
+    components: dict[tuple[str, str], dict] = {}
+    for node in shipped_nodes(nodes, binary_symbols).values():
+        name, version = split_ref(str(node.get("ref", "")))
+        if (name, version) in components:
+            continue
+        components[(name, version)] = {
+            "name": name,
+            "version": version,
+            "license": license_text(node.get("license")),
+            "texts": license_files(name, version, node),
+        }
+    for name, version in components:
+        if name == "onnxruntime":
+            notice = ONNXRUNTIME_NOTICES.get(version)
+            if notice is None:
+                raise NoticeError(f"no vendored ThirdPartyNotices.txt for onnxruntime {version}")
+            path = NOTICES / notice
+            components[(name, version)]["texts"].append(("ThirdPartyNotices.txt", path.read_bytes()))
+    return [components[key] for key in sorted(components)]
+
+
+def extra_components() -> list[dict]:
+    out = []
+    for extra in EXTRA_COMPONENTS:
+        texts = []
+        for relative in extra["files"]:
+            path = ROOT / relative
+            if not path.is_file():
+                raise NoticeError(f"missing notice file {relative}")
+            texts.append((relative, path.read_bytes()))
+        out.append({"name": extra["name"], "version": extra["version"], "license": extra["license"], "texts": texts})
+    return out
+
+
+def render(components: list[dict]) -> str:
+    parts = [
+        "nesso third-party notices",
+        "",
+        "The nesso binary, package, and image include code from the components below.",
+        "Their license and notice texts follow the list.",
+        "",
+    ]
+    for component in components:
+        parts.append(f"- {component['name']} {component['version']} ({component['license']})")
+    for component in components:
+        parts.extend(["", RULE, f"{component['name']} {component['version']}", f"License: {component['license']}", RULE])
+        for label, data in component["texts"]:
+            parts.extend(["", f"--- {label} ---", "", normalize(data).rstrip("\n")])
+    return "\n".join(parts) + "\n"
+
+
+def copyright_file(notices: str) -> str:
+    license_body = normalize((ROOT / "LICENSE").read_bytes()).rstrip("\n")
+    head = [
+        "nesso",
+        "Copyright (c) 2026 Lorenzo Caprari",
+        "License: Apache-2.0",
+        "Source: https://github.com/lorenzocaprari/nesso",
+        "",
+        license_body,
+        "",
+        RULE,
+        "",
+    ]
+    return "\n".join(head) + "\n" + notices
+
+
+def main(argv: list[str]) -> int:
+    if len(argv) != 4:
+        print("usage: third-party-notices CONAN_GRAPH_JSON BINARY OUT_DIR", file=sys.stderr)
+        return 2
+    graph_path, binary, out_dir = Path(argv[1]), Path(argv[2]), Path(argv[3])
+    try:
+        graph = json.loads(graph_path.read_text(encoding="utf-8"))
+        if not isinstance(graph, dict) or not isinstance(graph.get("graph"), dict) or "nodes" not in graph["graph"]:
+            raise NoticeError("input is not a Conan graph (missing graph.nodes)")
+        binary_symbols = strong_symbols(binary, archive=False)
+        if not binary_symbols:
+            raise NoticeError(f"{binary} has no symbol table; run this before stripping")
+        components = conan_components(graph, binary_symbols) + extra_components()
+    except (OSError, json.JSONDecodeError, NoticeError) as error:
+        print(f"error: {error}", file=sys.stderr)
+        return 1
+    notices = render(components)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    (out_dir / "THIRD_PARTY_NOTICES").write_text(notices, encoding="utf-8")
+    (out_dir / "copyright").write_text(copyright_file(notices), encoding="utf-8")
+    print(f"third-party-notices: {len(components)} components -> {out_dir}")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))
