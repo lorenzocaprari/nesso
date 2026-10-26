@@ -58,6 +58,11 @@ class Nesso(ConanFile):
             )
             tc.cache_variables["CMAKE_CXX_COMPILER_LAUNCHER"] = cxx_launcher
             tc.cache_variables["CMAKE_CXX_SCAN_FOR_MODULES"] = False
+        # Every host dependency is static, so nesso needs no library search path.
+        # Without this, CMakeDeps link directories become a build-tree RUNPATH that
+        # the release binary keeps, with a trailing empty entry (the current
+        # directory). scripts/check-no-runpath enforces it on the release binary.
+        tc.blocks["rpath"].skip_rpath = True
         tc.generate()
         deps = CMakeDeps(self)
         deps.generate()

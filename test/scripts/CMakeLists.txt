@@ -4,6 +4,10 @@ if(NESSO_PYTHON_EXECUTABLE)
            COMMAND "${NESSO_PYTHON_EXECUTABLE}"
                    "${CMAKE_CURRENT_SOURCE_DIR}/check_determinism_test.py")
   set_tests_properties(check_determinism_test PROPERTIES LABELS unit)
+  add_test(NAME check_no_runpath_test
+           COMMAND "${NESSO_PYTHON_EXECUTABLE}"
+                   "${CMAKE_CURRENT_SOURCE_DIR}/check_no_runpath_test.py")
+  set_tests_properties(check_no_runpath_test PROPERTIES LABELS unit)
   add_test(NAME package_deb_test
            COMMAND "${NESSO_PYTHON_EXECUTABLE}"
                    "${CMAKE_CURRENT_SOURCE_DIR}/package_deb_test.py")

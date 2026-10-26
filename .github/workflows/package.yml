@@ -33,6 +33,7 @@ on:
       - "scripts/compare-deb"
       - "scripts/smoke-deb"
       - "scripts/fetch-model"
+      - "scripts/check-no-runpath"
       - "scripts/publish-runtime-index"
       - "scripts/trivy"
       - "scripts/scan-runtime-image"
