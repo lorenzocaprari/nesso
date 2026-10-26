@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Pushes to `main` append the end-to-end benchmark to history on the `gh-pages` branch. Pull requests do not write that branch. They add an informational comparison against the stored history to the `bench` job summary. The benchmark job still fails only when a tier regresses against the latest baseline from `main`.
 - Pull requests fail the `coverage` job when fewer than 80% of the changed executable lines under `src/` are covered. The job summary lists the uncovered lines. A change with no executable product lines passes. Pushes to `main` still report only the tree-wide coverage.
 - Test jobs write ctest JUnit XML and list failing tests in the job summary. The XML is kept as an artifact.
 - The Package workflow builds the release `.deb` twice per architecture from a clean tree and requires the bytes to match. amd64 runs on `ubuntu-latest` and arm64 on `ubuntu-24.04-arm`. It then installs that package with apt on Ubuntu 26.04 and Ubuntu 26.10, on both architectures, runs the release smoke command, and checks `apt-get remove` and `apt-get purge`. It runs nightly and before a tag publish.

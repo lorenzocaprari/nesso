@@ -180,7 +180,7 @@ python3 scripts/bench
 python3 scripts/bench-compare
 ```
 
-The `bench` CI job runs on every pull request, on pushes to `main`, and nightly. Pull requests time the 1k and 10k tiers. Pushes to `main` and the nightly schedule also time 100k. The job compares the tiers it ran with the latest baseline saved from `main`, and that failure fails the job. The first run has no baseline and warns. Shared runners disagree on wall time by about 4.5× for the same tier, so CI allows up to 5.5× the baseline wall time and 1.2× the baseline peak RSS.
+The `bench` CI job runs on every pull request, on pushes to `main`, and nightly. Pull requests time the 1k and 10k tiers. Pushes to `main` and the nightly schedule also time 100k. The job compares the tiers it ran with the latest baseline saved from `main`, and that failure fails the job. The first run has no baseline and warns. Shared runners disagree on wall time by about 4.5× for the same tier, so CI allows up to 5.5× the baseline wall time and 1.2× the baseline peak RSS. A push to `main` appends the same result to benchmark history on the `gh-pages` branch. Pull requests do not write that branch. They add an informational comparison with the stored history to the job summary, and that comparison does not fail the job.
 
 Google Benchmark microbenchmarks build with `-o "&:bench=True"` on the Release profile and produce `build/Release/bench/nesso_bench`.
 
