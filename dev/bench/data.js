@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793012522040,
+  "lastUpdate": 1793017104688,
   "repoUrl": "https://github.com/lorenzocaprari/nesso",
   "entries": {
     "nesso": [
@@ -107,6 +107,60 @@ window.BENCHMARK_DATA = {
           {
             "name": "grep-100000-rss",
             "value": 132419584,
+            "unit": "bytes"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "caprarilorenzo5@gmail.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "committer": {
+            "email": "85455384+lorenzocaprari@users.noreply.github.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "distinct": true,
+          "id": "ed5ae6901c59d1ab19122c3903fbb700e01439ab",
+          "message": "ci: harden runners and scan the runtime image\n\nAudit outbound calls on host jobs. Scan the runtime image with a checksum-pinned Trivy binary when Package or a tag release builds it, and upload SARIF without failing the job.",
+          "timestamp": "2026-10-26T13:10:31+01:00",
+          "tree_id": "6902e551f6b70356496b6ee153439b2b67498421",
+          "url": "https://github.com/lorenzocaprari/nesso/commit/ed5ae6901c59d1ab19122c3903fbb700e01439ab"
+        },
+        "date": 1793017104056,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "grep-1000-wall",
+            "value": 3.69,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-1000-rss",
+            "value": 132317184,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-10000-wall",
+            "value": 27,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-10000-rss",
+            "value": 131989504,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-100000-wall",
+            "value": 261.78,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-100000-rss",
+            "value": 132075520,
             "unit": "bytes"
           }
         ]
