@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793023019343,
+  "lastUpdate": 1793023625625,
   "repoUrl": "https://github.com/lorenzocaprari/nesso",
   "entries": {
     "nesso": [
@@ -269,6 +269,60 @@ window.BENCHMARK_DATA = {
           {
             "name": "grep-100000-rss",
             "value": 132620288,
+            "unit": "bytes"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "caprarilorenzo5@gmail.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "committer": {
+            "email": "85455384+lorenzocaprari@users.noreply.github.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "distinct": true,
+          "id": "59aa049f14dcb3925719e3668f6abd9261e837e9",
+          "message": "build: ship the release binary without a RUNPATH\n\nCMakeDeps adds every host package's lib directory to the link, and CMake\nrecorded them as the binary's RUNPATH: Conan build-tree paths that do\nnot exist on a user's machine, followed by an empty entry. The dynamic\nloader searches an empty entry as the current directory, so running\nnesso from a directory someone else can write to could load a planted\nlibstdc++.so.6, libm.so.6 or libgcc_s.so.1 (CWE-426).\n\nAll Conan dependencies are linked statically, so the binary needs no\nRUNPATH at all. The toolchain now sets CMAKE_SKIP_RPATH through the\nrpath block. The binary's only other change is the smaller dynamic\nsection.\n\nscripts/check-no-runpath reads readelf -d and fails when an RPATH or\nRUNPATH tag is present, naming empty entries. scripts/build-release-binary\nruns it on the binary it produces, so the release build, the .deb and\nthe runtime image cannot regress. Tests cover a clean binary, a\ntrailing and an only empty entry, RPATH, an unparsable tag line, and\nreadelf failures.",
+          "timestamp": "2026-10-26T14:54:22+01:00",
+          "tree_id": "2dd21b1c4ab317f784ffdb53bc70afb3196a731b",
+          "url": "https://github.com/lorenzocaprari/nesso/commit/59aa049f14dcb3925719e3668f6abd9261e837e9"
+        },
+        "date": 1793023625215,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "grep-1000-wall",
+            "value": 3.57,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-1000-rss",
+            "value": 132464640,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-10000-wall",
+            "value": 25.31,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-10000-rss",
+            "value": 132493312,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-100000-wall",
+            "value": 244.43,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-100000-rss",
+            "value": 134955008,
             "unit": "bytes"
           }
         ]
