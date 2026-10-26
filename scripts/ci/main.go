@@ -10,7 +10,7 @@ import (
 
 func main() {
 	if len(os.Args) < 2 {
-		fmt.Fprintln(os.Stderr, "usage: ci <patch-coverage|junit-summary> [flags]")
+		fmt.Fprintln(os.Stderr, "usage: ci <patch-coverage|junit-summary|bench-external|bench-history> [flags]")
 		os.Exit(1)
 	}
 	var code int
@@ -19,8 +19,12 @@ func main() {
 		code = patchMain(os.Args[2:])
 	case "junit-summary":
 		code = junitMain(os.Args[2:])
+	case "bench-external":
+		code = benchExternalMain(os.Args[2:])
+	case "bench-history":
+		code = benchHistoryMain(os.Args[2:])
 	case "-h", "--help", "help":
-		fmt.Fprintln(os.Stderr, "usage: ci <patch-coverage|junit-summary> [flags]")
+		fmt.Fprintln(os.Stderr, "usage: ci <patch-coverage|junit-summary|bench-external|bench-history> [flags]")
 	default:
 		fmt.Fprintf(os.Stderr, "unknown command %q\n", os.Args[1])
 		code = 1
