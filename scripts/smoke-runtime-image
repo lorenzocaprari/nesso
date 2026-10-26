@@ -5,6 +5,8 @@ IMAGE="${1:?usage: smoke-runtime-image IMAGE}"
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 docker run --rm "${IMAGE}" -V
+docker run --rm --entrypoint test "${IMAGE}" -s /usr/share/doc/nesso/copyright
+docker run --rm --entrypoint test "${IMAGE}" -s /usr/share/doc/nesso/THIRD_PARTY_NOTICES
 docker run --rm \
   -v "${ROOT}/test/fixtures:/data:ro" \
   -w /data \

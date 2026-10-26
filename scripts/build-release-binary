@@ -60,10 +60,19 @@ echo "build-release-binary: SOURCE_DATE_EPOCH=${SOURCE_DATE_EPOCH} ROOT=${ROOT}"
 PROFILE="$(release_conan_profile)"
 echo "build-release-binary: profile=${PROFILE} machine=$(uname -m)"
 conan profile detect --force
+# Graph only, for scripts/third-party-notices. Conan skips the binaries of
+# header-only packages and of libraries nothing links, which leaves them without
+# a package folder; skip_binaries=False keeps the folders and their license files.
+# No --build=missing here: this call must never build anything.
+conan install . -pr:h "${PROFILE}" -pr:b default --lockfile=conan.lock --no-remote \
+  -c tools.graph:skip_binaries=False --format=json >"${TMPDIR}/conan-graph.json"
 conan install . -pr:h "${PROFILE}" -pr:b default --lockfile=conan.lock --build=missing --no-remote
 conan build . -pr:h "${PROFILE}" -pr:b default --lockfile=conan.lock --build=missing --no-remote
 
 install -D -m 0755 "${ROOT}/build/Release/src/nesso" "${OUT_BIN}"
+# copyright and THIRD_PARTY_NOTICES for the .deb and the runtime image.
+DOC_DIR="${DOC_DIR:-$(dirname "${OUT_BIN}")/doc}"
+python3 "${ROOT}/scripts/third-party-notices" "${TMPDIR}/conan-graph.json" "${OUT_BIN}" "${DOC_DIR}"
 
 # Unix Makefiles write CMakeFiles/nesso.dir/link.txt. Ninja keeps the link
 # command in build.ninja, so ask ninja for that command. @rsp arguments are

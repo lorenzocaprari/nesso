@@ -36,6 +36,19 @@ def model_dir(directory: pathlib.Path) -> pathlib.Path:
     return models
 
 
+def doc_dir(directory: pathlib.Path) -> pathlib.Path:
+    doc = directory / "doc"
+    doc.mkdir(exist_ok=True)
+    (doc / "copyright").write_text("nesso\nCopyright (c) 2026 Lorenzo Caprari\n")
+    (doc / "THIRD_PARTY_NOTICES").write_text("nesso third-party notices\n")
+    return doc
+
+
+def listing(deb: pathlib.Path) -> str:
+    result = subprocess.run(["dpkg-deb", "-c", str(deb)], capture_output=True, text=True, check=True)
+    return result.stdout
+
+
 def depends(deb: pathlib.Path) -> str:
     result = subprocess.run(
         ["dpkg-deb", "-f", str(deb), "Depends"],
@@ -66,6 +79,7 @@ class PackageDebTest(unittest.TestCase):
             )
             binary = directory / "nesso"
             binary.write_bytes(elf64(62))
+            doc_dir(directory)
             out = directory / "out"
             env = os.environ.copy()
             env["PATH"] = f"{bindir}{os.pathsep}{env.get('PATH', '')}"
@@ -91,6 +105,7 @@ class PackageDebTest(unittest.TestCase):
             write_executable(bindir / "objdump", "#!/bin/sh\nprintf '%s\\n' 'no versioned symbols'\n")
             binary = directory / "nesso"
             binary.write_bytes(elf64(62))
+            doc_dir(directory)
             env = os.environ.copy()
             env["PATH"] = f"{bindir}{os.pathsep}{env.get('PATH', '')}"
             result = subprocess.run(
@@ -116,6 +131,7 @@ class PackageDebTest(unittest.TestCase):
             )
             if compiled.returncode != 0:
                 self.skipTest(compiled.stderr.decode())
+            doc_dir(directory)
             dump = subprocess.run(
                 ["objdump", "-T", str(binary)],
                 capture_output=True,
@@ -137,6 +153,59 @@ class PackageDebTest(unittest.TestCase):
             debs = list(out.glob("nesso_0.1.0_*.deb"))
             self.assertEqual(len(debs), 1, result.stdout)
             self.assertIn(f"libc6 (>= {highest})", depends(debs[0]))
+
+    def run_with_stub_objdump(self, directory: pathlib.Path, env_extra: dict[str, str] | None = None):
+        bindir = directory / "bin"
+        bindir.mkdir(exist_ok=True)
+        write_executable(bindir / "objdump", "#!/bin/sh\nprintf '%s\\n' '000000 DF *UND* 000000 GLIBC_2.34 sym'\n")
+        binary = directory / "nesso"
+        binary.write_bytes(elf64(62))
+        env = os.environ.copy()
+        env["PATH"] = f"{bindir}{os.pathsep}{env.get('PATH', '')}"
+        env["SOURCE_DATE_EPOCH"] = "1700000000"
+        env.pop("DOC_DIR", None)
+        env.update(env_extra or {})
+        models = directory / "models" if (directory / "models").is_dir() else model_dir(directory)
+        return subprocess.run(
+            [str(PACKAGE), "0.1.0", str(binary), str(models), str(directory / "out")],
+            capture_output=True,
+            text=True,
+            env=env,
+            check=False,
+        )
+
+    def test_ships_copyright_and_third_party_notices(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            directory = pathlib.Path(temp)
+            doc_dir(directory)
+            result = self.run_with_stub_objdump(directory)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            files = listing(directory / "out" / "nesso_0.1.0_amd64.deb")
+            for path in ("./usr/share/doc/nesso/copyright", "./usr/share/doc/nesso/THIRD_PARTY_NOTICES"):
+                line = next((entry for entry in files.splitlines() if entry.endswith(" " + path)), "")
+                self.assertTrue(line.startswith("-rw-r--r-- root/root"), files)
+
+    def test_doc_dir_can_be_given_explicitly(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            directory = pathlib.Path(temp)
+            other = directory / "elsewhere"
+            other.mkdir()
+            doc = doc_dir(other)
+            result = self.run_with_stub_objdump(directory, {"DOC_DIR": str(doc)})
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn("./usr/share/doc/nesso/THIRD_PARTY_NOTICES", listing(directory / "out" / "nesso_0.1.0_amd64.deb"))
+
+    def test_rejects_a_missing_or_empty_doc_dir(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            directory = pathlib.Path(temp)
+            result = self.run_with_stub_objdump(directory)
+            self.assertEqual(result.returncode, 2)
+            self.assertIn("THIRD_PARTY_NOTICES", result.stderr)
+            doc = doc_dir(directory)
+            (doc / "THIRD_PARTY_NOTICES").write_text("")
+            result = self.run_with_stub_objdump(directory)
+            self.assertEqual(result.returncode, 2)
+            self.assertFalse((directory / "out").exists())
 
 
 if __name__ == "__main__":

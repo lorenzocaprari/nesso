@@ -12,11 +12,13 @@ import (
 
 // runtimeLayerCopies maps a final-stage COPY --from=build source onto the
 // context path and the path inside the release .deb. package-deb installs the
-// binary at /usr/bin/nesso and the model files under /usr/share/nesso.
+// binary at /usr/bin/nesso, the model files under /usr/share/nesso, and the
+// copyright and third-party notices under /usr/share/doc/nesso.
 // Dockerfile.runtime copies the same files out of the unpublished build stage.
 var runtimeLayerCopies = []scanCopySpec{
 	{from: "/opt/nesso/bin/nesso", kind: "file", context: "nesso", deb: "usr/bin/nesso"},
 	{from: "/opt/nesso/models", kind: "dir", context: "models", deb: "usr/share/nesso"},
+	{from: "/opt/nesso/doc", kind: "dir", context: "doc", deb: "usr/share/doc/nesso"},
 }
 
 type scanCopySpec struct {
@@ -114,7 +116,7 @@ func runtimeScanDockerfile(src string) (string, []scanCopy, error) {
 		}
 	}
 	if len(copies) != len(runtimeLayerCopies) {
-		return "", nil, fmt.Errorf("final stage must copy the nesso binary and the model directory")
+		return "", nil, fmt.Errorf("final stage must copy the nesso binary, the model directory, and the doc directory")
 	}
 	return b.String(), copies, nil
 }

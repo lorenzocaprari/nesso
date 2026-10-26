@@ -16,7 +16,7 @@ ENV TZ=UTC
 # /usr/src, which the leak check would then flag.
 WORKDIR /nesso-src
 COPY . .
-RUN ./scripts/build-release-binary /opt/nesso/bin/nesso \
+RUN DOC_DIR=/opt/nesso/doc ./scripts/build-release-binary /opt/nesso/bin/nesso \
     && ./scripts/fetch-model /opt/nesso/models
 
 # OCI index, not a single-platform manifest. BuildKit selects linux/amd64 or
@@ -30,6 +30,7 @@ RUN apt-get update \
 
 COPY --from=build /opt/nesso/bin/nesso /usr/local/bin/nesso
 COPY --from=build /opt/nesso/models /usr/share/nesso
+COPY --from=build /opt/nesso/doc /usr/share/doc/nesso
 
 ENV NESSO_MODEL_DIR=/usr/share/nesso
 

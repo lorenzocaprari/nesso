@@ -1,0 +1,15 @@
+The nesso package and image ship two model files:
+
+- model.onnx: onnx/model_quantized.onnx from
+  https://huggingface.co/Xenova/all-MiniLM-L6-v2, an ONNX export of
+  https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2.
+  Both repositories declare the Apache License 2.0 in their model card
+  metadata.
+- vocab.txt: from https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2
+  (Apache License 2.0).
+
+sentence-transformers/all-MiniLM-L6-v2 is fine-tuned from
+https://huggingface.co/nreimers/MiniLM-L6-H384-uncased, which declares the
+MIT License in its model card metadata.
+
+The full text of the Apache License 2.0 follows.

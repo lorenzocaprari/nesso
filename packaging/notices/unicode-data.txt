@@ -1,0 +1,5 @@
+src/embed/unicode_bert.inc holds character tables (whitespace, control,
+punctuation, combining marks, lowercase mappings, and canonical
+decompositions) generated from the Unicode Character Database as exposed by
+CPython's unicodedata module. The Unicode Character Database is covered by
+the Unicode License V3, which follows.

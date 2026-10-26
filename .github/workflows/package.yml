@@ -28,6 +28,9 @@ on:
       - ".github/workflows/release.yml"
       - "Dockerfile.runtime"
       - "CMakeLists.txt"
+      - "conanfile.py"
+      - "conan.lock"
+      - "LICENSE"
       - "scripts/build-release-binary"
       - "scripts/package-deb"
       - "scripts/compare-deb"
@@ -38,6 +41,9 @@ on:
       - "scripts/scan-runtime-image"
       - "scripts/ci/trivy.go"
       - "scripts/ci/runtime_scan.go"
+      - "scripts/smoke-runtime-image"
+      - "scripts/third-party-notices"
+      - "packaging/notices/**"
   workflow_dispatch:
   workflow_call:
     inputs:

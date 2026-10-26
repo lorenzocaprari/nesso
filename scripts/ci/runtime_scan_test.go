@@ -27,6 +27,7 @@ func TestRuntimeScanDockerfileUsesFinalStageOnly(t *testing.T) {
 		"apt-get install -y --no-install-recommends ca-certificates libstdc++6 libgomp1",
 		"COPY nesso /usr/local/bin/nesso\n",
 		"COPY models /usr/share/nesso\n",
+		"COPY doc /usr/share/doc/nesso\n",
 		"ENV NESSO_MODEL_DIR=/usr/share/nesso\n",
 		"ENTRYPOINT [\"nesso\"]\n",
 	} {
@@ -34,7 +35,7 @@ func TestRuntimeScanDockerfileUsesFinalStageOnly(t *testing.T) {
 			t.Fatalf("missing %q in\n%s", needle, got)
 		}
 	}
-	if len(copies) != 2 {
+	if len(copies) != 3 {
 		t.Fatalf("copies = %+v", copies)
 	}
 	if copies[0] != (scanCopy{kind: "file", context: "nesso", deb: "usr/bin/nesso"}) {
@@ -43,8 +44,11 @@ func TestRuntimeScanDockerfileUsesFinalStageOnly(t *testing.T) {
 	if copies[1] != (scanCopy{kind: "dir", context: "models", deb: "usr/share/nesso"}) {
 		t.Fatalf("model copy = %+v", copies[1])
 	}
+	if copies[2] != (scanCopy{kind: "dir", context: "doc", deb: "usr/share/doc/nesso"}) {
+		t.Fatalf("doc copy = %+v", copies[2])
+	}
 	plan := formatScanPlan(copies)
-	if plan != "file\tnesso\tusr/bin/nesso\ndir\tmodels\tusr/share/nesso\n" {
+	if plan != "file\tnesso\tusr/bin/nesso\ndir\tmodels\tusr/share/nesso\ndir\tdoc\tusr/share/doc/nesso\n" {
 		t.Fatalf("plan = %q", plan)
 	}
 }
@@ -54,11 +58,14 @@ func TestRuntimeScanDockerfileRejectsDrift(t *testing.T) {
 		"FROM ubuntu:26.04@sha256:abc\n" +
 		"RUN apt-get update\n" +
 		"COPY --from=build /opt/nesso/bin/nesso /usr/local/bin/nesso\n" +
-		"COPY --from=build /opt/nesso/models /usr/share/nesso\n"
+		"COPY --from=build /opt/nesso/models /usr/share/nesso\n" +
+		"COPY --from=build /opt/nesso/doc /usr/share/doc/nesso\n"
 	cases := []string{
 		base + "USER nobody\n",
 		base + "COPY extra /opt/extra\n",
 		base + "COPY --from=build /opt/nesso/extra /opt/extra\n",
+		base + "COPY --from=build /opt/nesso/doc /usr/share/doc/other\n",
+		strings.Replace(base, "COPY --from=build /opt/nesso/doc /usr/share/doc/nesso\n", "", 1),
 		"FROM ubuntu:26.04\nRUN true\n",
 		"RUN true\n",
 	}
@@ -75,7 +82,8 @@ func TestRuntimeCopyPathsMatchPackageDeb(t *testing.T) {
 		t.Fatal(err)
 	}
 	text := string(body)
-	if !strings.Contains(text, "/usr/bin/nesso") || !strings.Contains(text, "/usr/share/nesso/") {
+	if !strings.Contains(text, "/usr/bin/nesso") || !strings.Contains(text, "/usr/share/nesso/") ||
+		!strings.Contains(text, "usr/share/doc/nesso") {
 		t.Fatalf("package-deb install paths drifted from the scan plan")
 	}
 }

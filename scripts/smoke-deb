@@ -35,17 +35,24 @@ docker run --rm \
     nesso grep "connection refused" /data/grep_sample.log -k 3
     test -x /usr/bin/nesso
     test -f /usr/share/nesso/model.onnx
+    # Minimized images drop /usr/share/doc/* except copyright, so check the
+    # installed copyright and the notices file inside the package.
+    test -s /usr/share/doc/nesso/copyright
+    grep -q "nesso third-party notices" /usr/share/doc/nesso/copyright
+    # grep -q exits at the first match and SIGPIPE-kills dpkg-deb. pipefail
+    # then fails the smoke even though the notices file is in the package.
+    dpkg-deb -c /tmp/nesso.deb | grep " ./usr/share/doc/nesso/THIRD_PARTY_NOTICES$" >/dev/null
     apt-get remove -y nesso
-    if [[ -e /usr/bin/nesso || -e /usr/share/nesso ]]; then
+    if [[ -e /usr/bin/nesso || -e /usr/share/nesso || -e /usr/share/doc/nesso ]]; then
       echo "error: apt-get remove left nesso files behind" >&2
-      ls -la /usr/bin/nesso /usr/share/nesso >&2 || true
+      ls -la /usr/bin/nesso /usr/share/nesso /usr/share/doc/nesso >&2 || true
       exit 1
     fi
     apt-get install -y /tmp/nesso.deb
     apt-get purge -y nesso
-    if [[ -e /usr/bin/nesso || -e /usr/share/nesso ]]; then
+    if [[ -e /usr/bin/nesso || -e /usr/share/nesso || -e /usr/share/doc/nesso ]]; then
       echo "error: apt-get purge left nesso files behind" >&2
-      ls -la /usr/bin/nesso /usr/share/nesso >&2 || true
+      ls -la /usr/bin/nesso /usr/share/nesso /usr/share/doc/nesso >&2 || true
       exit 1
     fi
     status="$(dpkg-query -W -f="\${Status}" nesso 2>/dev/null || true)"
