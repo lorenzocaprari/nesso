@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793044411675,
+  "lastUpdate": 1793047689625,
   "repoUrl": "https://github.com/lorenzocaprari/nesso",
   "entries": {
     "nesso": [
@@ -863,6 +863,60 @@ window.BENCHMARK_DATA = {
           {
             "name": "grep-100000-rss",
             "value": 132608000,
+            "unit": "bytes"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "caprarilorenzo5@gmail.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "committer": {
+            "email": "85455384+lorenzocaprari@users.noreply.github.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "distinct": true,
+          "id": "a82123aab35620803bb09703cabea17f0ab78ee7",
+          "message": "build(deps): bump devcontainer Python pins to fix known vulnerabilities\n\nPin certifi 2026.10.19 and filelock 4.2.1, the lowest releases of those packages with no known OSV vulnerabilities. virtualenv 21.14.13 is already on main. Hashes come from pip-compile --generate-hashes.",
+          "timestamp": "2026-10-26T16:42:05-04:00",
+          "tree_id": "3aa2d535bec21c05eb967a899ee75c15d4f74746",
+          "url": "https://github.com/lorenzocaprari/nesso/commit/a82123aab35620803bb09703cabea17f0ab78ee7"
+        },
+        "date": 1793047688840,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "grep-1000-wall",
+            "value": 1.4,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-1000-rss",
+            "value": 133308416,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-10000-wall",
+            "value": 13.11,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-10000-rss",
+            "value": 133255168,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-100000-wall",
+            "value": 126.51,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-100000-rss",
+            "value": 137932800,
             "unit": "bytes"
           }
         ]
