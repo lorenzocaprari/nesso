@@ -57,4 +57,4 @@ merged as [PR #88](https://github.com/lorenzocaprari/nesso/pull/88) on 2026-10-1
 [064f888](https://github.com/lorenzocaprari/nesso/commit/064f888871babcc8d842c4b48233d9ac647c61c1).
 A threaded pipeline is not discussed in those pull requests or in 064f888.
 
-`README.md` still says `grep` holds the whole corpus in memory.
+`docs/usage.md` describes `grep` as embedding in batches and keeping the top matches.

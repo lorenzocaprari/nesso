@@ -368,7 +368,7 @@ func writeChart(b *strings.Builder, pages string) {
 	if pages == "" {
 		return
 	}
-	fmt.Fprintf(b, "\nChart, once GitHub Pages serves the `gh-pages` branch: %s\n", pages)
+	fmt.Fprintf(b, "\nChart on the `gh-pages` branch: %s\n", pages)
 }
 
 func recentPoints(points []historyPoint, window int) []historyPoint {
@@ -501,7 +501,7 @@ func pagesURL(repo string) string {
 	if !ok || owner == "" || name == "" {
 		return ""
 	}
-	return "https://" + strings.ToLower(owner) + ".github.io/" + name + "/dev/bench/"
+	return "https://github.com/" + strings.ToLower(owner) + "/" + name + "/blob/gh-pages/dev/bench/index.html"
 }
 
 func historyURL(repo string) (string, error) {

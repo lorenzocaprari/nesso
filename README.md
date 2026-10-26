@@ -5,208 +5,51 @@
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/lorenzocaprari/nesso/badge)](https://scorecard.dev/viewer/?uri=github.com/lorenzocaprari/nesso)
 
-**Local semantic search for unstructured text** (C++26)
+grep for meaning: find the log lines you're looking for even when the words differ. Offline, one binary.
 
-by **Lorenzo Caprari**
+Semantic grep for logs, fully offline, no server, no cloud, no API keys, [Apache-2.0](LICENSE).
 
-Nesso is a Linux-native CLI for searching local text by meaning.
+## Demo
 
-## Today
+![nesso search for "the disk is full" matching lines that say "No space left on device"](docs/assets/demo.gif)
 
-- `nesso grep QUERY FILE...` — one-shot semantic search over `.log`, `.json`, and `.jsonl`
-- `nesso index` / `nesso search` — persist that text and its embeddings, then search the file
-- Local ONNX MiniLM embedder. Ranking is a brute-force scan (no ANN index yet)
-- Conan 2 toolchain with ASan/UBSan debug builds and CI coverage gates
+The log does not contain the query. Index it, then search:
 
-## Non-goals
+```bash
+nesso index -o app.nesso app.log
+```
 
-- Not a hosted vector database (Qdrant, pgvector, etc.)
-- No approximate nearest-neighbor index yet
-- Linux only
+```text
+Indexed 5000 chunks into 'app.nesso'.
+```
+
+```bash
+nesso search "the disk is full" -i app.nesso -k 3
+```
+
+```text
+line 746: 0.4580: Oct 18 14:07:25 web-01 app[2699]: write /var/lib/app/queue.db: No space left on device
+line 3940: 0.4352: Oct 18 14:39:39 web-01 app[1930]: write /var/lib/app/queue.db: No space left on device
+line 918: 0.4322: Oct 18 14:09:17 web-01 app[3859]: write /var/lib/app/queue.db: No space left on device
+```
 
 ## Install
 
-Ubuntu 26.04+, from a GitHub Release `.deb`:
+Ubuntu 26.04+ (glibc 2.43+), amd64. The package includes the MiniLM model.
 
 ```bash
-sudo apt install ./nesso_*_amd64.deb
-# arm64: sudo apt install ./nesso_*_arm64.deb
-nesso grep "database connection error" app.log
+curl -fL -o nesso_0.1.0_amd64.deb \
+  https://github.com/lorenzocaprari/nesso/releases/download/v0.1.0/nesso_0.1.0_amd64.deb
+sudo apt install ./nesso_0.1.0_amd64.deb
 ```
 
-Two builds of the same commit produce the same `.deb` on that architecture. Install is checked on Ubuntu 26.04 and Ubuntu 26.10, on amd64 and on arm64.
+## More
 
-The package ships the MiniLM files in `/usr/share/nesso`. An omitted `--model-dir` uses `NESSO_MODEL_DIR`, then `./models` when both files are present, then `$XDG_DATA_HOME/nesso` (or `~/.local/share/nesso`), then `/usr/share/nesso`.
-
-Anywhere with Docker. `latest`, `vX.Y.Z`, and `X.Y.Z` are manifest lists (`linux/amd64` and `linux/arm64`). Docker pulls the architecture of the host:
-
-```bash
-docker pull ghcr.io/lorenzocaprari/nesso:latest
-docker run --rm -v "$PWD:/data" -w /data ghcr.io/lorenzocaprari/nesso:latest \
-  grep "database connection error" app.log
-```
-
-A release pull request bumps `version` in `conanfile.py`. After that commit is on `main`, publish the `vX.Y.Z` draft. Publishing creates the tag. `.github/workflows/release.yml` checks the tag against `conanfile.py`, waits for approval on the `release` environment, then publishes the image, both `.deb` packages, and the GitHub Release. CI must already have published `nesso-build-env` for amd64 and arm64. Checking the signature and provenance is [below](#verifying-a-release).
-
-## Verifying a release
-
-A `vX.Y.Z` tag signs `ghcr.io/lorenzocaprari/nesso` by digest with keyless cosign. The certificate identity is this repository's release workflow at that tag. `cosign verify` of the tag checks the manifest-list digest: that is the digest the tag resolves to. Each platform digest is signed with the same identity, because cosign does not treat the index signature as a signature of the amd64 or arm64 manifest. Use the platform digest when you pin `image@sha256:…` to one architecture.
-
-The GitHub Release carries SLSA Build Level 3 provenance. `nesso_<version>.intoto.jsonl` covers both `.deb` packages and both SPDX SBOMs (`nesso_<version>_amd64.spdx.json` and `nesso_<version>_arm64.spdx.json`). `nesso_<version>_ghcr.intoto.jsonl` is the index attestation copied from GHCR. `nesso_<version>_ghcr_amd64.intoto.jsonl` and `nesso_<version>_ghcr_arm64.intoto.jsonl` are the platform attestations. `SHA256SUMS` lists those eight files.
-
-`v0.1.0` was published before these signatures and is amd64-only. Set `version` to the release you are checking, without the leading `v`. `digest` below is the manifest-list digest.
-
-```bash
-version=1.2.3
-digest="$(docker buildx imagetools inspect --format '{{index .Manifest.Digest}}' "ghcr.io/lorenzocaprari/nesso:v${version}")"
-
-cosign verify \
-  --certificate-identity "https://github.com/lorenzocaprari/nesso/.github/workflows/release.yml@refs/tags/v${version}" \
-  --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
-  "ghcr.io/lorenzocaprari/nesso@${digest}"
-
-slsa-verifier verify-artifact \
-  "nesso_${version}_amd64.deb" \
-  "nesso_${version}_arm64.deb" \
-  "nesso_${version}_amd64.spdx.json" \
-  "nesso_${version}_arm64.spdx.json" \
-  --provenance-path "nesso_${version}.intoto.jsonl" \
-  --source-uri github.com/lorenzocaprari/nesso \
-  --source-tag "v${version}"
-
-slsa-verifier verify-image \
-  "ghcr.io/lorenzocaprari/nesso@${digest}" \
-  --source-uri github.com/lorenzocaprari/nesso \
-  --source-tag "v${version}"
-```
-
-To verify one platform, read its digest from `docker buildx imagetools inspect ghcr.io/lorenzocaprari/nesso:v${version}` and pass that digest to `cosign verify` and to `slsa-verifier verify-image`. The matching file on the release is `nesso_${version}_ghcr_amd64.intoto.jsonl` or `nesso_${version}_ghcr_arm64.intoto.jsonl`.
-
-`cosign` 2.x checks the signature. `slsa-verifier` v2.7.1 or later checks the provenance. `verify-image` reads the attestation from GHCR. When the registry asks for credentials, set `GH_TOKEN` for that command.
-
-## Prerequisites
-
-- **Compiler:** GCC 15+ with C++26 support
-- **Build system:** CMake 4.2+
-- **Package manager:** Conan 2.x
-- **OS:** Linux
-
-## Build
-
-```bash
-conan install . -pr:h ./conan/profiles/gcc-26-debug -pr:b default \
-  --lockfile=conan.lock --build=missing
-conan build . -pr:h ./conan/profiles/gcc-26-debug -pr:b default \
-  --lockfile=conan.lock --build=missing
-ctest --test-dir build/Debug --output-on-failure
-```
-
-Release profile: replace `gcc-26-debug` with `gcc-26`.
-
-The black-box specs in [test/functional/](test/functional/) run the `nesso` binary through [godog](https://github.com/cucumber/godog) as the `bdd` ctest case. Go 1.24+ is a test-only dependency. Without it CMake skips `bdd`, and `NESSO_REQUIRE_BDD=1` turns that into a configure error (CI sets it).
-
-Unit, integration, and functional tests are separate ctest labels. CI runs unit and integration in one job per lane. Functional shares that job on gcc Release, Clang, and arm64, and has its own gcc Debug job:
-
-```bash
-ctest --test-dir build/Debug -L unit
-ctest --test-dir build/Debug -L integration
-ctest --test-dir build/Debug -L functional
-```
-
-## Usage
-
-Download the embedding model once:
-
-```bash
-./scripts/fetch-model
-```
-
-Search files by meaning. `-k` is optional (default 5):
-
-```bash
-./build/Debug/nesso grep "database connection error" app.log
-./build/Debug/nesso grep "payment timeout" app.log events.jsonl dump.json -k 5
-./build/Debug/nesso grep "auth failure" app.log --model-dir models/
-```
-
-Index the same files once, then search the corpus. `-o` and `-i` are required:
-
-```bash
-./build/Debug/nesso index -o corpus.nesso app.log events.jsonl
-./build/Debug/nesso search "payment timeout" -i corpus.nesso -k 5
-```
-
-Matches go to stdout. Skipped lines, the index summary, and errors go to stderr. Every command exits 0 when it prints matches or the index succeeds, 1 when nothing matches, and 2 when the command fails. Argument errors, including `-k 0`, also exit 2. `--help` lists these codes. A missing model names the directories that were tried and suggests `scripts/fetch-model` or `--model-dir`.
-
-### File limits
-
-- `.json` and `.jsonl` are JSON, matched without regard to case. Every other name is read as lines: no extension, `.log.N` rotations, `.LOG`, `.txt`, `syslog`. `-` reads stdin as lines, and those matches are prefixed with `-:`.
-- A file whose first 4 KiB contains a NUL byte is rejected. Directories are rejected.
-- Lines: one chunk per non-empty line. Lines longer than 4096 characters are truncated. A trailing CR is stripped.
-- JSON: only objects with a string field are indexed (`message` by default, or `--json-field`). Malformed lines and documents are skipped. String values longer than 4096 characters are truncated. A JSON array is numbered `element N`, not `line N`.
-- `grep` holds the whole corpus in memory for that invocation. `index` writes it to the corpus file; `search` loads that file back into memory. Very large files will be slow and RAM-heavy.
-- Empty lines and JSON values without that string field are skipped. Overlong log lines and JSON string values are truncated. Skip and truncation counts are printed on stderr.
-- `index` records each file source's size and modification time. `search` warns on stderr when a source changed or is missing; stdin sources are not tracked.
-
-## Development
-
-Local CI gate (run before pushing):
-
-```bash
-bash scripts/lint
-bash scripts/actionlint
-bash scripts/zizmor
-./scripts/code-coverage conan/profiles/code-coverage
-```
-
-See [.github/workflows/ci.yml](.github/workflows/ci.yml) for `lint`, `clang-tidy`, and `cppcheck`, the gcc Release, gcc Debug, Clang, and arm64 builds, unit, integration, and functional tests, coverage, and the fp32 determinism gate. AFL++ `fuzz-test` runs on pushes to `main` and nightly; pull requests are fuzzed by [ClusterFuzzLite](.github/workflows/cifuzz.yml). The pipeline runs on pull requests, on pushes to `main`, and nightly. Require the `CI gate` check (`ci-gate` in that workflow) instead of listing every job. [.github/workflows/release-drafter.yml](.github/workflows/release-drafter.yml) drafts the next release from `version` in `conanfile.py`. Publishing the `vX.Y.Z` draft creates the tag, and tag `v*` publishes via [.github/workflows/release.yml](.github/workflows/release.yml). Weekly [CodeQL](.github/workflows/codeql.yml) (`c-cpp`, `build-mode: none`) and [OpenSSF Scorecard](.github/workflows/scorecard.yml) run on `main`.
-
-### Measuring performance
-
-Use a Release build. `NESSO_TRACE=1` prints one JSON line on stderr per command, with per-stage microseconds and peak RSS:
-
-```bash
-NESSO_TRACE=1 ./build/Release/src/nesso grep "connection refused" /var/log/app.log --model-dir models/
-```
-
-`scripts/profile` runs the same command under `perf` and `heaptrack` and writes `build/profile/flamegraph.svg` and `build/profile/heaptrack-summary.txt`. It needs `perf`, `heaptrack`, and FlameGraph's `stackcollapse-perf.pl` and `flamegraph.pl` on `PATH`, or `NESSO_FLAMEGRAPH_DIR` set to a FlameGraph checkout:
-
-```bash
-./scripts/profile grep "connection refused" /var/log/app.log --model-dir models/
-```
-
-`scripts/bench` times `grep` on fixed-seed synthetic logs of 1k, 10k, and 100k lines and writes `bench/results/<sha>.json`. `scripts/bench-compare` fails when wall time or peak RSS is more than 15% above [bench/baseline.json](bench/baseline.json):
-
-```bash
-python3 scripts/bench
-python3 scripts/bench-compare
-```
-
-The `bench` CI job runs on every pull request, on pushes to `main`, and nightly. Pull requests time the 1k and 10k tiers. Pushes to `main` and the nightly schedule also time 100k. The job compares the tiers it ran with the latest baseline saved from `main`, and that failure fails the job. The first run has no baseline and warns. Shared runners disagree on wall time by about 4.5× for the same tier, so CI allows up to 5.5× the baseline wall time and 1.2× the baseline peak RSS. A push to `main` appends the same result to benchmark history on the `gh-pages` branch. Pull requests do not write that branch. They add an informational comparison with the stored history to the job summary, and that comparison does not fail the job.
-
-Google Benchmark microbenchmarks build with `-o "&:bench=True"` on the Release profile and produce `build/Release/bench/nesso_bench`.
-
-### Checking embedding determinism
-
-The release gate starts fresh `nesso` processes for each index and search run, compares corpus files and complete rankings byte-for-byte, and keeps a CPU-load process running:
-
-```bash
-NESSO_BINARY=./build/Release/src/nesso \
-NESSO_MODEL_DIR=models \
-./scripts/check-determinism \
-  --input /path/to/events.log \
-  --query PAY-E1042 \
-  --runs 10 \
-  --top-k 1000000 \
-  --stress-command "stress-ng --cpu 8"
-```
-
-Use the same input, model, and gate in Release and Debug ASan builds before tagging. The default stress command is `stress-ng --cpu 1 --cpu-method loop --timeout 0 --cache-size 2M`: one integer busy-loop worker until the gate stops it. Pass `--stress-command` when the machine needs a different load generator. If that process exits, the gate restarts it and records its exit status and stderr; the fp32 comparison does not run unless a load process is alive.
-
-`scripts/fetch-model` downloads the int8 MiniLM. Pass `fp32` as the second argument for the float model (`./scripts/fetch-model models-fp32 fp32`). int8 runs one intra-op thread per session so repeated runs agree; `--threads` or `NESSO_THREADS` sets that session count. fp32 keeps one session, and the same option sets its intra-op threads. CI fails the job when fp32 or the default int8 policy disagrees. `--emit-input` writes a 3500-line log, and `--index-runs 3` compares those index files and the rankings for four queries, including `PAY-E1042`. Pull requests run `--mode pr` instead: a 256-line log, 2 runs, and 2 index runs, still across fresh processes under CPU load. Pushes to `main`, the nightly schedule, manual runs, and the release gate stay on the full check. The int8 run with `NESSO_THREADS` set to the logical CPU count stays report-only.
-
-When `grep` or `index` runs in a terminal, embedding progress is shown on stderr. Redirected output stays quiet; pass `--quiet` to suppress progress explicitly.
-
-## License
-
-Apache 2.0 — see [LICENSE](LICENSE). The `.deb` and the container image include the licenses and notices of the bundled libraries, model, and Unicode data in `/usr/share/doc/nesso/THIRD_PARTY_NOTICES` (also appended to `/usr/share/doc/nesso/copyright`). Changes are in [CHANGELOG.md](CHANGELOG.md). Contributing, security reports, and the code of conduct: [CONTRIBUTING.md](CONTRIBUTING.md), [SECURITY.md](SECURITY.md), [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md).
+- [Usage](docs/usage.md)
+- [Building](docs/building.md)
+- [Releases](docs/releases.md)
+- [Verifying a release](docs/verifying.md) (from v0.2.0)
+- [Benchmarks](docs/benchmarks.md)
+- [Determinism](docs/determinism.md)
+- [Decisions](docs/adr/README.md)
+- [Changelog](CHANGELOG.md), [contributing](CONTRIBUTING.md), [security](SECURITY.md), [license](LICENSE)

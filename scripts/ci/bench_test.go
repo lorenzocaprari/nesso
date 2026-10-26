@@ -144,11 +144,11 @@ func TestHistoryWindowUsesNewestPoints(t *testing.T) {
 }
 
 func TestMissingHistoryFileIsNotAFailureMessage(t *testing.T) {
-	text := missingHistory(historyOptions{pagesURL: "https://lorenzocaprari.github.io/nesso/dev/bench/"})
+	text := missingHistory(historyOptions{pagesURL: "https://github.com/lorenzocaprari/nesso/blob/gh-pages/dev/bench/index.html"})
 	if !strings.Contains(text, "No benchmark history") || !strings.Contains(text, "does not fail the job") {
 		t.Fatalf("missing = %s", text)
 	}
-	if !strings.Contains(text, "https://lorenzocaprari.github.io/nesso/dev/bench/") {
+	if !strings.Contains(text, "https://github.com/lorenzocaprari/nesso/blob/gh-pages/dev/bench/index.html") {
 		t.Fatalf("chart = %s", text)
 	}
 }
@@ -253,7 +253,7 @@ func TestOverGateUsesTheSameLimitAsBenchCompare(t *testing.T) {
 }
 
 func TestPagesURLLowercasesOwner(t *testing.T) {
-	if got := pagesURL("LorenzoCaprari/nesso"); got != "https://lorenzocaprari.github.io/nesso/dev/bench/" {
+	if got := pagesURL("LorenzoCaprari/nesso"); got != "https://github.com/lorenzocaprari/nesso/blob/gh-pages/dev/bench/index.html" {
 		t.Fatalf("pages = %s", got)
 	}
 }

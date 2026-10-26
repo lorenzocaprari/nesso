@@ -1,6 +1,6 @@
 # AGENTS.md
 
-Instructions for coding agents on nesso. Product behavior is in [README.md](README.md). Contributor workflow is in [CONTRIBUTING.md](CONTRIBUTING.md); follow that file instead of copying it.
+Instructions for coding agents on nesso. Product behavior is in [docs/usage.md](docs/usage.md). The short intro is [README.md](README.md). Contributor workflow is in [CONTRIBUTING.md](CONTRIBUTING.md); follow that file instead of copying it.
 
 ## Project
 
