@@ -3,6 +3,24 @@
 # Runs inside nesso-build-env: CONAN_HOME=/opt/conan2 and --no-remote.
 set -euo pipefail
 
+# gcc-26 is -march=x86-64-v2. That flag is invalid on aarch64, and the arm64
+# build-env image only baked conan/profiles/gcc-26-armv8.
+release_conan_profile() {
+  local machine="${1:-$(uname -m)}"
+  case "${machine}" in
+    x86_64) printf '%s\n' "./conan/profiles/gcc-26" ;;
+    aarch64) printf '%s\n' "./conan/profiles/gcc-26-armv8" ;;
+    *)
+      echo "error: no release profile for machine ${machine}" >&2
+      return 1
+      ;;
+  esac
+}
+
+if [[ "${BASH_SOURCE[0]}" != "${0}" ]]; then
+  return 0
+fi
+
 if [[ $# -ne 1 ]]; then
   echo "usage: build-release-binary OUT_BIN" >&2
   exit 2
@@ -39,9 +57,11 @@ fi
 
 echo "build-release-binary: SOURCE_DATE_EPOCH=${SOURCE_DATE_EPOCH} ROOT=${ROOT}"
 
+PROFILE="$(release_conan_profile)"
+echo "build-release-binary: profile=${PROFILE} machine=$(uname -m)"
 conan profile detect --force
-conan install . -pr:h ./conan/profiles/gcc-26 -pr:b default --lockfile=conan.lock --build=missing --no-remote
-conan build . -pr:h ./conan/profiles/gcc-26 -pr:b default --lockfile=conan.lock --build=missing --no-remote
+conan install . -pr:h "${PROFILE}" -pr:b default --lockfile=conan.lock --build=missing --no-remote
+conan build . -pr:h "${PROFILE}" -pr:b default --lockfile=conan.lock --build=missing --no-remote
 
 install -D -m 0755 "${ROOT}/build/Release/src/nesso" "${OUT_BIN}"
 

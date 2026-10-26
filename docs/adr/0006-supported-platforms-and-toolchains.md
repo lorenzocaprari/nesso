@@ -1,10 +1,12 @@
 ---
-status: "accepted"
-date: "2026-10-24"
+status: "superseded by 0007"
+date: "2026-10-26"
 decision-makers: Lorenzo Caprari
 ---
 
 # Release x86_64 Linux; gate arm64 and Clang in CI
+
+Superseded by [ADR 0007](0007-release-amd64-and-arm64.md). The text below is the decision this record made on 2026-10-24.
 
 ## Context and Problem Statement
 

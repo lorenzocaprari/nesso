@@ -17,6 +17,17 @@ def write_executable(path: pathlib.Path, text: str) -> None:
     path.chmod(path.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
 
 
+def elf64(machine: int) -> bytes:
+    buf = bytearray(64)
+    buf[0:4] = b"\x7fELF"
+    buf[4] = 2
+    buf[5] = 1
+    buf[6] = 1
+    buf[18] = machine & 0xFF
+    buf[19] = (machine >> 8) & 0xFF
+    return bytes(buf)
+
+
 def model_dir(directory: pathlib.Path) -> pathlib.Path:
     models = directory / "models"
     models.mkdir()
@@ -54,7 +65,7 @@ class PackageDebTest(unittest.TestCase):
                 ),
             )
             binary = directory / "nesso"
-            binary.write_bytes(b"not-an-elf")
+            binary.write_bytes(elf64(62))
             out = directory / "out"
             env = os.environ.copy()
             env["PATH"] = f"{bindir}{os.pathsep}{env.get('PATH', '')}"
@@ -79,7 +90,7 @@ class PackageDebTest(unittest.TestCase):
             bindir.mkdir()
             write_executable(bindir / "objdump", "#!/bin/sh\nprintf '%s\\n' 'no versioned symbols'\n")
             binary = directory / "nesso"
-            binary.write_bytes(b"not-an-elf")
+            binary.write_bytes(elf64(62))
             env = os.environ.copy()
             env["PATH"] = f"{bindir}{os.pathsep}{env.get('PATH', '')}"
             result = subprocess.run(
@@ -123,7 +134,9 @@ class PackageDebTest(unittest.TestCase):
             )
 
             self.assertEqual(result.returncode, 0, result.stderr)
-            self.assertIn(f"libc6 (>= {highest})", depends(out / "nesso_0.1.0_amd64.deb"))
+            debs = list(out.glob("nesso_0.1.0_*.deb"))
+            self.assertEqual(len(debs), 1, result.stdout)
+            self.assertIn(f"libc6 (>= {highest})", depends(debs[0]))
 
 
 if __name__ == "__main__":
