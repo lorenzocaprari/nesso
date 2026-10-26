@@ -3,9 +3,6 @@
 
 #include <platform/file.hpp>
 
-#include <array>
-#include <cstring>
-#include <new>
 #include <sys/mman.h>
 #include <sys/resource.h>
 #include <unistd.h>
@@ -90,20 +87,12 @@ std::expected<void, FileError> replaceFileAtomically(const std::filesystem::path
 
 std::int64_t peakResidentBytes() noexcept
 {
-    // glibc stores ru_maxrss in an anonymous union immediately after the two timevals.
-    // Copy that object representation so the reported peak stays getrusage's value
-    // (kilobytes on Linux) without naming the union member.
-    static_assert(sizeof(std::int64_t) == 8);
-    static_assert((sizeof(timeval) * 2) + sizeof(std::int64_t) <= sizeof(rusage));
-    std::array<std::byte, sizeof(rusage)> raw{};
-    auto *usage = new (raw.data()) rusage;
-    if (getrusage(RUSAGE_SELF, usage) != 0)
-    {
-        return 0;
-    }
-    std::int64_t peakKb = 0;
-    std::memcpy(&peakKb, raw.data() + (sizeof(timeval) * 2), sizeof(peakKb));
-    return peakKb * 1024;
+    rusage usage{};
+    const int status = ::getrusage(RUSAGE_SELF, &usage);
+    // glibc exposes ru_maxrss only as an anonymous-union member, in kilobytes.
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-union-access)
+    const auto peakKb = status == 0 ? usage.ru_maxrss : 0;
+    return static_cast<std::int64_t>(peakKb) * 1024;
 }
 
 } // namespace nesso::platform
