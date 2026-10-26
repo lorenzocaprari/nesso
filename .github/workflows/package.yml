@@ -37,6 +37,8 @@ on:
       - "scripts/smoke-deb"
       - "scripts/fetch-model"
       - "scripts/check-no-runpath"
+      - "scripts/check-network-free"
+      - "scripts/check-network-free.allow"
       - "scripts/publish-runtime-index"
       - "scripts/trivy"
       - "scripts/scan-runtime-image"

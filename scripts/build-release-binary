@@ -131,4 +131,6 @@ fi
 rm -f "${TMPDIR}/nesso-strings.txt"
 # No RPATH or RUNPATH: an empty entry would make ld.so search the working directory.
 python3 "${ROOT}/scripts/check-no-runpath" "${OUT_BIN}"
+# curl and OpenSSL stay in the Conan graph and out of the binary.
+python3 "${ROOT}/scripts/check-network-free" "${OUT_BIN}"
 echo "${OUT_BIN}"

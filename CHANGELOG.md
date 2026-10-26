@@ -49,6 +49,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Security
 
 - The release binary no longer has a RUNPATH. Up to 0.1.0 it carried the Conan build-tree library directories followed by an empty entry, and the dynamic loader reads an empty entry as the current working directory. Running `nesso` from a directory that someone else can write, such as a directory of collected logs, could load a shared library planted there instead of the system `libstdc++`, `libm`, or `libgcc_s`. Every dependency is linked statically, so no search path is needed. `scripts/build-release-binary` now fails when the binary has an RPATH or RUNPATH (`scripts/check-no-runpath`).
+- `scripts/build-release-binary` fails when the release binary links networking code (`scripts/check-network-free`). libcurl and OpenSSL are in the Conan graph through date and are not linked into the binary. The check rejects a denied `NEEDED` library, a networking libc import that is not listed in `scripts/check-network-free.allow`, and a statically linked curl or OpenSSL symbol or version string. The `.deb` and the runtime image ship that binary.
 
 ## [0.1.0] - 2026-10-11
 
