@@ -33,4 +33,9 @@ if(NESSO_GO_EXECUTABLE)
     COMMAND "${NESSO_GO_EXECUTABLE}" test -count=1 .
     WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}")
   set_tests_properties(deb_repro_test PROPERTIES LABELS unit)
+  add_test(
+    NAME ci_report_test
+    COMMAND "${NESSO_GO_EXECUTABLE}" test -count=1 .
+    WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/../../scripts/ci")
+  set_tests_properties(ci_report_test PROPERTIES LABELS unit)
 endif()
