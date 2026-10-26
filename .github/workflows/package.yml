@@ -1,11 +1,14 @@
 name: Package
 
-# Byte-compare two clean release .debs, then apt-install that package on the
-# Ubuntu releases README claims. Nightly is 03:47 UTC, after Pipeline's 03:17
-# run. Pull requests run only when packaging inputs change, so the rest of
-# Pipeline stays the fast path. release.yml calls this workflow and deploy
-# waits for it: a tag does not push the image or publish the release when a
-# job here fails. The same wait applies to a release workflow_dispatch.
+# Byte-compare two clean release .debs per architecture, then apt-install that
+# package on the Ubuntu releases README claims. amd64 runs on ubuntu-latest.
+# arm64 runs on ubuntu-24.04-arm. Both use the native build-env image, so
+# neither build nor the distro smoke goes through QEMU. Nightly is 03:47 UTC,
+# after Pipeline's 03:17 run. Pull requests run only when packaging inputs
+# change, so the rest of Pipeline stays the fast path. The arm64 jobs run in
+# parallel with amd64. release.yml calls this workflow and its image jobs
+# wait for it: a tag does not push the image or publish the GitHub Release
+# when a job here fails. The same wait applies to a release workflow_dispatch.
 
 on:
   schedule:
@@ -22,6 +25,7 @@ on:
       - "scripts/compare-deb"
       - "scripts/smoke-deb"
       - "scripts/fetch-model"
+      - "scripts/publish-runtime-index"
   workflow_dispatch:
   workflow_call:
 
@@ -43,7 +47,8 @@ jobs:
       contents: read
       packages: read
     outputs:
-      image: ${{ steps.select.outputs.image }}
+      image_amd64: ${{ steps.select.outputs.image_amd64 }}
+      image_arm64: ${{ steps.select.outputs.image_arm64 }}
     steps:
       - name: Checkout Repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -56,8 +61,16 @@ jobs:
           set -euo pipefail
           owner_lc="$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')"
           reg="${{ env.REGISTRY }}/${owner_lc}/nesso-build-env"
-          deps_hash="$(./scripts/build-env-hash amd64)"
-          echo "image=${reg}:deps-${deps_hash}" >> "${GITHUB_OUTPUT}"
+          for arch in amd64 arm64; do
+            deps_hash="$(./scripts/build-env-hash "${arch}")"
+            suffix=""
+            if [[ "${arch}" == "arm64" ]]; then
+              suffix="-arm64"
+            fi
+            ref="${reg}:deps-${deps_hash}${suffix}"
+            echo "image_${arch}=${ref}" >> "${GITHUB_OUTPUT}"
+            echo "${arch} ${ref}"
+          done
 
       - name: Log into ${{ env.REGISTRY }}
         uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
@@ -70,18 +83,22 @@ jobs:
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
       - name: Require nesso-build-env
+        env:
+          IMAGE_AMD64: ${{ steps.select.outputs.image_amd64 }}
+          IMAGE_ARM64: ${{ steps.select.outputs.image_arm64 }}
         run: |
           set -euo pipefail
-          img='${{ steps.select.outputs.image }}'
-          if ! docker buildx imagetools inspect "${img}" >/dev/null; then
-            echo "error: missing ${img}; run CI on main so nesso-build-env is published first" >&2
-            exit 1
-          fi
+          for img in "${IMAGE_AMD64}" "${IMAGE_ARM64}"; do
+            if ! docker buildx imagetools inspect "${img}" >/dev/null; then
+              echo "error: missing ${img}; run CI on main so nesso-build-env is published first" >&2
+              exit 1
+            fi
+          done
 
   repro-build:
-    name: repro-build (${{ matrix.slot }})
+    name: repro-build (${{ matrix.arch }} ${{ matrix.slot }})
     needs: resolve-image
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 90
     permissions:
       contents: read
@@ -91,12 +108,24 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - slot: a
+          - arch: amd64
+            slot: a
+            runner: ubuntu-latest
             workdir: /tmp/nesso-repro-a
-          - slot: b
+          - arch: amd64
+            slot: b
+            runner: ubuntu-latest
+            workdir: /tmp/nesso-repro-b
+          - arch: arm64
+            slot: a
+            runner: ubuntu-24.04-arm
+            workdir: /tmp/nesso-repro-a
+          - arch: arm64
+            slot: b
+            runner: ubuntu-24.04-arm
             workdir: /tmp/nesso-repro-b
     container:
-      image: ${{ needs.resolve-image.outputs.image }}
+      image: ${{ matrix.arch == 'arm64' && needs.resolve-image.outputs.image_arm64 || needs.resolve-image.outputs.image_amd64 }} # zizmor: ignore[unpinned-images] deps-<hash> tag, not a digest
       credentials:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
@@ -113,6 +142,7 @@ jobs:
       CMAKE_CXX_COMPILER_LAUNCHER: ccache
       WORKDIR: ${{ matrix.workdir }}
       SLOT: ${{ matrix.slot }}
+      ARCH: ${{ matrix.arch }}
     # Container jobs default to sh. The steps use bash [[ ]].
     defaults:
       run:
@@ -122,6 +152,21 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+
+      - name: Require the native architecture
+        run: |
+          set -euo pipefail
+          # ubuntu-24.04-arm has no QEMU binfmt. A foreign image would not
+          # start. This still fails the job if the container arch disagrees
+          # with the matrix, including a qemu user-mode mismatch.
+          case "${ARCH}:$(uname -m)" in
+            amd64:x86_64|arm64:aarch64) ;;
+            *)
+              echo "error: ${ARCH} repro is running on $(uname -m)" >&2
+              exit 1
+              ;;
+          esac
+          echo "native ${ARCH} ($(uname -m))"
 
       - name: Pin SOURCE_DATE_EPOCH
         run: |
@@ -137,7 +182,7 @@ jobs:
             exit 1
           fi
           echo "SOURCE_DATE_EPOCH=${epoch}" >> "${GITHUB_ENV}"
-          echo "SOURCE_DATE_EPOCH=${epoch} slot=${SLOT} workdir=${WORKDIR}"
+          echo "SOURCE_DATE_EPOCH=${epoch} arch=${ARCH} slot=${SLOT} workdir=${WORKDIR}"
 
       - name: Copy sources
         run: |
@@ -225,7 +270,7 @@ jobs:
           fi
           if [[ -n "${GITHUB_STEP_SUMMARY:-}" ]]; then
             {
-              echo "### ccache (${SLOT})"
+              echo "### ccache (${ARCH} ${SLOT})"
               echo '```'
               cat /tmp/ccache-stats.txt
               echo '```'
@@ -244,7 +289,7 @@ jobs:
       - name: Upload .deb
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: repro-deb-${{ matrix.slot }}
+          name: repro-deb-${{ matrix.arch }}-${{ matrix.slot }}
           path: repro-deb/*.deb
           retention-days: 14
           if-no-files-found: error
@@ -279,13 +324,22 @@ jobs:
         run: |
           set -euo pipefail
           chmod +x scripts/compare-deb
-          mapfile -t debs < <(find repro-debs -type f -name '*.deb' | sort)
-          if [[ "${#debs[@]}" -ne 2 ]]; then
-            echo "error: expected 2 debs, found ${#debs[@]}" >&2
-            printf '%s\n' "${debs[@]}" >&2
-            exit 1
-          fi
-          scripts/compare-deb "${debs[0]}" "${debs[1]}" repro-report
+          compare_arch() {
+            local arch="$1"
+            local -a debs=()
+            mapfile -t debs < <(find repro-debs -type f -name "nesso_*_${arch}.deb" | sort)
+            if [[ "${#debs[@]}" -ne 2 ]]; then
+              echo "error: expected 2 ${arch} debs, found ${#debs[@]}" >&2
+              find repro-debs -type f -print >&2
+              return 1
+            fi
+            scripts/compare-deb "${debs[0]}" "${debs[1]}" "repro-report/${arch}"
+            echo "reproducible ${arch} $(sha256sum "${debs[0]}" | awk '{print $1}')"
+          }
+          status=0
+          compare_arch amd64 || status=1
+          compare_arch arm64 || status=1
+          exit "${status}"
 
       - name: Upload diffoscope report
         if: failure()
@@ -297,9 +351,9 @@ jobs:
           if-no-files-found: error
 
   distro:
-    name: distro (${{ matrix.image }})
+    name: distro (${{ matrix.arch }}, ${{ matrix.image }})
     needs: compare
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 30
     permissions:
       contents: read
@@ -310,33 +364,61 @@ jobs:
         # README says Ubuntu 26.04+. These are the official images at or
         # above that floor. The .deb's libc comes from the Ubuntu 26.04
         # build-env image, so older Ubuntu and Debian are outside the claim.
-        image:
-          - ubuntu:26.04
-          - ubuntu:26.10
+        # The arm64 rows run on ubuntu-24.04-arm so apt installs the arm64
+        # package without QEMU. The official tags are multi-arch; Docker
+        # pulls the runner's platform.
+        include:
+          - arch: amd64
+            image: ubuntu:26.04
+            runner: ubuntu-latest
+          - arch: amd64
+            image: ubuntu:26.10
+            runner: ubuntu-latest
+          - arch: arm64
+            image: ubuntu:26.04
+            runner: ubuntu-24.04-arm
+          - arch: arm64
+            image: ubuntu:26.10
+            runner: ubuntu-24.04-arm
     steps:
       - name: Checkout Repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
+      - name: Require the native architecture
+        env:
+          ARCH: ${{ matrix.arch }}
+        run: |
+          set -euo pipefail
+          case "${ARCH}:$(uname -m)" in
+            amd64:x86_64|arm64:aarch64) ;;
+            *)
+              echo "error: ${ARCH} distro smoke is running on $(uname -m)" >&2
+              exit 1
+              ;;
+          esac
+
       - name: Download .deb
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          name: repro-deb-a
+          name: repro-deb-${{ matrix.arch }}-a
           path: repro-deb
 
       - name: Install, smoke, remove, and purge
         env:
           IMAGE: ${{ matrix.image }}
+          ARCH: ${{ matrix.arch }}
         run: |
           set -euo pipefail
           chmod +x scripts/smoke-deb
-          mapfile -t debs < <(find repro-deb -type f -name '*.deb' | sort)
+          mapfile -t debs < <(find repro-deb -type f -name "nesso_*_${ARCH}.deb" | sort)
           if [[ "${#debs[@]}" -ne 1 ]]; then
-            echo "error: expected 1 deb, found ${#debs[@]}" >&2
+            echo "error: expected 1 ${ARCH} deb, found ${#debs[@]}" >&2
+            find repro-deb -type f -print >&2
             exit 1
           fi
           scripts/smoke-deb "${debs[0]}" "${IMAGE}"
           if [[ -n "${GITHUB_STEP_SUMMARY:-}" ]]; then
-            echo "Installed, removed, and purged on \`${IMAGE}\`." >> "${GITHUB_STEP_SUMMARY}"
+            echo "Installed, removed, and purged \`${debs[0]}\` on \`${IMAGE}\` (${ARCH})." >> "${GITHUB_STEP_SUMMARY}"
           fi

@@ -1,33 +1,32 @@
 name: Release
 
-# arm64 CI blocks Pipeline. This workflow still publishes only the amd64
-# .deb, checksums, SBOM, and provenance. Dockerfile.runtime and
-# scripts/package-deb are amd64-only (gcc-26's -march=x86-64-v2,
-# Architecture: amd64). A follow-up, behind a workflow_dispatch input that
-# defaults to false, should:
-#   - build the runtime image natively on ubuntu-24.04-arm with
-#     conan/profiles/gcc-26-armv8
-#   - push a multi-arch manifest (an arm image must not replace :latest)
-#   - emit an arm64 .deb instead of the hardcoded amd64 filename
-#   - cover that .deb with the same SBOM, checksum, signature, and
-#     provenance this workflow already attaches for amd64
-# Until that input exists, vX.Y.Z tags stay amd64-only.
+# Each architecture is built on a native runner (ubuntu-24.04 for amd64,
+# ubuntu-24.04-arm for arm64) from that architecture's nesso-build-env image.
+# There is no QEMU. BuildKit attestations are off so the pushed arch image is
+# one platform manifest. scripts/publish-runtime-index merges those digests
+# into one manifest list and tags it vX.Y.Z, X.Y.Z, and latest. The arch tags
+# vX.Y.Z-amd64 and vX.Y.Z-arm64 stay so each platform digest remains
+# addressable; they are not the tags users pull.
 #
-# workflow_dispatch builds, gates, and uploads workflow artifacts. Push,
-# cosign, provenance, and the GitHub Release run only for a vX.Y.Z tag.
+# workflow_dispatch builds, gates, packages, and uploads workflow artifacts.
+# Push, cosign, provenance, and the GitHub Release run only for a vX.Y.Z tag.
 # That dispatch is the dry run: it cannot publish.
 #
-# deploy waits on Package (.github/workflows/package.yml). That workflow
-# builds the .deb twice and installs it on Ubuntu 26.04 and 26.10. A failed
-# check does not push the image or publish the GitHub Release. Package also
-# runs on its own nightly schedule and when its packaging files change.
-
-# Tag releases sign ghcr.io/<owner>/nesso by digest with keyless cosign
-# (cosign 2.6.1). SLSA Build Level 3 provenance comes from
-# slsa-github-generator v2.1.0: the generic generator for the .deb and
-# SPDX SBOM, the container generator for the image digest. Those two
-# reusable workflows are referenced by tag. They verify their own ref
-# and reject a commit SHA. Every other action stays pinned by SHA.
+# The image jobs wait on Package (.github/workflows/package.yml). That
+# workflow builds each .deb twice and installs it on Ubuntu 26.04 and 26.10
+# for both architectures. A failed check does not push the image or publish
+# the GitHub Release. Package also runs on its own nightly schedule and when
+# its packaging files change.
+#
+# Tag releases sign ghcr.io/<owner>/nesso with keyless cosign (cosign 2.6.1).
+# `cosign verify` on a release tag resolves the tag to the manifest-list
+# digest, so that index is signed. A pin to one platform digest does not
+# inherit the index signature; each platform digest is signed too.
+# SLSA Build Level 3 provenance comes from slsa-github-generator v2.1.0:
+# the generic generator for both .debs and both SPDX SBOMs, the container
+# generator for the index digest and each platform digest. Those reusable
+# workflows are referenced by tag. They verify their own ref and reject a
+# commit SHA. Every other action stays pinned by SHA.
 
 on:
   push:
@@ -54,37 +53,60 @@ jobs:
       packages: read
       actions: write
 
-  deploy:
+  image:
+    name: image (${{ matrix.arch }})
     needs: verify-package
-    runs-on: ubuntu-latest
-    timeout-minutes: 90
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 120
     permissions:
       contents: read
       packages: write
-    outputs:
-      image: ${{ steps.select.outputs.runtime_image }}
-      digest: ${{ steps.push.outputs.digest }}
-      ver: ${{ steps.ver.outputs.ver }}
-      hashes: ${{ steps.subjects.outputs.hashes }}
-      provenance_name: ${{ steps.subjects.outputs.provenance_name }}
+      actions: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    env:
+      ARCH: ${{ matrix.arch }}
+      PLATFORM: linux/${{ matrix.arch }}
     steps:
       - name: Checkout Repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Require the native architecture
+        run: |
+          set -euo pipefail
+          case "${ARCH}:$(uname -m)" in
+            amd64:x86_64|arm64:aarch64) ;;
+            *)
+              echo "error: refusing to build ${ARCH} on $(uname -m)" >&2
+              exit 1
+              ;;
+          esac
 
       - name: Resolve version
         id: ver
+        env:
+          REF: ${{ github.ref }}
+          REF_NAME: ${{ github.ref_name }}
+          INPUT_VERSION: ${{ inputs.version }}
         run: |
           set -euo pipefail
-          ref='${{ github.ref }}'
-          if [[ "${ref}" == refs/tags/* ]]; then
-            tag='${{ github.ref_name }}'
+          if [[ "${REF}" == refs/tags/* ]]; then
+            tag="${REF_NAME}"
             if [[ ! "${tag}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
               echo "error: tag must be vX.Y.Z, got ${tag}" >&2
               exit 1
             fi
             ver="${tag#v}"
           else
-            ver='${{ inputs.version }}'
+            ver="${INPUT_VERSION}"
             if [[ ! "${ver}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
               echo "error: version must be X.Y.Z, got ${ver}" >&2
               exit 1
@@ -105,14 +127,21 @@ jobs:
 
       - name: Resolve build-env image
         id: select
+        env:
+          OWNER: ${{ github.repository_owner }}
         run: |
           set -euo pipefail
-          owner_lc="$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')"
-          reg="${{ env.REGISTRY }}/${owner_lc}/nesso-build-env"
-          # Same script as prepare-image-amd64 and prepare-image-arm64.
-          deps_hash="$(./scripts/build-env-hash amd64)"
-          echo "build_image=${reg}:deps-${deps_hash}" >> "${GITHUB_OUTPUT}"
-          echo "runtime_image=${{ env.REGISTRY }}/${owner_lc}/nesso" >> "${GITHUB_OUTPUT}"
+          owner_lc="$(printf '%s' "${OWNER}" | tr '[:upper:]' '[:lower:]')"
+          reg="${REGISTRY}/${owner_lc}/nesso-build-env"
+          deps_hash="$(./scripts/build-env-hash "${ARCH}")"
+          suffix=""
+          if [[ "${ARCH}" == "arm64" ]]; then
+            suffix="-arm64"
+          fi
+          {
+            echo "build_image=${reg}:deps-${deps_hash}${suffix}"
+            echo "runtime_image=${REGISTRY}/${owner_lc}/nesso"
+          } >> "${GITHUB_OUTPUT}"
 
       - name: Log into ${{ env.REGISTRY }}
         uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
@@ -121,24 +150,47 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
       - name: Require nesso-build-env
+        env:
+          BUILD_IMAGE: ${{ steps.select.outputs.build_image }}
         run: |
           set -euo pipefail
-          img='${{ steps.select.outputs.build_image }}'
-          if ! docker pull "${img}"; then
-            echo "error: missing ${img}; run CI on main so nesso-build-env is published first" >&2
+          if ! docker pull "${BUILD_IMAGE}"; then
+            echo "error: missing ${BUILD_IMAGE}; run CI on main so nesso-build-env is published first" >&2
             exit 1
           fi
 
+      # --provenance=false keeps this a single-platform image. The default
+      # BuildKit attestation is its own manifest and would make imagetools
+      # create an index of indexes. SLSA provenance is attached later, by
+      # digest, on the tag.
       - name: Build runtime image
+        env:
+          BUILD_IMAGE: ${{ steps.select.outputs.build_image }}
+          RUNTIME_IMAGE: ${{ steps.select.outputs.runtime_image }}
+          TAG: ${{ steps.ver.outputs.tag }}
+          SOURCE_DATE_EPOCH: ${{ steps.ver.outputs.epoch }}
+          BUILDX_NO_DEFAULT_ATTESTATIONS: "1"
         run: |
           set -euo pipefail
-          docker build -f Dockerfile.runtime \
-            --build-arg BUILD_IMAGE='${{ steps.select.outputs.build_image }}' \
-            --build-arg SOURCE_DATE_EPOCH='${{ steps.ver.outputs.epoch }}' \
-            -t '${{ steps.select.outputs.runtime_image }}:${{ steps.ver.outputs.tag }}' \
-            -t '${{ steps.select.outputs.runtime_image }}:${{ steps.ver.outputs.ver }}' \
+          docker buildx build \
+            --platform "${PLATFORM}" \
+            --build-arg "BUILD_IMAGE=${BUILD_IMAGE}" \
+            --build-arg "SOURCE_DATE_EPOCH=${SOURCE_DATE_EPOCH}" \
+            --provenance=false \
+            --sbom=false \
+            --load \
+            -f Dockerfile.runtime \
+            -t "${RUNTIME_IMAGE}:${TAG}" \
             .
+          got="$(docker image inspect --format '{{.Os}}/{{.Architecture}}' "${RUNTIME_IMAGE}:${TAG}")"
+          if [[ "${got}" != "${PLATFORM}" ]]; then
+            echo "error: built ${got}, want ${PLATFORM}" >&2
+            exit 1
+          fi
 
       - name: Write determinism input
         run: ./scripts/check-determinism --emit-input determinism-input.log
@@ -153,15 +205,18 @@ jobs:
       # throwaway gate container, not the image that gets pushed. The smoke
       # test does not use stress-ng.
       - name: Gate int8 and fp32 determinism
+        env:
+          RUNTIME_IMAGE: ${{ steps.select.outputs.runtime_image }}
+          TAG: ${{ steps.ver.outputs.tag }}
         run: |
           set -euo pipefail
-          img='${{ steps.select.outputs.runtime_image }}:${{ steps.ver.outputs.tag }}'
           docker run --rm \
+            --platform "${PLATFORM}" \
             --entrypoint bash \
             -v "${PWD}/scripts/check-determinism:/opt/check-determinism:ro" \
             -v "${PWD}/determinism-input.log:/opt/determinism-input.log:ro" \
             -v "${PWD}/models-fp32:/opt/models-fp32:ro" \
-            "${img}" \
+            "${RUNTIME_IMAGE}:${TAG}" \
             -c '
               set -euo pipefail
               apt-get update
@@ -179,45 +234,23 @@ jobs:
               gate /opt/models-fp32
             '
 
-      - name: Push runtime image
-        id: push
-        if: startsWith(github.ref, 'refs/tags/')
-        run: |
-          set -euo pipefail
-          img='${{ steps.select.outputs.runtime_image }}'
-          tag='${{ steps.ver.outputs.tag }}'
-          ver='${{ steps.ver.outputs.ver }}'
-          docker tag "${img}:${tag}" "${img}:latest"
-          push_log="$(docker push "${img}:${tag}")"
-          printf '%s\n' "${push_log}"
-          docker push "${img}:${ver}"
-          docker push "${img}:latest"
-          digest="$(printf '%s\n' "${push_log}" | sed -n 's/.*digest: \(sha256:[0-9a-f]\{64\}\).*/\1/p' | tail -n1)"
-          if [[ -z "${digest}" ]]; then
-            digest="$(docker image inspect --format '{{range .RepoDigests}}{{println .}}{{end}}' "${img}:${tag}" \
-              | sed -n 's/.*@\(sha256:[0-9a-f]\{64\}\)$/\1/p' | head -n1)"
-          fi
-          if [[ ! "${digest}" =~ ^sha256:[0-9a-f]{64}$ ]]; then
-            echo "error: could not resolve digest for ${img}:${tag}" >&2
-            exit 1
-          fi
-          {
-            echo "image=${img}"
-            echo "digest=${digest}"
-          } >> "${GITHUB_OUTPUT}"
-
       - name: Extract binary and model
+        env:
+          RUNTIME_IMAGE: ${{ steps.select.outputs.runtime_image }}
+          TAG: ${{ steps.ver.outputs.tag }}
         run: |
           set -euo pipefail
-          img='${{ steps.select.outputs.runtime_image }}:${{ steps.ver.outputs.tag }}'
-          cid="$(docker create "${img}")"
-          docker cp "${cid}:/usr/local/bin/nesso" nesso
+          cid="$(docker create --platform "${PLATFORM}" "${RUNTIME_IMAGE}:${TAG}")"
+          docker cp "${cid}:/usr/local/bin/nesso" "nesso-${ARCH}"
           mkdir -p models
           docker cp "${cid}:/usr/share/nesso/." models/
           docker rm "${cid}"
-          chmod +x nesso
+          chmod +x "nesso-${ARCH}"
 
       - name: Build .deb
+        env:
+          VER: ${{ steps.ver.outputs.ver }}
+          SOURCE_DATE_EPOCH: ${{ steps.ver.outputs.epoch }}
         run: |
           set -euo pipefail
           if ! command -v objdump >/dev/null 2>&1; then
@@ -225,65 +258,233 @@ jobs:
             sudo apt-get install -y --no-install-recommends binutils
           fi
           chmod +x scripts/package-deb
-          export SOURCE_DATE_EPOCH='${{ steps.ver.outputs.epoch }}'
-          scripts/package-deb '${{ steps.ver.outputs.ver }}' ./nesso ./models .
+          scripts/package-deb "${VER}" "./nesso-${ARCH}" ./models .
 
       - name: Smoke-test image and .deb
+        env:
+          RUNTIME_IMAGE: ${{ steps.select.outputs.runtime_image }}
+          TAG: ${{ steps.ver.outputs.tag }}
+          VER: ${{ steps.ver.outputs.ver }}
         run: |
           set -euo pipefail
           chmod +x scripts/smoke-runtime-image scripts/smoke-deb
-          ./scripts/smoke-runtime-image \
-            '${{ steps.select.outputs.runtime_image }}:${{ steps.ver.outputs.tag }}'
-          ./scripts/smoke-deb './nesso_${{ steps.ver.outputs.ver }}_amd64.deb'
+          ./scripts/smoke-runtime-image "${RUNTIME_IMAGE}:${TAG}"
+          ./scripts/smoke-deb "./nesso_${VER}_${ARCH}.deb"
 
       - name: Generate SPDX SBOM
         uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
         with:
           image: ${{ steps.select.outputs.runtime_image }}:${{ steps.ver.outputs.tag }}
           format: spdx-json
-          output-file: nesso_${{ steps.ver.outputs.ver }}.spdx.json
+          output-file: nesso_${{ steps.ver.outputs.ver }}_${{ matrix.arch }}.spdx.json
           upload-artifact: false
           upload-release-assets: false
-
-      # sha256sum layout, then base64 one line. The generic generator decodes
-      # this into its subject list. The published checksum is recomputed
-      # after provenance exists; this file is the workflow artifact only.
-      - name: Hash release subjects
-        id: subjects
-        run: |
-          set -euo pipefail
-          ver='${{ steps.ver.outputs.ver }}'
-          deb="nesso_${ver}_amd64.deb"
-          sbom="nesso_${ver}.spdx.json"
-          hashes="$(sha256sum "${deb}" "${sbom}" | base64 -w0)"
-          echo "hashes=${hashes}" >> "${GITHUB_OUTPUT}"
-          echo "provenance_name=nesso_${ver}_amd64.intoto.jsonl" >> "${GITHUB_OUTPUT}"
-
-      - name: Generate SHA256SUMS
-        run: |
-          set -euo pipefail
-          ver='${{ steps.ver.outputs.ver }}'
-          sha256sum \
-            "nesso_${ver}_amd64.deb" \
-            "nesso_${ver}.spdx.json" \
-            > SHA256SUMS
-          cat SHA256SUMS
 
       - name: Upload artifacts
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: nesso-${{ steps.ver.outputs.ver }}-linux-amd64
+          name: release-image-${{ matrix.arch }}
           path: |
-            nesso_${{ steps.ver.outputs.ver }}_amd64.deb
-            nesso_${{ steps.ver.outputs.ver }}.spdx.json
-            SHA256SUMS
-            nesso
+            nesso_${{ steps.ver.outputs.ver }}_${{ matrix.arch }}.deb
+            nesso_${{ steps.ver.outputs.ver }}_${{ matrix.arch }}.spdx.json
+            nesso-${{ matrix.arch }}
           if-no-files-found: error
 
-  # Keyless signature over the manifest digest. The certificate SAN is
+      - name: Push arch image
+        id: push
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          RUNTIME_IMAGE: ${{ steps.select.outputs.runtime_image }}
+          TAG: ${{ steps.ver.outputs.tag }}
+          VER: ${{ steps.ver.outputs.ver }}
+        run: |
+          set -euo pipefail
+          dest="${RUNTIME_IMAGE}:${TAG}-${ARCH}"
+          docker tag "${RUNTIME_IMAGE}:${TAG}" "${dest}"
+          push_log="$(docker push "${dest}")"
+          printf '%s\n' "${push_log}"
+          digest="$(printf '%s\n' "${push_log}" | sed -n 's/.*digest: \(sha256:[0-9a-f]\{64\}\).*/\1/p' | tail -n1)"
+          if [[ -z "${digest}" ]]; then
+            digest="$(docker image inspect --format '{{range .RepoDigests}}{{println .}}{{end}}' "${dest}" \
+              | sed -n 's/.*@\(sha256:[0-9a-f]\{64\}\)$/\1/p' | head -n1)"
+          fi
+          if [[ ! "${digest}" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+            echo "error: could not resolve digest for ${dest}" >&2
+            exit 1
+          fi
+          {
+            echo "ver=${VER}"
+            echo "digest=${digest}"
+          } > runtime-digest.txt
+          cat runtime-digest.txt
+
+      - name: Upload digest
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: runtime-digest-${{ matrix.arch }}
+          path: runtime-digest.txt
+          if-no-files-found: error
+
+  subjects:
+    needs: image
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      actions: write
+    outputs:
+      ver: ${{ steps.hash.outputs.ver }}
+      hashes: ${{ steps.hash.outputs.hashes }}
+      provenance_name: ${{ steps.hash.outputs.provenance_name }}
+    steps:
+      - name: Download arch artifacts
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: release-image-*
+          merge-multiple: true
+          path: release-files
+
+      - name: Hash release subjects
+        id: hash
+        run: |
+          set -euo pipefail
+          ver=""
+          for arch in amd64 arm64; do
+            deb="$(find release-files -type f -name "nesso_*_${arch}.deb" -print -quit)"
+            sbom="$(find release-files -type f -name "nesso_*_${arch}.spdx.json" -print -quit)"
+            if [[ -z "${deb}" || -z "${sbom}" ]]; then
+              echo "error: missing ${arch} deb or SBOM" >&2
+              find release-files -type f -print >&2
+              exit 1
+            fi
+            this="$(basename "${deb}" | sed -n 's/^nesso_\([0-9][0-9.]*\)_'"${arch}"'\.deb$/\1/p')"
+            if [[ ! "${this}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+              echo "error: could not read version from ${deb}" >&2
+              exit 1
+            fi
+            if [[ -n "${ver}" && "${this}" != "${ver}" ]]; then
+              echo "error: ${arch} version ${this} != ${ver}" >&2
+              exit 1
+            fi
+            ver="${this}"
+            cp -a "${deb}" "${sbom}" .
+          done
+          hashes="$(sha256sum \
+            "nesso_${ver}_amd64.deb" \
+            "nesso_${ver}_arm64.deb" \
+            "nesso_${ver}_amd64.spdx.json" \
+            "nesso_${ver}_arm64.spdx.json" | base64 -w0)"
+          sha256sum \
+            "nesso_${ver}_amd64.deb" \
+            "nesso_${ver}_arm64.deb" \
+            "nesso_${ver}_amd64.spdx.json" \
+            "nesso_${ver}_arm64.spdx.json" \
+            > SHA256SUMS
+          cat SHA256SUMS
+          {
+            echo "ver=${ver}"
+            echo "hashes=${hashes}"
+            echo "provenance_name=nesso_${ver}.intoto.jsonl"
+          } >> "${GITHUB_OUTPUT}"
+
+      - name: Upload release files
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: nesso-${{ steps.hash.outputs.ver }}-release
+          path: |
+            nesso_${{ steps.hash.outputs.ver }}_amd64.deb
+            nesso_${{ steps.hash.outputs.ver }}_arm64.deb
+            nesso_${{ steps.hash.outputs.ver }}_amd64.spdx.json
+            nesso_${{ steps.hash.outputs.ver }}_arm64.spdx.json
+            SHA256SUMS
+          if-no-files-found: error
+
+  index:
+    needs: image
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: write
+      actions: read
+    outputs:
+      image: ${{ steps.merge.outputs.image }}
+      index_digest: ${{ steps.merge.outputs.index_digest }}
+      amd64_digest: ${{ steps.merge.outputs.amd64_digest }}
+      arm64_digest: ${{ steps.merge.outputs.arm64_digest }}
+      ver: ${{ steps.merge.outputs.ver }}
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Download digests
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: runtime-digest-*
+          merge-multiple: false
+          path: digests
+
+      - name: Log into ${{ env.REGISTRY }}
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - name: Publish manifest list
+        id: merge
+        env:
+          OWNER: ${{ github.repository_owner }}
+        run: |
+          set -euo pipefail
+          read_field() {
+            local file="$1" key="$2" value
+            value="$(sed -n "s/^${key}=//p" "${file}")"
+            if [[ -z "${value}" ]]; then
+              echo "error: ${file} has no ${key}" >&2
+              exit 1
+            fi
+            printf '%s\n' "${value}"
+          }
+          amd64_ver="$(read_field digests/runtime-digest-amd64/runtime-digest.txt ver)"
+          arm64_ver="$(read_field digests/runtime-digest-arm64/runtime-digest.txt ver)"
+          amd64_digest="$(read_field digests/runtime-digest-amd64/runtime-digest.txt digest)"
+          arm64_digest="$(read_field digests/runtime-digest-arm64/runtime-digest.txt digest)"
+          if [[ "${amd64_ver}" != "${arm64_ver}" ]]; then
+            echo "error: digest versions differ (${amd64_ver} vs ${arm64_ver})" >&2
+            exit 1
+          fi
+          owner_lc="$(printf '%s' "${OWNER}" | tr '[:upper:]' '[:lower:]')"
+          image="${REGISTRY}/${owner_lc}/nesso"
+          chmod +x scripts/publish-runtime-index
+          log="$(scripts/publish-runtime-index "${image}" "v${amd64_ver}" "${amd64_ver}" "${amd64_digest}" "${arm64_digest}")"
+          printf '%s\n' "${log}"
+          index_digest="$(printf '%s\n' "${log}" | tail -n1)"
+          if [[ ! "${index_digest}" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+            echo "error: publish-runtime-index did not print a digest" >&2
+            exit 1
+          fi
+          {
+            echo "image=${image}"
+            echo "ver=${amd64_ver}"
+            echo "index_digest=${index_digest}"
+            echo "amd64_digest=${amd64_digest}"
+            echo "arm64_digest=${arm64_digest}"
+          } >> "${GITHUB_OUTPUT}"
+
+  # Keyless signatures. The certificate SAN is
   # https://github.com/<owner>/nesso/.github/workflows/release.yml@refs/tags/vX.Y.Z
+  # The tag resolves to the index digest. Platform digests are signed as well:
+  # cosign does not treat an index signature as a signature of a child manifest.
   sign:
-    needs: deploy
+    needs: index
     if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -305,23 +506,27 @@ jobs:
 
       - name: Sign runtime image by digest
         env:
-          IMAGE: ${{ needs.deploy.outputs.image }}
-          DIGEST: ${{ needs.deploy.outputs.digest }}
+          IMAGE: ${{ needs.index.outputs.image }}
+          INDEX_DIGEST: ${{ needs.index.outputs.index_digest }}
+          AMD64_DIGEST: ${{ needs.index.outputs.amd64_digest }}
+          ARM64_DIGEST: ${{ needs.index.outputs.arm64_digest }}
         run: |
           set -euo pipefail
-          if [[ ! "${DIGEST}" =~ ^sha256:[0-9a-f]{64}$ ]]; then
-            echo "error: refusing to sign without a digest" >&2
-            exit 1
-          fi
-          cosign sign --yes "${IMAGE}@${DIGEST}"
+          for digest in "${INDEX_DIGEST}" "${AMD64_DIGEST}" "${ARM64_DIGEST}"; do
+            if [[ ! "${digest}" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+              echo "error: refusing to sign without a digest (${digest})" >&2
+              exit 1
+            fi
+            cosign sign --yes "${IMAGE}@${digest}"
+          done
 
-  # SLSA Build L3 for the .deb and the SPDX SBOM. upload-assets stays
+  # SLSA Build L3 for both .debs and both SPDX SBOMs. upload-assets stays
   # false so the release job can checksum the provenance before publishing.
   # contents: write is declared because the called workflow's upload job
   # requests it; that job does not run when upload-assets is false.
   # Tag ref: the generator rejects a SHA pin. See CONTRIBUTING.md.
   provenance:
-    needs: deploy
+    needs: subjects
     if: startsWith(github.ref, 'refs/tags/')
     permissions:
       actions: read
@@ -330,15 +535,16 @@ jobs:
     # zizmor: ignore[unpinned-uses] generator verifies its own vX.Y.Z ref
     uses: slsa-framework/slsa-github-generator/.github/workflows/generator_generic_slsa3.yml@v2.1.0
     with:
-      base64-subjects: ${{ needs.deploy.outputs.hashes }}
-      provenance-name: ${{ needs.deploy.outputs.provenance_name }}
+      base64-subjects: ${{ needs.subjects.outputs.hashes }}
+      provenance-name: ${{ needs.subjects.outputs.provenance_name }}
       upload-assets: false
 
-  # SLSA Build L3 for the image. The attestation is stored on the digest
+  # SLSA Build L3 for one digest. The attestation is stored on that digest
   # in GHCR. slsa-verifier verify-image reads it from the registry.
   # Tag ref: same generator constraint as the generic workflow.
   image-provenance:
-    needs: deploy
+    name: image-provenance (index)
+    needs: index
     if: startsWith(github.ref, 'refs/tags/')
     permissions:
       actions: read
@@ -347,8 +553,42 @@ jobs:
     # zizmor: ignore[unpinned-uses] generator verifies its own vX.Y.Z ref
     uses: slsa-framework/slsa-github-generator/.github/workflows/generator_container_slsa3.yml@v2.1.0
     with:
-      image: ${{ needs.deploy.outputs.image }}
-      digest: ${{ needs.deploy.outputs.digest }}
+      image: ${{ needs.index.outputs.image }}
+      digest: ${{ needs.index.outputs.index_digest }}
+      registry-username: ${{ github.actor }}
+    secrets:
+      registry-password: ${{ secrets.GITHUB_TOKEN }}
+
+  image-provenance-amd64:
+    name: image-provenance (amd64)
+    needs: index
+    if: startsWith(github.ref, 'refs/tags/')
+    permissions:
+      actions: read
+      id-token: write
+      packages: write
+    # zizmor: ignore[unpinned-uses] generator verifies its own vX.Y.Z ref
+    uses: slsa-framework/slsa-github-generator/.github/workflows/generator_container_slsa3.yml@v2.1.0
+    with:
+      image: ${{ needs.index.outputs.image }}
+      digest: ${{ needs.index.outputs.amd64_digest }}
+      registry-username: ${{ github.actor }}
+    secrets:
+      registry-password: ${{ secrets.GITHUB_TOKEN }}
+
+  image-provenance-arm64:
+    name: image-provenance (arm64)
+    needs: index
+    if: startsWith(github.ref, 'refs/tags/')
+    permissions:
+      actions: read
+      id-token: write
+      packages: write
+    # zizmor: ignore[unpinned-uses] generator verifies its own vX.Y.Z ref
+    uses: slsa-framework/slsa-github-generator/.github/workflows/generator_container_slsa3.yml@v2.1.0
+    with:
+      image: ${{ needs.index.outputs.image }}
+      digest: ${{ needs.index.outputs.arm64_digest }}
       registry-username: ${{ github.actor }}
     secrets:
       registry-password: ${{ secrets.GITHUB_TOKEN }}
@@ -356,7 +596,7 @@ jobs:
   # Scorecard Signed-Releases ignores the registry. releasesHaveProvenance
   # matches a release asset whose name ends in .intoto.jsonl.
   release:
-    needs: [deploy, sign, provenance, image-provenance]
+    needs: [subjects, index, sign, provenance, image-provenance, image-provenance-amd64, image-provenance-arm64]
     if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -380,7 +620,7 @@ jobs:
       - name: Download build artifacts
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          name: nesso-${{ needs.deploy.outputs.ver }}-linux-amd64
+          name: nesso-${{ needs.subjects.outputs.ver }}-release
 
       - name: Download .deb provenance
         env:
@@ -402,42 +642,58 @@ jobs:
 
       - name: Download image provenance
         env:
-          IMAGE: ${{ needs.deploy.outputs.image }}
-          DIGEST: ${{ needs.deploy.outputs.digest }}
-          VER: ${{ needs.deploy.outputs.ver }}
+          IMAGE: ${{ needs.index.outputs.image }}
+          VER: ${{ needs.index.outputs.ver }}
+          SUBJECT_VER: ${{ needs.subjects.outputs.ver }}
+          INDEX_DIGEST: ${{ needs.index.outputs.index_digest }}
+          AMD64_DIGEST: ${{ needs.index.outputs.amd64_digest }}
+          ARM64_DIGEST: ${{ needs.index.outputs.arm64_digest }}
         run: |
           set -euo pipefail
-          out="nesso_${VER}_ghcr.intoto.jsonl"
-          tmp="$(mktemp)"
-          ok=0
-          for _ in 1 2 3 4 5 6; do
-            if cosign download attestation "${IMAGE}@${DIGEST}" > "${tmp}" && [[ -s "${tmp}" ]]; then
-              ok=1
-              break
+          if [[ "${VER}" != "${SUBJECT_VER}" ]]; then
+            echo "error: image version ${VER} != package version ${SUBJECT_VER}" >&2
+            exit 1
+          fi
+          download() {
+            local digest="$1" out="$2" tmp ok
+            tmp="$(mktemp)"
+            ok=0
+            for _ in 1 2 3 4 5 6; do
+              if cosign download attestation "${IMAGE}@${digest}" > "${tmp}" && [[ -s "${tmp}" ]]; then
+                ok=1
+                break
+              fi
+              sleep 5
+            done
+            if [[ "${ok}" != 1 ]]; then
+              echo "error: image attestation was not readable for ${digest}" >&2
+              exit 1
             fi
-            sleep 5
-          done
-          if [[ "${ok}" != 1 ]]; then
-            echo "error: image attestation was not readable" >&2
-            exit 1
-          fi
-          if [[ "$(head -c 1 "${tmp}")" != '{' ]]; then
-            echo "error: image attestation was not JSON" >&2
-            exit 1
-          fi
-          mv "${tmp}" "${out}"
+            if [[ "$(head -c 1 "${tmp}")" != '{' ]]; then
+              echo "error: image attestation was not JSON for ${digest}" >&2
+              exit 1
+            fi
+            mv "${tmp}" "${out}"
+          }
+          download "${INDEX_DIGEST}" "nesso_${VER}_ghcr.intoto.jsonl"
+          download "${AMD64_DIGEST}" "nesso_${VER}_ghcr_amd64.intoto.jsonl"
+          download "${ARM64_DIGEST}" "nesso_${VER}_ghcr_arm64.intoto.jsonl"
 
       - name: Generate SHA256SUMS
         env:
-          VER: ${{ needs.deploy.outputs.ver }}
+          VER: ${{ needs.subjects.outputs.ver }}
           PROVENANCE_NAME: ${{ needs.provenance.outputs.provenance-name }}
         run: |
           set -euo pipefail
           sha256sum \
             "nesso_${VER}_amd64.deb" \
-            "nesso_${VER}.spdx.json" \
+            "nesso_${VER}_arm64.deb" \
+            "nesso_${VER}_amd64.spdx.json" \
+            "nesso_${VER}_arm64.spdx.json" \
             "${PROVENANCE_NAME}" \
             "nesso_${VER}_ghcr.intoto.jsonl" \
+            "nesso_${VER}_ghcr_amd64.intoto.jsonl" \
+            "nesso_${VER}_ghcr_arm64.intoto.jsonl" \
             > SHA256SUMS
           cat SHA256SUMS
 
@@ -445,9 +701,13 @@ jobs:
         uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
         with:
           files: |
-            nesso_${{ needs.deploy.outputs.ver }}_amd64.deb
-            nesso_${{ needs.deploy.outputs.ver }}.spdx.json
+            nesso_${{ needs.subjects.outputs.ver }}_amd64.deb
+            nesso_${{ needs.subjects.outputs.ver }}_arm64.deb
+            nesso_${{ needs.subjects.outputs.ver }}_amd64.spdx.json
+            nesso_${{ needs.subjects.outputs.ver }}_arm64.spdx.json
             ${{ needs.provenance.outputs.provenance-name }}
-            nesso_${{ needs.deploy.outputs.ver }}_ghcr.intoto.jsonl
+            nesso_${{ needs.subjects.outputs.ver }}_ghcr.intoto.jsonl
+            nesso_${{ needs.subjects.outputs.ver }}_ghcr_amd64.intoto.jsonl
+            nesso_${{ needs.subjects.outputs.ver }}_ghcr_arm64.intoto.jsonl
             SHA256SUMS
           generate_release_notes: true

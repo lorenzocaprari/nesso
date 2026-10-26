@@ -1,0 +1,64 @@
+#!/usr/bin/env bash
+# Merge two native single-platform images into the manifest list the release
+# tags point at. The arch tags are pushed by the image jobs; this only
+# creates vX.Y.Z, X.Y.Z, and latest. BuildKit attestations stay off on those
+# builds so each source digest is one platform manifest, not an index.
+set -euo pipefail
+
+if [[ $# -ne 5 ]]; then
+  echo "usage: publish-runtime-index IMAGE TAG VERSION AMD64_DIGEST ARM64_DIGEST" >&2
+  exit 2
+fi
+
+IMAGE="$1"
+TAG="$2"
+VERSION="$3"
+AMD64_DIGEST="$4"
+ARM64_DIGEST="$5"
+
+if [[ ! "${TAG}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+  echo "error: tag must be vX.Y.Z, got ${TAG}" >&2
+  exit 2
+fi
+if [[ "${TAG}" != "v${VERSION}" ]]; then
+  echo "error: tag ${TAG} does not match version ${VERSION}" >&2
+  exit 2
+fi
+for digest in "${AMD64_DIGEST}" "${ARM64_DIGEST}"; do
+  if [[ ! "${digest}" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+    echo "error: refusing digest '${digest}'" >&2
+    exit 2
+  fi
+done
+if [[ "${AMD64_DIGEST}" == "${ARM64_DIGEST}" ]]; then
+  echo "error: amd64 and arm64 digests are the same" >&2
+  exit 2
+fi
+
+docker buildx imagetools create \
+  -t "${IMAGE}:${TAG}" \
+  -t "${IMAGE}:${VERSION}" \
+  -t "${IMAGE}:latest" \
+  "${IMAGE}@${AMD64_DIGEST}" \
+  "${IMAGE}@${ARM64_DIGEST}"
+
+index="$(docker buildx imagetools inspect --format '{{index .Manifest.Digest}}' "${IMAGE}:${TAG}")"
+if [[ ! "${index}" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+  echo "error: index digest is '${index}'" >&2
+  exit 1
+fi
+if [[ "${index}" == "${AMD64_DIGEST}" || "${index}" == "${ARM64_DIGEST}" ]]; then
+  echo "error: index digest matches a platform digest (${index})" >&2
+  exit 1
+fi
+
+inspected="$(docker buildx imagetools inspect "${IMAGE}:${TAG}")"
+printf '%s\n' "${inspected}"
+for platform in linux/amd64 linux/arm64; do
+  if ! printf '%s\n' "${inspected}" | grep -F -q "${platform}"; then
+    echo "error: ${IMAGE}:${TAG} is missing ${platform}" >&2
+    exit 1
+  fi
+done
+
+printf '%s\n' "${index}"

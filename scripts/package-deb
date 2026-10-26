@@ -52,6 +52,43 @@ libc6_min_version() {
   printf '%s\n' "${libc_min}"
 }
 
+# Debian architecture follows the binary, not the host. e_machine is the ELF
+# field at byte 18. A host `dpkg --print-architecture` would mislabel a
+# cross-built binary and the arm64 package tests.
+deb_architecture() {
+  local binary="$1"
+  if ! command -v od >/dev/null 2>&1; then
+    echo "error: od is required to read the ELF machine" >&2
+    return 1
+  fi
+  local magic
+  magic="$(od -An -t x1 -N 4 -- "${binary}" | tr -d '[:space:]')"
+  if [[ "${magic}" != "7f454c46" ]]; then
+    echo "error: ${binary} is not an ELF file" >&2
+    return 1
+  fi
+  local class data
+  class="$(od -An -t u1 -j 4 -N 1 -- "${binary}" | tr -d '[:space:]')"
+  data="$(od -An -t u1 -j 5 -N 1 -- "${binary}" | tr -d '[:space:]')"
+  if [[ "${class}" != "2" || "${data}" != "1" ]]; then
+    echo "error: ${binary} is not a little-endian ELF64" >&2
+    return 1
+  fi
+  local lo hi machine
+  lo="$(od -An -t u1 -j 18 -N 1 -- "${binary}" | tr -d '[:space:]')"
+  hi="$(od -An -t u1 -j 19 -N 1 -- "${binary}" | tr -d '[:space:]')"
+  machine=$((10#${lo} + 10#${hi} * 256))
+  case "${machine}" in
+    62) printf '%s\n' amd64 ;;
+    183) printf '%s\n' arm64 ;;
+    *)
+      echo "error: unsupported ELF e_machine ${machine} in ${binary}" >&2
+      return 1
+      ;;
+  esac
+}
+
+DEB_ARCH="$(deb_architecture "${BINARY}")"
 LIBC_MIN="$(libc6_min_version "${BINARY}")"
 
 # Unset means "this clock". Two packages then differ. Callers that compare
@@ -83,7 +120,7 @@ Package: nesso
 Version: ${VERSION}
 Section: utils
 Priority: optional
-Architecture: amd64
+Architecture: ${DEB_ARCH}
 Depends: libc6 (>= ${LIBC_MIN}), libstdc++6, libgomp1
 Maintainer: Lorenzo Caprari <lorenzocaprari@users.noreply.github.com>
 Description: Local semantic search for unstructured text
@@ -100,7 +137,7 @@ chmod 0644 "${PKG}/DEBIAN/control" "${PKG}/usr/share/nesso/vocab.txt" "${PKG}/us
 find "${PKG}" -exec touch -h -d "@${SOURCE_DATE_EPOCH}" {} +
 
 mkdir -p "${OUT_DIR}"
-OUT_DEB="$(cd "${OUT_DIR}" && pwd)/nesso_${VERSION}_amd64.deb"
+OUT_DEB="$(cd "${OUT_DIR}" && pwd)/nesso_${VERSION}_${DEB_ARCH}.deb"
 dpkg-deb \
   --root-owner-group \
   --uniform-compression \

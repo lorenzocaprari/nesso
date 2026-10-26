@@ -19,6 +19,9 @@ COPY . .
 RUN ./scripts/build-release-binary /opt/nesso/bin/nesso \
     && ./scripts/fetch-model /opt/nesso/models
 
+# OCI index, not a single-platform manifest. BuildKit selects linux/amd64 or
+# linux/arm64 from this digest. Replacing it with one platform's manifest
+# makes the other architecture's build fail.
 FROM ubuntu:26.04@sha256:f144425ff09be612d6d9ad965196e9cdc23dae1f42110a8a11a3e9a8198759f7
 
 RUN apt-get update \

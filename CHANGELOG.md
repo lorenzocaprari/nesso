@@ -9,8 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- The Package workflow builds the release `.deb` twice from a clean tree and requires the bytes to match. It then installs that package with apt on Ubuntu 26.04 and Ubuntu 26.10, runs the release smoke command, and checks `apt-get remove` and `apt-get purge`. It runs nightly and before a tag publish.
-- Tag releases sign `ghcr.io/lorenzocaprari/nesso` by digest with keyless cosign, and attach SLSA Build Level 3 provenance for the `.deb`, the SPDX SBOM, and the image. Verification commands are in the README.
+- The Package workflow builds the release `.deb` twice per architecture from a clean tree and requires the bytes to match. amd64 runs on `ubuntu-latest` and arm64 on `ubuntu-24.04-arm`. It then installs that package with apt on Ubuntu 26.04 and Ubuntu 26.10, on both architectures, runs the release smoke command, and checks `apt-get remove` and `apt-get purge`. It runs nightly and before a tag publish.
+- Tag releases publish `nesso_<version>_amd64.deb` and `nesso_<version>_arm64.deb`, an SPDX SBOM for each, and `ghcr.io/lorenzocaprari/nesso` as a `linux/amd64` + `linux/arm64` manifest list tagged `vX.Y.Z`, `X.Y.Z`, and `latest`. Keyless cosign signs the index digest and each platform digest. SLSA Build Level 3 provenance covers both packages, both SBOMs, and those image digests. Verification commands are in the README.
 - `--threads` and `NESSO_THREADS` set the int8 session count and the fp32 intra-op thread count. `nesso --version --verbose` prints that policy.
 - `scripts/check-determinism --index-runs` compares corpus bytes and the rankings for four queries, including `PAY-E1042`. `--emit-input` writes the 3500-line input the gate uses.
 

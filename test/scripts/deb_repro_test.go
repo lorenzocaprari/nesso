@@ -80,12 +80,43 @@ func packageDeb(t *testing.T, epoch, binary, models string) []byte {
 	if err != nil {
 		t.Fatalf("package-deb: %v\n%s", err, out)
 	}
-	deb := filepath.Join(outDir, "nesso_0.1.0_amd64.deb")
-	body, err := os.ReadFile(deb)
+	matches, err := filepath.Glob(filepath.Join(outDir, "nesso_0.1.0_*.deb"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(matches) != 1 {
+		t.Fatalf("debs: %v\n%s", matches, out)
+	}
+	body, err := os.ReadFile(matches[0])
 	if err != nil {
 		t.Fatal(err)
 	}
 	return body
+}
+
+func writeELF(t *testing.T, path string, machine uint16) {
+	t.Helper()
+	buf := make([]byte, 64)
+	copy(buf, []byte{0x7f, 'E', 'L', 'F', 2, 1, 1})
+	buf[18] = byte(machine)
+	buf[19] = byte(machine >> 8)
+	if err := os.WriteFile(path, buf, 0o755); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func stubObjdump(t *testing.T, dir string) string {
+	t.Helper()
+	bindir := filepath.Join(dir, "bin")
+	if err := os.Mkdir(bindir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	stub := filepath.Join(bindir, "objdump")
+	body := "#!/bin/sh\nprintf '%s\\n' '000000 DF *UND* 000000 GLIBC_2.38 sym'\n"
+	if err := os.WriteFile(stub, []byte(body), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	return bindir
 }
 
 func tarListing(t *testing.T, deb []byte, which string) string {
@@ -185,6 +216,189 @@ func TestPackageDebRejectsABadEpoch(t *testing.T) {
 		t.Fatal("expected package-deb to reject a non-numeric epoch")
 	}
 	if !strings.Contains(string(out), "SOURCE_DATE_EPOCH") {
+		t.Fatalf("stderr: %s", out)
+	}
+}
+
+func TestPackageDebArchitectureFollowsTheElfMachine(t *testing.T) {
+	if _, err := exec.LookPath("dpkg-deb"); err != nil {
+		t.Skip("dpkg-deb is required")
+	}
+	if _, err := exec.LookPath("od"); err != nil {
+		t.Skip("od is required")
+	}
+	root := repoRoot(t)
+	for _, tc := range []struct {
+		machine uint16
+		arch    string
+	}{
+		{62, "amd64"},
+		{183, "arm64"},
+	} {
+		t.Run(tc.arch, func(t *testing.T) {
+			dir := t.TempDir()
+			binary := filepath.Join(dir, "nesso")
+			writeELF(t, binary, tc.machine)
+			models := writeModels(t, dir, 'a')
+			outDir := filepath.Join(dir, "out")
+			cmd := exec.Command(filepath.Join(root, "scripts", "package-deb"), "0.1.0", binary, models, outDir)
+			cmd.Env = append(envWithout("PATH", "SOURCE_DATE_EPOCH"), "PATH="+stubObjdump(t, dir)+string(os.PathListSeparator)+os.Getenv("PATH"), "SOURCE_DATE_EPOCH=1700000000")
+			out, err := cmd.CombinedOutput()
+			if err != nil {
+				t.Fatalf("package-deb: %v\n%s", err, out)
+			}
+			deb := filepath.Join(outDir, "nesso_0.1.0_"+tc.arch+".deb")
+			info, err := exec.Command("dpkg-deb", "-f", deb, "Architecture").CombinedOutput()
+			if err != nil {
+				t.Fatalf("dpkg-deb: %v\n%s", err, info)
+			}
+			if strings.TrimSpace(string(info)) != tc.arch {
+				t.Fatalf("Architecture %q", info)
+			}
+		})
+	}
+}
+
+func TestPackageDebRejectsANonElfOrUnknownMachine(t *testing.T) {
+	if _, err := exec.LookPath("od"); err != nil {
+		t.Skip("od is required")
+	}
+	root := repoRoot(t)
+	dir := t.TempDir()
+	models := writeModels(t, dir, 'a')
+	binary := filepath.Join(dir, "nesso")
+	if err := os.WriteFile(binary, []byte("not-an-elf-file-at-all!!"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command(filepath.Join(root, "scripts", "package-deb"), "0.1.0", binary, models, dir)
+	cmd.Env = append(envWithout("SOURCE_DATE_EPOCH"), "SOURCE_DATE_EPOCH=1700000000")
+	out, err := cmd.CombinedOutput()
+	if err == nil {
+		t.Fatal("expected package-deb to reject a non-ELF file")
+	}
+	if !strings.Contains(string(out), "not an ELF") {
+		t.Fatalf("stderr: %s", out)
+	}
+
+	writeELF(t, binary, 21)
+	cmd = exec.Command(filepath.Join(root, "scripts", "package-deb"), "0.1.0", binary, models, dir)
+	cmd.Env = append(envWithout("PATH", "SOURCE_DATE_EPOCH"), "PATH="+stubObjdump(t, dir)+string(os.PathListSeparator)+os.Getenv("PATH"), "SOURCE_DATE_EPOCH=1700000000")
+	out, err = cmd.CombinedOutput()
+	if err == nil {
+		t.Fatal("expected package-deb to reject an unknown e_machine")
+	}
+	if !strings.Contains(string(out), "e_machine") {
+		t.Fatalf("stderr: %s", out)
+	}
+}
+
+func TestReleaseConanProfile(t *testing.T) {
+	script := filepath.Join(repoRoot(t), "scripts", "build-release-binary")
+	for _, tc := range []struct {
+		machine string
+		profile string
+	}{
+		{"x86_64", "./conan/profiles/gcc-26"},
+		{"aarch64", "./conan/profiles/gcc-26-armv8"},
+	} {
+		cmd := exec.Command("bash", "-c", `source "$1"; release_conan_profile "$2"`, "bash", script, tc.machine)
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("%s: %v\n%s", tc.machine, err, out)
+		}
+		if strings.TrimSpace(string(out)) != tc.profile {
+			t.Fatalf("%s profile: %s", tc.machine, out)
+		}
+		if _, err := os.Stat(filepath.Join(repoRoot(t), tc.profile)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	cmd := exec.Command("bash", "-c", `source "$1"; release_conan_profile ppc64le`, "bash", script)
+	out, err := cmd.CombinedOutput()
+	if err == nil {
+		t.Fatalf("unknown machine exited 0: %s", out)
+	}
+	if !strings.Contains(string(out), "ppc64le") {
+		t.Fatalf("stderr: %s", out)
+	}
+}
+
+func TestPublishRuntimeIndex(t *testing.T) {
+	root := repoRoot(t)
+	script := filepath.Join(root, "scripts", "publish-runtime-index")
+	amd64 := "sha256:" + strings.Repeat("ab", 32)
+	arm64 := "sha256:" + strings.Repeat("cd", 32)
+	index := "sha256:" + strings.Repeat("01", 32)
+
+	cmd := exec.Command(script, "ghcr.io/example/nesso", "v1.2.3", "9.9.9", amd64, arm64)
+	out, err := cmd.CombinedOutput()
+	if err == nil {
+		t.Fatalf("tag/version mismatch exited 0: %s", out)
+	}
+
+	cmd = exec.Command(script, "ghcr.io/example/nesso", "v1.2.3", "1.2.3", "sha256:nope", arm64)
+	out, err = cmd.CombinedOutput()
+	if err == nil {
+		t.Fatalf("bad digest exited 0: %s", out)
+	}
+	if !strings.Contains(string(out), "digest") {
+		t.Fatalf("stderr: %s", out)
+	}
+
+	dir := t.TempDir()
+	argsPath := filepath.Join(dir, "docker-args")
+	stubDir := filepath.Join(dir, "bin")
+	if err := os.Mkdir(stubDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	stub := "#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"" + argsPath + "\"\n" +
+		"if [ \"$1\" = buildx ] && [ \"$2\" = imagetools ] && [ \"$3\" = inspect ] && [ \"$4\" = --format ]; then\n" +
+		"  printf '%s\\n' '" + index + "'\n  exit 0\nfi\n" +
+		"if [ \"$1\" = buildx ] && [ \"$2\" = imagetools ] && [ \"$3\" = inspect ]; then\n" +
+		"  printf '%s\\n' 'Platform: linux/amd64' 'Platform: linux/arm64'\n  exit 0\nfi\nexit 0\n"
+	if err := os.WriteFile(filepath.Join(stubDir, "docker"), []byte(stub), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cmd = exec.Command(script, "ghcr.io/example/nesso", "v1.2.3", "1.2.3", amd64, arm64)
+	cmd.Env = append(envWithout("PATH"), "PATH="+stubDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	out, err = cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("publish: %v\n%s", err, out)
+	}
+	if !strings.Contains(string(out), index) {
+		t.Fatalf("stdout: %s", out)
+	}
+	args, err := os.ReadFile(argsPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(args)
+	for _, want := range []string{
+		"imagetools create",
+		"ghcr.io/example/nesso:v1.2.3",
+		"ghcr.io/example/nesso:1.2.3",
+		"ghcr.io/example/nesso:latest",
+		"ghcr.io/example/nesso@" + amd64,
+		"ghcr.io/example/nesso@" + arm64,
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("docker args missing %q:\n%s", want, text)
+		}
+	}
+
+	stub = "#!/bin/sh\nif [ \"$1\" = buildx ] && [ \"$2\" = imagetools ] && [ \"$3\" = inspect ] && [ \"$4\" = --format ]; then\n" +
+		"  printf '%s\\n' '" + index + "'\n  exit 0\nfi\n" +
+		"printf '%s\\n' 'Platform: linux/amd64'\nexit 0\n"
+	if err := os.WriteFile(filepath.Join(stubDir, "docker"), []byte(stub), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cmd = exec.Command(script, "ghcr.io/example/nesso", "v1.2.3", "1.2.3", amd64, arm64)
+	cmd.Env = append(envWithout("PATH"), "PATH="+stubDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	out, err = cmd.CombinedOutput()
+	if err == nil {
+		t.Fatalf("missing arm64 exited 0: %s", out)
+	}
+	if !strings.Contains(string(out), "linux/arm64") {
 		t.Fatalf("stderr: %s", out)
 	}
 }
