@@ -17,6 +17,6 @@ Include the version (`nesso --version`, the `.deb` version, the image tag, or th
 
 ## Image scanning
 
-The Package workflow and tag releases scan the runtime image with Trivy and upload SARIF to GitHub code scanning. The job summary lists counts by severity. A finding there does not fail the workflow. The published image's operating-system packages come from the pinned Ubuntu digest in `Dockerfile.runtime`.
+The Package workflow and tag releases scan the runtime image with Trivy and upload SARIF to GitHub code scanning. The job summary lists counts by severity. A finding there does not fail the workflow. The published image's operating-system packages come from the pinned Ubuntu digest in `packaging/Dockerfile.runtime`.
 
 Hosted runners that execute nesso workflows also run StepSecurity Harden-Runner in audit mode. That agent sends network and runner metadata to StepSecurity. The link for a run is in the hardened step's log.

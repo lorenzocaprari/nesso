@@ -4,7 +4,7 @@
 # The Google mirror of Docker Hub and the Java DB are not used.
 # Exit 0 when the scan finishes. Findings are counted by `ci trivy-summary`.
 #
-# --deb builds the published final stage from Dockerfile.runtime plus the
+# --deb builds the published final stage from packaging/Dockerfile.runtime plus the
 # release .deb, instead of compiling the unpublished build stage again.
 # `ci runtime-scan-dockerfile` refuses a final stage it does not understand.
 set -euo pipefail

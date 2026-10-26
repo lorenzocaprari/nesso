@@ -40,6 +40,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The project license is Apache 2.0.
 - CI and the release workflow block when int8 embeddings disagree across processes. The run that sets `NESSO_THREADS` to the logical CPU count stays report-only.
 - `scripts/cppcheck` and `scripts/scan-runtime-image` quote the comma-separated option values in their argument arrays, so shellcheck reports no SC2054 warnings. The arguments passed to cppcheck and Trivy are unchanged.
+- `renovate.json` moved to `.github/renovate.json`, `.cppcheck-suppressions` to `scripts/cppcheck-suppressions`, and `Dockerfile.runtime` to `packaging/Dockerfile.runtime`.
 
 ### Fixed
 

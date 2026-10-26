@@ -26,7 +26,7 @@ common=(
   "--enable=warning,performance,portability,unusedFunction"
   --library=std
   --inline-suppr
-  --suppressions-list="${ROOT}/.cppcheck-suppressions"
+  --suppressions-list="${ROOT}/scripts/cppcheck-suppressions"
   --std=c++26
   -j 1
 )

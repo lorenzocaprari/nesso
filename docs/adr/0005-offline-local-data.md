@@ -58,6 +58,6 @@ Date is annotated tag
 [v0.1.0](https://github.com/lorenzocaprari/nesso/releases/tag/v0.1.0),
 commit
 [9c5773d](https://github.com/lorenzocaprari/nesso/commit/9c5773d86b5caab49b5dd6f09bca0cdf0775913b).
-`scripts/fetch-model`, `Dockerfile.runtime`,
+`scripts/fetch-model`, `packaging/Dockerfile.runtime`,
 `.clusterfuzzlite/build.sh`, `SECURITY.md`,
 `test/functional/features/errors.feature`.
