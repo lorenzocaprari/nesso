@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793017104688,
+  "lastUpdate": 1793021510292,
   "repoUrl": "https://github.com/lorenzocaprari/nesso",
   "entries": {
     "nesso": [
@@ -161,6 +161,60 @@ window.BENCHMARK_DATA = {
           {
             "name": "grep-100000-rss",
             "value": 132075520,
+            "unit": "bytes"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "caprarilorenzo5@gmail.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "committer": {
+            "email": "85455384+lorenzocaprari@users.noreply.github.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "distinct": true,
+          "id": "a94eea417c3ef47e9ab0e5a90c7bff96bcf400ce",
+          "message": "fix(ci): grant security-events so Release can call Package\n\nGitHub checks scan-runtime's security-events: write before the job\nif, so verify-package must grant it or a tag release fails at\nstartup. Release passes scan_runtime: false. The image job still\nscans the image it built. Package's own nightly, dispatch, and\npackaging pull requests still scan.",
+          "timestamp": "2026-10-26T14:27:14+01:00",
+          "tree_id": "6c545893a511496c6b1e1deb153a00a0c42437bd",
+          "url": "https://github.com/lorenzocaprari/nesso/commit/a94eea417c3ef47e9ab0e5a90c7bff96bcf400ce"
+        },
+        "date": 1793021509614,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "grep-1000-wall",
+            "value": 0.74,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-1000-rss",
+            "value": 132091904,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-10000-wall",
+            "value": 6.62,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-10000-rss",
+            "value": 132161536,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-100000-wall",
+            "value": 67.55,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-100000-rss",
+            "value": 132874240,
             "unit": "bytes"
           }
         ]
