@@ -43,6 +43,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Release builds rewrite source and build paths, pin LTO to one job, and archive the `.deb` with the commit timestamp, fixed ownership, and single-threaded zstd. Two clean builds of the same commit produce the same package bytes.
 - `scripts/bench` treats the current grep trace (`parse`, `query-embed`, `embed`) as a completed run. The old `parse`/`embed`/`rank` check marked every CI run failed, and `continue-on-error` hid that result.
 - int8 embeddings use one intra-op thread per session so repeated runs agree under CPU load.
+- The default int8 session pool is sized by the memory available to nesso (`MemAvailable`, or total RAM when the kernel does not report it) and an estimated 480 MiB per session, keeping half of that memory free. It was sized by the model file, about 23 MB per session, so the cap never applied. `--threads` and `NESSO_THREADS` still set the count, with a warning on stderr when it exceeds the estimate. `--version --verbose` shows the cap.
 
 ### Security
 

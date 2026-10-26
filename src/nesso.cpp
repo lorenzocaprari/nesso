@@ -493,6 +493,11 @@ std::expected<const nesso::embed::OnnxEmbedder *, Error> Nesso::embedder() const
             error.note = modelLoadNote(tried);
             return std::unexpected(std::move(error));
         }
+        if (const std::string warning = nesso::embed::overrideWarning((*created)->policy(), config_.threads);
+            !warning.empty())
+        {
+            std::println(stderr, "{}", warning);
+        }
         embedder_ = std::move(*created);
     }
     return embedder_.get();

@@ -17,5 +17,9 @@ target_compile_options(session_pool_test PRIVATE -fno-profile-arcs
                                                  -fno-test-coverage)
 add_test(NAME session_pool_test COMMAND $<TARGET_FILE:session_pool_test>
                                         ${NESSO_MODEL_TEST_ARGS})
-set_tests_properties(onnx_embedder_test session_pool_test PROPERTIES LABELS
-                                                                     unit)
+add_executable(session_policy_test session_policy_test.cpp)
+target_link_libraries(session_policy_test PRIVATE nesso_embed
+                                                  Catch2::Catch2WithMain)
+add_test(NAME session_policy_test COMMAND session_policy_test)
+set_tests_properties(onnx_embedder_test session_pool_test session_policy_test
+                     PROPERTIES LABELS unit)
