@@ -106,7 +106,7 @@ func TestTrivyDistributionPins(t *testing.T) {
 		"e174dff2a6dba5e3ae41f8d0537a6324405bd08132497340304c6b20e0f16a1f",
 		"--db-repository ghcr.io/aquasecurity/trivy-db:2",
 		"--skip-java-db-update",
-		"--pkg-types os,library",
+		"--pkg-types \"os,library\"",
 	} {
 		if !strings.Contains(text, needle) {
 			t.Fatalf("missing pin %s", needle)
