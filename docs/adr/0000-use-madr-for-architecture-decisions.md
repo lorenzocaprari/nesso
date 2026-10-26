@@ -86,7 +86,4 @@ Template version: MADR 4.0.0.
 Homepage: <https://adr.github.io/madr/>.
 The template is dual-licensed MIT OR CC0-1.0.
 
-An earlier Nygard-style draft ADR exists on the unmerged branch
-`chore/repo-hygiene-adr` at `docs/adr/0001-exact-search-no-ann.md` (exact
-brute-force ranking, no approximate nearest-neighbor index). That draft
-will be ported to MADR in a separate pull request. It is not included here.
+An earlier Nygard-style draft ADR for exact brute-force ranking was ported to MADR and merged in [ADR 0001](0001-exact-brute-force-search.md) ([#101](https://github.com/lorenzocaprari/nesso/pull/101)).

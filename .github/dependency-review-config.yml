@@ -1,7 +1,7 @@
 # Pull-request gate for dependencies GitHub's dependency graph has indexed.
 # Today that is GitHub Actions, test/functional/go.mod, and
 # .devcontainer/requirements.txt. conanfile.py and conan.lock are not in the
-# graph, and test/scripts/go.mod has no module requirements.
+# graph, and scripts/ci/go.mod and test/scripts/go.mod have no module requirements.
 #
 # allow-licenses is the supported control. deny-licenses is deprecated in
 # dependency-review-action v5. An expression passes when it can be satisfied
