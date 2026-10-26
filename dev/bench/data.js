@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793023625625,
+  "lastUpdate": 1793024233330,
   "repoUrl": "https://github.com/lorenzocaprari/nesso",
   "entries": {
     "nesso": [
@@ -323,6 +323,60 @@ window.BENCHMARK_DATA = {
           {
             "name": "grep-100000-rss",
             "value": 134955008,
+            "unit": "bytes"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "caprarilorenzo5@gmail.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "committer": {
+            "email": "85455384+lorenzocaprari@users.noreply.github.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "distinct": true,
+          "id": "52a75bd52b02cf095e64fd4b9c38440c9a437740",
+          "message": "fix(embed): cap int8 sessions by estimated per-session memory and available RAM\n\nThe default int8 pool was meant to leave half of RAM free, but it\ndivided by the model file size (about 23 MB), so 8 GiB allowed 187\nsessions and the cap never applied. It also used total RAM, not the\nmemory still available.\n\nThe cap now divides half of MemAvailable from /proc/meminfo (total RAM\nwhen the kernel does not report it) by 480 MiB per session, and keeps\nat least one session. The per-session figure (480 MiB) is estimated\nfrom Python ORT measurements, not measured in this build: about 440 MiB\nof activations for one 32x256 batch plus about 40 MiB per session.\n8 GiB available allows 8 sessions, 4 GiB allows 4, and 1 GiB allows 1.\nAn unknown memory figure leaves the pool at the core count, as before.\n\n--threads and NESSO_THREADS still set the session count. When an int8\ncount exceeds the cap, nesso prints a warning on stderr and continues\nwith the requested count. --version --verbose shows the cap.\n\nThe policy moves from onnx_embedder.cpp, which coverage excludes\nbecause it needs the model, into session_policy.cpp. readMachine()\ntakes /proc and /sys roots so tests can use fixture trees. The session\ncount never changes embedding bytes.",
+          "timestamp": "2026-10-26T15:11:07+01:00",
+          "tree_id": "801e64a76c79e46a92ac650d94d286ac1b22d727",
+          "url": "https://github.com/lorenzocaprari/nesso/commit/52a75bd52b02cf095e64fd4b9c38440c9a437740"
+        },
+        "date": 1793024232499,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "grep-1000-wall",
+            "value": 1.39,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-1000-rss",
+            "value": 133332992,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-10000-wall",
+            "value": 12.65,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-10000-rss",
+            "value": 132505600,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-100000-wall",
+            "value": 125.55,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-100000-rss",
+            "value": 132579328,
             "unit": "bytes"
           }
         ]
