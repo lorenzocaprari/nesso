@@ -47,6 +47,8 @@ enum class ErrorCause : uint8_t
     MismatchedDimensions,
     EmptyEmbedding,
     CorruptFile,
+    UnsupportedCorpusVersion,
+    ModelMismatch,
     EmptyFile,
     NothingIndexable,
     EmptyCorpus

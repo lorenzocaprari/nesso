@@ -105,6 +105,8 @@ ErrorCause causeOf(nesso::core::EngineError error)
         return ErrorCause::EmptyEmbedding;
     case nesso::core::EngineError::CorruptDatabase:
         return ErrorCause::CorruptFile;
+    case nesso::core::EngineError::UnsupportedVersion:
+        return ErrorCause::UnsupportedCorpusVersion;
     }
     std::unreachable();
 }
@@ -137,6 +139,10 @@ std::string_view describe(ErrorCause cause)
         return "the embedding is empty";
     case ErrorCause::CorruptFile:
         return "the file is corrupt";
+    case ErrorCause::UnsupportedCorpusVersion:
+        return "the corpus format is not supported by this nesso; re-run nesso index";
+    case ErrorCause::ModelMismatch:
+        return "the corpus was built with a different model; re-run nesso index";
     case ErrorCause::EmptyFile:
         return "the file is empty";
     case ErrorCause::NothingIndexable:
@@ -833,6 +839,14 @@ std::expected<TextResults, Error> Nesso::search(const SearchRequest &request) co
     {
         return std::unexpected(Error{.kind = ErrorKind::EmptyInput,
                                      .cause = ErrorCause::EmptyCorpus,
+                                     .path = request.index,
+                                     .note = {},
+                                     .staleSources = {}});
+    }
+    if (chunks->modelId() != nesso::embed::MINILM_MODEL_ID)
+    {
+        return std::unexpected(Error{.kind = ErrorKind::CorpusRead,
+                                     .cause = ErrorCause::ModelMismatch,
                                      .path = request.index,
                                      .note = {},
                                      .staleSources = {}});

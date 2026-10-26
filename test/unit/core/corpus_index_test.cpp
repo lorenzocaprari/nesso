@@ -213,7 +213,15 @@ TEST_CASE("corpus reader rejects corrupt files", "[corpus][core]")
     header[3] = 'C';
     header[4] = 1;
     writeBytes(path, header);
-    REQUIRE(nesso::core::readCorpusFile(path).error() == nesso::core::EngineError::CorruptDatabase);
+    REQUIRE(nesso::core::readCorpusFile(path).error() == nesso::core::EngineError::UnsupportedVersion);
+
+    header[4] = 3;
+    writeBytes(path, header);
+    REQUIRE(nesso::core::readCorpusFile(path).error() == nesso::core::EngineError::UnsupportedVersion);
+    REQUIRE(nesso::core::mapCorpusFile(path).error() == nesso::core::EngineError::UnsupportedVersion);
+
+    writeBytes(path, header.substr(0, 6));
+    REQUIRE(nesso::core::mapCorpusFile(path).error() == nesso::core::EngineError::CorruptDatabase);
 
     header[4] = 2;
     const std::uint32_t dimensions = 0;
@@ -260,6 +268,15 @@ TEST_CASE("checked-in corpora round-trip", "[corpus][core]")
     REQUIRE((*mismatch)[0].chunk.text == "short vector");
     REQUIRE((*mismatch)[0].embedding.size() == 2);
     REQUIRE((*mismatch)[0].embedding[1] == 1.F);
+
+    const auto otherModel = nesso::core::mapCorpusFile(NESSO_OTHER_MODEL_FIXTURE);
+    REQUIRE(otherModel);
+    REQUIRE(otherModel->modelId() == "sentence-transformers/all-MiniLM-L6-v1");
+    REQUIRE(otherModel->dimensions() == 384);
+
+    const auto futureVersion = nesso::core::mapCorpusFile(NESSO_FUTURE_VERSION_FIXTURE);
+    REQUIRE_FALSE(futureVersion);
+    REQUIRE(futureVersion.error() == nesso::core::EngineError::UnsupportedVersion);
 }
 
 TEST_CASE("corpus writer rejects an unusable destination", "[corpus][core]")

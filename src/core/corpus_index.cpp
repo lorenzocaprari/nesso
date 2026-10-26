@@ -763,10 +763,18 @@ std::expected<MappedCorpus, EngineError> mapCorpusFile(const std::filesystem::pa
     }
     Layout layout;
     std::uint32_t version = 0;
-    if (!readU32(bytes, 4, version) || version != CORPUS_VERSION || !readU32(bytes, 8, layout.modelIdBytes) ||
-        !readU32(bytes, 12, layout.dimensions) || !readU64(bytes, 16, layout.sourceCount) ||
-        !readU64(bytes, 24, layout.chunkCount) || !readU64(bytes, 32, layout.sourceTableOffset) ||
-        !readU64(bytes, 40, layout.chunkTableOffset) || !readU64(bytes, 48, layout.matrixOffset))
+    if (!readU32(bytes, 4, version))
+    {
+        return std::unexpected(EngineError::CorruptDatabase);
+    }
+    if (version != CORPUS_VERSION)
+    {
+        return std::unexpected(EngineError::UnsupportedVersion);
+    }
+    if (!readU32(bytes, 8, layout.modelIdBytes) || !readU32(bytes, 12, layout.dimensions) ||
+        !readU64(bytes, 16, layout.sourceCount) || !readU64(bytes, 24, layout.chunkCount) ||
+        !readU64(bytes, 32, layout.sourceTableOffset) || !readU64(bytes, 40, layout.chunkTableOffset) ||
+        !readU64(bytes, 48, layout.matrixOffset))
     {
         return std::unexpected(EngineError::CorruptDatabase);
     }
