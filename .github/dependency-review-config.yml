@@ -1,0 +1,51 @@
+# Pull-request gate for dependencies GitHub's dependency graph has indexed.
+# Today that is GitHub Actions, test/functional/go.mod, and
+# .devcontainer/requirements.txt. conanfile.py and conan.lock are not in the
+# graph, and test/scripts/go.mod has no module requirements.
+#
+# allow-licenses is the supported control. deny-licenses is deprecated in
+# dependency-review-action v5. An expression passes when it can be satisfied
+# from this list, so "MIT OR GPL-2.0" passes and "GPL-2.0" does not. A
+# dependency with no detected license is reported and does not fail the job.
+#
+# The list is permissive SPDX ids, the licenses already on this graph (MIT,
+# Apache-2.0, BSD-2-Clause, BSD-3-Clause, MPL-2.0, PSF-2.0, Python-2.0), and
+# LGPL-3.0, which the FSF treats as combinable with Apache-2.0. GPL, AGPL,
+# LGPL-2.1, SSPL, BUSL, EUPL, and non-commercial Creative Commons are absent.
+# BlueOak-1.0 is omitted: dependency-review-action v5.0.0 rejects that id.
+fail-on-severity: moderate
+# The action default is runtime only. Go test modules and some Actions
+# changes are classified development or unknown.
+fail-on-scopes:
+  - runtime
+  - development
+  - unknown
+license-check: true
+vulnerability-check: true
+comment-summary-in-pr: never
+# .github/workflows/scorecard.yml already records OpenSSF Scorecard.
+show-openssf-scorecard: false
+allow-licenses:
+  - Apache-2.0
+  - MIT
+  - MIT-0
+  - 0BSD
+  - BSD-2-Clause
+  - BSD-3-Clause
+  - ISC
+  - Unlicense
+  - CC0-1.0
+  - Zlib
+  - BSL-1.0
+  - PostgreSQL
+  - NCSA
+  - HPND
+  - X11
+  - Python-2.0
+  - PSF-2.0
+  - MPL-2.0
+  - LGPL-3.0
+  - LGPL-3.0-only
+  - LGPL-3.0-or-later
+  - Unicode-3.0
+  - Unicode-DFS-2016

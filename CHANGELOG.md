@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- The `lint` job runs actionlint and zizmor on `.github/workflows` for every pull request and push to `main`. `bash scripts/actionlint` and `bash scripts/zizmor` run the same checks locally. Pull requests also run dependency review in that job. It blocks new dependencies at severity moderate or higher, and licenses that cannot be satisfied from the Apache-2.0 allow list. GitHub's dependency graph covers Actions, the godog Go module, and the devcontainer pip lock. Conan is not in that graph.
 - Pushes to `main` append the end-to-end benchmark to history on the `gh-pages` branch. Pull requests do not write that branch. They add an informational comparison against the stored history to the `bench` job summary. The benchmark job still fails only when a tier regresses against the latest baseline from `main`.
 - Pull requests fail the `coverage` job when fewer than 80% of the changed executable lines under `src/` are covered. The job summary lists the uncovered lines. A change with no executable product lines passes. Pushes to `main` still report only the tree-wide coverage.
 - Test jobs write ctest JUnit XML and list failing tests in the job summary. The XML is kept as an artifact.

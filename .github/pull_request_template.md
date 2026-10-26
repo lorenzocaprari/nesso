@@ -3,6 +3,7 @@
 ## Tests
 
 - [ ] `bash scripts/lint`
+- [ ] `bash scripts/actionlint` and `bash scripts/zizmor` if workflow files changed
 - [ ] ctest label that this change affects (`unit`, `integration`, or `functional`; `bdd` is the godog suite)
 - [ ] `./scripts/fuzz-test` if parser or tokenizer input handling changed
 
