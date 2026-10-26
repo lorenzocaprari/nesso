@@ -1,0 +1,4 @@
+# Networking libc symbols the release binary may import.
+# One symbol per line, then a comment saying why nesso needs it.
+# Blank lines and lines that start with # are ignored.
+# An empty list denies every networking symbol the check knows.
