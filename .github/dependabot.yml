@@ -22,12 +22,12 @@ updates:
     cooldown:
       default-days: 7
 
-  # Dockerfile.runtime (repo root), .devcontainer/Dockerfile, and
+  # packaging/Dockerfile.runtime, .devcontainer/Dockerfile, and
   # .clusterfuzzlite/Dockerfile. FROM ${BUILD_IMAGE} in the runtime image is
   # the CI-published nesso-build-env tag, not a pinnable upstream image.
   - package-ecosystem: docker
     directories:
-      - /
+      - /packaging
       - /.devcontainer
       - /.clusterfuzzlite
     schedule:

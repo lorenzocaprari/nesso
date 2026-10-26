@@ -11,7 +11,7 @@ import (
 )
 
 func TestRuntimeScanDockerfileUsesFinalStageOnly(t *testing.T) {
-	src, err := os.ReadFile(filepath.Join("..", "..", "Dockerfile.runtime"))
+	src, err := os.ReadFile(filepath.Join("..", "..", "packaging", "Dockerfile.runtime"))
 	if err != nil {
 		t.Fatal(err)
 	}

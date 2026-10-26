@@ -234,7 +234,7 @@ jobs:
             --provenance=false \
             --sbom=false \
             --load \
-            -f Dockerfile.runtime \
+            -f packaging/Dockerfile.runtime \
             -t "${RUNTIME_IMAGE}:${TAG}" \
             .
           got="$(docker image inspect --format '{{.Os}}/{{.Architecture}}' "${RUNTIME_IMAGE}:${TAG}")"

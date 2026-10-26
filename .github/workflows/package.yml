@@ -26,7 +26,7 @@ on:
     paths:
       - ".github/workflows/package.yml"
       - ".github/workflows/release.yml"
-      - "Dockerfile.runtime"
+      - "packaging/Dockerfile.runtime"
       - "CMakeLists.txt"
       - "conanfile.py"
       - "conan.lock"
@@ -465,7 +465,7 @@ jobs:
             echo "Installed, removed, and purged \`${debs[0]}\` on \`${IMAGE}\` (${ARCH})." >> "${GITHUB_STEP_SUMMARY}"
           fi
 
-  # Final stage of Dockerfile.runtime plus the binary and models from the
+  # Final stage of packaging/Dockerfile.runtime plus the binary and models from the
   # .deb repro-build just produced. The compiler stage is not published.
   # Rebuilding it here would compile nesso again. ci runtime-scan-dockerfile
   # fails if that final stage gains an instruction this plan does not copy.
@@ -557,7 +557,7 @@ jobs:
           ./scripts/scan-runtime-image \
             --deb "${debs[0]}" \
             --platform "${PLATFORM}" \
-            --runtime Dockerfile.runtime \
+            --runtime packaging/Dockerfile.runtime \
             --sarif trivy.sarif \
             --json trivy.json \
             --ci /tmp/nesso-ci

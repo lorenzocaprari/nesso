@@ -14,7 +14,7 @@ import (
 // context path and the path inside the release .deb. package-deb installs the
 // binary at /usr/bin/nesso, the model files under /usr/share/nesso, and the
 // copyright and third-party notices under /usr/share/doc/nesso.
-// Dockerfile.runtime copies the same files out of the unpublished build stage.
+// packaging/Dockerfile.runtime copies the same files out of the unpublished build stage.
 var runtimeLayerCopies = []scanCopySpec{
 	{from: "/opt/nesso/bin/nesso", kind: "file", context: "nesso", deb: "usr/bin/nesso"},
 	{from: "/opt/nesso/models", kind: "dir", context: "models", deb: "usr/share/nesso"},
@@ -37,7 +37,7 @@ type scanCopy struct {
 func runtimeScanMain(args []string) int {
 	fs := flag.NewFlagSet("runtime-scan-dockerfile", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
-	runtime := fs.String("runtime", "", "path to Dockerfile.runtime")
+	runtime := fs.String("runtime", "", "path to packaging/Dockerfile.runtime")
 	out := fs.String("out", "", "scan Dockerfile to write")
 	plan := fs.String("plan", "", "copy plan to write")
 	fs.Usage = func() {

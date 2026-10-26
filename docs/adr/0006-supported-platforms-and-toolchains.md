@@ -58,7 +58,7 @@ driver does not hold, so arm64 is not released.
 
 * Good, because the arm64 Release jobs already run in Pipeline.
 * Bad, because distance is scalar, cross-arch results are unmeasured,
-  and `scripts/package-deb` plus `Dockerfile.runtime` publish amd64 only.
+  and `scripts/package-deb` plus `packaging/Dockerfile.runtime` publish amd64 only.
 
 ### Keep arm64 and Clang as CI-only gates
 
