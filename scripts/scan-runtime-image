@@ -1,0 +1,129 @@
+#!/usr/bin/env bash
+# Scan one image with the pinned Trivy binary. OS packages and language
+# libraries only. The vulnerability DB is ghcr.io/aquasecurity/trivy-db:2.
+# The Google mirror of Docker Hub and the Java DB are not used.
+# Exit 0 when the scan finishes. Findings are counted by `ci trivy-summary`.
+#
+# --deb builds the published final stage from Dockerfile.runtime plus the
+# release .deb, instead of compiling the unpublished build stage again.
+# `ci runtime-scan-dockerfile` refuses a final stage it does not understand.
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source=trivy
+source "${ROOT}/scripts/trivy"
+
+usage() {
+  echo "usage: scan-runtime-image --image IMAGE --sarif FILE --json FILE" >&2
+  echo "       scan-runtime-image --deb FILE --platform PLATFORM --runtime FILE --sarif FILE --json FILE --ci BIN" >&2
+}
+
+image=""
+sarif=""
+json=""
+deb=""
+platform=""
+runtime=""
+ci=""
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --image)
+      image="${2:-}"
+      shift 2
+      ;;
+    --sarif)
+      sarif="${2:-}"
+      shift 2
+      ;;
+    --json)
+      json="${2:-}"
+      shift 2
+      ;;
+    --deb)
+      deb="${2:-}"
+      shift 2
+      ;;
+    --platform)
+      platform="${2:-}"
+      shift 2
+      ;;
+    --runtime)
+      runtime="${2:-}"
+      shift 2
+      ;;
+    --ci)
+      ci="${2:-}"
+      shift 2
+      ;;
+    *)
+      echo "error: unknown argument ${1}" >&2
+      usage
+      exit 2
+      ;;
+  esac
+done
+
+if [[ -z "${sarif}" || -z "${json}" ]]; then
+  usage
+  exit 2
+fi
+
+if [[ -n "${deb}" ]]; then
+  if [[ -z "${platform}" || -z "${runtime}" || -z "${ci}" || -n "${image}" ]]; then
+    usage
+    exit 2
+  fi
+  ctx="$(mktemp -d)"
+  root="$(mktemp -d)"
+  trap 'rm -rf -- "${ctx}" "${root}"' EXIT
+  "${ci}" runtime-scan-dockerfile --runtime "${runtime}" --out "${ctx}/Dockerfile" --plan "${ctx}/plan"
+  dpkg-deb -x "${deb}" "${root}"
+  while IFS=$'\t' read -r kind name debpath; do
+    if [[ -z "${kind}" ]]; then
+      continue
+    fi
+    src="${root}/${debpath}"
+    dest="${ctx}/${name}"
+    case "${kind}" in
+      dir)
+        mkdir -p "${dest}"
+        cp -a "${src}/." "${dest}/"
+        ;;
+      file)
+        install -D -m 0755 "${src}" "${dest}"
+        ;;
+      *)
+        echo "error: bad plan kind ${kind}" >&2
+        exit 1
+        ;;
+    esac
+  done <"${ctx}/plan"
+  image="nesso-runtime-scan:local"
+  docker build \
+    --provenance=false \
+    --sbom=false \
+    --platform "${platform}" \
+    -t "${image}" \
+    "${ctx}"
+elif [[ -z "${image}" ]]; then
+  usage
+  exit 2
+fi
+
+cache="${TRIVY_CACHE_DIR:-${XDG_CACHE_HOME:-${HOME}/.cache}/nesso/trivy-db}"
+mkdir -p "${cache}"
+
+args=(
+  image
+  --cache-dir "${cache}"
+  --db-repository ghcr.io/aquasecurity/trivy-db:2
+  --skip-java-db-update
+  --scanners vuln
+  --pkg-types os,library
+  --no-progress
+  --exit-code 0
+)
+
+"${TRIVY_BIN}" "${args[@]}" --format sarif --output "${sarif}" "${image}"
+"${TRIVY_BIN}" "${args[@]}" --format json --output "${json}" "${image}"

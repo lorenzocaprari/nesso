@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+# Trivy 0.76.1 from the GitHub release tarball. Checksums are the release
+# asset digests (immutable release, 2026-10-21). Do not install via
+# aquasecurity/trivy-action, aquasecurity/setup-trivy, get.trivy.dev, or the
+# Docker Hub image: those channels were swapped in March 2026
+# (GHSA-69fq-xp46-6x23, v0.69.4 and the v0.69.5/v0.69.6 Hub images).
+# Source this script to set TRIVY_BIN, or run it to exec Trivy.
+
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+  set -euo pipefail
+fi
+
+_trivy_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source=download-pinned
+source "${_trivy_root}/scripts/download-pinned"
+
+_trivy_version="0.76.1"
+case "$(uname -m)" in
+  x86_64)
+    _trivy_arch="64bit"
+    _trivy_sha="c7cbe3137fb8a48a17574bede3dd6beb16742d1e9772929940fc90082c39d9c0"
+    ;;
+  aarch64 | arm64)
+    _trivy_arch="ARM64"
+    _trivy_sha="e174dff2a6dba5e3ae41f8d0537a6324405bd08132497340304c6b20e0f16a1f"
+    ;;
+  *)
+    echo "error: unsupported architecture $(uname -m)" >&2
+    return 1 2>/dev/null || exit 1
+    ;;
+esac
+
+_trivy_cache="${XDG_CACHE_HOME:-${HOME}/.cache}/nesso/trivy/${_trivy_version}-${_trivy_arch}"
+_trivy_url="https://github.com/aquasecurity/trivy/releases/download/v${_trivy_version}/trivy_${_trivy_version}_Linux-${_trivy_arch}.tar.gz"
+TRIVY_BIN="$(download_pinned "${_trivy_cache}" "${_trivy_url}" "${_trivy_sha}" trivy)"
+
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+  exec "${TRIVY_BIN}" "$@"
+fi

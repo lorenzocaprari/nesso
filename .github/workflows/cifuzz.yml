@@ -10,6 +10,8 @@ on:
 
 permissions: {}
 
+# Host job. First step is harden-runner audit. ClusterFuzzLite still builds
+# in its own containers; the agent watches the runner VM.
 jobs:
   fuzzing:
     name: ClusterFuzzLite
@@ -18,6 +20,11 @@ jobs:
     permissions:
       contents: read
     steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
+        with:
+          egress-policy: audit
+
       # google/clusterfuzzlite actions omit OSS_FUZZ_PROJECT_NAME. The oss-fuzz
       # copies of these actions require that name and then look the project up
       # in OSS-Fuzz, which fails for a repo that only has .clusterfuzzlite/.

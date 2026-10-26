@@ -31,6 +31,9 @@ env:
 # same-repo rebuild can push deps-<hash> and the BuildKit registry cache.
 # lint overrides to contents: read. It does not pull the image.
 # bench-history overrides to contents: write. It runs only on a push to main.
+# step-security/harden-runner v2.22.2 (egress-policy: audit) is the first step
+# of every job that runs on the host. Jobs that set container: do not get it:
+# those steps run inside the container, and the agent has to install on the VM.
 permissions:
   contents: read
   packages: read
@@ -51,6 +54,11 @@ jobs:
     outputs:
       code: ${{ steps.gate.outputs.code }}
     steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
+        with:
+          egress-policy: audit
+
       - name: Checkout Repository
         if: github.event_name == 'pull_request'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -97,6 +105,11 @@ jobs:
     outputs:
       image: ${{ steps.select.outputs.image }}
     steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
+        with:
+          egress-policy: audit
+
       - name: Checkout Repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -213,6 +226,11 @@ jobs:
     permissions:
       contents: read
     steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
+        with:
+          egress-policy: audit
+
       - name: Checkout Repository
         id: checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -1089,6 +1107,11 @@ jobs:
       actions: read
       contents: write
     steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
+        with:
+          egress-policy: audit
+
       - name: Refuse to record history off main
         shell: bash
         env:
@@ -1523,6 +1546,11 @@ jobs:
     outputs:
       image: ${{ steps.select.outputs.image }}
     steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
+        with:
+          egress-policy: audit
+
       - name: Checkout Repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

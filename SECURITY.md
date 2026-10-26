@@ -15,3 +15,9 @@ Report privately through [GitHub private vulnerability reporting](https://github
 The maintainer, [@lorenzocaprari](https://github.com/lorenzocaprari), has to enable that form first: repository **Settings → Advanced Security → Private vulnerability reporting → Enable**. Until then the page does not accept reports. Do not open a public issue, pull request, or discussion for a suspected vulnerability.
 
 Include the version (`nesso --version`, the `.deb` version, the image tag, or the git SHA), the command (`grep`, `index`, or `search`), and a minimal input. Strip secrets and private log data. Nesso runs offline on files you pass it; parser, model-load, and package bugs are still in scope.
+
+## Image scanning
+
+The Package workflow and tag releases scan the runtime image with Trivy and upload SARIF to GitHub code scanning. The job summary lists counts by severity. A finding there does not fail the workflow. The published image's operating-system packages come from the pinned Ubuntu digest in `Dockerfile.runtime`.
+
+Hosted runners that execute nesso workflows also run StepSecurity Harden-Runner in audit mode. That agent sends network and runner metadata to StepSecurity. The link for a run is in the hardened step's log.

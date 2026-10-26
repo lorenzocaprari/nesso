@@ -27,6 +27,13 @@ name: Release
 # generator for the index digest and each platform digest. Those reusable
 # workflows are referenced by tag. They verify their own ref and reject a
 # commit SHA. Every other action stays pinned by SHA.
+#
+# step-security/harden-runner v2.22.2 (egress-policy: audit) is the first
+# step of jobs that have steps. verify-package is the Package workflow.
+# The SLSA generator jobs are reusable workflows that check their own tag
+# and do not accept an added step. The image job scans the runtime image
+# it built, before the push, and is the only job here with
+# security-events: write.
 
 on:
   push:
@@ -62,6 +69,7 @@ jobs:
       contents: read
       packages: write
       actions: write
+      security-events: write
     strategy:
       fail-fast: false
       matrix:
@@ -74,6 +82,11 @@ jobs:
       ARCH: ${{ matrix.arch }}
       PLATFORM: linux/${{ matrix.arch }}
     steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
+        with:
+          egress-policy: audit
+
       - name: Checkout Repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -191,6 +204,52 @@ jobs:
             echo "error: built ${got}, want ${PLATFORM}" >&2
             exit 1
           fi
+
+      - name: Trivy cache day
+        id: trivy-day
+        run: echo "day=$(date -u +%Y%m%d)" >> "${GITHUB_OUTPUT}"
+
+      - name: Cache Trivy DB and binary
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ${{ runner.temp }}/trivy-db
+            ${{ runner.temp }}/nesso-cache/nesso/trivy
+          key: trivy-0.76.1-${{ runner.arch }}-${{ hashFiles('scripts/trivy') }}-${{ steps.trivy-day.outputs.day }}
+          restore-keys: |
+            trivy-0.76.1-${{ runner.arch }}-${{ hashFiles('scripts/trivy') }}-
+          lookup-only: true
+
+      - name: Scan runtime image
+        env:
+          RUNTIME_IMAGE: ${{ steps.select.outputs.runtime_image }}
+          TAG: ${{ steps.ver.outputs.tag }}
+          ARCH: ${{ matrix.arch }}
+          XDG_CACHE_HOME: ${{ runner.temp }}/nesso-cache
+          TRIVY_CACHE_DIR: ${{ runner.temp }}/trivy-db
+          GOPROXY: "off"
+          GOTOOLCHAIN: local
+          GOFLAGS: "-mod=readonly -buildvcs=false"
+        run: |
+          set -euo pipefail
+          if ! command -v go >/dev/null 2>&1 || ! go version | grep -Eq 'go1\.(2[2-9]|[3-9][0-9])'; then
+            sudo apt-get update
+            sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends golang-go
+          fi
+          chmod +x scripts/scan-runtime-image scripts/trivy
+          ./scripts/scan-runtime-image \
+            --image "${RUNTIME_IMAGE}:${TAG}" \
+            --sarif trivy.sarif \
+            --json trivy.json
+          go build -C scripts/ci -o /tmp/nesso-ci .
+          /tmp/nesso-ci trivy-summary --json trivy.json --arch "${ARCH}"
+
+      - name: Upload Trivy SARIF
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+        uses: github/codeql-action/upload-sarif@24c54180a607b1449ed407dd24f251e4e9147c8d # v4.38.3
+        with:
+          sarif_file: trivy.sarif
+          category: trivy-runtime-${{ matrix.arch }}
 
       - name: Write determinism input
         run: ./scripts/check-determinism --emit-input determinism-input.log
@@ -338,6 +397,11 @@ jobs:
       hashes: ${{ steps.hash.outputs.hashes }}
       provenance_name: ${{ steps.hash.outputs.provenance_name }}
     steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
+        with:
+          egress-policy: audit
+
       - name: Download arch artifacts
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
@@ -416,6 +480,11 @@ jobs:
       arm64_digest: ${{ steps.merge.outputs.arm64_digest }}
       ver: ${{ steps.merge.outputs.ver }}
     steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
+        with:
+          egress-policy: audit
+
       - name: Checkout Repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -492,6 +561,11 @@ jobs:
       id-token: write
       packages: write
     steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
+        with:
+          egress-policy: audit
+
       - name: Install Cosign
         uses: sigstore/cosign-installer@7e8b541eb2e61bf99390e1afd4be13a184e9ebc5 # v3.10.1
         with:
@@ -605,6 +679,11 @@ jobs:
       contents: write
       packages: read
     steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
+        with:
+          egress-policy: audit
+
       - name: Install Cosign
         uses: sigstore/cosign-installer@7e8b541eb2e61bf99390e1afd4be13a184e9ebc5 # v3.10.1
         with:
