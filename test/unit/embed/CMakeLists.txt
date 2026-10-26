@@ -21,5 +21,8 @@ add_executable(session_policy_test session_policy_test.cpp)
 target_link_libraries(session_policy_test PRIVATE nesso_embed
                                                   Catch2::Catch2WithMain)
 add_test(NAME session_policy_test COMMAND session_policy_test)
+add_executable(amx_guard_test amx_guard_test.cpp)
+target_link_libraries(amx_guard_test PRIVATE nesso_embed Catch2::Catch2WithMain)
+add_test(NAME amx_guard_test COMMAND amx_guard_test)
 set_tests_properties(onnx_embedder_test session_pool_test session_policy_test
-                     PROPERTIES LABELS unit)
+                     amx_guard_test PROPERTIES LABELS unit)

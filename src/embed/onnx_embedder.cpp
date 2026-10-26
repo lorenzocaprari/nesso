@@ -1,6 +1,7 @@
 // Copyright (c) 2026 Lorenzo Caprari
 // SPDX-License-Identifier: Apache-2.0
 
+#include <embed/amx_guard.hpp>
 #include <embed/onnx_embedder.hpp>
 
 #include <algorithm>
@@ -133,6 +134,15 @@ static Ort::SessionOptions makeSessionOptions(int intraOpThreads)
     return options;
 }
 
+// ORT picks its int8 GEMM kernel once per process, so the AMX refusal goes in
+// before the first environment and session. A host where it cannot be
+// installed keeps the ORT default.
+static Ort::Env makeEnv()
+{
+    static_cast<void>(denyAmxTiles());
+    return Ort::Env{ORT_LOGGING_LEVEL_WARNING, "nesso-embed"};
+}
+
 static ModelIo readModelIo(Ort::Session &session)
 {
     const Ort::AllocatorWithDefaultOptions allocator;
@@ -185,7 +195,7 @@ class OnnxEmbedder::SessionImpl
     [[nodiscard]] std::expected<std::vector<std::vector<float>>, EmbedError>
     infer(Ort::Session &session, std::span<const TokenizedInput> encoded) const;
 
-    Ort::Env env_{ORT_LOGGING_LEVEL_WARNING, "nesso-embed"};
+    Ort::Env env_ = makeEnv();
     std::vector<std::unique_ptr<Ort::Session>> sessions_;
     ModelIo io_;
     SessionPolicy policy_{};

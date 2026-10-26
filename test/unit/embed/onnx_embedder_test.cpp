@@ -1,11 +1,17 @@
 #include <catch2/catch_all.hpp>
 #include <embed/onnx_embedder.hpp>
 
+#include <cerrno>
 #include <cmath>
 #include <filesystem>
 #include <string>
 #include <utility>
 #include <vector>
+
+#if defined(__linux__) && defined(__x86_64__)
+#include <sys/syscall.h>
+#include <unistd.h>
+#endif
 
 #ifndef NESSO_MODELS_DIR
 #error "NESSO_MODELS_DIR must be defined"
@@ -178,6 +184,49 @@ TEST_CASE("OnnxEmbedder repeats an embedding", "[OnnxEmbedder][embed][integratio
     {
         const auto again = (*embedder)->embed("database connection refused");
         REQUIRE(again.has_value());
-        REQUIRE(cosineSimilarity(*first, *again) > 0.9999F);
+        REQUIRE(*again == *first);
+    }
+}
+
+TEST_CASE("OnnxEmbedder int8 pool repeats a two-batch embed byte for byte", "[OnnxEmbedder][embed][integration]")
+{
+    const std::filesystem::path modelDir = modelDirOrSkip();
+
+    const auto pooled = nesso::embed::OnnxEmbedder::create(modelDir, 2);
+    REQUIRE(pooled.has_value());
+    if (!(*pooled)->policy().quantized)
+    {
+        SKIP("the model is fp32");
+    }
+
+#if defined(__linux__) && defined(__x86_64__)
+    // ORT asks for AMX tile data when it builds its environment. On a host
+    // that loses tiles across a context switch, an AMX GEMM is corrupted when
+    // it is preempted, so the request must have been refused.
+    constexpr long kArchReqXcompPerm = 0x1023;
+    constexpr long kXfeatureXtiledata = 18;
+    errno = 0;
+    const long request = syscall(SYS_arch_prctl, kArchReqXcompPerm, kXfeatureXtiledata);
+    const int requestErrno = errno;
+    CHECK(request == -1);
+    CHECK(requestErrno == EPERM);
+#endif
+
+    // 64 texts are two batches of 32, which run at the same time on the two
+    // sessions. Each repeat must match the first byte for byte.
+    std::vector<std::string> texts;
+    texts.reserve(64);
+    for (int index = 0; index < 64; ++index)
+    {
+        texts.push_back("upstream timeout on replica " + std::to_string(index) + " after retry");
+    }
+    const auto first = (*pooled)->embedBatch(texts);
+    REQUIRE(first.has_value());
+    REQUIRE(first->size() == texts.size());
+    for (int run = 0; run < 10; ++run)
+    {
+        const auto again = (*pooled)->embedBatch(texts);
+        REQUIRE(again.has_value());
+        REQUIRE(*again == *first);
     }
 }
