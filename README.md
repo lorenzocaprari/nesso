@@ -11,9 +11,19 @@ Semantic grep for logs, fully offline, no server, no cloud, no API keys, [Apache
 
 ## Demo
 
-![nesso search for "the disk is full" matching lines that say "No space left on device"](docs/assets/demo.gif)
+![nesso grep for "the disk is full" matching lines that say "No space left on device"](docs/assets/demo.gif)
 
-The log does not contain the query. Index it, then search:
+The log does not contain the query.
+
+```bash
+nesso grep "the disk is full" app.log -k 3
+```
+
+```text
+line 869: 0.4736: Oct 18 06:13:11 web-02 app[4900]: write /var/lib/app/queue.db: No space left on device
+line 1494: 0.4694: Oct 22 17:08:04 web-02 app[7918]: write /var/lib/app/queue.db: No space left on device
+line 3762: 0.4677: Oct 24 23:39:07 web-02 app[2888]: write /var/lib/app/queue.db: No space left on device
+```
 
 ```bash
 nesso index -o app.nesso app.log
@@ -28,9 +38,9 @@ nesso search "the disk is full" -i app.nesso -k 3
 ```
 
 ```text
-line 746: 0.4580: Oct 18 14:07:25 web-01 app[2699]: write /var/lib/app/queue.db: No space left on device
-line 3940: 0.4352: Oct 18 14:39:39 web-01 app[1930]: write /var/lib/app/queue.db: No space left on device
-line 918: 0.4322: Oct 18 14:09:17 web-01 app[3859]: write /var/lib/app/queue.db: No space left on device
+line 869: 0.4736: Oct 18 06:13:11 web-02 app[4900]: write /var/lib/app/queue.db: No space left on device
+line 1494: 0.4694: Oct 22 17:08:04 web-02 app[7918]: write /var/lib/app/queue.db: No space left on device
+line 3762: 0.4677: Oct 24 23:39:07 web-02 app[2888]: write /var/lib/app/queue.db: No space left on device
 ```
 
 ## Install
