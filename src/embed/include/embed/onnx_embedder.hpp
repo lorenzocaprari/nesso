@@ -5,6 +5,7 @@
 #define EMBED_ONNX_EMBEDDER_HPP
 
 #include <embed/embed_types.hpp>
+#include <embed/session_policy.hpp>
 #include <embed/wordpiece_tokenizer.hpp>
 
 #include <cstdint>
@@ -18,28 +19,6 @@
 
 namespace nesso::embed
 {
-
-struct MachineResources
-{
-    size_t physicalCores = 1;
-    size_t logicalThreads = 1;
-    std::uintmax_t ramBytes = 0;
-};
-
-struct SessionPolicy
-{
-    bool quantized = false;
-    size_t sessions = 1;
-    int intraOpThreads = 1;
-};
-
-/// `requestedThreads` of 0 selects the machine default. An explicit count overrides it.
-[[nodiscard]] SessionPolicy sessionPolicy(bool quantized, std::uintmax_t modelBytes, size_t requestedThreads,
-                                          const MachineResources &machine);
-
-[[nodiscard]] std::string sessionPolicyText(size_t requestedThreads, const MachineResources &machine);
-
-[[nodiscard]] MachineResources thisMachine();
 
 class OnnxEmbedder
 {

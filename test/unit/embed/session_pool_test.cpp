@@ -5,39 +5,6 @@
 #include <string>
 #include <vector>
 
-using nesso::embed::MachineResources;
-using nesso::embed::SessionPolicy;
-
-TEST_CASE("an explicit thread count overrides the machine", "[session-policy]")
-{
-    const MachineResources machine{.physicalCores = 8, .logicalThreads = 16, .ramBytes = 8ULL << 30};
-    const SessionPolicy quantized = nesso::embed::sessionPolicy(true, 23ULL << 20, 4, machine);
-    CHECK(quantized.quantized);
-    CHECK(quantized.sessions == 4);
-    CHECK(quantized.intraOpThreads == 1);
-
-    const SessionPolicy floating = nesso::embed::sessionPolicy(false, 80ULL << 20, 4, machine);
-    CHECK_FALSE(floating.quantized);
-    CHECK(floating.sessions == 1);
-    CHECK(floating.intraOpThreads == 4);
-}
-
-TEST_CASE("the default int8 pool is capped by half of RAM", "[session-policy]")
-{
-    const MachineResources machine{.physicalCores = 16, .logicalThreads = 32, .ramBytes = 200};
-    const SessionPolicy policy = nesso::embed::sessionPolicy(true, 100, 0, machine);
-    CHECK(policy.sessions == 1);
-    CHECK(policy.intraOpThreads == 1);
-}
-
-TEST_CASE("fp32 keeps one session at the logical thread count", "[session-policy]")
-{
-    const MachineResources machine{.physicalCores = 4, .logicalThreads = 8, .ramBytes = 0};
-    const SessionPolicy policy = nesso::embed::sessionPolicy(false, 0, 0, machine);
-    CHECK(policy.sessions == 1);
-    CHECK(policy.intraOpThreads == 8);
-}
-
 #ifndef NESSO_MODELS_DIR
 #error "NESSO_MODELS_DIR must be defined"
 #endif

@@ -126,7 +126,7 @@ std::expected<ParsedCommand, int> parseCommandLine(int argc, char **argv)
                              if (verbose)
                              {
                                  text.push_back('\n');
-                                 text += nesso::embed::sessionPolicyText(threads, nesso::embed::thisMachine());
+                                 text += nesso::embed::sessionPolicyText(threads, nesso::embed::readMachine());
                              }
                              return text;
                          });

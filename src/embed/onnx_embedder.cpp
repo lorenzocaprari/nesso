@@ -13,11 +13,9 @@
 #include <functional>
 #include <memory>
 #include <onnxruntime_cxx_api.h>
-#include <set>
 #include <stdexcept>
 #include <string>
 #include <thread>
-#include <unistd.h>
 #include <utility>
 
 namespace nesso::embed
@@ -80,82 +78,6 @@ struct ModelIo
     std::string tokenTypeIds;
     std::string output;
 };
-
-static size_t atLeastOne(size_t count) { return count == 0 ? 1 : count; }
-
-MachineResources thisMachine()
-{
-    MachineResources machine;
-    const unsigned int logical = std::thread::hardware_concurrency();
-    machine.logicalThreads = atLeastOne(logical);
-    const auto pages = sysconf(_SC_PHYS_PAGES);
-    const auto pageSize = sysconf(_SC_PAGESIZE);
-    if (pages > 0 && pageSize > 0)
-    {
-        machine.ramBytes = static_cast<std::uintmax_t>(pages) * static_cast<std::uintmax_t>(pageSize);
-    }
-
-    std::set<std::pair<int, int>> cores;
-    std::error_code error;
-    for (const std::filesystem::directory_entry &entry :
-         std::filesystem::directory_iterator("/sys/devices/system/cpu", error))
-    {
-        const std::string name = entry.path().filename().string();
-        if (name.size() < 4 || !name.starts_with("cpu"))
-        {
-            continue;
-        }
-        if (!std::ranges::all_of(name.substr(3), [](unsigned char digit) { return digit >= '0' && digit <= '9'; }))
-        {
-            continue;
-        }
-        std::ifstream packageFile(entry.path() / "topology/physical_package_id");
-        std::ifstream coreFile(entry.path() / "topology/core_id");
-        int packageId = 0;
-        int coreId = 0;
-        if (!(packageFile >> packageId) || !(coreFile >> coreId))
-        {
-            continue;
-        }
-        cores.emplace(packageId, coreId);
-    }
-    machine.physicalCores = cores.empty() ? machine.logicalThreads : cores.size();
-    return machine;
-}
-
-SessionPolicy sessionPolicy(bool quantized, std::uintmax_t modelBytes, size_t requestedThreads,
-                            const MachineResources &machine)
-{
-    const size_t logical = atLeastOne(machine.logicalThreads);
-    if (!quantized)
-    {
-        const size_t intra = requestedThreads == 0 ? logical : requestedThreads;
-        return SessionPolicy{.quantized = false, .sessions = 1, .intraOpThreads = static_cast<int>(intra)};
-    }
-
-    size_t sessions = requestedThreads == 0 ? atLeastOne(machine.physicalCores) : requestedThreads;
-    // Each int8 session maps the model. Leave half of RAM for the process.
-    if (requestedThreads == 0 && modelBytes > 0 && machine.ramBytes > modelBytes)
-    {
-        const std::uintmax_t fit = (machine.ramBytes / 2) / modelBytes;
-        sessions = std::min(sessions, static_cast<size_t>(std::max<std::uintmax_t>(fit, 1)));
-    }
-    return SessionPolicy{.quantized = true, .sessions = atLeastOne(sessions), .intraOpThreads = 1};
-}
-
-std::string sessionPolicyText(size_t requestedThreads, const MachineResources &machine)
-{
-    const SessionPolicy quantized = sessionPolicy(true, 0, requestedThreads, machine);
-    const SessionPolicy floating = sessionPolicy(false, 0, requestedThreads, machine);
-    const char *sessionWord = quantized.sessions == 1 ? "session" : "sessions";
-    std::string text = std::format("int8: {} single-thread {}", quantized.sessions, sessionWord);
-    if (requestedThreads == 0)
-    {
-        text += ", capped by available RAM";
-    }
-    text += std::format("\nfp32: {} session, {} intra-op threads", floating.sessions, floating.intraOpThreads);
-    return text;
-}
 
 // Debug builds define _GLIBCXX_DEBUG. Copying the model through
 // istreambuf_iterator checks every byte, which takes about five seconds under
@@ -270,14 +192,8 @@ class OnnxEmbedder::SessionImpl
 };
 
 OnnxEmbedder::SessionImpl::SessionImpl(const std::filesystem::path &modelPath, size_t requestedThreads)
+    : policy_(sessionPolicy(modelIsQuantized(modelPath), requestedThreads, readMachine()))
 {
-    const bool quantized = modelIsQuantized(modelPath);
-    std::uintmax_t modelBytes = 0;
-    if (const auto size = std::filesystem::file_size(modelPath); size > 0)
-    {
-        modelBytes = size;
-    }
-    policy_ = sessionPolicy(quantized, modelBytes, requestedThreads, thisMachine());
     const Ort::SessionOptions options = makeSessionOptions(policy_.intraOpThreads);
     const std::string path = modelPath.string();
     sessions_.reserve(policy_.sessions);
