@@ -37,6 +37,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A tag release can call Package. `verify-package` grants `security-events: write`, which `scan-runtime` declares, because GitHub checks that permission before the job's `if`. Release passes `scan_runtime: false`. The Release `image` job still scans the image it built. Package's nightly run, manual run, and packaging pull requests still scan.
 - Release builds rewrite source and build paths, pin LTO to one job, and archive the `.deb` with the commit timestamp, fixed ownership, and single-threaded zstd. Two clean builds of the same commit produce the same package bytes.
 - `scripts/bench` treats the current grep trace (`parse`, `query-embed`, `embed`) as a completed run. The old `parse`/`embed`/`rank` check marked every CI run failed, and `continue-on-error` hid that result.
 - int8 embeddings use one intra-op thread per session so repeated runs agree under CPU load.
