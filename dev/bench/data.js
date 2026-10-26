@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793047689625,
+  "lastUpdate": 1793049872954,
   "repoUrl": "https://github.com/lorenzocaprari/nesso",
   "entries": {
     "nesso": [
@@ -917,6 +917,60 @@ window.BENCHMARK_DATA = {
           {
             "name": "grep-100000-rss",
             "value": 137932800,
+            "unit": "bytes"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "caprarilorenzo5@gmail.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "committer": {
+            "email": "85455384+lorenzocaprari@users.noreply.github.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "distinct": true,
+          "id": "2c9d942a6f7613f34289def1e446b02c71f0e190",
+          "message": "fix(platform): read ru_maxrss directly in peakResidentBytes\n\nPlacement-new of rusage into a one-byte-aligned array is undefined.\nRead the glibc field after getrusage and keep the Linux kilobyte-to-byte conversion.",
+          "timestamp": "2026-10-26T17:16:54-04:00",
+          "tree_id": "d326e085f778eee917e1b0fa9ad9880ab68d1af5",
+          "url": "https://github.com/lorenzocaprari/nesso/commit/2c9d942a6f7613f34289def1e446b02c71f0e190"
+        },
+        "date": 1793049872581,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "grep-1000-wall",
+            "value": 3.56,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-1000-rss",
+            "value": 136998912,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-10000-wall",
+            "value": 25.14,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-10000-rss",
+            "value": 132407296,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-100000-wall",
+            "value": 240.79,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-100000-rss",
+            "value": 137187328,
             "unit": "bytes"
           }
         ]
