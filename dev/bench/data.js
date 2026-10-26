@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793043159936,
+  "lastUpdate": 1793044066900,
   "repoUrl": "https://github.com/lorenzocaprari/nesso",
   "entries": {
     "nesso": [
@@ -755,6 +755,60 @@ window.BENCHMARK_DATA = {
           {
             "name": "grep-100000-rss",
             "value": 132456448,
+            "unit": "bytes"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "caprarilorenzo5@gmail.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "committer": {
+            "email": "85455384+lorenzocaprari@users.noreply.github.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "distinct": true,
+          "id": "b2e6099689628961a483bbc0db14d58341936e1f",
+          "message": "ci: add a single gate job for required checks",
+          "timestamp": "2026-10-26T15:28:14-04:00",
+          "tree_id": "a9f6232d280034e29b28c3c22b591f061d08f241",
+          "url": "https://github.com/lorenzocaprari/nesso/commit/b2e6099689628961a483bbc0db14d58341936e1f"
+        },
+        "date": 1793044066294,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "grep-1000-wall",
+            "value": 3.57,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-1000-rss",
+            "value": 131825664,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-10000-wall",
+            "value": 25.04,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-10000-rss",
+            "value": 132153344,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-100000-wall",
+            "value": 239.88,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-100000-rss",
+            "value": 132501504,
             "unit": "bytes"
           }
         ]
