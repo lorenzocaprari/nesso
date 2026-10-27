@@ -273,6 +273,18 @@ def hdfs_measurement(
     return case
 
 
+def grep_payload(*, sha: str, binary: Path, query: str, cpu: str, nproc: int, threads: str | None, cases: list) -> dict:
+    return {
+        "sha": sha,
+        "binary": str(binary),
+        "query": query,
+        "cpuModel": cpu,
+        "nproc": nproc,
+        "threads": threads,
+        "cases": cases,
+    }
+
+
 def hdfs_payload(*, sha: str, binary: Path, cpu: str, nproc: int, threads: str | None, case: dict) -> dict:
     return {
         "sha": sha,
@@ -995,12 +1007,15 @@ def main() -> None:
         print(f"bench: {size} lines {status} wall={case['wallSeconds']}s peak={case['peakRssBytes']}", flush=True)
         cases.append(case)
 
-    payload = {
-        "sha": sha,
-        "binary": str(binary),
-        "query": QUERY,
-        "cases": cases,
-    }
+    payload = grep_payload(
+        sha=sha,
+        binary=binary,
+        query=QUERY,
+        cpu=cpu_model(),
+        nproc=logical_cpus(),
+        threads=threads_setting(),
+        cases=cases,
+    )
     output = args.output or (ROOT / "bench" / "results" / f"{sha}.json")
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")

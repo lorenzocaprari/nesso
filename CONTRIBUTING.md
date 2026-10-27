@@ -12,7 +12,7 @@ Bugs and feature requests use the issue forms. Vulnerabilities follow [SECURITY.
 - GCC 15+ with C++26 (`conan/profiles/gcc-26*`)
 - CMake 4.2+ (`cmake_minimum_required` in `CMakeLists.txt`) and Ninja
 - Conan 2 (`conanfile.py`, `conan.lock`)
-- Python 3 for pre-commit, `scripts/bench`, and `scripts/bench-compare`
+- Python 3 for pre-commit, `scripts/bench`, and `scripts/bench-compare`. `go run -C scripts/ci . bench-baseline` rewrites `bench/baseline.json` from one or more of those results, keeping the slower wall time of each tier. Commit that file in its own change.
 - Go 1.24+ only for the godog specs (`test/functional/go.mod`)
 - AFL++, lld 21, and llvm-21 only for `scripts/fuzz-test`. Clang 21 is that toolchain and `conan/profiles/clang-26`
 

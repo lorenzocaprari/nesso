@@ -997,12 +997,18 @@ jobs:
           if-no-files-found: warn
 
   # Gates a merge. Pull requests run 1k and 10k. Pushes to main, the nightly
-  # schedule, and workflow_dispatch also run 100k. The baseline is the latest
-  # result saved from a non-PR run of this workflow.
+  # schedule, and workflow_dispatch also run 100k. The baseline is the committed
+  # bench/baseline.json. go run -C scripts/ci . bench-baseline rewrites it from
+  # result JSON, keeping the slower wall time of each tier.
   #
-  # Across 13 PR runs on 2026-10-25, one tier's wall time varied by up to 4.51x
-  # (two runner speed classes) while peak RSS stayed within 1.05x. Wall limit
-  # is 5.50x so that spread passes; RSS limit is 1.20x. A missing baseline warns.
+  # That file is the slowest measured sample of each tier on ubuntu-latest.
+  # Samples of that slower class stayed within about 12% on wall time. Peak RSS
+  # across both runner classes stayed within about 7%. The limits below sit
+  # above that spread. A missing baseline file fails the job.
+  #
+  # The same job runs threadScaleLines (scripts/ci) once with NESSO_THREADS=1
+  # and once with NESSO_THREADS=4. bench-scale fails when the speedup is below
+  # threadScaleMinRatio. The summary lists lines/s for every tier and that ratio.
   #
   # Pull requests also append an informational comparison against gh-pages
   # history. That step does not fail the job and does not push. bench-history
@@ -1017,8 +1023,8 @@ jobs:
       packages: read
       actions: write
     env:
-      NESSO_BENCH_WALL_TOLERANCE: "4.5"
-      NESSO_BENCH_RSS_TOLERANCE: "0.20"
+      NESSO_BENCH_WALL_TOLERANCE: "0.35"
+      NESSO_BENCH_RSS_TOLERANCE: "0.15"
       NESSO_BENCH_SIZES: ${{ github.event_name == 'pull_request' && '1000,10000' || '1000,10000,100000' }}
     container:
       image: ${{ needs.prepare-image-amd64.outputs.image }} # zizmor: ignore[unpinned-images] deps-<hash> tag, not a digest
@@ -1050,16 +1056,6 @@ jobs:
       - name: Extract Release build
         run: ./scripts/ci-build-archive unpack release-build
 
-      - name: Restore main benchmark baseline
-        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: bench/main-baseline
-          # Unique primary key so each non-PR run can save. Restore picks the
-          # newest bench-baseline-* entry, which non-PR runs write below.
-          key: bench-baseline-${{ github.run_id }}-${{ github.run_attempt }}
-          restore-keys: |
-            bench-baseline-
-
       - name: Run end-to-end benchmark
         run: |
           # Cap address space at 3/4 of RAM so an oversized embed batch fails
@@ -1070,22 +1066,85 @@ jobs:
             --sizes "${NESSO_BENCH_SIZES}" \
             --output bench/results/ci.json
 
-      - name: Compare against main baseline
+      # threadScaleLines in scripts/ci. One small grep, twice, on this runner.
+      - name: Run thread-scaling benchmark
+        if: always() && !cancelled()
+        run: |
+          mem_kb=$(awk '/^MemTotal:/ {print $2}' /proc/meminfo)
+          export NESSO_BENCH_AS_LIMIT_KB=$((mem_kb * 3 / 4))
+          NESSO_THREADS=1 python3 scripts/bench --binary build/Release/src/nesso --timeout 180 \
+            --sizes 4000 \
+            --output bench/results/threads-1.json
+          NESSO_THREADS=4 python3 scripts/bench --binary build/Release/src/nesso --timeout 180 \
+            --sizes 4000 \
+            --output bench/results/threads-4.json
+
+      - name: Compare against pinned baseline
+        if: always() && !cancelled()
         shell: bash
         run: |
           set -euo pipefail
-          status=0
+          if [[ ! -s bench/baseline.json ]]; then
+            echo "bench: missing bench/baseline.json" >&2
+            exit 1
+          fi
+          if [[ ! -s bench/results/ci.json ]]; then
+            echo "bench: missing bench/results/ci.json" >&2
+            exit 1
+          fi
           python3 scripts/bench-compare \
-            --baseline bench/main-baseline/baseline.json \
-            --result bench/results/ci.json | tee bench/results/compare.txt || status=$?
-          cat bench/results/compare.txt
-          {
-            echo '### Benchmark versus main baseline'
-            echo '```'
-            cat bench/results/compare.txt
-            echo '```'
-          } >>"${GITHUB_STEP_SUMMARY}"
-          exit "${status}"
+            --baseline bench/baseline.json \
+            --result bench/results/ci.json | tee bench/results/compare.txt
+
+      - name: Check thread scaling
+        if: always() && !cancelled()
+        shell: bash
+        env:
+          GOPROXY: "off"
+          GOTOOLCHAIN: local
+          GOFLAGS: "-mod=readonly -buildvcs=false"
+        run: |
+          set -euo pipefail
+          go build -C scripts/ci -o /tmp/nesso-ci .
+          /tmp/nesso-ci bench-scale \
+            --one bench/results/threads-1.json \
+            --four bench/results/threads-4.json | tee bench/results/scale.txt
+
+      - name: Write benchmark summary
+        if: always() && !cancelled()
+        shell: bash
+        env:
+          GOPROXY: "off"
+          GOTOOLCHAIN: local
+          GOFLAGS: "-mod=readonly -buildvcs=false"
+        run: |
+          set -euo pipefail
+          if [[ ! -s bench/results/ci.json ]]; then
+            {
+              echo '### Benchmark'
+              echo
+              echo 'No benchmark result file.'
+            } >>"${GITHUB_STEP_SUMMARY}"
+            exit 0
+          fi
+          if [[ ! -x /tmp/nesso-ci ]]; then
+            go build -C scripts/ci -o /tmp/nesso-ci .
+          fi
+          args=(bench-summary --result bench/results/ci.json)
+          if [[ -s bench/results/threads-1.json && -s bench/results/threads-4.json ]]; then
+            args+=(--one bench/results/threads-1.json --four bench/results/threads-4.json)
+          fi
+          /tmp/nesso-ci "${args[@]}"
+          if [[ -s bench/results/compare.txt ]]; then
+            {
+              echo
+              echo '### Benchmark versus pinned baseline'
+              echo
+              echo '```'
+              cat bench/results/compare.txt
+              echo '```'
+            } >>"${GITHUB_STEP_SUMMARY}"
+          fi
 
       # Reads gh-pages. Does not write it, and does not change the exit status
       # of the baseline comparison above. A missing branch or a GitHub error
@@ -1111,19 +1170,6 @@ jobs:
           fi
           go build -C scripts/ci -o /tmp/nesso-ci .
           /tmp/nesso-ci bench-history --result bench/results/ci.json --repo "${HISTORY_REPO}"
-
-      - name: Stage main benchmark baseline
-        if: github.event_name != 'pull_request'
-        run: |
-          mkdir -p bench/main-baseline
-          cp bench/results/ci.json bench/main-baseline/baseline.json
-
-      - name: Save main benchmark baseline
-        if: github.event_name != 'pull_request'
-        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: bench/main-baseline
-          key: bench-baseline-${{ github.run_id }}-${{ github.run_attempt }}
 
       - name: Upload benchmark results
         if: always()
@@ -1230,8 +1276,7 @@ jobs:
             gh api --silent "repos/${GITHUB_REPOSITORY}/branches/gh-pages"
           fi
 
-      # fail-on-alert and comment-on-alert stay off. Runner wall time moves by
-      # about 4.5x, so an alert here would fight the bench gate.
+      # fail-on-alert and comment-on-alert stay off. This chart is not a second gate.
       - name: Store benchmark history
         if: hashFiles('bench/results/external.json') != ''
         uses: benchmark-action/github-action-benchmark@4322e5726e6334590d251fc4f92bec0efafc45dc # v1.22.2

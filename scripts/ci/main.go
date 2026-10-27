@@ -8,7 +8,7 @@ import (
 	"os"
 )
 
-const ciUsage = "usage: ci <patch-coverage|junit-summary|bench-external|bench-history|trivy-summary|runtime-scan-dockerfile|ci-gate|ci-gate-needs|wait-build-env> [flags]"
+const ciUsage = "usage: ci <patch-coverage|junit-summary|bench-external|bench-history|bench-scale|bench-summary|bench-baseline|trivy-summary|runtime-scan-dockerfile|ci-gate|ci-gate-needs|wait-build-env> [flags]"
 
 func main() {
 	if len(os.Args) < 2 {
@@ -25,6 +25,12 @@ func main() {
 		code = benchExternalMain(os.Args[2:])
 	case "bench-history":
 		code = benchHistoryMain(os.Args[2:])
+	case "bench-scale":
+		code = benchScaleMain(os.Args[2:])
+	case "bench-summary":
+		code = benchSummaryMain(os.Args[2:])
+	case "bench-baseline":
+		code = benchBaselineMain(os.Args[2:])
 	case "trivy-summary":
 		code = trivyMain(os.Args[2:])
 	case "runtime-scan-dockerfile":

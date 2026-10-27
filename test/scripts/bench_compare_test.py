@@ -118,16 +118,45 @@ class BenchCompareTest(unittest.TestCase):
         self.assertEqual(result.returncode, 1, result.stdout)
         self.assertIn("FAILED", result.stdout)
 
-    def test_ci_wall_spread_passes_and_a_larger_slowdown_fails(self) -> None:
-        baseline = payload(case(1000, 0.82, 132_000_000), case(10_000, 6.91, 132_000_000))
-        env = {"NESSO_BENCH_WALL_TOLERANCE": "4.5", "NESSO_BENCH_RSS_TOLERANCE": "0.20"}
-        spread = payload(case(1000, 3.70, 137_000_000), case(10_000, 25.84, 137_000_000))
-        held = self.run_compare(baseline, spread, env=env)
+    def test_ci_tolerances_pass_at_the_limit_and_fail_above_it(self) -> None:
+        baseline = payload(case(1000, 2.74, 156_700_672), case(10_000, 14.81, 154_976_256))
+        env = {"NESSO_BENCH_WALL_TOLERANCE": "0.35", "NESSO_BENCH_RSS_TOLERANCE": "0.15"}
+        at_limit = payload(
+            case(1000, 2.74 * 1.35, int(156_700_672 * 1.15)),
+            case(10_000, 14.81 * 1.35, 154_976_256),
+        )
+        held = self.run_compare(baseline, at_limit, env=env)
         self.assertEqual(held.returncode, 0, held.stdout + held.stderr)
-        slowed = payload(case(1000, 0.82 * 6, 132_000_000), case(10_000, 6.91, 132_000_000))
+        slowed = payload(case(1000, 2.74 * 1.35 + 0.01, 156_700_672), case(10_000, 14.81, 154_976_256))
         failed = self.run_compare(baseline, slowed, env=env)
         self.assertEqual(failed.returncode, 1, failed.stdout)
         self.assertIn("REGRESSION", failed.stdout)
+
+    def test_grep_payload_records_threads(self) -> None:
+        bench = load_bench()
+        body = bench.grep_payload(
+            sha="abc",
+            binary=bench.Path("build/Release/src/nesso"),
+            query="database connection refused",
+            cpu="test",
+            nproc=4,
+            threads="4",
+            cases=[],
+        )
+        self.assertEqual(body["threads"], "4")
+        self.assertEqual(body["nproc"], 4)
+        self.assertEqual(body["cpuModel"], "test")
+        self.assertIsNone(
+            bench.grep_payload(
+                sha="abc",
+                binary=bench.Path("nesso"),
+                query="q",
+                cpu="test",
+                nproc=1,
+                threads=None,
+                cases=[],
+            )["threads"]
+        )
 
     def test_trace_stages_match_grep(self) -> None:
         bench = load_bench()
