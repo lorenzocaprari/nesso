@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Package `resolve-image` waits, on a pull request, for Pipeline to publish a new `nesso-build-env` tag. A base-image digest bump used to fail that job because Package and Pipeline start together and the new `deps-<hash>` tag does not exist yet. Schedule, manual, and release runs still fail on the first miss. The runtime-image scan test reads the final `FROM` from `packaging/Dockerfile.runtime` instead of a fixed digest, so the next digest bump does not fail `ci_report_test`.
+- A tag release downloads the `.deb` provenance with `gh run download` and then uploads the GitHub Release. The `release` job sets `GH_REPO` to the repository, because that job has no checkout. The v0.2.0 run stopped at "Download .deb provenance" with `failed to run git: fatal: not a git repository` and skipped the upload.
 
 ## [0.2.0] - 2026-10-27
 
