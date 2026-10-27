@@ -720,6 +720,10 @@ jobs:
       actions: read
       contents: write
       packages: read
+    # This job has no checkout. gh reads GH_REPO instead of a git remote,
+    # which is what lets `gh run download` fetch the .deb provenance.
+    env:
+      GH_REPO: ${{ github.repository }}
     steps:
       - name: Harden runner
         uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
