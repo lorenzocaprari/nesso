@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793096476715,
+  "lastUpdate": 1793097110074,
   "repoUrl": "https://github.com/lorenzocaprari/nesso",
   "entries": {
     "nesso": [
@@ -1349,6 +1349,60 @@ window.BENCHMARK_DATA = {
           {
             "name": "grep-100000-rss",
             "value": 136527872,
+            "unit": "bytes"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "caprarilorenzo5@gmail.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "committer": {
+            "email": "85455384+lorenzocaprari@users.noreply.github.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "distinct": true,
+          "id": "7ca0d2f131d4a4f46e51fc05cc717c16728c8dad",
+          "message": "ci: upload coverage reports to Codecov\n\nPublish the cleaned lcov trace from the coverage job on pull requests and\npushes to main. Same-repo uploads use GitHub OIDC. Fork pull requests stay\ntokenless, and Dependabot does not request an OIDC token. A rejected upload\ndoes not fail the job. The README badge points at that report.",
+          "timestamp": "2026-10-27T11:27:05+01:00",
+          "tree_id": "b487a2284907f798a0205986ebbd0150149938d1",
+          "url": "https://github.com/lorenzocaprari/nesso/commit/7ca0d2f131d4a4f46e51fc05cc717c16728c8dad"
+        },
+        "date": 1793097109659,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "grep-1000-wall",
+            "value": 0.86,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-1000-rss",
+            "value": 131788800,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-10000-wall",
+            "value": 7.42,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-10000-rss",
+            "value": 134565888,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-100000-wall",
+            "value": 72.21,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-100000-rss",
+            "value": 135200768,
             "unit": "bytes"
           }
         ]
