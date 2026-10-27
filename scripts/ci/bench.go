@@ -33,14 +33,19 @@ const (
 var repoPattern = regexp.MustCompile(`^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$`)
 
 type benchFile struct {
-	Cases []benchCase `json:"cases"`
+	SHA     string      `json:"sha,omitempty"`
+	Query   string      `json:"query,omitempty"`
+	Threads *string     `json:"threads"`
+	Cases   []benchCase `json:"cases"`
 }
 
 type benchCase struct {
 	Lines        int      `json:"lines"`
 	OK           bool     `json:"ok"`
+	ExitCode     int      `json:"exitCode,omitempty"`
 	WallSeconds  *float64 `json:"wallSeconds"`
 	PeakRssBytes *float64 `json:"peakRssBytes"`
+	Error        string   `json:"error,omitempty"`
 }
 
 type externalBench struct {
@@ -328,7 +333,7 @@ func formatHistory(current []externalBench, raw []byte, opts historyOptions) (st
 	}
 	fmt.Fprintf(
 		&b,
-		"\nA `flag` means this run is above the median of the last %d recorded points by more than the bench gate (wall %.2f×, rss %.2f×). Fewer than %d points does not flag. `scripts/bench-compare` remains the gate against the latest baseline.\n",
+		"\nA `flag` means this run is above the median of the last %d recorded points by more than the bench gate (wall %.2f×, rss %.2f×). Fewer than %d points does not flag. `scripts/bench-compare` remains the gate against `bench/baseline.json`.\n",
 		opts.window,
 		1+opts.wallTolerance,
 		1+opts.rssTolerance,

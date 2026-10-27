@@ -65,8 +65,9 @@ def main() -> int:
     parser.add_argument("--rss-tolerance", type=float, default=None, help="Fractional peak-RSS increase allowed")
     args = parser.parse_args()
 
-    # Local default stays 15%. CI sets the per-field variables: shared-runner
-    # wall times for one tier vary by about 4.5x, while peak RSS stays within 5%.
+    # Local default stays 15%. CI sets the per-field variables against the
+    # committed baseline: wall noise on the slow shared-runner sample stays
+    # inside the wall tolerance, and peak RSS stays inside the RSS tolerance.
     shared_raw = os.environ.get("NESSO_BENCH_TOLERANCE", "0.15")
     try:
         shared = float(shared_raw)
