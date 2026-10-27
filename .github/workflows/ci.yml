@@ -31,6 +31,7 @@ env:
 # same-repo rebuild can push deps-<hash> and the BuildKit registry cache.
 # lint and ci-gate override to contents: read. They do not pull the image.
 # bench-history overrides to contents: write. It runs only on a push to main.
+# coverage adds id-token: write so the Codecov upload can mint an OIDC token.
 # step-security/harden-runner v2.22.2 (egress-policy: audit) is the first step
 # of every job that runs on the host. Jobs that set container: do not get it:
 # those steps run inside the container, and the agent has to install on the VM.
@@ -874,6 +875,7 @@ jobs:
       contents: read
       packages: read
       actions: write
+      id-token: write
     container:
       image: ${{ needs.prepare-image-amd64.outputs.image }} # zizmor: ignore[unpinned-images] deps-<hash> tag, not a digest
       credentials:
@@ -909,6 +911,36 @@ jobs:
         run: |
           chmod +x scripts/code-coverage
           ./scripts/code-coverage conan/profiles/code-coverage
+
+      # The Codecov CLI checks its download with gpg. software-properties-common
+      # pulls gnupg into the image; install it only when that binary is absent.
+      # Pull requests and pushes to main only, after the floor script has written
+      # the cleaned trace. Same-repo runs authenticate with OIDC. The action
+      # itself skips OIDC on a fork and uploads tokenless (public repos accept
+      # that on an owner:branch name). Dependabot gets neither an OIDC token
+      # nor Actions secrets, so use_oidc is off for that actor and the token
+      # input is empty unless a Dependabot CODECOV_TOKEN secret exists.
+      # fail_ci_if_error is false so a missing app or token does not fail CI.
+      # Schedule and workflow_dispatch do not upload.
+      - name: Ensure gpg for Codecov
+        if: success() && (github.event_name == 'pull_request' || github.event_name == 'push')
+        run: |
+          if ! command -v gpg >/dev/null 2>&1; then
+            apt-get update -qq
+            apt-get install -y --no-install-recommends gnupg
+          fi
+
+      - name: Upload coverage to Codecov
+        if: success() && (github.event_name == 'pull_request' || github.event_name == 'push')
+        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
+        with:
+          use_oidc: ${{ github.actor != 'dependabot[bot]' }}
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: build/coverage/coverage.cleaned
+          disable_search: true
+          fail_ci_if_error: false
+          disable_telem: true
+          cleanup: true
 
       # Pull requests only. Reuses the lcov trace from the floor step, so the
       # added work is the checkout history plus a line lookup. The bar is 80%

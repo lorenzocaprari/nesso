@@ -15,7 +15,7 @@ The script `cd`s to the repository root derived from its own path. The first arg
 
 Each summary row is `<metric>: <measured>% (required >= <floor>%)`, where metric is `lines`, `functions`, or `branches`. The script writes `summary.txt` after `check`, including when a floor fails, then exits 2. It does not write that file if `lcov` or `genhtml` exits first. When `GITHUB_STEP_SUMMARY` is set, the same rows are appended there.
 
-The Pipeline job is `coverage` in `.github/workflows/ci.yml`. It runs `./scripts/code-coverage conan/profiles/code-coverage` and uploads `build/coverage/report` as `coverage-report`. When `CI=true`, the script adds `--no-remote` and exports `NESSO_REQUIRE_MODEL=1`. That job also sets `NESSO_REQUIRE_BDD=1`.
+The Pipeline job is `coverage` in `.github/workflows/ci.yml`. It runs `./scripts/code-coverage conan/profiles/code-coverage` and uploads `build/coverage/report` as `coverage-report`. When `CI=true`, the script adds `--no-remote` and exports `NESSO_REQUIRE_MODEL=1`. That job also sets `NESSO_REQUIRE_BDD=1`. On a pull request and on a push to `main`, the job also uploads `build/coverage/coverage.cleaned` to Codecov. `fail_ci_if_error` is false, so a rejected upload does not fail the job.
 
 ## Floor miss
 
@@ -24,6 +24,8 @@ The Pipeline job is `coverage` in `.github/workflows/ci.yml`. It runs `./scripts
 ## `negative taken count`
 
 That lcov text is a capture problem. The script's `lcov --capture` and the following `genhtml` both run before `check`. If either exits, the floor comparison has not run. The script's `--ignore-errors` lists are in `scripts/code-coverage` (`inconsistent`, `mismatch`, `unused` on capture; the summary call also ignores `corrupt`). Do not add this error to that list and do not lower `REQUIRED_*`.
+
+`conan/profiles/code-coverage` passes `-fprofile-update=atomic` on the consumer compile, and `conanfile.py` copies those flags into the CMake toolchain. `inferAll` runs `infer` on one thread per int8 session. Plain `--coverage` updates those gcov arc counters with a non-atomic add, the counters drift, and lcov reports a negative taken count for `onnx_embedder.cpp`. Atomic updates are the fix for that race. Do not drop the flag, and do not ignore the `negative` error to get past a capture that is still racy.
 
 ## Tests
 

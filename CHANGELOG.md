@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- The `coverage` job uploads the cleaned lcov trace to Codecov on pull requests and on pushes to `main`. The README shows that coverage badge. A missing Codecov token or app does not fail the job. The coverage floors are unchanged.
+
 ## [0.2.0] - 2026-10-27
 
 ### Added
