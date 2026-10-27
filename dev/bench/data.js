@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793120581321,
+  "lastUpdate": 1793131069751,
   "repoUrl": "https://github.com/lorenzocaprari/nesso",
   "entries": {
     "nesso": [
@@ -1943,6 +1943,60 @@ window.BENCHMARK_DATA = {
           {
             "name": "grep-100000-rss",
             "value": 148008960,
+            "unit": "bytes"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "85455384+lorenzocaprari@users.noreply.github.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "58418eadf6c6fdee253d491860ad65891d8157a7",
+          "message": "docs(adr): record the command-line contract and JSON Lines output (#169)",
+          "timestamp": "2026-10-27T15:52:03-04:00",
+          "tree_id": "16480bb2d0d2464bf0349b80ba7d6be367e3e22d",
+          "url": "https://github.com/lorenzocaprari/nesso/commit/58418eadf6c6fdee253d491860ad65891d8157a7"
+        },
+        "date": 1793131068896,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "grep-1000-wall",
+            "value": 2.69,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-1000-rss",
+            "value": 151826432,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-10000-wall",
+            "value": 14.49,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-10000-rss",
+            "value": 150585344,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-100000-wall",
+            "value": 136.43,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-100000-rss",
+            "value": 150110208,
             "unit": "bytes"
           }
         ]
