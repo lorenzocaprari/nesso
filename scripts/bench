@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""Run deterministic grep benchmarks and write bench/results/<sha>.json."""
+"""Run deterministic benchmarks and write JSON under bench/results/.
+
+Without --dataset, time grep on fixed-seed synthetic logs. --dataset hdfs
+indexes the Loghub HDFS sample and writes bench/results/<sha>.hdfs.json.
+"""
 
 import argparse
 import json
@@ -7,12 +11,14 @@ import os
 import random
 import signal
 import subprocess
+import sys
 import tempfile
 import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_SIZES = (1000, 10_000, 100_000)
+HDFS_DEFAULT_LINES = 100_000
 QUERY = "database connection refused"
 SEED = 0x4E455353
 TEMPLATES = (
@@ -104,6 +110,120 @@ def address_limit_bytes() -> int | None:
     return int(raw) * 1024
 
 
+def with_address_limit(command: list[str]) -> list[str]:
+    limit = address_limit_bytes()
+    if limit is None:
+        return command
+    if not Path("/usr/bin/prlimit").is_file():
+        raise SystemExit("error: /usr/bin/prlimit is required when NESSO_BENCH_AS_LIMIT_KB is set")
+    return ["prlimit", f"--as={limit}", *command]
+
+
+def read_gnu_time(time_path: Path) -> tuple[float | None, int | None]:
+    if not time_path.is_file():
+        return None, None
+    for line in reversed(time_path.read_text(encoding="utf-8", errors="replace").splitlines()):
+        parts = line.split()
+        if len(parts) < 2:
+            continue
+        try:
+            return float(parts[0]), int(parts[1]) * 1024
+        except ValueError:
+            continue
+    return None, None
+
+
+def repeat_lines(source: Path, dest: Path, count: int) -> tuple[int, int]:
+    if count <= 0:
+        raise SystemExit("error: --lines must be a positive integer")
+    lines = source.read_text(encoding="utf-8").splitlines()
+    if not lines:
+        raise SystemExit(f"error: {source} has no lines")
+    with dest.open("w", encoding="utf-8", newline="\n") as handle:
+        for index in range(count):
+            handle.write(lines[index % len(lines)])
+            handle.write("\n")
+    size = dest.stat().st_size
+    return count, size
+
+
+def parse_cpu_model(text: str) -> str:
+    for line in text.splitlines():
+        if line.lower().startswith("model name"):
+            return line.split(":", 1)[1].strip()
+    return "unknown"
+
+
+def cpu_model() -> str:
+    path = Path("/proc/cpuinfo")
+    if not path.is_file():
+        return "unknown"
+    return parse_cpu_model(path.read_text(encoding="utf-8", errors="replace"))
+
+
+def logical_cpus() -> int:
+    try:
+        return int(subprocess.check_output(["nproc"], text=True).strip())
+    except (OSError, subprocess.CalledProcessError, ValueError) as exc:
+        raise SystemExit(f"error: nproc failed: {exc}") from exc
+
+
+def gnu_time_binary() -> str:
+    # The arm64 test image has no GNU time. Tests point this at a stand-in.
+    return os.environ.get("NESSO_BENCH_TIME", "/usr/bin/time")
+
+
+def threads_setting() -> str | None:
+    value = os.environ.get("NESSO_THREADS")
+    if value is None or value == "":
+        return None
+    return value
+
+
+def hdfs_measurement(
+    *,
+    lines: int,
+    wall_seconds: float,
+    peak_rss_bytes: int | None,
+    input_bytes: int,
+    corpus_bytes: int | None,
+    exit_code: int | None,
+    ok: bool,
+    error: str | None = None,
+) -> dict:
+    wall = round(wall_seconds, 6)
+    per_second = round(lines / wall, 6) if wall > 0 else None
+    ratio = None
+    if corpus_bytes is not None and input_bytes > 0:
+        ratio = round(corpus_bytes / input_bytes, 6)
+    case = {
+        "lines": lines,
+        "ok": ok,
+        "exitCode": exit_code,
+        "wallSeconds": wall,
+        "peakRssBytes": peak_rss_bytes,
+        "linesPerSecond": per_second,
+        "inputBytes": input_bytes,
+        "corpusBytes": corpus_bytes,
+        "corpusToInputRatio": ratio,
+    }
+    if error is not None:
+        case["error"] = error
+    return case
+
+
+def hdfs_payload(*, sha: str, binary: Path, cpu: str, nproc: int, threads: str | None, case: dict) -> dict:
+    return {
+        "sha": sha,
+        "binary": str(binary),
+        "dataset": "hdfs",
+        "cpuModel": cpu,
+        "nproc": nproc,
+        "threads": threads,
+        "cases": [case],
+    }
+
+
 def run_case(binary: Path, model_dir: Path, lines: int, timeout: float | None) -> dict:
     with tempfile.TemporaryDirectory(prefix="nesso-bench-") as tmp:
         log_path = Path(tmp) / "corpus.log"
@@ -126,11 +246,7 @@ def run_case(binary: Path, model_dir: Path, lines: int, timeout: float | None) -
             "-k",
             "5",
         ]
-        limit = address_limit_bytes()
-        if limit is not None:
-            if not Path("/usr/bin/prlimit").is_file():
-                raise SystemExit("error: /usr/bin/prlimit is required when NESSO_BENCH_AS_LIMIT_KB is set")
-            command = ["prlimit", f"--as={limit}", *command]
+        command = with_address_limit(command)
         started = time.perf_counter()
         process = subprocess.Popen(
             command,
@@ -154,18 +270,9 @@ def run_case(binary: Path, model_dir: Path, lines: int, timeout: float | None) -
             }
         wall_seconds = time.perf_counter() - started
         stderr = stderr_bytes.decode("utf-8", "replace")
-        peak_rss_bytes = None
-        if time_path.is_file():
-            for line in reversed(time_path.read_text(encoding="utf-8", errors="replace").splitlines()):
-                parts = line.split()
-                if len(parts) < 2:
-                    continue
-                try:
-                    wall_seconds = float(parts[0])
-                    peak_rss_bytes = int(parts[1]) * 1024
-                except ValueError:
-                    continue
-                break
+        timed_wall, peak_rss_bytes = read_gnu_time(time_path)
+        if timed_wall is not None:
+            wall_seconds = timed_wall
         trace = parse_trace(stderr)
         return_code = process.returncode
         ok = return_code == 0 and trace_ok(trace) and peak_rss_bytes is not None and bool(stdout)
@@ -195,18 +302,179 @@ def run_case(binary: Path, model_dir: Path, lines: int, timeout: float | None) -
         return case
 
 
+def index_failure(return_code: int | None, stderr: str, peak_rss_bytes: int | None, corpus: Path) -> str | None:
+    if return_code == 0 and peak_rss_bytes is not None and corpus.is_file() and corpus.stat().st_size > 0:
+        return None
+    if "Failed to allocate memory" in stderr:
+        return "embedder failed to allocate"
+    if return_code is not None and return_code < 0:
+        return f"killed by signal {-return_code}"
+    if return_code is not None and return_code > 128:
+        return f"killed by signal {return_code - 128}"
+    if return_code not in (0, None):
+        return f"nesso exited {return_code}"
+    if not corpus.is_file() or corpus.stat().st_size == 0:
+        return "missing corpus"
+    return "missing peak RSS"
+
+
+def ensure_hdfs_sample(explicit: Path | None) -> Path:
+    if explicit is not None:
+        if not explicit.is_file():
+            raise SystemExit(f"error: sample not found: {explicit}")
+        return explicit
+    script = Path(__file__).resolve().parent / "fetch-loghub"
+    completed = subprocess.run([sys.executable, str(script)], check=False)
+    if completed.returncode != 0:
+        raise SystemExit(completed.returncode)
+    dest = ROOT / "build" / "bench" / "HDFS_2k.log"
+    if not dest.is_file():
+        raise SystemExit(f"error: fetch-loghub did not write {dest}")
+    return dest
+
+
+def run_hdfs_index(binary: Path, model_dir: Path, sample: Path, lines: int, timeout: float | None) -> dict:
+    with tempfile.TemporaryDirectory(prefix="nesso-bench-hdfs-") as tmp:
+        directory = Path(tmp)
+        log_path = directory / "hdfs.log"
+        _, input_bytes = repeat_lines(sample, log_path, lines)
+        corpus = directory / "corpus.nesso"
+        time_path = directory / "time.txt"
+        command = with_address_limit(
+            [
+                gnu_time_binary(),
+                "-f",
+                "%e %M",
+                "-o",
+                str(time_path),
+                str(binary),
+                "index",
+                "-o",
+                str(corpus),
+                str(log_path),
+                "--model-dir",
+                str(model_dir),
+                "--quiet",
+            ]
+        )
+        started = time.perf_counter()
+        process = subprocess.Popen(
+            command,
+            env=os.environ.copy(),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            start_new_session=True,
+        )
+        try:
+            _stdout, stderr_bytes = process.communicate(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            os.killpg(process.pid, signal.SIGKILL)
+            process.communicate()
+            return hdfs_measurement(
+                lines=lines,
+                wall_seconds=time.perf_counter() - started,
+                peak_rss_bytes=None,
+                input_bytes=input_bytes,
+                corpus_bytes=None,
+                exit_code=None,
+                ok=False,
+                error=f"timed out after {timeout}s",
+            )
+        wall_seconds = time.perf_counter() - started
+        stderr = stderr_bytes.decode("utf-8", "replace")
+        timed_wall, peak_rss_bytes = read_gnu_time(time_path)
+        if timed_wall is not None:
+            wall_seconds = timed_wall
+        corpus_bytes = corpus.stat().st_size if corpus.is_file() else None
+        error = index_failure(process.returncode, stderr, peak_rss_bytes, corpus)
+        return hdfs_measurement(
+            lines=lines,
+            wall_seconds=wall_seconds,
+            peak_rss_bytes=peak_rss_bytes,
+            input_bytes=input_bytes,
+            corpus_bytes=corpus_bytes,
+            exit_code=process.returncode,
+            ok=error is None,
+            error=error,
+        )
+
+
+def run_hdfs(args: argparse.Namespace) -> None:
+    if args.sizes is not None:
+        raise SystemExit("error: --sizes applies to the synthetic grep benchmark")
+    lines = HDFS_DEFAULT_LINES if args.lines is None else args.lines
+    if lines <= 0:
+        raise SystemExit("error: --lines must be a positive integer")
+    binary = resolve_binary(args.binary)
+    if not binary.is_file():
+        raise SystemExit(f"error: binary not found: {binary}")
+    model_dir = resolve_model_dir(args.model_dir)
+    if not (model_dir / "model.onnx").is_file() or not (model_dir / "vocab.txt").is_file():
+        raise SystemExit(f"error: {model_dir} must contain model.onnx and vocab.txt")
+    time_bin = gnu_time_binary()
+    if not Path(time_bin).is_file():
+        raise SystemExit(f"error: {time_bin} is required")
+    sample = ensure_hdfs_sample(args.sample)
+    print(f"bench: hdfs index {lines} lines", flush=True)
+    case = run_hdfs_index(binary, model_dir, sample, lines, args.timeout)
+    status = "ok" if case["ok"] else case.get("error", "failed")
+    print(
+        f"bench: {lines} lines {status} wall={case['wallSeconds']}s "
+        f"lines/s={case['linesPerSecond']} peak={case['peakRssBytes']} "
+        f"corpusBytes={case['corpusBytes']} inputBytes={case['inputBytes']} "
+        f"ratio={case['corpusToInputRatio']}",
+        flush=True,
+    )
+    cpu = cpu_model()
+    count = logical_cpus()
+    threads = threads_setting()
+    shown_threads = threads if threads is not None else "unset"
+    print(f"bench: cpu={cpu} nproc={count} NESSO_THREADS={shown_threads}", flush=True)
+    payload = hdfs_payload(
+        sha=git_sha(),
+        binary=binary,
+        cpu=cpu,
+        nproc=count,
+        threads=threads,
+        case=case,
+    )
+    output = args.output or (ROOT / "bench" / "results" / f"{payload['sha']}.hdfs.json")
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+    print(f"bench: wrote {output}")
+    if not case.get("ok"):
+        raise SystemExit(1)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--binary", help="Path to the nesso executable")
     parser.add_argument("--model-dir", help="Directory with model.onnx and vocab.txt")
     parser.add_argument(
+        "--dataset",
+        choices=("hdfs",),
+        help="Index the Loghub HDFS sample instead of the synthetic grep tiers",
+    )
+    parser.add_argument(
+        "--lines",
+        type=int,
+        default=None,
+        help="Repeat the HDFS sample to this many lines (default: 100000)",
+    )
+    parser.add_argument("--sample", type=Path, help="HDFS sample to repeat (default: scripts/fetch-loghub)")
+    parser.add_argument(
         "--sizes",
-        default=",".join(str(size) for size in DEFAULT_SIZES),
+        default=None,
         help="Comma-separated log line counts (default: 1000,10000,100000)",
     )
     parser.add_argument("--output", type=Path, help="Result JSON path (default: bench/results/<sha>.json)")
     parser.add_argument("--timeout", type=float, help="Per-size timeout in seconds")
     args = parser.parse_args()
+    if args.dataset == "hdfs":
+        run_hdfs(args)
+        return
+    if args.lines is not None or args.sample is not None:
+        raise SystemExit("error: --lines and --sample apply to --dataset hdfs")
 
     binary = resolve_binary(args.binary)
     if not binary.is_file():
@@ -217,7 +485,8 @@ def main() -> None:
     if not Path("/usr/bin/time").is_file():
         raise SystemExit("error: /usr/bin/time is required")
 
-    sizes = tuple(int(part) for part in args.sizes.split(",") if part)
+    size_text = args.sizes if args.sizes is not None else ",".join(str(size) for size in DEFAULT_SIZES)
+    sizes = tuple(int(part) for part in size_text.split(",") if part)
     if not sizes or any(size <= 0 for size in sizes):
         raise SystemExit("error: --sizes must be positive integers")
 
