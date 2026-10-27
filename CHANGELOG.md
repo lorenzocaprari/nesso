@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- The README shows the SLSA Build Level 3 badge and the commands to verify a release `.deb` and the GHCR image with `slsa-verifier`.
+
 ## [0.2.1] - 2026-10-27
 
 ### Added

@@ -4,6 +4,7 @@
 [![Latest release](https://img.shields.io/github/v/release/lorenzocaprari/nesso)](https://github.com/lorenzocaprari/nesso/releases/latest)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/lorenzocaprari/nesso/badge)](https://scorecard.dev/viewer/?uri=github.com/lorenzocaprari/nesso)
+[![SLSA 3](https://slsa.dev/images/gh-badge-level3.svg)](https://slsa.dev)
 [![CodeQL](https://github.com/lorenzocaprari/nesso/actions/workflows/codeql.yml/badge.svg)](https://github.com/lorenzocaprari/nesso/actions/workflows/codeql.yml)
 [![ClusterFuzzLite](https://github.com/lorenzocaprari/nesso/actions/workflows/cifuzz.yml/badge.svg?branch=main&event=schedule)](https://github.com/lorenzocaprari/nesso/actions/workflows/cifuzz.yml)
 [![GHCR](https://img.shields.io/badge/ghcr.io-lorenzocaprari%2Fnesso-blue.svg)](https://github.com/lorenzocaprari/nesso/pkgs/container/nesso)
@@ -56,6 +57,33 @@ curl -fL -o nesso_0.2.1_amd64.deb \
   https://github.com/lorenzocaprari/nesso/releases/download/v0.2.1/nesso_0.2.1_amd64.deb
 sudo apt install ./nesso_0.2.1_amd64.deb
 ```
+
+## Verify a download
+
+`nesso_0.2.1.intoto.jsonl` covers the `.deb` packages and the SPDX SBOMs. `SHA256SUMS` lists every release file. The image attestation is stored on the manifest-list digest in GHCR.
+
+```bash
+curl -fL -o nesso_0.2.1_amd64.deb \
+  https://github.com/lorenzocaprari/nesso/releases/download/v0.2.1/nesso_0.2.1_amd64.deb
+curl -fL -o nesso_0.2.1.intoto.jsonl \
+  https://github.com/lorenzocaprari/nesso/releases/download/v0.2.1/nesso_0.2.1.intoto.jsonl
+curl -fL -o SHA256SUMS \
+  https://github.com/lorenzocaprari/nesso/releases/download/v0.2.1/SHA256SUMS
+
+sha256sum --ignore-missing -c SHA256SUMS
+
+slsa-verifier verify-artifact nesso_0.2.1_amd64.deb \
+  --provenance-path nesso_0.2.1.intoto.jsonl \
+  --source-uri github.com/lorenzocaprari/nesso \
+  --source-tag v0.2.1
+
+digest="$(docker buildx imagetools inspect --format '{{index .Manifest.Digest}}' ghcr.io/lorenzocaprari/nesso:v0.2.1)"
+slsa-verifier verify-image "ghcr.io/lorenzocaprari/nesso@${digest}" \
+  --source-uri github.com/lorenzocaprari/nesso \
+  --source-tag v0.2.1
+```
+
+`slsa-verifier` v2.7.1 or later. Signatures and the other provenance files are in [Verifying a release](docs/verifying.md).
 
 ## More
 
