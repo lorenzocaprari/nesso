@@ -4,6 +4,9 @@
 [![Latest release](https://img.shields.io/github/v/release/lorenzocaprari/nesso)](https://github.com/lorenzocaprari/nesso/releases/latest)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/lorenzocaprari/nesso/badge)](https://scorecard.dev/viewer/?uri=github.com/lorenzocaprari/nesso)
+[![CodeQL](https://github.com/lorenzocaprari/nesso/actions/workflows/codeql.yml/badge.svg)](https://github.com/lorenzocaprari/nesso/actions/workflows/codeql.yml)
+[![ClusterFuzzLite](https://github.com/lorenzocaprari/nesso/actions/workflows/cifuzz.yml/badge.svg?branch=main&event=schedule)](https://github.com/lorenzocaprari/nesso/actions/workflows/cifuzz.yml)
+[![GHCR](https://img.shields.io/badge/ghcr.io-lorenzocaprari%2Fnesso-blue.svg)](https://github.com/lorenzocaprari/nesso/pkgs/container/nesso)
 
 grep for meaning: find the log lines you're looking for even when the words differ. Offline, one binary.
 
