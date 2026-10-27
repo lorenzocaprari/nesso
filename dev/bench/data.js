@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793115172518,
+  "lastUpdate": 1793115962729,
   "repoUrl": "https://github.com/lorenzocaprari/nesso",
   "entries": {
     "nesso": [
@@ -1835,6 +1835,60 @@ window.BENCHMARK_DATA = {
           {
             "name": "grep-100000-rss",
             "value": 148406272,
+            "unit": "bytes"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "caprarilorenzo5@gmail.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "committer": {
+            "email": "85455384+lorenzocaprari@users.noreply.github.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "distinct": true,
+          "id": "937c386ea84f3caf6b73c92c2ab49dae1e4824fc",
+          "message": "docs: add nightly build badge",
+          "timestamp": "2026-10-27T16:40:58+01:00",
+          "tree_id": "18b6ef78be53afd616a88079e8a191e1b78fc212",
+          "url": "https://github.com/lorenzocaprari/nesso/commit/937c386ea84f3caf6b73c92c2ab49dae1e4824fc"
+        },
+        "date": 1793115961998,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "grep-1000-wall",
+            "value": 0.85,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-1000-rss",
+            "value": 147836928,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-10000-wall",
+            "value": 6.81,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-10000-rss",
+            "value": 151121920,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-100000-wall",
+            "value": 67.24,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-100000-rss",
+            "value": 148213760,
             "unit": "bytes"
           }
         ]
