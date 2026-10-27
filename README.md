@@ -1,6 +1,7 @@
 # Nesso
 
 [![Pipeline](https://github.com/lorenzocaprari/nesso/actions/workflows/ci.yml/badge.svg)](https://github.com/lorenzocaprari/nesso/actions/workflows/ci.yml)
+[![Nightly](https://img.shields.io/github/actions/workflow/status/lorenzocaprari/nesso/ci.yml?branch=main&event=schedule&label=nightly)](https://github.com/lorenzocaprari/nesso/actions/workflows/ci.yml?query=event%3Aschedule+branch%3Amain)
 [![Latest release](https://img.shields.io/github/v/release/lorenzocaprari/nesso)](https://github.com/lorenzocaprari/nesso/releases/latest)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/lorenzocaprari/nesso/badge)](https://scorecard.dev/viewer/?uri=github.com/lorenzocaprari/nesso)
