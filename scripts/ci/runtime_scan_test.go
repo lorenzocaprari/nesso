@@ -22,8 +22,15 @@ func TestRuntimeScanDockerfileUsesFinalStageOnly(t *testing.T) {
 	if strings.Contains(got, "BUILD_IMAGE") || strings.Contains(got, "--from=build") {
 		t.Fatalf("build stage leaked into scan dockerfile:\n%s", got)
 	}
+	// The final FROM is whatever packaging/Dockerfile.runtime pins, digest
+	// included. A base-image bump changes that pin; the scan keeps the final
+	// stage line and drops the build stage.
+	fromLine := finalStageFrom(t, string(src))
+	gotFrom, _, _ := strings.Cut(got, "\n")
+	if gotFrom != fromLine || strings.Count(got, "FROM ") != 1 {
+		t.Fatalf("scan FROM = %q, final stage FROM = %q\n%s", gotFrom, fromLine, got)
+	}
 	for _, needle := range []string{
-		"FROM ubuntu:26.04@sha256:f144425ff09be612d6d9ad965196e9cdc23dae1f42110a8a11a3e9a8198759f7\n",
 		"apt-get install -y --no-install-recommends ca-certificates libstdc++6 libgomp1",
 		"COPY nesso /usr/local/bin/nesso\n",
 		"COPY models /usr/share/nesso\n",
@@ -51,6 +58,48 @@ func TestRuntimeScanDockerfileUsesFinalStageOnly(t *testing.T) {
 	if plan != "file\tnesso\tusr/bin/nesso\ndir\tmodels\tusr/share/nesso\ndir\tdoc\tusr/share/doc/nesso\n" {
 		t.Fatalf("plan = %q", plan)
 	}
+}
+
+func TestRuntimeScanDockerfilePreservesFinalFrom(t *testing.T) {
+	digest := "sha256:" + strings.Repeat("cd", 32)
+	src := "" +
+		"ARG BUILD_IMAGE\n" +
+		"FROM ${BUILD_IMAGE} AS build\n" +
+		"RUN echo build\n" +
+		"FROM ubuntu:26.04@" + digest + "\n" +
+		"RUN apt-get install -y --no-install-recommends ca-certificates libstdc++6 libgomp1\n" +
+		"COPY --from=build /opt/nesso/bin/nesso /usr/local/bin/nesso\n" +
+		"COPY --from=build /opt/nesso/models /usr/share/nesso\n" +
+		"COPY --from=build /opt/nesso/doc /usr/share/doc/nesso\n" +
+		"ENV NESSO_MODEL_DIR=/usr/share/nesso\n" +
+		"ENTRYPOINT [\"nesso\"]\n"
+	got, _, err := runtimeScanDockerfile(src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(got, "BUILD_IMAGE") || strings.Contains(got, "--from=build") || strings.Contains(got, "AS build") {
+		t.Fatalf("build stage leaked:\n%s", got)
+	}
+	if strings.Count(got, "FROM ") != 1 || !strings.Contains(got, "FROM ubuntu:26.04@"+digest+"\n") {
+		t.Fatalf("final FROM not preserved:\n%s", got)
+	}
+}
+
+func finalStageFrom(t *testing.T, src string) string {
+	t.Helper()
+	lines, err := dockerfileInstructions(src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stages := splitDockerfileStages(lines)
+	if len(stages) == 0 || len(stages[len(stages)-1]) == 0 {
+		t.Fatal("dockerfile has no final stage")
+	}
+	from := stages[len(stages)-1][0]
+	if !strings.HasPrefix(strings.ToUpper(from), "FROM ") {
+		t.Fatalf("final stage starts with %q", from)
+	}
+	return from
 }
 
 func TestRuntimeScanDockerfileRejectsDrift(t *testing.T) {

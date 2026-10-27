@@ -10,6 +10,16 @@ name: Package
 # wait for it: a tag does not push the image or publish the GitHub Release
 # when a job here fails. The same wait applies to a release workflow_dispatch.
 #
+# resolve-image does not build nesso-build-env. On a pull request it polls
+# for the deps-<hash> tag for up to 350 minutes so a base-image digest bump
+# can wait for prepare-image-amd64 and prepare-image-arm64 in that same
+# Pipeline run. The job timeout is 360 minutes, the same budget as those
+# image jobs. An image that already exists returns on the first inspect.
+# Schedule, workflow_dispatch, and a caller such as release.yml fail on the
+# first miss: the called workflow sees the caller's event, not pull_request.
+# The job keeps packages: read. A Dependabot pull request can read the tag
+# Pipeline pushed and does not need packages: write.
+#
 # step-security/harden-runner v2.22.2 (egress-policy: audit) is the first
 # step of host jobs. repro-build sets container: and does not get it: those
 # steps run inside the container, and the agent has to install on the VM.
@@ -44,6 +54,7 @@ on:
       - "scripts/scan-runtime-image"
       - "scripts/ci/trivy.go"
       - "scripts/ci/runtime_scan.go"
+      - "scripts/ci/wait_build_env.go"
       - "scripts/smoke-runtime-image"
       - "scripts/third-party-notices"
       - "packaging/notices/**"
@@ -69,7 +80,10 @@ permissions: {}
 jobs:
   resolve-image:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    # prepare-image-amd64 and prepare-image-arm64 use this same 360 minute
+    # budget. The pull-request poll below stops at 350 minutes so this job
+    # can still print a timeout. A tag that already exists returns immediately.
+    timeout-minutes: 360
     permissions:
       contents: read
       packages: read
@@ -118,14 +132,20 @@ jobs:
         env:
           IMAGE_AMD64: ${{ steps.select.outputs.image_amd64 }}
           IMAGE_ARM64: ${{ steps.select.outputs.image_arm64 }}
+          EVENT_NAME: ${{ github.event_name }}
+          # Same offline Go invocation as the Pipeline lint job. scripts/ci
+          # has no module requirements.
+          GOPROXY: "off"
+          GOTOOLCHAIN: local
+          GOFLAGS: "-mod=readonly -buildvcs=false"
         run: |
           set -euo pipefail
-          for img in "${IMAGE_AMD64}" "${IMAGE_ARM64}"; do
-            if ! docker buildx imagetools inspect "${img}" >/dev/null; then
-              echo "error: missing ${img}; run CI on main so nesso-build-env is published first" >&2
-              exit 1
-            fi
-          done
+          args=(--interval 30s)
+          if [[ "${EVENT_NAME}" == "pull_request" ]]; then
+            args+=(--wait 350m)
+          fi
+          go run -C scripts/ci . wait-build-env "${args[@]}" \
+            "${IMAGE_AMD64}" "${IMAGE_ARM64}"
 
   repro-build:
     name: repro-build (${{ matrix.arch }} ${{ matrix.slot }})

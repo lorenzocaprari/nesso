@@ -11,6 +11,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - The `coverage` job uploads the cleaned lcov trace to Codecov on pull requests and on pushes to `main`. The README shows that coverage badge. A missing Codecov token or app does not fail the job. The coverage floors are unchanged.
 
+### Fixed
+
+- Package `resolve-image` waits, on a pull request, for Pipeline to publish a new `nesso-build-env` tag. A base-image digest bump used to fail that job because Package and Pipeline start together and the new `deps-<hash>` tag does not exist yet. Schedule, manual, and release runs still fail on the first miss. The runtime-image scan test reads the final `FROM` from `packaging/Dockerfile.runtime` instead of a fixed digest, so the next digest bump does not fail `ci_report_test`.
+
 ## [0.2.0] - 2026-10-27
 
 ### Added
