@@ -43,3 +43,4 @@ record.
 | 0005 | Keep operation offline and data on the machine | accepted | 2026-10-11 |
 | 0006 | Release x86_64 Linux; gate arm64 and Clang in CI | superseded by 0007 | 2026-10-26 |
 | 0007 | Release amd64 and arm64 Linux | accepted | 2026-10-26 |
+| 0009 | Keep a stable command-line contract and add JSON Lines output | proposed | 2026-10-27 |
