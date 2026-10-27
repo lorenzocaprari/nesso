@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793093526159,
+  "lastUpdate": 1793096476715,
   "repoUrl": "https://github.com/lorenzocaprari/nesso",
   "entries": {
     "nesso": [
@@ -1295,6 +1295,60 @@ window.BENCHMARK_DATA = {
           {
             "name": "grep-100000-rss",
             "value": 131809280,
+            "unit": "bytes"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "caprarilorenzo5@gmail.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "committer": {
+            "email": "85455384+lorenzocaprari@users.noreply.github.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "distinct": true,
+          "id": "aa7b6d3f3d8cea12ac55623649572b5d993c0874",
+          "message": "docs: add CodeQL, ClusterFuzzLite, and GHCR badges\n\nLink the CodeQL workflow, the weekly ClusterFuzzLite schedule on main,\nand the public ghcr.io/lorenzocaprari/nesso package from the README status row.",
+          "timestamp": "2026-10-27T06:13:25-04:00",
+          "tree_id": "0de253cdbb602a3b86666f216fafd63acb2e811a",
+          "url": "https://github.com/lorenzocaprari/nesso/commit/aa7b6d3f3d8cea12ac55623649572b5d993c0874"
+        },
+        "date": 1793096476139,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "grep-1000-wall",
+            "value": 3.6,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-1000-rss",
+            "value": 132009984,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-10000-wall",
+            "value": 25.35,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-10000-rss",
+            "value": 132423680,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-100000-wall",
+            "value": 244.23,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-100000-rss",
+            "value": 136527872,
             "unit": "bytes"
           }
         ]
