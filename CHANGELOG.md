@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-10-27
+
 ### Added
 
 - Pipeline adds `ci-gate`, shown on GitHub as `CI gate`, so one required status check can cover the whole workflow. It fails unless every other Pipeline job succeeded, or was skipped for a docs-only pull request, for `fuzz-test` on a pull request, or for `bench-history` off a push to `main`. A failure, a cancellation, or any other skip fails it. `lint` fails when a new job is left out of that list.
@@ -118,5 +120,6 @@ First release. Items below are commits reachable from tag `v0.1.0` and the auto-
 - Deterministic embeddings (#72, `3b7a8c6`)
 - Exit codes 0/1/2 and readable failures (#73, `844954f`)
 
-[Unreleased]: https://github.com/lorenzocaprari/nesso/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/lorenzocaprari/nesso/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/lorenzocaprari/nesso/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/lorenzocaprari/nesso/releases/tag/v0.1.0
