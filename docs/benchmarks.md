@@ -18,9 +18,12 @@ NESSO_TRACE=1 ./build/Release/src/nesso grep "connection refused" /var/log/app.l
 python3 scripts/bench
 python3 scripts/bench-compare
 python3 scripts/bench --dataset hdfs
+python3 scripts/bench --dataset logdir
 ```
 
 `python3 scripts/bench --dataset hdfs` indexes the Loghub HDFS_v1 2k sample and writes `bench/results/<sha>.hdfs.json`. `scripts/fetch-loghub` downloads that file into `build/bench/` and checks its sha256. The sample is repeated to 100000 lines unless `--lines` is set. The result records input lines, wall time, lines per second, peak RSS, corpus bytes, the corpus-to-input byte ratio, the CPU model, `nproc`, and `NESSO_THREADS`. The sample is research data and is not committed.
+
+`python3 scripts/bench --dataset logdir` generates a seeded synthetic log directory and writes `bench/results/<sha>.logdir.json`. The tree has syslog files and two rotations, an auth log, kernel and boot logs, a cron log, a package-manager log, a JSON Lines application log, a journal text export, and small non-log files under `etc/`, `proc/`, and `sys/`. The lines are templates filled from a fixed seed. Nothing in the tree is downloaded or committed. `--lines` sets the line count (default 256). `--mib` grows the indexed files to that many MiB instead. `nesso index` reads regular files, so the run passes every file in the tree. The result records the index wall time, the first search wall time, their sum, peak RSS, the line count, the file count, and the corpus-to-input byte ratio, plus the CPU model, `nproc`, and `NESSO_THREADS`.
 
 The `bench` CI job runs on every pull request, on pushes to `main`, and nightly. Pull requests time the 1k and 10k tiers. Pushes to `main` and the nightly schedule also time 100k. The job compares the tiers it ran with the latest baseline saved from `main`, and that failure fails the job. The first run has no baseline and warns. Shared runners disagree on wall time by about 4.5× for the same tier, so CI allows up to 5.5× the baseline wall time and 1.2× the baseline peak RSS. A push to `main` appends the same result to benchmark history on the `gh-pages` branch. Pull requests do not write that branch. They add an informational comparison with the stored history to the job summary, and that comparison does not fail the job.
 

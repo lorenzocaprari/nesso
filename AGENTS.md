@@ -47,6 +47,8 @@ bash scripts/clang-tidy
 # against the latest main baseline. Pushes to main and the nightly schedule also run 100k.
 python3 scripts/bench
 python3 scripts/bench-compare
+# Local index and first-search measurement on a generated log directory.
+python3 scripts/bench --dataset logdir
 ```
 
 ## Misreads
