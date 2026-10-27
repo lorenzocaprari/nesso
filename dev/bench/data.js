@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793109284815,
+  "lastUpdate": 1793110129089,
   "repoUrl": "https://github.com/lorenzocaprari/nesso",
   "entries": {
     "nesso": [
@@ -1565,6 +1565,60 @@ window.BENCHMARK_DATA = {
           {
             "name": "grep-100000-rss",
             "value": 133365760,
+            "unit": "bytes"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "caprarilorenzo5@gmail.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "committer": {
+            "email": "85455384+lorenzocaprari@users.noreply.github.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "distinct": true,
+          "id": "abdb9a1eb196f6a9c53639775978b8a83fa1e3dd",
+          "message": "chore(release): 0.2.1\n\nBump conanfile.py to 0.2.1, move the changelog notes into 0.2.1, and point the README install snippet at that release.",
+          "timestamp": "2026-10-27T15:02:54+01:00",
+          "tree_id": "8753b3692fd2813b96fee73fd85adefc93c79133",
+          "url": "https://github.com/lorenzocaprari/nesso/commit/abdb9a1eb196f6a9c53639775978b8a83fa1e3dd"
+        },
+        "date": 1793110128533,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "grep-1000-wall",
+            "value": 1.49,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-1000-rss",
+            "value": 136867840,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-10000-wall",
+            "value": 13.28,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-10000-rss",
+            "value": 132657152,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-100000-wall",
+            "value": 133.38,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-100000-rss",
+            "value": 132194304,
             "unit": "bytes"
           }
         ]
