@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-10-27
+
 ### Added
 
 - The `coverage` job uploads the cleaned lcov trace to Codecov on pull requests and on pushes to `main`. The README shows that coverage badge. A missing Codecov token or app does not fail the job. The coverage floors are unchanged.
@@ -129,6 +131,7 @@ First release. Items below are commits reachable from tag `v0.1.0` and the auto-
 - Deterministic embeddings (#72, `3b7a8c6`)
 - Exit codes 0/1/2 and readable failures (#73, `844954f`)
 
-[Unreleased]: https://github.com/lorenzocaprari/nesso/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/lorenzocaprari/nesso/compare/v0.2.1...HEAD
+[0.2.1]: https://github.com/lorenzocaprari/nesso/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/lorenzocaprari/nesso/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/lorenzocaprari/nesso/releases/tag/v0.1.0
