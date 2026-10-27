@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793131069751,
+  "lastUpdate": 1793132090957,
   "repoUrl": "https://github.com/lorenzocaprari/nesso",
   "entries": {
     "nesso": [
@@ -1997,6 +1997,60 @@ window.BENCHMARK_DATA = {
           {
             "name": "grep-100000-rss",
             "value": 150110208,
+            "unit": "bytes"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "85455384+lorenzocaprari@users.noreply.github.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "ce1d71c570be26bd6d40f56631090f68b2eb2383",
+          "message": "docs: add OpenSSF Best Practices badge (#170)",
+          "timestamp": "2026-10-27T21:09:42+01:00",
+          "tree_id": "c20b885d4c7205baef287b9789ca0756589aa1b0",
+          "url": "https://github.com/lorenzocaprari/nesso/commit/ce1d71c570be26bd6d40f56631090f68b2eb2383"
+        },
+        "date": 1793132089836,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "grep-1000-wall",
+            "value": 0.98,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-1000-rss",
+            "value": 147927040,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-10000-wall",
+            "value": 8.37,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-10000-rss",
+            "value": 154976256,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-100000-wall",
+            "value": 80.71,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-100000-rss",
+            "value": 147402752,
             "unit": "bytes"
           }
         ]
