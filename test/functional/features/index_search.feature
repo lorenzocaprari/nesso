@@ -74,15 +74,39 @@ Feature: index and search
     And stderr contains "is missing"
     And stderr contains "{dir}/app.log"
 
-  Scenario: an empty log indexes zero chunks
+  Scenario: an empty log is not indexed
     Given an empty file "empty.log"
     When I run nesso with arguments index -o {dir}/corpus.nesso {dir}/empty.log
-    Then the exit code is 0
-    And stderr contains "Indexed 0 chunks"
-    When I run nesso with arguments search "database connection error" -i {dir}/corpus.nesso
     Then the exit code is 1
     And stdout is empty
-    And stderr contains "the corpus is empty"
+    And stderr contains "no indexable lines"
+    And stderr contains "{dir}/empty.log"
+    And stderr contains "the file is empty"
+    And stderr contains "--json-field"
+    And stderr does not contain "Indexed"
+    And stderr does not contain "Error:"
+    When I run nesso with arguments search "database connection error" -i {dir}/corpus.nesso
+    Then the exit code is 2
+    And stdout is empty
+    And stderr contains "File does not exist"
+    And stderr does not contain "the corpus is empty"
+
+  Scenario: a JSON file with no indexable field is not indexed
+    Given a file "events.json" with:
+      """
+      {"host": "web"}
+      """
+    When I run nesso with arguments index -o {dir}/corpus.nesso {dir}/events.json
+    Then the exit code is 1
+    And stdout is empty
+    And stderr contains "no indexable lines"
+    And stderr contains "{dir}/events.json"
+    And stderr contains "--json-field"
+    And stderr contains "Skipped "
+    And stderr does not contain "Indexed"
+    When I run nesso with arguments search "database connection error" -i {dir}/corpus.nesso
+    Then the exit code is 2
+    And stderr contains "File does not exist"
 
   Scenario: search reads a checked-in corpus
     When I run nesso with arguments search "database connection error" -i {fixture}/one-chunk.nesso

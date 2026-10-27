@@ -187,6 +187,15 @@ std::string message(const Error &error)
     case ErrorKind::CorpusLoad:
         return std::format("Error: failed to load the corpus: {}", reason);
     case ErrorKind::EmptyInput:
+        if (!error.note.empty())
+        {
+            const std::string where = path.empty() ? std::string{} : std::format(" in '{}'", path);
+            if (error.cause == ErrorCause::EmptyFile)
+            {
+                return std::format("no indexable lines{}: {}; {}", where, reason, error.note);
+            }
+            return std::format("no indexable lines{}; {}", where, error.note);
+        }
         if (path.empty())
         {
             return std::format("nothing to search: {}", reason);
@@ -367,6 +376,16 @@ template <typename E> static std::unexpected<Error> textFailure(ErrorKind kind, 
 static std::unexpected<Error> noMatch(ErrorKind kind, const LineCounts &counts)
 {
     return std::unexpected(makeError(kind, ErrorCause::None, {}, counts));
+}
+
+// `note` selects the index wording in `message`. `EmptyInput` stays exit 1.
+static std::unexpected<Error> nothingToIndex(const IndexRequest &request, const Scan &scanned)
+{
+    const ErrorCause cause = scanned.counts.skipped == 0 ? ErrorCause::EmptyFile : ErrorCause::NothingIndexable;
+    const std::filesystem::path path = request.files.size() == 1 ? request.files.front() : std::filesystem::path{};
+    Error error = makeError(ErrorKind::EmptyInput, cause, path, scanned.counts);
+    error.note = "check the input path or --json-field";
+    return std::unexpected(std::move(error));
 }
 
 static bool multipleSources(std::span<const nesso::core::CorpusChunk> chunks)
@@ -759,11 +778,17 @@ std::expected<IndexSummary, Error> Nesso::index(const IndexRequest &request) con
         return std::unexpected(scanned.error());
     }
 
+    // create() rejects an unusable output path (exit 2). finish() is what writes the corpus; returning first
+    // deletes the spill file and leaves an existing corpus in place.
     auto writer = nesso::core::CorpusWriter::create(request.output, nesso::embed::MINILM_MODEL_ID);
     if (!writer)
     {
         return std::unexpected(
             makeError(ErrorKind::CorpusWrite, causeOf(writer.error()), request.output, scanned->counts));
+    }
+    if (scanned->chunks == 0)
+    {
+        return nothingToIndex(request, *scanned);
     }
 
     const size_t batch = streamBatch(**model);
