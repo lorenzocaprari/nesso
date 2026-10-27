@@ -922,6 +922,8 @@ jobs:
       # input is empty unless a Dependabot CODECOV_TOKEN secret exists.
       # fail_ci_if_error is false so a missing app or token does not fail CI.
       # Schedule and workflow_dispatch do not upload.
+      # plugins: noop turns off the gcov plugin. files and disable_search
+      # already select the cleaned trace, so gcov must not walk .gcno files.
       - name: Ensure gpg for Codecov
         if: success() && (github.event_name == 'pull_request' || github.event_name == 'push')
         run: |
@@ -941,6 +943,7 @@ jobs:
           fail_ci_if_error: false
           disable_telem: true
           cleanup: true
+          plugins: noop
 
       # Pull requests only. Reuses the lcov trace from the floor step, so the
       # added work is the checkout history plus a line lookup. The bar is 80%
