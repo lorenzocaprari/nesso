@@ -32,6 +32,9 @@ class OnnxEmbedder
 
     [[nodiscard]] const SessionPolicy &policy() const noexcept;
 
+    /// int8 session count, or 1 for an fp32 model.
+    [[nodiscard]] size_t sessions() const noexcept;
+
     [[nodiscard]] std::expected<std::vector<float>, EmbedError> embed(std::string_view text) const;
 
     [[nodiscard]] std::expected<std::vector<std::vector<float>>, EmbedError>

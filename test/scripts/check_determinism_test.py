@@ -14,6 +14,7 @@ GATE = ROOT / "scripts" / "check-determinism"
 FAKE_BINARY = textwrap.dedent(
     """\
     #!/usr/bin/env python3
+    import os
     import pathlib
     import sys
 
@@ -27,6 +28,8 @@ FAKE_BINARY = textwrap.dedent(
             value = int(counter.read_text()) if counter.exists() else 0
             counter.write_text(str(value + 1))
             output.write_bytes(f"unstable-{value}".encode())
+        elif pathlib.Path(sys.argv[0]).with_name("thread-sensitive").exists():
+            output.write_bytes(os.environ.get("NESSO_THREADS", "unset").encode())
         else:
             output.write_bytes(b"stable")
     elif mode == "search":
@@ -68,9 +71,12 @@ class CheckDeterminismTest(unittest.TestCase):
         index_runs: str | None = None,
         mode: str | None = None,
         env: dict[str, str] | None = None,
+        model_bytes: bytes | None = None,
     ) -> subprocess.CompletedProcess[str]:
         model_dir = directory / "models"
         model_dir.mkdir()
+        if model_bytes is not None:
+            (model_dir / "model.onnx").write_bytes(model_bytes)
         input_file = directory / "events.log"
         input_file.write_text("PAY-E1042\n")
         command = [
@@ -316,6 +322,51 @@ class CheckDeterminismTest(unittest.TestCase):
             lines = path.read_text().splitlines()
 
         self.assertGreaterEqual(len(lines), 3500)
+
+    def test_one_thread_and_n_threads_must_match(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            directory = pathlib.Path(temp)
+            result = self.run_gate(self.write_binary(directory, unstable="thread-sensitive"), directory, runs="2")
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("corpus differs between 1 and", result.stderr)
+        self.assertIn("threads", result.stderr)
+        self.assertNotIn("determinism OK", result.stdout)
+
+    def test_one_thread_and_n_threads_pass_when_bytes_match(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            directory = pathlib.Path(temp)
+            result = self.run_gate(self.write_binary(directory, unstable=None), directory, runs="2")
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertRegex(result.stdout, r"1 and [0-9]+ threads identical")
+
+    def test_fp32_model_skips_the_thread_count_compare(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            directory = pathlib.Path(temp)
+            result = self.run_gate(
+                self.write_binary(directory, unstable="thread-sensitive"),
+                directory,
+                runs="2",
+                model_bytes=b"not-quantized",
+            )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertNotIn("threads identical", result.stdout)
+        self.assertNotIn("corpus differs between", result.stderr)
+
+    def test_quantized_model_still_compares_thread_counts(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            directory = pathlib.Path(temp)
+            result = self.run_gate(
+                self.write_binary(directory, unstable="thread-sensitive"),
+                directory,
+                runs="2",
+                model_bytes=b"graph MatMulInteger",
+            )
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("corpus differs between 1 and", result.stderr)
 
     def test_default_stress_command_pins_a_cpu_loop(self) -> None:
         result = subprocess.run([str(GATE), "--help"], capture_output=True, text=True, check=False)

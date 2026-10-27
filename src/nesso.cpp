@@ -9,6 +9,7 @@
 
 #include <core/corpus_index.hpp>
 #include <core/top_k.hpp>
+#include <embed/embedder.hpp>
 #include <embed/onnx_embedder.hpp>
 #include <parser/log_chunker.hpp>
 
@@ -402,7 +403,7 @@ static std::expected<std::vector<float>, Error> packMatrix(std::span<const nesso
 }
 
 static std::expected<TextResults, Error> rankChunks(std::span<const nesso::core::CorpusChunk> chunks,
-                                                    const nesso::embed::OnnxEmbedder &embedder, std::string_view query,
+                                                    const nesso::embed::Embedder &embedder, std::string_view query,
                                                     size_t topK, const LineCounts &counts, ErrorKind packFailure,
                                                     std::span<const float> packed)
 {
@@ -464,7 +465,46 @@ static std::expected<TextResults, Error> rankChunks(std::span<const nesso::core:
     return results;
 }
 
-Nesso::Nesso(Config config) : config_(std::move(config)) {}
+namespace
+{
+
+class OnnxBoundEmbedder final : public nesso::embed::Embedder
+{
+  public:
+    explicit OnnxBoundEmbedder(std::unique_ptr<nesso::embed::OnnxEmbedder> inner) : inner_(std::move(inner)) {}
+
+    OnnxBoundEmbedder(const OnnxBoundEmbedder &) = delete;
+    OnnxBoundEmbedder &operator=(const OnnxBoundEmbedder &) = delete;
+    OnnxBoundEmbedder(OnnxBoundEmbedder &&) = delete;
+    OnnxBoundEmbedder &operator=(OnnxBoundEmbedder &&) = delete;
+    ~OnnxBoundEmbedder() override = default;
+
+    [[nodiscard]] size_t sessions() const noexcept override { return inner_->sessions(); }
+
+    [[nodiscard]] std::expected<std::vector<float>, nesso::embed::EmbedError>
+    embed(std::string_view text) const override
+    {
+        return inner_->embed(text);
+    }
+
+    [[nodiscard]] std::expected<std::vector<std::vector<float>>, nesso::embed::EmbedError>
+    embedBatch(std::span<const std::string> texts, ProgressCallback progress) const override
+    {
+        return inner_->embedBatch(texts, std::move(progress));
+    }
+
+  private:
+    std::unique_ptr<nesso::embed::OnnxEmbedder> inner_;
+};
+
+} // namespace
+
+Nesso::Nesso(Config config) : Nesso(std::move(config), nullptr) {}
+
+Nesso::Nesso(Config config, std::unique_ptr<embed::Embedder> embedder)
+    : config_(std::move(config)), embedder_(std::move(embedder))
+{
+}
 
 Nesso::~Nesso() = default;
 
@@ -472,7 +512,7 @@ Nesso::Nesso(Nesso &&) noexcept = default;
 
 Nesso &Nesso::operator=(Nesso &&) noexcept = default;
 
-std::expected<const nesso::embed::OnnxEmbedder *, Error> Nesso::embedder() const
+std::expected<const nesso::embed::Embedder *, Error> Nesso::embedder() const
 {
     if (!embedder_)
     {
@@ -504,13 +544,17 @@ std::expected<const nesso::embed::OnnxEmbedder *, Error> Nesso::embedder() const
         {
             std::println(stderr, "{}", warning);
         }
-        embedder_ = std::move(*created);
+        embedder_ = std::make_unique<OnnxBoundEmbedder>(std::move(*created));
     }
     return embedder_.get();
 }
 
-// Matches OnnxEmbedder's inference window so only one batch of vectors is live.
-static constexpr size_t STREAM_BATCH = 32;
+// One 32-text window per session. inferAll splits on EMBED_BATCH_SIZE, so the
+// windows stay the same for every session count and the int8 vectors do not move.
+static size_t streamBatch(const nesso::embed::Embedder &embedder)
+{
+    return embedder.sessions() * nesso::embed::EMBED_BATCH_SIZE;
+}
 
 struct PendingChunk
 {
@@ -519,7 +563,7 @@ struct PendingChunk
 };
 
 static std::expected<std::vector<std::vector<float>>, Error> embedPending(std::span<const PendingChunk> pending,
-                                                                          const nesso::embed::OnnxEmbedder &embedder,
+                                                                          const nesso::embed::Embedder &embedder,
                                                                           ProgressReporter &progress, size_t &completed,
                                                                           size_t total, const LineCounts &counts)
 {
@@ -529,15 +573,15 @@ static std::expected<std::vector<std::vector<float>>, Error> embedPending(std::s
     {
         texts.push_back(item.chunk.text);
     }
-    const auto embeddings = embedder.embedBatch(texts, [&progress, &completed, total](size_t batchCompleted, size_t)
-                                                { progress.update(completed + batchCompleted, total); });
+    auto embeddings = embedder.embedBatch(texts, [&progress, &completed, total](size_t batchCompleted, size_t)
+                                          { progress.update(completed + batchCompleted, total); });
     if (!embeddings)
     {
         return std::unexpected(makeError(ErrorKind::Embed, causeOf(embeddings.error()), {}, counts));
     }
     completed += pending.size();
     progress.update(completed, total);
-    return *embeddings;
+    return std::move(*embeddings);
 }
 
 std::expected<TextResults, Error> Nesso::grep(const GrepRequest &request) const
@@ -581,8 +625,9 @@ std::expected<TextResults, Error> Nesso::grep(const GrepRequest &request) const
     { return left.score != right.score ? left.score > right.score : left.index < right.index; };
 
     std::vector<Candidate> best;
+    const size_t batch = streamBatch(**model);
     std::vector<PendingChunk> pending;
-    pending.reserve(STREAM_BATCH);
+    pending.reserve(batch);
     ProgressReporter progress(request.progress);
     size_t completed = 0;
     uint64_t ordinal = 0;
@@ -657,7 +702,7 @@ std::expected<TextResults, Error> Nesso::grep(const GrepRequest &request) const
                                     severalSources = true;
                                 }
                                 pending.push_back(PendingChunk{.chunk = std::move(chunk), .source = source});
-                                if (pending.size() == STREAM_BATCH)
+                                if (pending.size() == batch)
                                 {
                                     if (const auto flushed = flush(); !flushed)
                                     {
@@ -721,8 +766,9 @@ std::expected<IndexSummary, Error> Nesso::index(const IndexRequest &request) con
             makeError(ErrorKind::CorpusWrite, causeOf(writer.error()), request.output, scanned->counts));
     }
 
+    const size_t batch = streamBatch(**model);
     std::vector<PendingChunk> pending;
-    pending.reserve(STREAM_BATCH);
+    pending.reserve(batch);
     ProgressReporter progress(request.progress);
     size_t completed = 0;
     const LineCounts &counts = scanned->counts;
@@ -777,7 +823,7 @@ std::expected<IndexSummary, Error> Nesso::index(const IndexRequest &request) con
                                     return;
                                 }
                                 pending.push_back(PendingChunk{.chunk = std::move(chunk), .source = source});
-                                if (pending.size() == STREAM_BATCH)
+                                if (pending.size() == batch)
                                 {
                                     if (const auto flushed = flush(); !flushed)
                                     {

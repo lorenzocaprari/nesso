@@ -146,8 +146,10 @@ def digest(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()[:16]
 
 
-def run_process(command: list[str], name: str) -> subprocess.CompletedProcess[str]:
-    result = subprocess.run(command, capture_output=True, text=True, check=False)
+def run_process(
+    command: list[str], name: str, env: dict[str, str] | None = None
+) -> subprocess.CompletedProcess[str]:
+    result = subprocess.run(command, capture_output=True, text=True, check=False, env=env)
     if result.returncode != 0:
         details = result.stderr.strip() or result.stdout.strip() or "no output"
         raise GateFailure(f"{name} failed with exit {result.returncode}: {details}")
@@ -234,7 +236,12 @@ def refresh_stress(
     return process, stderr_path
 
 
-def index_corpus(options: argparse.Namespace, corpus: Path, name: str) -> bytes:
+def index_corpus(
+    options: argparse.Namespace,
+    corpus: Path,
+    name: str,
+    env: dict[str, str] | None = None,
+) -> bytes:
     run_process(
         [
             options.binary,
@@ -246,8 +253,31 @@ def index_corpus(options: argparse.Namespace, corpus: Path, name: str) -> bytes:
             str(options.input),
         ],
         name,
+        env,
     )
     return corpus.read_bytes()
+
+
+def parallel_session_count() -> int:
+    count = os.cpu_count() or 1
+    return count if count > 1 else 2
+
+
+def threads_env(threads: int) -> dict[str, str]:
+    env = os.environ.copy()
+    env["NESSO_THREADS"] = str(threads)
+    return env
+
+
+def model_is_quantized(model_dir: Path) -> bool | None:
+    # None: no model file (the unit-test fake). fp32 intra-op width follows
+    # NESSO_THREADS and is not the int8 session-pool contract, so that model
+    # is not compared here. int8 sessions are one thread each; 1 vs N must match.
+    model = model_dir / "model.onnx"
+    if not model.is_file():
+        return None
+    data = model.read_bytes()
+    return b"MatMulInteger" in data or b"DynamicQuantizeLinear" in data
 
 
 def search_corpus(options: argparse.Namespace, corpus: Path, query: str, name: str) -> str:
@@ -321,12 +351,37 @@ def check_determinism(options: argparse.Namespace) -> None:
                     for query, ranking in rankings.items():
                         if ranking != indexed_rankings[query]:
                             raise GateFailure(f"ranking for {query!r} differs on index run {run + 1}")
+
+            thread_note = ""
+            if model_is_quantized(options.model_dir) is not False:
+                threads = parallel_session_count()
+                stress, stderr_path = refresh_stress(stress, stderr_path, options.stress_command)
+                one_thread = index_corpus(
+                    options,
+                    output_dir / "threads-1.nesso",
+                    "index 1 thread",
+                    threads_env(1),
+                )
+                stress, stderr_path = refresh_stress(stress, stderr_path, options.stress_command)
+                many_threads = index_corpus(
+                    options,
+                    output_dir / f"threads-{threads}.nesso",
+                    f"index {threads} threads",
+                    threads_env(threads),
+                )
+                if one_thread != many_threads:
+                    raise GateFailure(
+                        f"corpus differs between 1 and {threads} threads: "
+                        f"{digest(one_thread)} != {digest(many_threads)}"
+                    )
+                thread_note = f"; 1 and {threads} threads identical"
     finally:
         stop_stress(stress)
         stderr_path.unlink(missing_ok=True)
     message = f"determinism OK ({options.mode}): {options.runs} runs, corpus and rankings identical"
     if options.index_runs is not None:
         message += f"; index-runs {options.index_runs}, {len(INDEX_QUERIES)} queries identical"
+    message += thread_note
     print(message)
 
 

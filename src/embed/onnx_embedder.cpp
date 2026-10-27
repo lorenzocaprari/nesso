@@ -67,11 +67,6 @@ static std::vector<float> meanPoolAndNormalize(const float *hiddenStates, const 
     return pooled;
 }
 
-// One ONNX Run of the whole corpus, padded to 256, asks for tens of gigabytes.
-// A batch of 32 padded to its own longest sequence stays under a few hundred
-// MB.
-static constexpr size_t EMBED_BATCH_SIZE = 32;
-
 struct ModelIo
 {
     std::string inputIds;
@@ -370,6 +365,8 @@ OnnxEmbedder::OnnxEmbedder(WordPieceTokenizer tokenizer, const std::filesystem::
 }
 
 const SessionPolicy &OnnxEmbedder::policy() const noexcept { return policy_; }
+
+size_t OnnxEmbedder::sessions() const noexcept { return policy_.sessions; }
 
 OnnxEmbedder::~OnnxEmbedder() = default;
 
