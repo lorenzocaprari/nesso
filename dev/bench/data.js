@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793114489555,
+  "lastUpdate": 1793115172518,
   "repoUrl": "https://github.com/lorenzocaprari/nesso",
   "entries": {
     "nesso": [
@@ -1781,6 +1781,60 @@ window.BENCHMARK_DATA = {
           {
             "name": "grep-100000-rss",
             "value": 137170944,
+            "unit": "bytes"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "caprarilorenzo5@gmail.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "committer": {
+            "email": "85455384+lorenzocaprari@users.noreply.github.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "distinct": true,
+          "id": "ab2824052f8bd1159962efb396125743e061361f",
+          "message": "perf(embed): flush one 32-text window per session\n\nSize the grep and index flush to the embedder session count times\nEMBED_BATCH_SIZE so every int8 session runs. inferAll still splits\nthose flushes on 32 texts, so the corpus bytes do not follow the\nthread count.",
+          "timestamp": "2026-10-27T16:26:52+01:00",
+          "tree_id": "af26ca2b2bf8021cf431c9f2e1ae6dfcf192b2e8",
+          "url": "https://github.com/lorenzocaprari/nesso/commit/ab2824052f8bd1159962efb396125743e061361f"
+        },
+        "date": 1793115171712,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "grep-1000-wall",
+            "value": 2.47,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-1000-rss",
+            "value": 151588864,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-10000-wall",
+            "value": 14.07,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-10000-rss",
+            "value": 148140032,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-100000-wall",
+            "value": 127.82,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-100000-rss",
+            "value": 148406272,
             "unit": "bytes"
           }
         ]
