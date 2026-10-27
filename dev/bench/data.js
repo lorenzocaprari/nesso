@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793132090957,
+  "lastUpdate": 1793134234745,
   "repoUrl": "https://github.com/lorenzocaprari/nesso",
   "entries": {
     "nesso": [
@@ -2051,6 +2051,60 @@ window.BENCHMARK_DATA = {
           {
             "name": "grep-100000-rss",
             "value": 147402752,
+            "unit": "bytes"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "85455384+lorenzocaprari@users.noreply.github.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "0940e9a21493f9e4d7f5553db1a90059436df470",
+          "message": "test(bench): time indexing and first search on a generated log directory (#171)\n\nscripts/bench --dataset logdir generates a seeded synthetic log directory\nand records cold index wall time, the first search wall time, their sum,\npeak RSS, lines, files read, and the corpus-to-input byte ratio.",
+          "timestamp": "2026-10-27T21:44:36+01:00",
+          "tree_id": "c414a0a162423970a0f45dcd6f60f8cfdb2c07c2",
+          "url": "https://github.com/lorenzocaprari/nesso/commit/0940e9a21493f9e4d7f5553db1a90059436df470"
+        },
+        "date": 1793134234080,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "grep-1000-wall",
+            "value": 2.46,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-1000-rss",
+            "value": 149676032,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-10000-wall",
+            "value": 13.95,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-10000-rss",
+            "value": 147853312,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-100000-wall",
+            "value": 126.67,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-100000-rss",
+            "value": 152436736,
             "unit": "bytes"
           }
         ]
