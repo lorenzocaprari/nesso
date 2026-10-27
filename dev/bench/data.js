@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793099725636,
+  "lastUpdate": 1793105963390,
   "repoUrl": "https://github.com/lorenzocaprari/nesso",
   "entries": {
     "nesso": [
@@ -1457,6 +1457,60 @@ window.BENCHMARK_DATA = {
           {
             "name": "grep-100000-rss",
             "value": 132206592,
+            "unit": "bytes"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "caprarilorenzo5@gmail.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "committer": {
+            "email": "85455384+lorenzocaprari@users.noreply.github.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "distinct": true,
+          "id": "48d6ae08a99005bbc0a5c595a42b3ed5e72488a5",
+          "message": "ci: wait for a new build-env tag on pull requests\n\nPackage resolve-image failed when a base-image digest bump changed\ndeps-<hash> before Pipeline published the tag. On a pull request, poll\nwith packages: read until the tag exists. The runtime scan test reads\nthe final FROM line from packaging/Dockerfile.runtime instead of a\nfixed digest.",
+          "timestamp": "2026-10-27T13:54:41+01:00",
+          "tree_id": "cb073cd698c6cc6e476a967e5ba488663e119e7a",
+          "url": "https://github.com/lorenzocaprari/nesso/commit/48d6ae08a99005bbc0a5c595a42b3ed5e72488a5"
+        },
+        "date": 1793105962468,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "grep-1000-wall",
+            "value": 0.87,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-1000-rss",
+            "value": 132702208,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-10000-wall",
+            "value": 7.78,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-10000-rss",
+            "value": 132308992,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-100000-wall",
+            "value": 74.28,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-100000-rss",
+            "value": 132841472,
             "unit": "bytes"
           }
         ]
