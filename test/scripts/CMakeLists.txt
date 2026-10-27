@@ -28,6 +28,10 @@ if(NESSO_PYTHON_EXECUTABLE)
            COMMAND "${NESSO_PYTHON_EXECUTABLE}"
                    "${CMAKE_CURRENT_SOURCE_DIR}/bench_hdfs_test.py")
   set_tests_properties(bench_hdfs_test PROPERTIES LABELS unit)
+  add_test(NAME bench_logdir_test
+           COMMAND "${NESSO_PYTHON_EXECUTABLE}"
+                   "${CMAKE_CURRENT_SOURCE_DIR}/bench_logdir_test.py")
+  set_tests_properties(bench_logdir_test PROPERTIES LABELS unit)
   add_test(NAME fetch_loghub_test
            COMMAND "${NESSO_PYTHON_EXECUTABLE}"
                    "${CMAKE_CURRENT_SOURCE_DIR}/fetch_loghub_test.py")

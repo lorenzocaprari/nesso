@@ -3,12 +3,16 @@
 
 Without --dataset, time grep on fixed-seed synthetic logs. --dataset hdfs
 indexes the Loghub HDFS sample and writes bench/results/<sha>.hdfs.json.
+--dataset logdir generates a synthetic log directory, times a cold index and
+the first search, and writes bench/results/<sha>.logdir.json. nesso index
+reads regular files, so logdir passes each file on its own.
 """
 
 import argparse
 import json
 import os
 import random
+import re
 import signal
 import subprocess
 import sys
@@ -19,7 +23,64 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_SIZES = (1000, 10_000, 100_000)
 HDFS_DEFAULT_LINES = 100_000
+LOGDIR_DEFAULT_LINES = 256
+LOGDIR_QUERY = "disk write failed"
+LOGDIR_NOISE_DIVISOR = 5
 QUERY = "database connection refused"
+INDEXED_CHUNKS = re.compile(r"Indexed (\d+) chunks")
+MONTHS = ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
+HOSTS = ("edge-01", "edge-02", "store-01", "batch-01")
+LOG_SPECS = (
+    ("var/log/messages", "messages", 24),
+    ("var/log/messages.1", "messages", 10),
+    ("var/log/messages.2", "messages", 6),
+    ("var/log/secure", "secure", 8),
+    ("var/log/kern.log", "kern", 8),
+    ("var/log/dmesg", "dmesg", 6),
+    ("var/log/boot.log", "boot", 4),
+    ("var/log/cron", "cron", 5),
+    ("var/log/pkg.log", "pkg", 6),
+    ("var/log/app/service.jsonl", "jsonl", 14),
+    ("sos_commands/logs/journalctl_--no-pager", "journal", 18),
+)
+NOISE_FILES = (
+    ("etc/hostname", "edge-01"),
+    ("proc/cpuinfo", "processor: 0"),
+    ("sys/class/net/eth0/address", "02:00:00:00:00:01"),
+    ("etc/hosts", "127.0.0.1 localhost edge-01"),
+    ("proc/meminfo", "MemTotal: 16384000 kB"),
+    ("sys/class/net/eth0/mtu", "1500"),
+    ("etc/resolv.conf", "nameserver 10.0.0.2"),
+    ("proc/uptime", "12345.67 8901.23"),
+    ("sys/class/net/eth0/operstate", "up"),
+    ("etc/os-release", 'PRETTY_NAME="Synthetic OS"'),
+    ("proc/loadavg", "0.10 0.20 0.30 1/100 1234"),
+    ("sys/devices/system/cpu/online", "0-3"),
+    ("etc/nsswitch.conf", "hosts: files dns"),
+    ("proc/version", "Linux version synthetic"),
+    ("sys/devices/system/cpu/possible", "0-3"),
+    ("etc/fstab", "/dev/sda1 / ext4 defaults 0 1"),
+    ("proc/mounts", "/dev/sda1 / ext4 rw 0 0"),
+    ("sys/kernel/hostname", "edge-01"),
+    ("etc/passwd", "svc:x:1000:1000:Service:/home/svc:/bin/false"),
+    ("proc/stat", "cpu 10 20 30 40"),
+    ("sys/module/synthetic/parameters/debug", "0"),
+    ("etc/group", "svc:x:1000:"),
+    ("proc/diskstats", "8 0 sda 1 2 3 4"),
+    ("sys/class/net/eth0/speed", "1000"),
+    ("etc/ssh/sshd_config", "Port 22"),
+    ("proc/net/dev", "eth0: 100 10 0 0 0 0 0 0 200 20 0 0 0 0 0 0"),
+    ("sys/class/net/eth0/duplex", "full"),
+    ("etc/sysctl.d/99-synthetic.conf", "net.ipv4.ip_forward = 0"),
+    ("etc/app/conf.d/00-base.conf", "listener 8080"),
+    ("etc/app/conf.d/10-listener.conf", "workers 4"),
+    ("etc/app/conf.d/20-worker.conf", "queue 128"),
+    ("etc/app/conf.d/30-limits.conf", "nofile 1024"),
+    ("etc/app/conf.d/40-rotate.conf", "keep 2"),
+    ("etc/cron.d/synthetic-job", "*/5 * * * * svc /usr/bin/synthetic-job"),
+    ("etc/logrotate.d/app", "/var/log/app/service.jsonl { rotate 2 }"),
+    ("etc/profile.d/app.sh", "PATH=/usr/bin"),
+)
 SEED = 0x4E455353
 TEMPLATES = (
     "database connection refused",
@@ -446,20 +507,446 @@ def run_hdfs(args: argparse.Namespace) -> None:
         raise SystemExit(1)
 
 
+def syslog_stamp(rng: random.Random) -> str:
+    month = MONTHS[rng.randrange(len(MONTHS))]
+    day = rng.randint(1, 28)
+    hour = rng.randint(0, 23)
+    minute = rng.randint(0, 59)
+    second = rng.randint(0, 59)
+    return f"{month} {day:2d} {hour:02d}:{minute:02d}:{second:02d}"
+
+
+def pick_host(rng: random.Random) -> str:
+    return HOSTS[rng.randrange(len(HOSTS))]
+
+
+def pick_pid(rng: random.Random) -> int:
+    return rng.randint(200, 65000)
+
+
+def pick_ip(rng: random.Random) -> str:
+    return f"10.{rng.randint(0, 255)}.{rng.randint(0, 255)}.{rng.randint(1, 254)}"
+
+
+def message_text(rng: random.Random, *, query: bool) -> str:
+    if query:
+        return f"{LOGDIR_QUERY} on volume vol-{rng.randint(1, 48)}"
+    choice = rng.randrange(5)
+    if choice == 0:
+        return f"accepted connection from {pick_ip(rng)}"
+    if choice == 1:
+        return f"session opened for user svc{rng.randint(1, 40)}"
+    if choice == 2:
+        return f"checkpoint written for block blk-{rng.randint(0, 65535):04x}"
+    if choice == 3:
+        return f"worker idle after {rng.randint(1, 900)} ms"
+    return f"certificate reloaded for listener {rng.randint(1, 12)}"
+
+
+def bracket_time(rng: random.Random, whole_max: int) -> str:
+    return f"{rng.randint(0, whole_max):5d}.{rng.randint(0, 999999):06d}"
+
+
+def render_log_line(kind: str, ordinal: int, rng: random.Random) -> str:
+    if kind == "messages":
+        if ordinal == 0:
+            program = "app"
+            text = message_text(rng, query=True)
+        else:
+            program = ("app", "systemd")[rng.randrange(2)]
+            text = message_text(rng, query=rng.randrange(17) == 0)
+        return f"{syslog_stamp(rng)} {pick_host(rng)} {program}[{pick_pid(rng)}]: {text}"
+    if kind == "journal":
+        text = message_text(rng, query=rng.randrange(17) == 0)
+        return f"{syslog_stamp(rng)} {pick_host(rng)} app[{pick_pid(rng)}]: {text}"
+    if kind == "jsonl":
+        text = message_text(rng, query=rng.randrange(17) == 0)
+        payload = {
+            "time": syslog_stamp(rng),
+            "host": pick_host(rng),
+            "pid": pick_pid(rng),
+            "message": text,
+        }
+        return json.dumps(payload, separators=(",", ":"))
+    if kind == "secure":
+        action = ("Failed password", "Accepted publickey")[rng.randrange(2)]
+        user = rng.randint(1, 40)
+        return (
+            f"{syslog_stamp(rng)} {pick_host(rng)} sshd[{pick_pid(rng)}]: "
+            f"{action} for svc{user} from {pick_ip(rng)} port {rng.randint(1024, 65000)} ssh2"
+        )
+    if kind == "kern":
+        letter = "abcd"[rng.randrange(4)]
+        return (
+            f"{syslog_stamp(rng)} {pick_host(rng)} kernel: [{bracket_time(rng, 99999)}] "
+            f"block blk-{rng.randint(0, 65535):04x}: I/O error on dev sd{letter} "
+            f"sector {rng.randint(1, 50_000_000)}"
+        )
+    if kind == "dmesg":
+        return (
+            f"[{bracket_time(rng, 40)}] block blk-{rng.randint(0, 65535):04x}: "
+            f"device ready sector {rng.randint(1, 50_000_000)}"
+        )
+    if kind == "boot":
+        return f"[  OK  ] Started synthetic unit worker-{rng.randint(1, 20)}.service"
+    if kind == "cron":
+        user = rng.randint(1, 40)
+        return (
+            f"{syslog_stamp(rng)} {pick_host(rng)} CROND[{pick_pid(rng)}]: "
+            f"(svc{user}) CMD (/usr/bin/synthetic-job {user})"
+        )
+    if kind == "pkg":
+        number = rng.randint(1, 80)
+        return (
+            f"{syslog_stamp(rng)} {pick_host(rng)} pkgman[{pick_pid(rng)}]: "
+            f"installed synthetic-pkg-{number} 1.{rng.randint(0, 20)}.{rng.randint(0, 30)}"
+        )
+    raise SystemExit(f"error: unknown log kind {kind}")
+
+
+def logdir_budget(total: int) -> tuple[int, int]:
+    if total <= 0:
+        raise SystemExit("error: --lines must be a positive integer")
+    if total < len(LOG_SPECS):
+        raise SystemExit(f"error: --lines must be at least {len(LOG_SPECS)} to fill the log directory")
+    noise = min(len(NOISE_FILES), total // LOGDIR_NOISE_DIVISOR)
+    if total - noise < len(LOG_SPECS):
+        noise = total - len(LOG_SPECS)
+    return total - noise, noise
+
+
+def distribute_counts(total: int, weights: list[int]) -> list[int]:
+    count = len(weights)
+    if total < count:
+        raise SystemExit("error: --lines must be a positive integer")
+    extra = total - count
+    weight_sum = sum(weights)
+    scaled = [extra * weight for weight in weights]
+    counts = [value // weight_sum for value in scaled]
+    remainders = [value % weight_sum for value in scaled]
+    leftover = extra - sum(counts)
+    order = sorted(
+        range(count),
+        key=lambda index: (remainders[index], weights[index]),
+        reverse=True,
+    )
+    for index in range(leftover):
+        counts[order[index]] += 1
+    return [1 + value for value in counts]
+
+
+def logdir_records(line_count: int, seed: int) -> list[tuple[str, str]]:
+    log_lines, noise_lines = logdir_budget(line_count)
+    counts = distribute_counts(log_lines, [spec[2] for spec in LOG_SPECS])
+    rng = random.Random(seed)
+    records: list[tuple[str, str]] = []
+    for spec, count in zip(LOG_SPECS, counts, strict=True):
+        path, kind, _weight = spec
+        for ordinal in range(count):
+            records.append((path, render_log_line(kind, ordinal, rng)))
+    for path, text in NOISE_FILES[:noise_lines]:
+        records.append((path, text))
+    return records
+
+
+def logdir_input_bytes(line_count: int, seed: int) -> int:
+    return sum(len(line.encode("utf-8")) + 1 for _path, line in logdir_records(line_count, seed))
+
+
+def lines_for_mib(mib: float, seed: int) -> int:
+    if mib <= 0:
+        raise SystemExit("error: --mib must be positive")
+    size_bytes = round(mib * 1024 * 1024)
+    if size_bytes < 1:
+        raise SystemExit("error: --mib must be positive")
+    minimum = len(LOG_SPECS)
+    minimum_bytes = logdir_input_bytes(minimum, seed)
+    if minimum_bytes > size_bytes:
+        raise SystemExit(f"error: --mib is below the log directory minimum of {minimum_bytes} bytes")
+    if minimum_bytes == size_bytes:
+        return minimum
+    low = minimum
+    high = minimum
+    while logdir_input_bytes(high, seed) < size_bytes:
+        high *= 2
+    while low + 1 < high:
+        mid = (low + high) // 2
+        if logdir_input_bytes(mid, seed) >= size_bytes:
+            high = mid
+        else:
+            low = mid
+    return high
+
+
+def generate_logdir(root: Path, *, lines: int | None = None, mib: float | None = None, seed: int = SEED) -> dict:
+    if lines is not None and mib is not None:
+        raise SystemExit("error: pass only one of --lines and --mib")
+    if mib is not None:
+        line_count = lines_for_mib(mib, seed)
+    else:
+        line_count = LOGDIR_DEFAULT_LINES if lines is None else lines
+    records = logdir_records(line_count, seed)
+    grouped: dict[str, list[str]] = {}
+    order: list[str] = []
+    for relative, line in records:
+        if relative not in grouped:
+            order.append(relative)
+            grouped[relative] = []
+        grouped[relative].append(line)
+    root.mkdir(parents=True, exist_ok=True)
+    written: list[Path] = []
+    total_bytes = 0
+    for relative in order:
+        path = root.joinpath(*relative.split("/"))
+        path.parent.mkdir(parents=True, exist_ok=True)
+        text = "".join(f"{line}\n" for line in grouped[relative])
+        path.write_text(text, encoding="utf-8", newline="\n")
+        total_bytes += path.stat().st_size
+        written.append(path)
+    encoded = sum(len(line.encode("utf-8")) + 1 for _relative, line in records)
+    if total_bytes != encoded:
+        raise SystemExit("error: log directory byte count changed while writing")
+    written.sort(key=lambda path: path.relative_to(root).as_posix())
+    return {
+        "lines": line_count,
+        "filesRead": len(written),
+        "inputBytes": total_bytes,
+        "files": written,
+    }
+
+
+def execute_timed(argv: list[str], timeout: float | None, time_path: Path) -> dict:
+    command = with_address_limit([gnu_time_binary(), "-f", "%e %M", "-o", str(time_path), *argv])
+    started = time.perf_counter()
+    process = subprocess.Popen(
+        command,
+        env=os.environ.copy(),
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        start_new_session=True,
+    )
+    try:
+        stdout, stderr_bytes = process.communicate(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        os.killpg(process.pid, signal.SIGKILL)
+        process.communicate()
+        return {
+            "exitCode": None,
+            "stdout": "",
+            "stderr": "",
+            "wallSeconds": round(time.perf_counter() - started, 6),
+            "peakRssBytes": None,
+            "error": f"timed out after {timeout}s",
+        }
+    wall_seconds, peak_rss_bytes = read_gnu_time(time_path)
+    if wall_seconds is None:
+        wall_seconds = time.perf_counter() - started
+    return {
+        "exitCode": process.returncode,
+        "stdout": stdout.decode("utf-8", "replace"),
+        "stderr": stderr_bytes.decode("utf-8", "replace"),
+        "wallSeconds": round(wall_seconds, 6),
+        "peakRssBytes": peak_rss_bytes,
+        "error": None,
+    }
+
+
+def command_error(result: dict, *, corpus: Path | None = None, need_stdout: bool = False) -> str | None:
+    if result.get("error"):
+        return result["error"]
+    code = result["exitCode"]
+    stderr = result["stderr"]
+    if "Failed to allocate memory" in stderr:
+        return "embedder failed to allocate"
+    if code is not None and code < 0:
+        return f"killed by signal {-code}"
+    if code is not None and code > 128:
+        return f"killed by signal {code - 128}"
+    if code not in (0, None):
+        return f"nesso exited {code}"
+    if corpus is not None and (not corpus.is_file() or corpus.stat().st_size == 0):
+        return "missing corpus"
+    if result["peakRssBytes"] is None:
+        return "missing peak RSS"
+    if need_stdout and not result["stdout"]:
+        return "no matches on stdout"
+    return None
+
+
+def logdir_case(
+    *,
+    lines: int,
+    files_read: int,
+    input_bytes: int,
+    index_result: dict,
+    search_result: dict | None,
+    corpus_bytes: int | None,
+    error: str | None,
+) -> dict:
+    index_wall = index_result["wallSeconds"]
+    search_wall = None if search_result is None else search_result["wallSeconds"]
+    index_peak = index_result["peakRssBytes"]
+    search_peak = None if search_result is None else search_result["peakRssBytes"]
+    total = None
+    if index_wall is not None and search_wall is not None:
+        total = round(index_wall + search_wall, 6)
+    peaks = [value for value in (index_peak, search_peak) if value is not None]
+    ratio = None
+    if corpus_bytes is not None and input_bytes > 0:
+        ratio = round(corpus_bytes / input_bytes, 6)
+    case = {
+        "lines": lines,
+        "filesRead": files_read,
+        "ok": error is None,
+        "indexExitCode": index_result["exitCode"],
+        "searchExitCode": None if search_result is None else search_result["exitCode"],
+        "indexWallSeconds": index_wall,
+        "searchWallSeconds": search_wall,
+        "wallSeconds": total,
+        "indexPeakRssBytes": index_peak,
+        "searchPeakRssBytes": search_peak,
+        "peakRssBytes": max(peaks) if peaks else None,
+        "inputBytes": input_bytes,
+        "corpusBytes": corpus_bytes,
+        "corpusToInputRatio": ratio,
+    }
+    if error is not None:
+        case["error"] = error
+    return case
+
+
+def logdir_payload(*, sha: str, binary: Path, cpu: str, nproc: int, threads: str | None, case: dict) -> dict:
+    return {
+        "sha": sha,
+        "binary": str(binary),
+        "dataset": "logdir",
+        "query": LOGDIR_QUERY,
+        "seed": SEED,
+        "cpuModel": cpu,
+        "nproc": nproc,
+        "threads": threads,
+        "cases": [case],
+    }
+
+
+def run_logdir(args: argparse.Namespace) -> None:
+    if args.sizes is not None:
+        raise SystemExit("error: --sizes applies to the synthetic grep benchmark")
+    if args.sample is not None:
+        raise SystemExit("error: --sample applies to --dataset hdfs")
+    if args.lines is not None and args.mib is not None:
+        raise SystemExit("error: pass only one of --lines and --mib")
+    binary = resolve_binary(args.binary)
+    if not binary.is_file():
+        raise SystemExit(f"error: binary not found: {binary}")
+    model_dir = resolve_model_dir(args.model_dir)
+    if not (model_dir / "model.onnx").is_file() or not (model_dir / "vocab.txt").is_file():
+        raise SystemExit(f"error: {model_dir} must contain model.onnx and vocab.txt")
+    time_bin = gnu_time_binary()
+    if not Path(time_bin).is_file():
+        raise SystemExit(f"error: {time_bin} is required")
+    with tempfile.TemporaryDirectory(prefix="nesso-bench-logdir-") as tmp:
+        directory = Path(tmp)
+        root = directory / "tree"
+        if args.mib is not None:
+            stats = generate_logdir(root, mib=args.mib)
+        else:
+            stats = generate_logdir(root, lines=args.lines)
+        corpus = directory / "corpus.nesso"
+        print(
+            f"bench: logdir index+search {stats['lines']} lines {stats['filesRead']} files",
+            flush=True,
+        )
+        index_result = execute_timed(
+            [
+                str(binary),
+                "index",
+                "-o",
+                str(corpus),
+                *[str(path) for path in stats["files"]],
+                "--model-dir",
+                str(model_dir),
+                "--quiet",
+            ],
+            args.timeout,
+            directory / "index-time.txt",
+        )
+        error = command_error(index_result, corpus=corpus)
+        if error is None:
+            found = INDEXED_CHUNKS.findall(index_result["stderr"])
+            if found and int(found[-1]) != stats["lines"]:
+                error = "indexed chunk count mismatch"
+        search_result = None
+        if error is None:
+            search_result = execute_timed(
+                [
+                    str(binary),
+                    "search",
+                    LOGDIR_QUERY,
+                    "-i",
+                    str(corpus),
+                    "--model-dir",
+                    str(model_dir),
+                    "-k",
+                    "5",
+                ],
+                args.timeout,
+                directory / "search-time.txt",
+            )
+            error = command_error(search_result, need_stdout=True)
+        corpus_bytes = corpus.stat().st_size if corpus.is_file() else None
+        case = logdir_case(
+            lines=stats["lines"],
+            files_read=stats["filesRead"],
+            input_bytes=stats["inputBytes"],
+            index_result=index_result,
+            search_result=search_result,
+            corpus_bytes=corpus_bytes,
+            error=error,
+        )
+    status = "ok" if case["ok"] else case.get("error", "failed")
+    print(
+        f"bench: {case['lines']} lines {case['filesRead']} files {status} "
+        f"wall={case['wallSeconds']}s index={case['indexWallSeconds']}s "
+        f"search={case['searchWallSeconds']}s peak={case['peakRssBytes']} "
+        f"corpusBytes={case['corpusBytes']} inputBytes={case['inputBytes']} "
+        f"ratio={case['corpusToInputRatio']}",
+        flush=True,
+    )
+    cpu = cpu_model()
+    count = logical_cpus()
+    threads = threads_setting()
+    shown_threads = threads if threads is not None else "unset"
+    print(f"bench: cpu={cpu} nproc={count} NESSO_THREADS={shown_threads}", flush=True)
+    payload = logdir_payload(sha=git_sha(), binary=binary, cpu=cpu, nproc=count, threads=threads, case=case)
+    output = args.output or (ROOT / "bench" / "results" / f"{payload['sha']}.logdir.json")
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+    print(f"bench: wrote {output}")
+    if not case.get("ok"):
+        raise SystemExit(1)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--binary", help="Path to the nesso executable")
     parser.add_argument("--model-dir", help="Directory with model.onnx and vocab.txt")
     parser.add_argument(
         "--dataset",
-        choices=("hdfs",),
-        help="Index the Loghub HDFS sample instead of the synthetic grep tiers",
+        choices=("hdfs", "logdir"),
+        help="hdfs indexes the Loghub sample. logdir indexes a generated log directory and runs one search",
     )
     parser.add_argument(
         "--lines",
         type=int,
         default=None,
-        help="Repeat the HDFS sample to this many lines (default: 100000)",
+        help="Line count for --dataset hdfs (repeat the sample) or --dataset logdir (generate the tree)",
+    )
+    parser.add_argument(
+        "--mib",
+        type=float,
+        default=None,
+        help="Build the log directory until the indexed files reach this many MiB",
     )
     parser.add_argument("--sample", type=Path, help="HDFS sample to repeat (default: scripts/fetch-loghub)")
     parser.add_argument(
@@ -471,10 +958,19 @@ def main() -> None:
     parser.add_argument("--timeout", type=float, help="Per-size timeout in seconds")
     args = parser.parse_args()
     if args.dataset == "hdfs":
+        if args.mib is not None:
+            raise SystemExit("error: --mib applies to --dataset logdir")
         run_hdfs(args)
         return
-    if args.lines is not None or args.sample is not None:
-        raise SystemExit("error: --lines and --sample apply to --dataset hdfs")
+    if args.dataset == "logdir":
+        run_logdir(args)
+        return
+    if args.mib is not None:
+        raise SystemExit("error: --mib applies to --dataset logdir")
+    if args.sample is not None:
+        raise SystemExit("error: --sample applies to --dataset hdfs")
+    if args.lines is not None:
+        raise SystemExit("error: --lines applies to --dataset hdfs or --dataset logdir")
 
     binary = resolve_binary(args.binary)
     if not binary.is_file():
