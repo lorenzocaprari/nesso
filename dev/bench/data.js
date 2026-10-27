@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793115962729,
+  "lastUpdate": 1793120581321,
   "repoUrl": "https://github.com/lorenzocaprari/nesso",
   "entries": {
     "nesso": [
@@ -1889,6 +1889,60 @@ window.BENCHMARK_DATA = {
           {
             "name": "grep-100000-rss",
             "value": 148213760,
+            "unit": "bytes"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "caprarilorenzo5@gmail.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "committer": {
+            "email": "85455384+lorenzocaprari@users.noreply.github.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "distinct": true,
+          "id": "e69f820aa7e2fb4e9c04e16cf2c6246cf58712a1",
+          "message": "test(bench): add a Loghub HDFS throughput benchmark\n\nscripts/fetch-loghub downloads the pinned Loghub HDFS_v1 2k sample into build/bench and checks its sha256. scripts/bench --dataset hdfs repeats that sample and records indexing throughput.",
+          "timestamp": "2026-10-27T17:57:09+01:00",
+          "tree_id": "f7d4689f1c5c4c8789a8c15299e32c9436bf852b",
+          "url": "https://github.com/lorenzocaprari/nesso/commit/e69f820aa7e2fb4e9c04e16cf2c6246cf58712a1"
+        },
+        "date": 1793120580330,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "grep-1000-wall",
+            "value": 2.44,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-1000-rss",
+            "value": 151560192,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-10000-wall",
+            "value": 14.75,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-10000-rss",
+            "value": 153264128,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-100000-wall",
+            "value": 133.98,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-100000-rss",
+            "value": 148008960,
             "unit": "bytes"
           }
         ]
