@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793097110074,
+  "lastUpdate": 1793099725636,
   "repoUrl": "https://github.com/lorenzocaprari/nesso",
   "entries": {
     "nesso": [
@@ -1403,6 +1403,60 @@ window.BENCHMARK_DATA = {
           {
             "name": "grep-100000-rss",
             "value": 135200768,
+            "unit": "bytes"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "caprarilorenzo5@gmail.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "committer": {
+            "email": "85455384+lorenzocaprari@users.noreply.github.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "distinct": true,
+          "id": "59359317686753461eabfe3d6237757283a2deb7",
+          "message": "ci(codecov): count partial lines as hits, ignore test/, skip gcov plugin\n\nlcov counts a line with an untaken branch as a hit. Codecov scores that\npartial as a miss, so the badge sits near 49% while the line floor is\n95.5%. Ignore test/ so the badge is src/ only. plugins: noop stops the\nuploader from running gcov over .gcno files; the cleaned trace is already\nnamed. The config lives at .github/codecov.yml. The REQUIRED_* floors\nare unchanged.",
+          "timestamp": "2026-10-27T12:09:06+01:00",
+          "tree_id": "f3d8b770e235afa7fac27942305dd50d0e64a8e6",
+          "url": "https://github.com/lorenzocaprari/nesso/commit/59359317686753461eabfe3d6237757283a2deb7"
+        },
+        "date": 1793099725023,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "grep-1000-wall",
+            "value": 1.82,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-1000-rss",
+            "value": 133201920,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-10000-wall",
+            "value": 16.77,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-10000-rss",
+            "value": 136265728,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-100000-wall",
+            "value": 167.46,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-100000-rss",
+            "value": 132206592,
             "unit": "bytes"
           }
         ]
