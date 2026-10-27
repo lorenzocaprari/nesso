@@ -8,7 +8,7 @@ import (
 	"os"
 )
 
-const ciUsage = "usage: ci <patch-coverage|junit-summary|bench-external|bench-history|trivy-summary|runtime-scan-dockerfile|ci-gate|ci-gate-needs> [flags]"
+const ciUsage = "usage: ci <patch-coverage|junit-summary|bench-external|bench-history|trivy-summary|runtime-scan-dockerfile|ci-gate|ci-gate-needs|wait-build-env> [flags]"
 
 func main() {
 	if len(os.Args) < 2 {
@@ -33,6 +33,8 @@ func main() {
 		code = ciGateMain(os.Args[2:])
 	case "ci-gate-needs":
 		code = ciGateNeedsMain(os.Args[2:])
+	case "wait-build-env":
+		code = waitBuildEnvMain(os.Args[2:])
 	case "-h", "--help", "help":
 		fmt.Fprintln(os.Stderr, ciUsage)
 	default:
