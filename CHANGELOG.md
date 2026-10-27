@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - The README shows the SLSA Build Level 3 badge and the commands to verify a release `.deb` and the GHCR image with `slsa-verifier`.
+- `scripts/bench --dataset hdfs` measures indexing throughput on the Loghub HDFS_v1 2k sample. `scripts/fetch-loghub` downloads that sample into `build/bench/` and checks a pinned sha256. The run repeats it to 100000 lines unless `--lines` is set, and records lines per second, peak RSS, corpus bytes relative to input bytes, the CPU model, `nproc`, and `NESSO_THREADS`. The sample stays out of the repository.
 
 ### Changed
 
