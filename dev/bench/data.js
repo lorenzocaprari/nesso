@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793113499591,
+  "lastUpdate": 1793114489555,
   "repoUrl": "https://github.com/lorenzocaprari/nesso",
   "entries": {
     "nesso": [
@@ -1727,6 +1727,60 @@ window.BENCHMARK_DATA = {
           {
             "name": "grep-100000-rss",
             "value": 132435968,
+            "unit": "bytes"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "caprarilorenzo5@gmail.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "committer": {
+            "email": "85455384+lorenzocaprari@users.noreply.github.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "distinct": true,
+          "id": "63dd0e4a8fed51a33a8921ee3016072582525d87",
+          "message": "docs: add SLSA 3 badge and provenance verification steps",
+          "timestamp": "2026-10-27T16:17:06+01:00",
+          "tree_id": "b4e6f8370a1c9c52847e2c0e1ca33e9c9f100caf",
+          "url": "https://github.com/lorenzocaprari/nesso/commit/63dd0e4a8fed51a33a8921ee3016072582525d87"
+        },
+        "date": 1793114489187,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "grep-1000-wall",
+            "value": 0.8,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-1000-rss",
+            "value": 135753728,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-10000-wall",
+            "value": 7.01,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-10000-rss",
+            "value": 132014080,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-100000-wall",
+            "value": 66.99,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-100000-rss",
+            "value": 137170944,
             "unit": "bytes"
           }
         ]
