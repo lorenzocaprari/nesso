@@ -1,0 +1,13 @@
+#!/bin/bash
+# gcc expands --coverage after -fno-profile-arcs, so the later flag never wins.
+# Drop the coverage flags for a harness whose _GLIBCXX_DEBUG epilogues would
+# otherwise sit in the branch floor. The libraries it calls stay instrumented.
+
+filtered=()
+for arg in "$@"; do
+  case "${arg}" in
+  --coverage | -coverage | -fprofile-arcs | -ftest-coverage | -fprofile-update=atomic) ;;
+  *) filtered+=("${arg}") ;;
+  esac
+done
+exec "${filtered[@]}"

@@ -31,7 +31,9 @@ TEST_CASE("a multi-session pool matches one session byte for byte", "[session-po
         SKIP("the model is fp32; intra-op thread count is not a second session");
     }
     CHECK((*single)->policy().sessions == 1);
+    CHECK((*single)->sessions() == 1);
     CHECK((*pooled)->policy().sessions == 2);
+    CHECK((*pooled)->sessions() == 2);
     CHECK((*pooled)->policy().intraOpThreads == 1);
 
     std::vector<std::string> texts;

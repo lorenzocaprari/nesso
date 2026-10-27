@@ -33,9 +33,9 @@ merged as [PR #88](https://github.com/lorenzocaprari/nesso/pull/88) on 2026-10-1
 
 * Good, because `grep` keeps at most `topK` matches after each batch (score
   descending, then ascending ordinal) and `index` spills each batch.
-  `STREAM_BATCH` in `src/nesso.cpp` and `EMBED_BATCH_SIZE` are both 32, so
-  `inferAll` gets one batch per flush and only one session runs
-  (`src/embed/onnx_embedder.cpp`). `src/cli_parser.cpp` has no batch option.
+  Each flush is one `EMBED_BATCH_SIZE` window per embedder session.
+  `inferAll` still splits on that window, so the 32-text groups do not
+  follow the session count. `src/cli_parser.cpp` has no batch option.
 * Good, because an embed, score, or spill error returns from that batch.
   `index` replaces the destination only when `CorpusWriter::finish` completes,
   and the destructor removes the spill while the writer is still open.

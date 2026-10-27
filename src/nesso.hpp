@@ -154,13 +154,15 @@ struct Config
 
 namespace embed
 {
-class OnnxEmbedder;
+class Embedder;
 } // namespace embed
 
 class Nesso
 {
   public:
     explicit Nesso(Config config);
+    /// Uses `embedder` and does not load a model from `config`.
+    Nesso(Config config, std::unique_ptr<embed::Embedder> embedder);
     ~Nesso();
     Nesso(const Nesso &) = delete;
     Nesso &operator=(const Nesso &) = delete;
@@ -172,11 +174,11 @@ class Nesso
     [[nodiscard]] std::expected<TextResults, Error> search(const SearchRequest &request) const;
 
   private:
-    [[nodiscard]] std::expected<const embed::OnnxEmbedder *, Error> embedder() const;
+    [[nodiscard]] std::expected<const embed::Embedder *, Error> embedder() const;
 
     Config config_;
     // Created on first use. const operations share that cache.
-    mutable std::unique_ptr<embed::OnnxEmbedder> embedder_;
+    mutable std::unique_ptr<embed::Embedder> embedder_;
 };
 
 } // namespace nesso

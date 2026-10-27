@@ -3,18 +3,24 @@
 
 #include <catch2/catch_all.hpp>
 #include <core/corpus_index.hpp>
+#include <embed/embedder.hpp>
 #include <model_paths.hpp>
 #include <nesso.hpp>
 
+#include <algorithm>
 #include <array>
+#include <cstdint>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <iterator>
 #include <optional>
 #include <span>
 #include <string>
+#include <string_view>
 #include <unistd.h>
 #include <utility>
+#include <vector>
 
 #ifndef NESSO_TEST_FIXTURES
 #error "NESSO_TEST_FIXTURES must be defined"
@@ -59,6 +65,118 @@ void writeEmptyCorpus(const std::filesystem::path &path) { REQUIRE(nesso::core::
 nesso::Nesso withMissingModel(const std::filesystem::path &root)
 {
     return nesso::Nesso{nesso::Config{.modelDir = root / "no-models"}};
+}
+
+std::uint32_t mixByte(std::uint32_t hash, unsigned char byte)
+{
+    hash ^= byte;
+    hash *= 16777619u;
+    return hash;
+}
+
+std::uint32_t mixText(std::uint32_t hash, std::string_view text)
+{
+    for (const char byte : text)
+    {
+        hash = mixByte(hash, static_cast<unsigned char>(byte));
+    }
+    return hash;
+}
+
+std::vector<float> vectorFor(std::string_view text, std::uint32_t window)
+{
+    std::vector<float> values(4);
+    std::uint32_t hash = mixText(2166136261u, text);
+    hash = mixByte(hash, static_cast<unsigned char>(window & 0xffu));
+    hash = mixByte(hash, static_cast<unsigned char>((window >> 8U) & 0xffu));
+    hash = mixByte(hash, static_cast<unsigned char>((window >> 16U) & 0xffu));
+    hash = mixByte(hash, static_cast<unsigned char>((window >> 24U) & 0xffu));
+    for (size_t index = 0; index < values.size(); ++index)
+    {
+        hash = mixByte(hash, static_cast<unsigned char>(index));
+        values[index] = static_cast<float>(hash % 1000U) / 1000.F;
+    }
+    return values;
+}
+
+class RecordingEmbedder final : public nesso::embed::Embedder
+{
+  public:
+    explicit RecordingEmbedder(size_t sessions = 1) : sessions_(sessions) {}
+
+    [[nodiscard]] size_t sessions() const noexcept override { return sessions_; }
+
+    [[nodiscard]] std::expected<std::vector<float>, nesso::embed::EmbedError> embed(std::string_view) const override
+    {
+        return std::vector<float>{1.F, 0.F, 0.F, 0.F};
+    }
+
+    [[nodiscard]] std::expected<std::vector<std::vector<float>>, nesso::embed::EmbedError>
+    embedBatch(std::span<const std::string> texts, ProgressCallback progress) const override
+    {
+        batches_.push_back(texts.size());
+        std::vector<std::vector<float>> embeddings;
+        embeddings.reserve(texts.size());
+        for (size_t offset = 0; offset < texts.size(); offset += nesso::embed::EMBED_BATCH_SIZE)
+        {
+            const size_t count = std::min(nesso::embed::EMBED_BATCH_SIZE, texts.size() - offset);
+            std::uint32_t window = 2166136261u;
+            for (size_t index = 0; index < count; ++index)
+            {
+                window = mixText(window, texts[offset + index]);
+            }
+            for (size_t index = 0; index < count; ++index)
+            {
+                embeddings.push_back(vectorFor(texts[offset + index], window));
+            }
+        }
+        if (progress)
+        {
+            progress(texts.size(), texts.size());
+        }
+        return embeddings;
+    }
+
+    [[nodiscard]] const std::vector<size_t> &batches() const { return batches_; }
+
+  private:
+    size_t sessions_;
+    mutable std::vector<size_t> batches_;
+};
+
+void writeLines(const std::filesystem::path &path, size_t count, std::string_view tag)
+{
+    std::ofstream output(path);
+    REQUIRE(output);
+    for (size_t index = 0; index < count; ++index)
+    {
+        output << tag << '-' << index << " database connection\n";
+    }
+    REQUIRE(output);
+}
+
+std::string readFile(const std::filesystem::path &path)
+{
+    std::ifstream input(path, std::ios::binary);
+    REQUIRE(input);
+    return {std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>()};
+}
+
+void expectFlushSizes(const std::vector<size_t> &batches, size_t sessions, size_t total)
+{
+    const size_t flush = sessions * nesso::embed::EMBED_BATCH_SIZE;
+    REQUIRE(flush > 0);
+    REQUIRE_FALSE(batches.empty());
+    size_t seen = 0;
+    for (size_t index = 0; index + 1 < batches.size(); ++index)
+    {
+        CHECK(batches[index] == flush);
+        seen += batches[index];
+    }
+    const size_t tail = total % flush == 0 ? flush : total % flush;
+    CHECK(batches.back() == tail);
+    seen += batches.back();
+    CHECK(seen == total);
 }
 
 } // namespace
@@ -214,4 +332,64 @@ TEST_CASE("Nesso is movable", "[nesso]")
     REQUIRE_FALSE(missing.has_value());
     REQUIRE(missing.error().kind == nesso::ErrorKind::CorpusRead);
     REQUIRE(missing.error().cause == nesso::ErrorCause::FileOpen);
+}
+
+TEST_CASE("a multi-session embedder is flushed one window per session", "[nesso][text]")
+{
+    const TempDir dir{"nesso_facade_sessions"};
+    const auto first = dir.path() / "a.log";
+    const auto second = dir.path() / "b.log";
+    constexpr size_t firstLines = 80;
+    constexpr size_t secondLines = 40;
+    constexpr size_t total = firstLines + secondLines;
+    writeLines(first, firstLines, "alpha");
+    writeLines(second, secondLines, "beta");
+
+    const RecordingEmbedder probe;
+    CHECK(probe.sessions() == 1);
+
+    auto singleEmbedder = std::make_unique<RecordingEmbedder>();
+    auto multiEmbedder = std::make_unique<RecordingEmbedder>(3);
+    const RecordingEmbedder *single = singleEmbedder.get();
+    const RecordingEmbedder *multi = multiEmbedder.get();
+    const nesso::Nesso singleApp{nesso::Config{}, std::move(singleEmbedder)};
+    const nesso::Nesso multiApp{nesso::Config{}, std::move(multiEmbedder)};
+
+    const auto singleCorpus = dir.path() / "single.nesso";
+    const auto multiCorpus = dir.path() / "multi.nesso";
+    const auto singleIndexed = singleApp.index({.files = {first, second}, .output = singleCorpus});
+    const auto multiIndexed = multiApp.index({.files = {first, second}, .output = multiCorpus});
+    REQUIRE(singleIndexed.has_value());
+    REQUIRE(multiIndexed.has_value());
+    CHECK(singleIndexed->chunks == total);
+    CHECK(multiIndexed->chunks == total);
+    expectFlushSizes(single->batches(), 1, total);
+    expectFlushSizes(multi->batches(), 3, total);
+    CHECK(readFile(singleCorpus) == readFile(multiCorpus));
+
+    auto singleGrepEmbedder = std::make_unique<RecordingEmbedder>();
+    auto multiGrepEmbedder = std::make_unique<RecordingEmbedder>(3);
+    const RecordingEmbedder *singleGrep = singleGrepEmbedder.get();
+    const RecordingEmbedder *multiGrep = multiGrepEmbedder.get();
+    const nesso::Nesso singleGrepApp{nesso::Config{}, std::move(singleGrepEmbedder)};
+    const nesso::Nesso multiGrepApp{nesso::Config{}, std::move(multiGrepEmbedder)};
+    const nesso::GrepRequest request{.query = "database connection", .files = {first, second}, .topK = total};
+    const auto singleGrepped = singleGrepApp.grep(request);
+    const auto multiGrepped = multiGrepApp.grep(request);
+    REQUIRE(singleGrepped.has_value());
+    REQUIRE(multiGrepped.has_value());
+    expectFlushSizes(singleGrep->batches(), 1, total);
+    expectFlushSizes(multiGrep->batches(), 3, total);
+    REQUIRE(singleGrepped->matches.size() == multiGrepped->matches.size());
+    REQUIRE(singleGrepped->matches.size() == total);
+    for (size_t index = 0; index < singleGrepped->matches.size(); ++index)
+    {
+        const nesso::TextMatch &left = singleGrepped->matches[index];
+        const nesso::TextMatch &right = multiGrepped->matches[index];
+        CHECK(left.source == right.source);
+        CHECK(left.line == right.line);
+        CHECK(left.score == right.score);
+        CHECK(left.text == right.text);
+        CHECK(left.arrayElement == right.arrayElement);
+    }
 }
