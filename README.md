@@ -7,6 +7,7 @@
 [![CodeQL](https://github.com/lorenzocaprari/nesso/actions/workflows/codeql.yml/badge.svg)](https://github.com/lorenzocaprari/nesso/actions/workflows/codeql.yml)
 [![ClusterFuzzLite](https://github.com/lorenzocaprari/nesso/actions/workflows/cifuzz.yml/badge.svg?branch=main&event=schedule)](https://github.com/lorenzocaprari/nesso/actions/workflows/cifuzz.yml)
 [![GHCR](https://img.shields.io/badge/ghcr.io-lorenzocaprari%2Fnesso-blue.svg)](https://github.com/lorenzocaprari/nesso/pkgs/container/nesso)
+[![Coverage](https://codecov.io/gh/lorenzocaprari/nesso/branch/main/graph/badge.svg)](https://codecov.io/gh/lorenzocaprari/nesso)
 
 grep for meaning: find the log lines you're looking for even when the words differ. Offline, one binary.
 
