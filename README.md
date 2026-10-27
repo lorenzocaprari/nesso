@@ -52,9 +52,9 @@ line 3762: 0.4677: Oct 24 23:39:07 web-02 app[2888]: write /var/lib/app/queue.db
 Ubuntu 26.04+ (glibc 2.43+), amd64. The package includes the MiniLM model.
 
 ```bash
-curl -fL -o nesso_0.2.0_amd64.deb \
-  https://github.com/lorenzocaprari/nesso/releases/download/v0.2.0/nesso_0.2.0_amd64.deb
-sudo apt install ./nesso_0.2.0_amd64.deb
+curl -fL -o nesso_0.2.1_amd64.deb \
+  https://github.com/lorenzocaprari/nesso/releases/download/v0.2.1/nesso_0.2.1_amd64.deb
+sudo apt install ./nesso_0.2.1_amd64.deb
 ```
 
 ## More
