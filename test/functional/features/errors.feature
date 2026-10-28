@@ -4,16 +4,35 @@ Feature: command errors
   Scenario: help documents the exit codes
     When I run nesso with arguments --help
     Then the exit code is 0
-    And stdout contains "Exit codes"
-    And stdout contains "2 on error"
+    And stdout contains "Examples:"
+    And stdout contains "nesso grep \"database connection error\" app.log"
+    And stdout contains "nesso grep \"payment timeout\" app.log events.jsonl -k 5"
+    And stdout contains "nesso index -o corpus.nesso app.log"
+    And stdout contains "nesso search \"payment timeout\" -i corpus.nesso"
+    And stdout contains "0 matches printed or corpus written"
+    And stdout contains "1 nothing to search or index"
+    And stdout contains "2 error"
 
   Scenario: grep and index help document quiet mode
     When I run nesso with arguments grep --help
     Then the exit code is 0
     And stdout contains "--quiet"
+    And stdout does not contain "(default: 5)"
+    And stdout contains "[5]"
+    And stdout does not contain "(default: message)"
+    And stdout contains "[message]"
+    And the "--threads" help is at most 2 lines
     When I run nesso with arguments index --help
     Then the exit code is 0
     And stdout contains "--quiet"
+    And stdout does not contain "(default: message)"
+    And stdout contains "[message]"
+    And the "--threads" help is at most 2 lines
+    When I run nesso with arguments search --help
+    Then the exit code is 0
+    And stdout does not contain "(default: 5)"
+    And stdout contains "[5]"
+    And the "--threads" help is at most 2 lines
 
   Scenario: an unknown flag is rejected
     Given a file "app.log" with:

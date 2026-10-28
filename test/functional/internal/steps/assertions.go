@@ -114,6 +114,48 @@ func (b *bindings) streamOmits(name, fragment string) error {
 	return nil
 }
 
+func (b *bindings) optionHelpAtMost(flag, limit string) error {
+	text, err := b.stream("stdout")
+	if err != nil {
+		return err
+	}
+	maxLines, convErr := strconv.Atoi(limit)
+	if convErr != nil {
+		return convErr
+	}
+	count, err := optionHelpLines(text, flag)
+	if err != nil {
+		return err
+	}
+	if count > maxLines {
+		return fmt.Errorf("%s help is %d lines, want at most %d\n%s", flag, count, maxLines, text)
+	}
+	return nil
+}
+
+func optionHelpLines(text, flag string) (int, error) {
+	lines := strings.Split(strings.TrimRight(text, "\n"), "\n")
+	start := -1
+	for i, line := range lines {
+		if strings.Contains(line, flag) {
+			start = i
+			break
+		}
+	}
+	if start < 0 {
+		return 0, fmt.Errorf("stdout has no %s help:\n%s", flag, text)
+	}
+	count := 1
+	for i := start + 1; i < len(lines); i++ {
+		trimmed := strings.TrimLeft(lines[i], " ")
+		if trimmed == "" || strings.HasPrefix(trimmed, "-") || strings.HasSuffix(strings.TrimRight(trimmed, " "), ":") {
+			break
+		}
+		count++
+	}
+	return count, nil
+}
+
 func (b *bindings) streamIsEmpty(name string) error {
 	text, err := b.stream(name)
 	if err != nil {
