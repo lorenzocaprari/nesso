@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793190946818,
+  "lastUpdate": 1793191638813,
   "repoUrl": "https://github.com/lorenzocaprari/nesso",
   "entries": {
     "nesso": [
@@ -2645,6 +2645,60 @@ window.BENCHMARK_DATA = {
           {
             "name": "grep-100000-rss",
             "value": 152150016,
+            "unit": "bytes"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "caprarilorenzo5@gmail.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "committer": {
+            "email": "85455384+lorenzocaprari@users.noreply.github.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "distinct": true,
+          "id": "db27aeb2a2da711b97bb68974f2e6a339240c85f",
+          "message": "fix(core): reject corpus table offsets outside the file\n\nRequire HEADER_BYTES <= sourceTableOffset <= chunkTableOffset <= matrixOffset <= file size before a corpus table is read, and report a violation as CorruptDatabase. Remove the writer's spill file with the error_code overload so a filesystem error in the destructor or noexcept move assignment does not terminate.",
+          "timestamp": "2026-10-28T13:42:28+01:00",
+          "tree_id": "d4a7880049d37ebc0460b1ff5be036060fe9608b",
+          "url": "https://github.com/lorenzocaprari/nesso/commit/db27aeb2a2da711b97bb68974f2e6a339240c85f"
+        },
+        "date": 1793191638425,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "grep-1000-wall",
+            "value": 0.67,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-1000-rss",
+            "value": 149606400,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-10000-wall",
+            "value": 5.27,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-10000-rss",
+            "value": 149282816,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-100000-wall",
+            "value": 51.08,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-100000-rss",
+            "value": 150245376,
             "unit": "bytes"
           }
         ]
