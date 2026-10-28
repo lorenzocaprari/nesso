@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793201932035,
+  "lastUpdate": 1793205730600,
   "repoUrl": "https://github.com/lorenzocaprari/nesso",
   "entries": {
     "nesso": [
@@ -3023,6 +3023,60 @@ window.BENCHMARK_DATA = {
           {
             "name": "grep-100000-rss",
             "value": 153837568,
+            "unit": "bytes"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "caprarilorenzo5@gmail.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "committer": {
+            "email": "85455384+lorenzocaprari@users.noreply.github.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "distinct": true,
+          "id": "eb4e92c43c0f702b41fd1f171f29dc0f5abb95d9",
+          "message": "feat(core): add a lexical tokenizer and BM25 scorer",
+          "timestamp": "2026-10-28T17:35:44+01:00",
+          "tree_id": "99763befa17a784e331fb023e354d31b2054b47c",
+          "url": "https://github.com/lorenzocaprari/nesso/commit/eb4e92c43c0f702b41fd1f171f29dc0f5abb95d9"
+        },
+        "date": 1793205730005,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "grep-1000-wall",
+            "value": 2.15,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-1000-rss",
+            "value": 143998976,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-10000-wall",
+            "value": 10.49,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-10000-rss",
+            "value": 150581248,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-100000-wall",
+            "value": 90.92,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-100000-rss",
+            "value": 156487680,
             "unit": "bytes"
           }
         ]
