@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793194230220,
+  "lastUpdate": 1793194853464,
   "repoUrl": "https://github.com/lorenzocaprari/nesso",
   "entries": {
     "nesso": [
@@ -2807,6 +2807,60 @@ window.BENCHMARK_DATA = {
           {
             "name": "grep-100000-rss",
             "value": 158314496,
+            "unit": "bytes"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "caprarilorenzo5@gmail.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "committer": {
+            "email": "85455384+lorenzocaprari@users.noreply.github.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "distinct": true,
+          "id": "2366dc8485f521e04d15270b80dd3d0b32bf0f21",
+          "message": "build: opt coverage and fuzz scripts into -Werror\n\nNESSO_WERROR=1 is off by default. code-coverage passes\n-c user.nesso:werror=True on conan build. fuzz-test passes it on\nconan install and does not call conan build. scripts/clang-tidy\ndrops the GCC-only warning flags before analysis.",
+          "timestamp": "2026-10-28T14:33:33+01:00",
+          "tree_id": "918e80e9cf253e7c3480bbc10903c6948f0ea63b",
+          "url": "https://github.com/lorenzocaprari/nesso/commit/2366dc8485f521e04d15270b80dd3d0b32bf0f21"
+        },
+        "date": 1793194852589,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "grep-1000-wall",
+            "value": 2.17,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-1000-rss",
+            "value": 145358848,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-10000-wall",
+            "value": 10.56,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-10000-rss",
+            "value": 150056960,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-100000-wall",
+            "value": 91.62,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-100000-rss",
+            "value": 153214976,
             "unit": "bytes"
           }
         ]
