@@ -59,6 +59,13 @@ static constexpr const char *MODEL_DIR_HELP = "Directory containing model.onnx a
 
 static constexpr const char *TEXT_FILES_HELP = "Text files to read. - reads stdin as lines";
 
+static constexpr const char *THREADS_HELP =
+    "CPU budget N. On x86, int8 uses one intra-op thread and N sessions when N is 4 or less. A larger "
+    "budget uses I = min(4, N/2) intra-op threads and max(1, N/I) sessions, and shrinks the arena. "
+    "On aarch64 I is at least 2, including when N is 1. The default N is the usable physical core count "
+    "after affinity and cgroup cpu.max. For fp32, N is the intra-op thread count of the one session and the "
+    "default is the logical CPU count. NESSO_THREADS supplies N when --threads is omitted.";
+
 struct TextOptions
 {
     std::string query;
@@ -156,11 +163,7 @@ std::expected<ParsedCommand, int> parseCommandLine(int argc, char **argv)
         ->default_val(5)
         ->check(positiveCount());
     grepCmd->add_flag("--quiet", text.quiet, "Suppress interactive progress output");
-    const auto *grepThreads =
-        grepCmd
-            ->add_option("--threads", text.threads,
-                         "int8 session count, or fp32 intra-op threads. Default: physical cores, or NESSO_THREADS")
-            ->check(positiveCount());
+    const auto *grepThreads = grepCmd->add_option("--threads", text.threads, THREADS_HELP)->check(positiveCount());
     const auto *grepModelDir = grepCmd->add_option("--model-dir", text.modelDir, MODEL_DIR_HELP);
 
     auto *indexCmd = app.add_subcommand("index", "Embed text files into a corpus file. .json and .jsonl are JSON; "
@@ -172,11 +175,7 @@ std::expected<ParsedCommand, int> parseCommandLine(int argc, char **argv)
     indexCmd->add_option("--json-field", text.jsonField, "JSON object field to read (default: message)")
         ->default_val("message");
     indexCmd->add_flag("--quiet", text.quiet, "Suppress interactive progress output");
-    const auto *indexThreads =
-        indexCmd
-            ->add_option("--threads", text.threads,
-                         "int8 session count, or fp32 intra-op threads. Default: physical cores, or NESSO_THREADS")
-            ->check(positiveCount());
+    const auto *indexThreads = indexCmd->add_option("--threads", text.threads, THREADS_HELP)->check(positiveCount());
     const auto *indexModelDir = indexCmd->add_option("--model-dir", text.modelDir, MODEL_DIR_HELP);
 
     auto *searchCmd = app.add_subcommand("search", "Semantic search of a corpus file. Prints matches only.");
@@ -185,11 +184,7 @@ std::expected<ParsedCommand, int> parseCommandLine(int argc, char **argv)
     searchCmd->add_option("-k,--top-k", text.topK, "Maximum number of matches to return (default: 5)")
         ->default_val(5)
         ->check(positiveCount());
-    const auto *searchThreads =
-        searchCmd
-            ->add_option("--threads", text.threads,
-                         "int8 session count, or fp32 intra-op threads. Default: physical cores, or NESSO_THREADS")
-            ->check(positiveCount());
+    const auto *searchThreads = searchCmd->add_option("--threads", text.threads, THREADS_HELP)->check(positiveCount());
     const auto *searchModelDir = searchCmd->add_option("--model-dir", text.modelDir, MODEL_DIR_HELP);
 
     try

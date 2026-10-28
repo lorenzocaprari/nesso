@@ -28,6 +28,11 @@ class OnnxEmbedder
     [[nodiscard]] static std::expected<std::unique_ptr<OnnxEmbedder>, EmbedError>
     create(const std::filesystem::path &modelDir, size_t threads = 0);
 
+    /// One session at this intra-op width, raised to intraOpThreadFloor().
+    /// The product path is create(). This pins a width the policy would not.
+    [[nodiscard]] static std::expected<std::unique_ptr<OnnxEmbedder>, EmbedError>
+    createWithIntraOp(const std::filesystem::path &modelDir, int intraOpThreads);
+
     OnnxEmbedder(WordPieceTokenizer tokenizer, const std::filesystem::path &modelPath, size_t threads);
 
     [[nodiscard]] const SessionPolicy &policy() const noexcept;
@@ -46,7 +51,11 @@ class OnnxEmbedder
     OnnxEmbedder &operator=(OnnxEmbedder &&) = delete;
     ~OnnxEmbedder();
 
+    /// The first embedder environment, including the AMX guard.
+    static void prepareEmbedderEnv();
+
   private:
+    OnnxEmbedder(WordPieceTokenizer tokenizer, const std::filesystem::path &modelPath, const SessionPolicy &policy);
     struct SessionImpl;
     std::unique_ptr<SessionImpl> session_;
     WordPieceTokenizer tokenizer_;

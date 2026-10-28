@@ -6,12 +6,19 @@ Feature: Harness smoke test
     Then the exit code is 0
     And stderr is empty
 
-  Scenario: NESSO_THREADS overrides the session count
+  Scenario: NESSO_THREADS sets the CPU budget
     Given the environment variable "NESSO_THREADS" is "2"
     When I run nesso with arguments --version --verbose
     Then the exit code is 0
-    And stdout contains "int8: 2 single-thread"
+    And stdout shows the host int8 policy for a budget of two
     And stdout contains "fp32: 1 session, 2 intra-op threads"
+    And stderr is empty
+
+  Scenario: NESSO_THREADS=1 uses the host intra-op floor
+    Given the environment variable "NESSO_THREADS" is "1"
+    When I run nesso with arguments --version --verbose
+    Then the exit code is 0
+    And stdout shows the host intra-op floor for one thread
     And stderr is empty
 
   Scenario: version can print the session policy

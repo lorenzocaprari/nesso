@@ -66,6 +66,8 @@ func InitializeScenario(sc *godog.ScenarioContext) {
 	sc.Step(`^the exit code is not (\d+)$`, b.exitCodeIsNot)
 	// (.*) so a phrase may contain quotes, as in: missing the "message" field.
 	sc.Step(`^(stdout|stderr) contains "(.*)"$`, b.streamContains)
+	sc.Step(`^stdout shows the host intra-op floor for one thread$`, b.hostIntraOpFloor)
+	sc.Step(`^stdout shows the host int8 policy for a budget of two$`, b.hostBudgetTwo)
 	sc.Step(`^(stdout|stderr) does not contain "(.*)"$`, b.streamOmits)
 	sc.Step(`^(stdout|stderr) is empty$`, b.streamIsEmpty)
 }

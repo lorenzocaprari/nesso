@@ -48,6 +48,6 @@ so 1.18.1 adds the CPU execution provider.
 
 ## More Information
 
-No issue and no pull request compares the options above. Sources: [v0.1.0 `9c5773d`](https://github.com/lorenzocaprari/nesso/commit/9c5773d), [#72 `3b7a8c6`](https://github.com/lorenzocaprari/nesso/pull/72), [#80 `8849bb4`](https://github.com/lorenzocaprari/nesso/pull/80), [#92 `0615854`](https://github.com/lorenzocaprari/nesso/pull/92). #92 is the session policy on `main`. Determinism is [ADR 0003](0003-byte-identical-determinism.md).
+No issue and no pull request compares the options above. Sources: [v0.1.0 `9c5773d`](https://github.com/lorenzocaprari/nesso/commit/9c5773d), [#72 `3b7a8c6`](https://github.com/lorenzocaprari/nesso/pull/72), [#80 `8849bb4`](https://github.com/lorenzocaprari/nesso/pull/80), [#92 `0615854`](https://github.com/lorenzocaprari/nesso/pull/92). #92 is the session policy on `main`. Determinism is [ADR 0003](0003-byte-identical-determinism.md). The int8 session and thread layout is now decided by [ADR 0014](0014-int8-session-and-thread-policy.md).
 
 Open question: whether a future `--device auto` should select an execution provider. This record leaves that undecided.
