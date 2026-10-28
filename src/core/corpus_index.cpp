@@ -328,7 +328,8 @@ CorpusWriter::~CorpusWriter()
     if (open_)
     {
         records_.close();
-        std::filesystem::remove(recordsPath_);
+        std::error_code error;
+        std::filesystem::remove(recordsPath_, error);
         open_ = false;
     }
 }
@@ -351,7 +352,8 @@ CorpusWriter &CorpusWriter::operator=(CorpusWriter &&other) noexcept
     if (open_)
     {
         records_.close();
-        std::filesystem::remove(recordsPath_);
+        std::error_code error;
+        std::filesystem::remove(recordsPath_, error);
     }
     destination_ = std::move(other.destination_);
     recordsPath_ = std::move(other.recordsPath_);
@@ -791,7 +793,10 @@ std::expected<MappedCorpus, EngineError> mapCorpusFile(const std::filesystem::pa
         return std::unexpected(EngineError::CorruptDatabase);
     }
     const std::uint64_t matrixBytes = layout.chunkCount * layout.dimensions * sizeof(float);
-    if (!rangeInside(layout.matrixOffset, matrixBytes, bytes.size()) ||
+    // Offsets are file input. A value past the mapping is a corrupt corpus, not a broken invariant.
+    if (layout.sourceTableOffset < HEADER_BYTES || layout.sourceTableOffset > layout.chunkTableOffset ||
+        layout.chunkTableOffset > layout.matrixOffset || layout.matrixOffset > bytes.size() ||
+        !rangeInside(layout.matrixOffset, matrixBytes, bytes.size()) ||
         layout.matrixOffset + matrixBytes != bytes.size() ||
         !rangeInside(HEADER_BYTES, layout.modelIdBytes, layout.sourceTableOffset))
     {

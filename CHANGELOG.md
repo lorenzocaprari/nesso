@@ -24,6 +24,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A corpus whose source-table, chunk-table, or matrix offset is outside the file, or out of order, is rejected as corrupt. The command exits 2 and prints `the file is corrupt`. The reader used to follow those offsets past the end of the file.
+- Deleting a corpus writer's spill file no longer terminates the process when the filesystem refuses the removal.
 - `nesso index` exits 1 when the input produces no chunks. Stderr gets one line naming the input and what to check (the path or `--json-field`); stdout stays empty. The corpus file is not created or replaced. A path that cannot be opened still exits 2. The command used to exit 0 and write an empty corpus.
 
 ## [0.2.1] - 2026-10-27

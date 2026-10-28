@@ -417,3 +417,73 @@ TEST_CASE("moving a corpus writer keeps one owner of the spill file", "[corpus][
     REQUIRE_FALSE(std::filesystem::exists(droppedPath.string() + ".records"));
     std::filesystem::remove_all(directory);
 }
+
+TEST_CASE("corpus reader rejects each offset that breaks the table order", "[corpus][core]")
+{
+    const auto directory = makeTempDir();
+    const auto path = directory / "corrupt.nesso";
+    const auto expectCorrupt = [&](std::uint64_t sourceTable, std::uint64_t chunkTable, std::uint64_t matrix)
+    {
+        writeBytes(path, corpusHeader(64, 0, 0, 0, sourceTable, chunkTable, matrix));
+        const auto mapped = nesso::core::mapCorpusFile(path);
+        REQUIRE_FALSE(mapped);
+        REQUIRE(mapped.error() == nesso::core::EngineError::CorruptDatabase);
+    };
+
+    // Exactly one comparison fails in each section.
+    SECTION("source table past the chunk table") { expectCorrupt(4096, 64, 64); }
+    SECTION("source table inside the header") { expectCorrupt(32, 64, 64); }
+    SECTION("chunk table past the matrix") { expectCorrupt(64, 4096, 64); }
+    SECTION("matrix past the end of the file") { expectCorrupt(64, 64, 128); }
+    std::filesystem::remove_all(directory);
+}
+
+TEST_CASE("corpus reader rejects a matrix offset before the chunk table", "[corpus][core]")
+{
+    const auto directory = makeTempDir();
+    const auto path = directory / "corrupt.nesso";
+    // One source and one chunk parse, but the chunk table sits inside the matrix block.
+    std::string bytes = corpusHeader(256, 32, 1, 1, 64, 192, 128);
+    putU64(bytes, 64, 96);
+    putU32(bytes, 72, 1);
+    bytes[96] = 'a';
+    putU64(bytes, 192, 1);
+    putU64(bytes, 216, 128);
+    writeBytes(path, bytes);
+    const auto mapped = nesso::core::mapCorpusFile(path);
+    REQUIRE_FALSE(mapped);
+    REQUIRE(mapped.error() == nesso::core::EngineError::CorruptDatabase);
+    std::filesystem::remove_all(directory);
+}
+
+TEST_CASE("corpus writer cleanup ignores a spill path that cannot be removed", "[corpus][core]")
+{
+    const auto directory = makeTempDir();
+    const auto firstPath = directory / "first.nesso";
+    const auto secondPath = directory / "second.nesso";
+    auto created = nesso::core::CorpusWriter::create(firstPath, "model");
+    REQUIRE(created);
+    nesso::core::CorpusWriter writer = std::move(*created);
+
+    const auto blockRemoval = [](const std::filesystem::path &records)
+    {
+        REQUIRE(std::filesystem::remove(records));
+        REQUIRE(std::filesystem::create_directory(records));
+        writeBytes(records / "held", "x");
+    };
+
+    const auto firstRecords = std::filesystem::path(firstPath.string() + ".records");
+    blockRemoval(firstRecords);
+    auto other = nesso::core::CorpusWriter::create(secondPath, "model");
+    REQUIRE(other);
+    writer = std::move(*other);
+    REQUIRE(std::filesystem::is_directory(firstRecords));
+
+    const auto secondRecords = std::filesystem::path(secondPath.string() + ".records");
+    blockRemoval(secondRecords);
+    {
+        nesso::core::CorpusWriter dropped = std::move(writer);
+    }
+    REQUIRE(std::filesystem::is_directory(secondRecords));
+    std::filesystem::remove_all(directory);
+}
