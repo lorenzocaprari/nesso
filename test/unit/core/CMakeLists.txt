@@ -26,5 +26,17 @@ add_test(NAME search_oracle_test COMMAND search_oracle_test)
 target_link_libraries(search_oracle_test PRIVATE nesso_options nesso_core
                                                  Catch2::Catch2WithMain)
 
+add_executable(dedup_test dedup_test.cpp)
+add_test(NAME dedup_test COMMAND dedup_test)
+target_include_directories(dedup_test
+                           PRIVATE "${CMAKE_SOURCE_DIR}/src/embed/include")
+target_link_libraries(dedup_test PRIVATE nesso_core Catch2::Catch2WithMain)
+# Catch2 checks add uncoverable branches. The library this calls stays in the
+# floor.
+set_property(
+  TARGET dedup_test
+  PROPERTY CXX_COMPILER_LAUNCHER
+           "${CMAKE_SOURCE_DIR}/test/unit/nesso/strip-coverage-flags")
+
 set_tests_properties(distance_test corpus_index_test top_k_test
-                     search_oracle_test PROPERTIES LABELS unit)
+                     search_oracle_test dedup_test PROPERTIES LABELS unit)

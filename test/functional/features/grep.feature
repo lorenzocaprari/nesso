@@ -245,3 +245,44 @@ Feature: grep
     When I run nesso with arguments grep "database connection error" {dir}/app.log
     Then the exit code is 0
     And stdout contains "database connection refused"
+
+  Scenario: repeated lines stay in input order
+    Given a file "app.log" with:
+      """
+      database connection refused
+      database connection refused
+      """
+    When I run nesso with arguments grep "database connection error" -k 2 {dir}/app.log
+    Then the exit code is 0
+    And stdout contains "line 1:"
+    And stdout contains "line 2:"
+    And lines that share text share a score
+    And stdout does not contain "occurrences"
+
+  Scenario: json rows report how many lines share the text
+    Given a file "app.log" with:
+      """
+      database connection refused
+      database connection refused
+      sunny beach vacation
+      """
+    When I run nesso with arguments grep "database connection error" --json -k 3 {dir}/app.log
+    Then the exit code is 0
+    And stdout contains "\"schema_version\":1"
+    And stdout contains "\"occurrences\":2"
+    And stdout contains "\"occurrences\":1"
+    And stdout contains "\"kind\":\"line\""
+    And lines that share text share a score
+    And stderr is empty
+
+  Scenario: repeated stdin lines share one json occurrence count
+    Given stdin is:
+      """
+      database connection refused
+      database connection refused
+      """
+    When I run nesso with arguments grep "database connection error" --json -k 2 -
+    Then the exit code is 0
+    And stdout contains "\"source\":\"-\""
+    And stdout contains "\"occurrences\":2"
+    And stdout contains "\"schema_version\":1"
