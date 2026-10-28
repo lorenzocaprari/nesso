@@ -63,3 +63,5 @@ fp32-only default are declined.
 * [#85](https://github.com/lorenzocaprari/nesso/pull/85) (`5b52a5a`)
 * [#92](https://github.com/lorenzocaprari/nesso/pull/92) (`0615854`)
 * [#108](https://github.com/lorenzocaprari/nesso/pull/108) (`0cdeda3`)
+
+The int8 session and thread layout is now decided by [ADR 0014](0014-int8-session-and-thread-policy.md). The byte-equality decision in this record stands.

@@ -33,6 +33,16 @@ nesso search "payment timeout" -i corpus.nesso -k 5
 
 From a source tree the binary is `build/Debug/src/nesso` or `build/Release/src/nesso`.
 
+## Threads
+
+`--threads` and `NESSO_THREADS` set the same CPU budget `N`. `--threads` wins when both are set.
+
+For the int8 model on x86, a budget of 4 or less is one intra-op thread and `N` sessions, and the arena is not shrunk. A larger budget uses `I = min(4, N/2)` (integer division) and `S = max(1, N/I)`, and shrinks the arena after each run. `N=8` is 2 sessions of 4 intra-op threads. `N=16` is 4 sessions of 4. On aarch64 `I` is at least 2, including when `N` is 1, so a session does not use the intra-op 1 path. When the option and the variable are both unset, `N` is the number of usable physical cores: topology cores in the process affinity mask (`Cpus_allowed_list`), then reduced by a cgroup `cpu.max` quota when a parent sets one. A positive quota smaller than one period counts as one CPU. The default session count is also reduced while `S` times the per-session estimate exceeds half of `MemAvailable` (total RAM when that key is missing). An explicit `N` is not reduced; nesso warns on stderr and continues.
+
+For the fp32 model, `N` is the intra-op thread count of the one session. The default is the logical CPU count. On aarch64 that count is at least 2, including when `N` is 1.
+
+`nesso --version --verbose` prints the policy for both models.
+
 ## Files
 
 - `.json` and `.jsonl` are JSON, matched without regard to case. Every other name is read as lines: no extension, `.log.N` rotations, `.LOG`, `.txt`, `syslog`. `-` reads stdin as lines, and those matches are prefixed with `-:`.

@@ -6,6 +6,7 @@ package steps
 import (
 	"errors"
 	"fmt"
+	"runtime"
 	"strconv"
 	"strings"
 )
@@ -55,6 +56,38 @@ func (b *bindings) stream(name string) (string, error) {
 func phrase(fragment string) string {
 	// Feature files write \" for a quote inside a step.
 	return strings.ReplaceAll(fragment, `\"`, `"`)
+}
+
+func (b *bindings) hostIntraOpFloor() error {
+	text, err := b.stream("stdout")
+	if err != nil {
+		return err
+	}
+	int8Line := "int8: 1 single-thread session"
+	fp32Line := "fp32: 1 session, 1 intra-op thread"
+	if runtime.GOARCH == "arm64" {
+		int8Line = "int8: 1 session, 2 intra-op threads"
+		fp32Line = "fp32: 1 session, 2 intra-op threads"
+	}
+	if !strings.Contains(text, int8Line) || !strings.Contains(text, fp32Line) {
+		return fmt.Errorf("stdout does not contain %q and %q:\n%s", int8Line, fp32Line, text)
+	}
+	return nil
+}
+
+func (b *bindings) hostBudgetTwo() error {
+	text, err := b.stream("stdout")
+	if err != nil {
+		return err
+	}
+	int8Line := "int8: 2 single-thread"
+	if runtime.GOARCH == "arm64" {
+		int8Line = "int8: 1 session, 2 intra-op threads"
+	}
+	if !strings.Contains(text, int8Line) {
+		return fmt.Errorf("stdout does not contain %q:\n%s", int8Line, text)
+	}
+	return nil
 }
 
 func (b *bindings) streamContains(name, fragment string) error {

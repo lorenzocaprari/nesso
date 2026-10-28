@@ -1,5 +1,6 @@
 #include <catch2/catch_all.hpp>
 #include <embed/amx_guard.hpp>
+#include <embed/onnx_embedder.hpp>
 
 #if defined(__linux__) && defined(__x86_64__)
 #include <cerrno>
@@ -28,5 +29,17 @@ TEST_CASE("the AMX guard refuses tile data for the rest of the process", "[amx-g
     CHECK(refused);
     CHECK_FALSE(granted);
     CHECK(otherCallsPass);
+#endif
+}
+
+TEST_CASE("the embedder env leaves AMX tile data ungranted", "[amx-guard]")
+{
+    nesso::embed::OnnxEmbedder::prepareEmbedderEnv();
+#if defined(__linux__) && defined(__x86_64__)
+    constexpr long kArchGetXcompPerm = 0x1022;
+    constexpr unsigned long kXtiledataBit = 1UL << 18U;
+    unsigned long mask = 0;
+    REQUIRE(syscall(SYS_arch_prctl, kArchGetXcompPerm, &mask) == 0);
+    CHECK((mask & kXtiledataBit) == 0);
 #endif
 }

@@ -149,7 +149,9 @@ struct IndexSummary
 struct Config
 {
     std::optional<std::filesystem::path> modelDir;
-    // 0 selects the embedder default. A positive value is --threads or NESSO_THREADS.
+    // 0 selects the embedder default. A positive value is the CPU budget from
+    // --threads or NESSO_THREADS. For int8, a budget of 4 or less is that many
+    // single-thread sessions on x86. aarch64 uses at least two intra-op threads.
     size_t threads = 0;
 };
 

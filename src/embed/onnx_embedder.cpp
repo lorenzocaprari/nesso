@@ -16,6 +16,7 @@
 #include <onnxruntime_cxx_api.h>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <thread>
 #include <utility>
 
@@ -123,8 +124,8 @@ static Ort::SessionOptions makeSessionOptions(int intraOpThreads)
     // ORT 1.18 U8S8 quantized GEMM overflows on AVX2 and on AVX-512 without
     // VNNI. The garbage depends on how the GEMM is tiled, which is why the
     // same query scored 0.05 under CPU load on the Xeon. U8U8 does not overflow.
-    // int8 still races inside one intra-op pool, so those sessions use one thread
-    // and a pool of sessions instead.
+    // Intra-op threads share that pool. A wider pool stays only when the corpus
+    // bytes match a single intra-op thread.
     options.AddConfigEntry("session.x64quantprecision", "1");
     return options;
 }
@@ -180,6 +181,7 @@ class OnnxEmbedder::SessionImpl
 {
   public:
     SessionImpl(const std::filesystem::path &modelPath, size_t requestedThreads);
+    SessionImpl(const std::filesystem::path &modelPath, const SessionPolicy &policy);
 
     [[nodiscard]] const SessionPolicy &policy() const noexcept { return policy_; }
 
@@ -197,7 +199,12 @@ class OnnxEmbedder::SessionImpl
 };
 
 OnnxEmbedder::SessionImpl::SessionImpl(const std::filesystem::path &modelPath, size_t requestedThreads)
-    : policy_(sessionPolicy(modelIsQuantized(modelPath), requestedThreads, readMachine()))
+    : SessionImpl(modelPath, sessionPolicy(modelIsQuantized(modelPath), requestedThreads, readMachine()))
+{
+}
+
+OnnxEmbedder::SessionImpl::SessionImpl(const std::filesystem::path &modelPath, const SessionPolicy &policy)
+    : policy_(policy)
 {
     const Ort::SessionOptions options = makeSessionOptions(policy_.intraOpThreads);
     const std::string path = modelPath.string();
@@ -260,8 +267,24 @@ OnnxEmbedder::SessionImpl::infer(Ort::Session &session, std::span<const Tokenize
         std::array<Ort::Value, 3> inputs{std::move(inputIdsTensor), std::move(attentionMaskTensor),
                                          std::move(tokenTypeIdsTensor)};
 
-        auto outputs = session.Run(Ort::RunOptions{nullptr}, inputNames.data(), inputs.data(), inputs.size(),
-                                   outputNames.data(), outputNames.size());
+        // Wide int8 sessions and fp32 shrink the CPU arena after this Run. The
+        // arena stays enabled: shrinkage is refused when it is disabled. x86
+        // single-thread sessions leave the arena, matching a budget of 4 or less.
+        // A null run-options pointer is what a budget of 4 or less passes; it
+        // cannot take a config entry.
+        std::vector<Ort::Value> outputs;
+        if (policy_.shrinkArena)
+        {
+            Ort::RunOptions runOptions;
+            runOptions.AddConfigEntry("memory.enable_memory_arena_shrinkage", "cpu:0");
+            outputs = session.Run(runOptions, inputNames.data(), inputs.data(), inputs.size(), outputNames.data(),
+                                  outputNames.size());
+        }
+        else
+        {
+            outputs = session.Run(Ort::RunOptions{nullptr}, inputNames.data(), inputs.data(), inputs.size(),
+                                  outputNames.data(), outputNames.size());
+        }
         if (outputs.empty())
         {
             return std::unexpected(EmbedError::InferenceFailure);
@@ -359,9 +382,21 @@ OnnxEmbedder::SessionImpl::inferAll(std::span<const TokenizedInput> encoded,
 }
 
 OnnxEmbedder::OnnxEmbedder(WordPieceTokenizer tokenizer, const std::filesystem::path &modelPath, size_t threads)
-    : session_(std::make_unique<SessionImpl>(modelPath, threads)), tokenizer_(std::move(tokenizer)),
+    : OnnxEmbedder(std::move(tokenizer), modelPath, sessionPolicy(modelIsQuantized(modelPath), threads, readMachine()))
+{
+}
+
+OnnxEmbedder::OnnxEmbedder(WordPieceTokenizer tokenizer, const std::filesystem::path &modelPath,
+                           const SessionPolicy &policy)
+    : session_(std::make_unique<SessionImpl>(modelPath, policy)), tokenizer_(std::move(tokenizer)),
       policy_(session_->policy())
 {
+}
+
+void OnnxEmbedder::prepareEmbedderEnv()
+{
+    const Ort::Env env = makeEnv();
+    static_cast<void>(env);
 }
 
 const SessionPolicy &OnnxEmbedder::policy() const noexcept { return policy_; }
@@ -389,6 +424,38 @@ std::expected<std::unique_ptr<OnnxEmbedder>, EmbedError> OnnxEmbedder::create(co
     try
     {
         return std::make_unique<OnnxEmbedder>(std::move(*tokenizer), modelPath, threads);
+    }
+    catch (...)
+    {
+        return std::unexpected(EmbedError::ModelLoadFailure);
+    }
+}
+
+std::expected<std::unique_ptr<OnnxEmbedder>, EmbedError>
+OnnxEmbedder::createWithIntraOp(const std::filesystem::path &modelDir, int intraOpThreads)
+{
+    const auto vocabPath = modelDir / "vocab.txt";
+    const auto modelPath = modelDir / "model.onnx";
+    if (!std::filesystem::exists(vocabPath) || !std::filesystem::exists(modelPath))
+    {
+        return std::unexpected(EmbedError::ModelLoadFailure);
+    }
+
+    auto tokenizer = WordPieceTokenizer::fromVocabFile(vocabPath);
+    if (!tokenizer)
+    {
+        return std::unexpected(tokenizer.error());
+    }
+
+    const int width = std::max(intraOpThreads, intraOpThreadFloor());
+    const SessionPolicy policy{.quantized = modelIsQuantized(modelPath),
+                               .sessions = 1,
+                               .intraOpThreads = width,
+                               .memoryCap = 0,
+                               .shrinkArena = width > 1};
+    try
+    {
+        return std::unique_ptr<OnnxEmbedder>(new OnnxEmbedder(std::move(*tokenizer), modelPath, policy));
     }
     catch (...)
     {
