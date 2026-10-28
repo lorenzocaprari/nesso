@@ -10,8 +10,10 @@ build_type=Debug
 onnxruntime/*:build_type=Release
 
 [conf]
-# Consumer-only (other deps share a stable Debug package ID with coverage)
-user.nesso:cxxflags=["-g3", "-O0", "-fno-omit-frame-pointer", "-Wall", "-Wextra", "-Wpedantic", "-Wshadow", "-Wconversion", "-Wsign-conversion", "-D_GLIBCXX_DEBUG", "-D_GLIBCXX_DEBUG_PEDANTIC", "-fsanitize=address,undefined"]
-user.nesso:cflags=["-g3", "-O0", "-fno-omit-frame-pointer", "-Wall", "-Wextra", "-Wpedantic", "-fsanitize=address,undefined"]
+# Consumer-only (other deps share a stable Debug package ID with coverage).
+# Warnings live on nesso_options. -fno-sanitize-recover=all stops ASan/UBSan
+# on the first error without UBSAN_OPTIONS. -Werror is not set here.
+user.nesso:cxxflags=["-g3", "-O0", "-fno-omit-frame-pointer", "-D_GLIBCXX_DEBUG", "-D_GLIBCXX_DEBUG_PEDANTIC", "-fsanitize=address,undefined", "-fno-sanitize-recover=all"]
+user.nesso:cflags=["-g3", "-O0", "-fno-omit-frame-pointer", "-fsanitize=address,undefined", "-fno-sanitize-recover=all"]
 user.nesso:sharedlinkflags=["-fsanitize=address,undefined"]
 user.nesso:exelinkflags=["-fsanitize=address,undefined"]

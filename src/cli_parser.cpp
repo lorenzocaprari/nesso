@@ -143,13 +143,13 @@ std::expected<ParsedCommand, int> parseCommandLine(int argc, char **argv)
                          [verbose]()
                          {
                              const size_t threads = threadsFromEnvironment().value_or(0);
-                             std::string text{NESSO_VERSION};
+                             std::string version{NESSO_VERSION};
                              if (verbose)
                              {
-                                 text.push_back('\n');
-                                 text += nesso::embed::sessionPolicyText(threads, nesso::embed::readMachine());
+                                 version.push_back('\n');
+                                 version += nesso::embed::sessionPolicyText(threads, nesso::embed::readMachine());
                              }
-                             return text;
+                             return version;
                          });
     app.get_formatter()->enable_footer_formatting(false);
     app.footer(HELP_FOOTER);

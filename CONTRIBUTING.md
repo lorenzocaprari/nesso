@@ -32,11 +32,13 @@ Profiles in `conan/profiles/`:
 | Profile | Use |
 | --- | --- |
 | `gcc-26` | Release (`-O3`, `-march=x86-64-v2`, LTO) |
-| `gcc-26-debug` | Debug with ASan and UBSan |
+| `gcc-26-debug` | Debug with ASan and UBSan (`-fno-sanitize-recover=all`) |
 | `gcc-26-fuzz` | AFL++ library harnesses |
 | `gcc-26-armv8` | arm64 Release (`-O3`, `-march=armv8-a`, LTO) |
 | `clang-26` | Clang 21 Release with libstdc++, no LTO (`-O3`, `-march=x86-64-v2`) |
 | `code-coverage` | Debug plus `--coverage` |
+
+`nesso_options` in `CMakeLists.txt` is the INTERFACE target every nesso target links. It requires C++26 with compiler extensions off and sets the warning flags. `-Werror` is off unless `NESSO_WERROR` is ON. Profiles do not set that. `conanfile.py` copies `user.nesso:werror` into the cache variable, and `conan -c user.nesso:werror=True` turns it on. `conan build` generates the toolchain again, so the flag has to be on that command too. Optimization, sanitizer, and LTO flags stay in `user.nesso:cxxflags` so they are not applied to dependency builds.
 
 `conanfile.py` uses Conan `cmake_layout` and `CMakeToolchain` and sets the generator to Ninja. `conan install` writes `CMakeUserPresets.json` at the repo root; that file includes `build/<Config>/generators/CMakePresets.json`. Both are generated and should stay uncommitted. `cmake --list-presets` prints the names (Conan uses `conan-<build type>` in lowercase, so `conan-debug` and `conan-release` for these two profiles). `cmake --preset` and `cmake --build --preset` drive those presets. CI and [docs/building.md](docs/building.md) call `conan build`, which configures and builds through the same toolchain.
 
@@ -68,7 +70,7 @@ The functional label includes the `bdd` test. It runs `go test` in `test/functio
 
 `bdd` runs godog scenarios concurrently, one per logical CPU. Each scenario has its own temporary directory, environment, and pty. CI passes `-j "$(nproc)"` and `--output-on-failure` to every ctest invocation. The test jobs also pass `--output-junit` and list failing tests in the job summary.
 
-Debug ctest in CI also sets `ASAN_OPTIONS` and `UBSAN_OPTIONS` so sanitizer findings abort the job.
+`gcc-26-debug` passes `-fno-sanitize-recover=all`, so a local debug build stops on the first ASan or UBSan error. Debug ctest in CI also sets `ASAN_OPTIONS` and `UBSAN_OPTIONS`.
 
 ## Fuzz
 

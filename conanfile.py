@@ -39,6 +39,11 @@ class Nesso(ConanFile):
         tc.cache_variables["CMAKE_EXPORT_COMPILE_COMMANDS"] = "ON"
         tc.cache_variables["NESSO_VERSION"] = str(self.version)
         tc.cache_variables["NESSO_BUILD_BENCH"] = bool(self.options.bench)
+        # Shipped profiles leave this unset. CI passes -c user.nesso:werror=True.
+        # conan build runs generators again, so that -c has to be on the build too.
+        tc.cache_variables["NESSO_WERROR"] = bool(
+            self.conf.get("user.nesso:werror", default=False, check_type=bool)
+        )
         # Profile consumer flags (user.nesso:*) — not tools.build:*, so deps keep
         # stable package IDs and are not rebuilt with ASan/coverage/LTO.
         tc.extra_cxxflags = list(self.conf.get("user.nesso:cxxflags", check_type=list, default=[]))

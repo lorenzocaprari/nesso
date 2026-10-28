@@ -47,7 +47,7 @@ class ProgressReporter
         const std::chrono::duration<double> elapsed = std::chrono::steady_clock::now() - started_;
         const double linesPerSecond = elapsed.count() > 0.0 ? static_cast<double>(completed) / elapsed.count() : 0.0;
         std::print(stderr, "\rEmbedded {}/{} lines ({:.0f} lines/s)", completed, total, linesPerSecond);
-        (void)std::fflush(stderr);
+        static_cast<void>(std::fflush(stderr));
     }
 
     void finish() const
@@ -809,19 +809,19 @@ std::expected<IndexSummary, Error> Nesso::index(const IndexRequest &request) con
         {
             return textFailure(ErrorKind::Embed, nesso::core::EngineError::MismatchedDimensions, counts);
         }
-        std::vector<nesso::core::CorpusChunk> batch;
-        batch.reserve(pending.size());
+        std::vector<nesso::core::CorpusChunk> chunks;
+        chunks.reserve(pending.size());
         for (size_t index = 0; index < pending.size(); ++index)
         {
             const PendingChunk &item = pending[index];
-            batch.push_back(nesso::core::CorpusChunk{.chunk = {.text = item.chunk.text,
-                                                               .lineNumber = item.chunk.lineNumber,
-                                                               .source = item.source,
-                                                               .byteOffset = item.chunk.byteOffset,
-                                                               .arrayElement = item.chunk.arrayElement},
-                                                     .embedding = (*embeddings)[index]});
+            chunks.push_back(nesso::core::CorpusChunk{.chunk = {.text = item.chunk.text,
+                                                                .lineNumber = item.chunk.lineNumber,
+                                                                .source = item.source,
+                                                                .byteOffset = item.chunk.byteOffset,
+                                                                .arrayElement = item.chunk.arrayElement},
+                                                      .embedding = (*embeddings)[index]});
         }
-        if (const auto added = writer->add(batch); !added)
+        if (const auto added = writer->add(chunks); !added)
         {
             return std::unexpected(makeError(ErrorKind::CorpusWrite, causeOf(added.error()), request.output, counts));
         }
