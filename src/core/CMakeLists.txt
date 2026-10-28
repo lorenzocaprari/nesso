@@ -4,7 +4,7 @@ target_include_directories(nesso_core
 target_link_libraries(
   nesso_core
   PUBLIC nesso_platform
-  PRIVATE nesso_options)
+  PRIVATE nesso_options nesso_parser)
 # AVX2 stays on this translation unit. Applying it to the whole library lets LTO
 # copy those instructions into generic callers and SIGILL on older CPUs.
 if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64" AND NOT MSVC)

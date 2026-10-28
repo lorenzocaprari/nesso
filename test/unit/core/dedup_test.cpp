@@ -26,6 +26,18 @@ std::vector<std::string_view> viewsOf(const std::vector<std::string> &lines)
     return views;
 }
 
+std::string plainToken(std::size_t index)
+{
+    // A non-hex letter plus base-26 keeps the token off the mask rules.
+    std::string token = "w";
+    do
+    {
+        token.push_back(static_cast<char>('a' + static_cast<int>(index % 26)));
+        index /= 26;
+    } while (index > 0);
+    return token;
+}
+
 } // namespace
 
 TEST_CASE("identical lines collapse to one distinct text", "[dedup]")
@@ -147,7 +159,7 @@ TEST_CASE("a repeated text that spans two windows stays one id", "[dedup]")
     CHECK(index.add("shared") == 0);
     for (size_t line = 1; line < nesso::embed::BATCH_WINDOW; ++line)
     {
-        CHECK(index.add("unique-" + std::to_string(line)) == static_cast<std::uint32_t>(line));
+        CHECK(index.add(plainToken(line)) == static_cast<std::uint32_t>(line));
         if (index.pending().size() == nesso::embed::BATCH_WINDOW)
         {
             flush();
@@ -164,6 +176,27 @@ TEST_CASE("a repeated text that spans two windows stays one id", "[dedup]")
     CHECK(std::count(embedded.begin(), embedded.end(), "shared") == 1);
     CHECK(embedded.back() == "fresh");
     CHECK(embedded.size() == nesso::embed::BATCH_WINDOW + 1);
+}
+
+TEST_CASE("masked keys collapse to the first raw line", "[dedup]")
+{
+    nesso::core::DistinctIndex index;
+    CHECK(index.add("block blk_10 done") == 0);
+    CHECK(index.add("block blk_20 done") == 0);
+    CHECK(index.add("block blk_-3 done") == 0);
+    CHECK(index.pending().size() == 1);
+    CHECK(index.pending().front() == "block blk_10 done");
+    CHECK(index.text(0) == "block blk_10 done");
+    CHECK(index.occurrences(0) == 3);
+    CHECK(index.add("http2 ready") == 1);
+    CHECK(index.add("sha256 ready") == 2);
+    CHECK(index.pending()[1] == "http2 ready");
+    CHECK(index.pending()[2] == "sha256 ready");
+
+    const std::vector<std::string> lines{"block blk_20 done", "block blk_10 done", "sunny beach"};
+    const std::vector<std::uint32_t> counts = nesso::core::occurrenceCounts(viewsOf(lines));
+    CHECK(counts == std::vector<std::uint32_t>{2, 2, 1});
+    CHECK(nesso::core::occurrenceCounts(viewsOf(lines)) == counts);
 }
 
 TEST_CASE("occurrence counts of an empty input are empty", "[dedup]")

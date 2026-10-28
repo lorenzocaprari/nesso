@@ -3,12 +3,15 @@
 
 #include <core/dedup.hpp>
 
+#include <parser/template_mask.hpp>
+
 namespace nesso::core
 {
 
 std::uint32_t DistinctIndex::add(std::string_view text)
 {
-    const auto found = ids_.find(text);
+    const std::string key = nesso::parser::maskTemplate(text);
+    const auto found = ids_.find(key);
     if (found != ids_.end())
     {
         const std::uint32_t id = found->second;
@@ -17,8 +20,9 @@ std::uint32_t DistinctIndex::add(std::string_view text)
     }
 
     texts_.emplace_back(text);
+    keys_.emplace_back(key);
     const auto id = static_cast<std::uint32_t>(occurrences_.size());
-    ids_.emplace(texts_.back(), id);
+    ids_.emplace(keys_.back(), id);
     occurrences_.push_back(1);
     pending_.emplace_back(texts_.back());
     return id;

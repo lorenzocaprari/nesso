@@ -71,5 +71,6 @@ func InitializeScenario(sc *godog.ScenarioContext) {
 	sc.Step(`^(stdout|stderr) does not contain "(.*)"$`, b.streamOmits)
 	sc.Step(`^the "(--[^"]+)" help is at most (\d+) lines$`, b.optionHelpAtMost)
 	sc.Step(`^lines that share text share a score$`, b.sharedTextSharesScore)
+	sc.Step(`^lines that differ only by an id share a score$`, b.idVariantsShareScore)
 	sc.Step(`^(stdout|stderr) is empty$`, b.streamIsEmpty)
 }

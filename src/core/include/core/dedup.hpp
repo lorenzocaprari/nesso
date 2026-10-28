@@ -16,11 +16,11 @@
 namespace nesso::core
 {
 
-/// First-occurrence ids for chunk text. Pending texts are those not yet embedded.
+/// First-occurrence ids for masked chunk text. Pending texts are the raw lines not yet embedded.
 class DistinctIndex
 {
   public:
-    /// Records one input line. The same text keeps the id from its first line.
+    /// Records one input line. Lines that share a masked key keep the id from the first line.
     [[nodiscard]] std::uint32_t add(std::string_view text);
 
     /// Reserves room for up to `lines` distinct texts.
@@ -31,10 +31,10 @@ class DistinctIndex
 
     void clearPending() noexcept;
 
-    /// The text `add` stored for `id`. The view stays valid for the life of this index.
+    /// The first raw line `add` stored for `id`. The view stays valid for the life of this index.
     [[nodiscard]] std::string_view text(std::uint32_t id) const noexcept;
 
-    /// Input lines that share `id`. At least 1 for an id `add` returned.
+    /// Input lines that share `id`'s masked key. At least 1 for an id `add` returned.
     [[nodiscard]] std::uint32_t occurrences(std::uint32_t id) const noexcept;
 
   private:
@@ -58,14 +58,15 @@ class DistinctIndex
         }
     };
 
-    // deque so a string_view into a text stays valid when a later text is added.
+    // deques so a string_view into a text or key stays valid when a later one is added.
     std::deque<std::string> texts_;
+    std::deque<std::string> keys_;
     std::unordered_map<std::string_view, std::uint32_t, TextHash, TextEqual> ids_;
     std::vector<std::uint32_t> occurrences_;
     std::vector<std::string> pending_;
 };
 
-/// One count per input line: how many lines share that line's text. Each count is at least 1.
+/// One count per input line: how many lines share that line's masked key. Each count is at least 1.
 [[nodiscard]] std::vector<std::uint32_t> occurrenceCounts(std::span<const std::string_view> texts);
 
 } // namespace nesso::core

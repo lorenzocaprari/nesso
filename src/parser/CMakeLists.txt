@@ -1,4 +1,4 @@
-add_library(nesso_parser log_chunker.cpp)
+add_library(nesso_parser log_chunker.cpp template_mask.cpp)
 target_include_directories(nesso_parser
                            PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
 find_package(nlohmann_json CONFIG REQUIRED)

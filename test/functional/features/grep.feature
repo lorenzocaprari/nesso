@@ -286,3 +286,34 @@ Feature: grep
     And stdout contains "\"source\":\"-\""
     And stdout contains "\"occurrences\":2"
     And stdout contains "\"schema_version\":1"
+
+  Scenario: lines that differ only by an id share a score
+    Given a file "blocks.log" with:
+      """
+      PacketResponder 1 for block blk_38865049064139660 terminating
+      PacketResponder 0 for block blk_-6952295868487656571 terminating
+      """
+    When I run nesso with arguments grep "block terminating" -k 2 {dir}/blocks.log
+    Then the exit code is 0
+    And stdout contains "blk_38865049064139660"
+    And stdout contains "blk_-6952295868487656571"
+    And lines that differ only by an id share a score
+    And stdout does not contain "occurrences"
+
+  Scenario: json rows count masked id groups
+    Given a file "blocks.log" with:
+      """
+      PacketResponder 1 for block blk_38865049064139660 terminating
+      PacketResponder 0 for block blk_-6952295868487656571 terminating
+      sunny beach vacation
+      """
+    When I run nesso with arguments grep "block terminating" --json -k 3 {dir}/blocks.log
+    Then the exit code is 0
+    And stdout contains "\"schema_version\":1"
+    And stdout contains "\"occurrences\":2"
+    And stdout contains "\"occurrences\":1"
+    And stdout contains "blk_38865049064139660"
+    And stdout contains "blk_-6952295868487656571"
+    And stdout contains "sunny beach vacation"
+    And lines that differ only by an id share a score
+    And stderr is empty

@@ -148,13 +148,24 @@ class RecordingEmbedder final : public nesso::embed::Embedder
     mutable std::vector<size_t> batches_;
 };
 
+std::string letterSuffix(std::size_t index)
+{
+    std::string suffix;
+    do
+    {
+        suffix.push_back(static_cast<char>('a' + static_cast<int>(index % 26)));
+        index /= 26;
+    } while (index > 0);
+    return suffix;
+}
+
 void writeLines(const std::filesystem::path &path, size_t count, std::string_view tag)
 {
     std::ofstream output(path);
     REQUIRE(output);
     for (size_t index = 0; index < count; ++index)
     {
-        output << tag << '-' << index << " database connection\n";
+        output << tag << '-' << letterSuffix(index) << " database connection\n";
     }
     REQUIRE(output);
 }

@@ -131,14 +131,38 @@ def resolve_model_dir(explicit: str | None) -> Path:
     return ROOT / "models"
 
 
+# scripts/ci bench-scale greps this many lines at 1 thread and at 4. A numeric
+# id masks to one token, so that file collapses to a handful of embeddings and
+# four sessions are slower than one. A letter id keeps each non-query line
+# distinct, which is the workload that check was measured on.
+SCALE_LINES = 4000
+
+
+def letter_token(ordinal: int) -> str:
+    chars = []
+    value = ordinal
+    while True:
+        chars.append(chr(ord("a") + (value % 26)))
+        value //= 26
+        if value == 0:
+            break
+    return "w" + "".join(reversed(chars))
+
+
 def write_log(path: Path, lines: int) -> None:
     rng = random.Random(SEED)
+    distinct = lines == SCALE_LINES
     with path.open("w", encoding="utf-8") as handle:
-        for _ in range(lines):
+        for ordinal in range(lines):
             choice = rng.randrange(len(TEMPLATES))
             force_query = rng.randrange(10) == 0
             identifier = rng.randrange(1_000_000)
-            text = QUERY if force_query else f"{TEMPLATES[choice]} id={identifier}"
+            if force_query:
+                text = QUERY
+            elif distinct:
+                text = f"{TEMPLATES[choice]} id-{letter_token(ordinal)}"
+            else:
+                text = f"{TEMPLATES[choice]} id={identifier}"
             handle.write(text + "\n")
 
 
