@@ -3,6 +3,7 @@
 
 #include <embed/amx_guard.hpp>
 #include <embed/batch_plan.hpp>
+#include <embed/inference_wave.hpp>
 #include <embed/onnx_embedder.hpp>
 
 #include <algorithm>
@@ -18,7 +19,6 @@
 #include <stdexcept>
 #include <string>
 #include <string_view>
-#include <thread>
 #include <utility>
 
 namespace nesso::embed
@@ -338,18 +338,20 @@ OnnxEmbedder::SessionImpl::inferAll(std::span<const TokenizedInput> encoded,
     size_t waveStart = 0;
     for (const BatchWave &wave : waves)
     {
-        std::vector<std::thread> workers;
-        workers.reserve(wave.batchIndices.size());
-        for (size_t slot = 0; slot < wave.batchIndices.size(); ++slot)
+        auto waveOutcome =
+            runInferenceWave(wave.batchIndices.size(),
+                             [this, &wave, encoded, &plan](std::size_t slot)
+                             {
+                                 const std::size_t batchIndex = wave.batchIndices[slot];
+                                 return infer(*sessions_[slot], encoded, plan.batches[batchIndex].indices);
+                             });
+        if (!waveOutcome)
         {
-            const size_t batchIndex = wave.batchIndices[slot];
-            workers.emplace_back(
-                [this, batchIndex, slot, encoded, &plan, &parts]
-                { parts[batchIndex] = infer(*sessions_[slot], encoded, plan.batches[batchIndex].indices); });
+            return std::unexpected(waveOutcome.error());
         }
-        for (std::thread &worker : workers)
+        for (std::size_t slot = 0; slot < wave.batchIndices.size(); ++slot)
         {
-            worker.join();
+            parts[wave.batchIndices[slot]] = std::move((*waveOutcome)[slot]);
         }
         if (onCompleted)
         {
