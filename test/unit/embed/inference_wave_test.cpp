@@ -73,11 +73,17 @@ TEST_CASE("inference wave joins workers and maps resource failures", "[inference
     const nesso::embed::SlotResult emptyBatch{std::vector<std::vector<float>>{}};
     const nesso::embed::SlotResult other{std::unexpected(nesso::embed::EmbedError::InvalidInput)};
     const nesso::embed::SlotResult inference{std::unexpected(nesso::embed::EmbedError::InferenceFailure)};
-    const bool predicates = static_cast<bool>(!failed(good) & failed(inference) & !failed(other) & succeeded(good) &
-                                              !succeeded(other) & !succeeded(emptyBatch) & !succeeded(shortRow) &
-                                              !succeeded(wrongHead) & !succeeded(wrongTail));
+    CHECK_FALSE(failed(good));
+    CHECK(failed(inference));
+    CHECK_FALSE(failed(other));
+    CHECK(succeeded(good));
+    CHECK_FALSE(succeeded(other));
+    CHECK_FALSE(succeeded(emptyBatch));
+    CHECK_FALSE(succeeded(shortRow));
+    CHECK_FALSE(succeeded(wrongHead));
+    CHECK_FALSE(succeeded(wrongTail));
 
-    int step = predicates ? 0 : 1;
+    int step = 0;
 
     bool called = false;
     const auto none = nesso::embed::runInferenceWave(0,
