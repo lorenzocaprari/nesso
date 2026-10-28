@@ -72,10 +72,10 @@ nesso::core::CorpusPolicy testPolicy()
     const auto identity = testEmbedderIdentity();
     return {{"batch", "window:1024,max:32,tokens:1024,order:length-then-input"},
             {"bm25", std::string{nesso::core::BM25_POLICY}},
-            {"dedup", "exact-v1"},
+            {"dedup", "masked-v1"},
             {"dimensions", std::to_string(identity.dimensions)},
             {"lexical.terms", std::string{nesso::core::LEXICAL_TERMS_VERSION}},
-            {"mask", "none-v1"},
+            {"mask", "template-v1"},
             {"model.id", identity.modelId},
             {"model.quantization", identity.quantized ? "int8" : "fp32"},
             {"model.sha256", identity.modelSha256},
@@ -191,13 +191,24 @@ class RecordingEmbedder final : public nesso::embed::Embedder
     mutable std::vector<size_t> batches_;
 };
 
+std::string letterSuffix(std::size_t index)
+{
+    std::string suffix;
+    do
+    {
+        suffix.push_back(static_cast<char>('a' + static_cast<int>(index % 26)));
+        index /= 26;
+    } while (index > 0);
+    return suffix;
+}
+
 void writeLines(const std::filesystem::path &path, size_t count, std::string_view tag)
 {
     std::ofstream output(path);
     REQUIRE(output);
     for (size_t index = 0; index < count; ++index)
     {
-        output << tag << '-' << index << " database connection\n";
+        output << tag << '-' << letterSuffix(index) << " database connection\n";
     }
     REQUIRE(output);
 }

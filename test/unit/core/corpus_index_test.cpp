@@ -58,10 +58,10 @@ CorpusPolicy policy(std::uint32_t dimensions = 2)
 {
     return {{"batch", "window:1024,max:32,tokens:1024,order:length-then-input"},
             {"bm25", std::string{nesso::core::BM25_POLICY}},
-            {"dedup", "exact-v1"},
+            {"dedup", "masked-v1"},
             {"dimensions", std::to_string(dimensions)},
             {"lexical.terms", std::string{nesso::core::LEXICAL_TERMS_VERSION}},
-            {"mask", "none-v1"},
+            {"mask", "template-v1"},
             {"model.id", "model"},
             {"model.quantization", "int8"},
             {"model.sha256", std::string(64, 'a')},

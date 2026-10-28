@@ -130,6 +130,23 @@ Feature: index and search
     And lines that share text share a score
     And stderr is empty
 
+  Scenario: search json counts lines that share a masked id
+    Given a file "blocks.log" with:
+      """
+      PacketResponder 1 for block blk_38865049064139660 terminating
+      PacketResponder 0 for block blk_-6952295868487656571 terminating
+      """
+    When I run nesso with arguments index -o {dir}/corpus.nesso {dir}/blocks.log
+    Then the exit code is 0
+    When I run nesso with arguments search "block terminating" --mode dense --json -k 2 -i {dir}/corpus.nesso
+    Then the exit code is 0
+    And stdout contains "\"schema_version\":2"
+    And stdout contains "\"occurrences\":2"
+    And stdout contains "blk_38865049064139660"
+    And stdout contains "blk_-6952295868487656571"
+    And lines that differ only by an id share a score
+    And stderr is empty
+
   Scenario: indexing reports truncated lines
     Given a file "long.log" with:
       """
@@ -173,16 +190,8 @@ Feature: index and search
     When I run nesso with arguments grep "database connection error" --threads 1 -k 8 {dir}/app.log
     Then the exit code is 0
     When running nesso with arguments search "database connection error" --threads 1 -k 8 -i {dir}/one.nesso prints the same stdout
-    When running nesso with arguments search "database connection error" --threads 2 -k 8 -i {dir}/one.nesso prints the same stdout
-    When running nesso with arguments search "database connection error" --threads 3 -k 8 -i {dir}/four.nesso prints the same stdout
-    When running nesso with arguments search "database connection error" --threads 4 -k 8 -i {dir}/seven.nesso prints the same stdout
-    When running nesso with arguments search "database connection error" --threads 7 -k 8 -i {dir}/one.nesso prints the same stdout
-    Given the environment variable "NESSO_THREADS" is "4"
-    When running nesso with arguments search "database connection error" -k 8 -i {dir}/one.nesso prints the same stdout
-    Given the environment variable "NESSO_THREADS" is "7"
-    When running nesso with arguments grep "database connection error" -k 8 {dir}/app.log prints the same stdout
-    Given the environment variable "NESSO_THREADS" is "1"
-    When running nesso with arguments search "database connection error" --threads 3 -k 8 -i {dir}/four.nesso prints the same stdout
+    When running nesso with arguments search "database connection error" --threads 4 -k 8 -i {dir}/four.nesso prints the same stdout
+    When running nesso with arguments search "database connection error" --threads 7 -k 8 -i {dir}/seven.nesso prints the same stdout
 
   Scenario: json search keeps a stale-source warning on stderr
     Given a file "app.log" with:

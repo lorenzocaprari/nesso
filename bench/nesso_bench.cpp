@@ -142,10 +142,10 @@ void readCorpus(benchmark::State &state)
     std::mt19937 rng{1};
     nesso::core::CorpusPolicy policy{{"batch", "window:1024,max:32,tokens:1024,order:length-then-input"},
                                      {"bm25", std::string{nesso::core::BM25_POLICY}},
-                                     {"dedup", "exact-v1"},
+                                     {"dedup", "masked-v1"},
                                      {"dimensions", std::to_string(EMBEDDING_DIMENSIONS)},
                                      {"lexical.terms", std::string{nesso::core::LEXICAL_TERMS_VERSION}},
-                                     {"mask", "none-v1"},
+                                     {"mask", "template-v1"},
                                      {"model.id", "benchmark"},
                                      {"model.quantization", "int8"},
                                      {"model.sha256", std::string(64, 'a')},
