@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793183953918,
+  "lastUpdate": 1793184677627,
   "repoUrl": "https://github.com/lorenzocaprari/nesso",
   "entries": {
     "nesso": [
@@ -2483,6 +2483,60 @@ window.BENCHMARK_DATA = {
           {
             "name": "grep-100000-rss",
             "value": 152408064,
+            "unit": "bytes"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "caprarilorenzo5@gmail.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "committer": {
+            "email": "85455384+lorenzocaprari@users.noreply.github.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "distinct": true,
+          "id": "6fafd5be776a2e349a20368f22c933451ee2fd2f",
+          "message": "docs(adr): record 8-vCPU measurements for the int8 session policy\n\nRecord the 8-vCPU index and grep results in ADR 0014. Status stays proposed.",
+          "timestamp": "2026-10-28T11:34:38+01:00",
+          "tree_id": "38175738d5e871e757f44738e5e5def4c46b20da",
+          "url": "https://github.com/lorenzocaprari/nesso/commit/6fafd5be776a2e349a20368f22c933451ee2fd2f"
+        },
+        "date": 1793184677231,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "grep-1000-wall",
+            "value": 2.46,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-1000-rss",
+            "value": 151461888,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-10000-wall",
+            "value": 14.01,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-10000-rss",
+            "value": 150061056,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-100000-wall",
+            "value": 127.3,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-100000-rss",
+            "value": 147718144,
             "unit": "bytes"
           }
         ]
