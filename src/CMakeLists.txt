@@ -5,7 +5,7 @@ add_subdirectory(core)
 add_subdirectory(embed)
 add_subdirectory(parser)
 
-add_library(nesso_lib nesso.cpp model_paths.cpp trace.cpp)
+add_library(nesso_lib nesso.cpp model_paths.cpp trace.cpp render_json.cpp)
 set_target_properties(nesso_lib PROPERTIES OUTPUT_NAME nesso)
 target_include_directories(nesso_lib PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
 target_link_libraries(nesso_lib PRIVATE nesso_options nesso_core nesso_embed

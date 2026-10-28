@@ -70,5 +70,6 @@ func InitializeScenario(sc *godog.ScenarioContext) {
 	sc.Step(`^stdout shows the host int8 policy for a budget of two$`, b.hostBudgetTwo)
 	sc.Step(`^(stdout|stderr) does not contain "(.*)"$`, b.streamOmits)
 	sc.Step(`^the "(--[^"]+)" help is at most (\d+) lines$`, b.optionHelpAtMost)
+	sc.Step(`^lines that share text share a score$`, b.sharedTextSharesScore)
 	sc.Step(`^(stdout|stderr) is empty$`, b.streamIsEmpty)
 }

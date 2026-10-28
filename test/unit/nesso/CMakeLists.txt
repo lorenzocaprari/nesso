@@ -39,5 +39,14 @@ set_property(
   PROPERTY CXX_COMPILER_LAUNCHER
            "${CMAKE_CURRENT_SOURCE_DIR}/strip-coverage-flags")
 
+add_executable(render_json_test render_json_test.cpp)
+add_test(NAME render_json_test COMMAND render_json_test)
+target_link_libraries(render_json_test PRIVATE nesso_lib Catch2::Catch2WithMain)
+# Catch2 checks add uncoverable branches. render_json.cpp stays in the floor.
+set_property(
+  TARGET render_json_test
+  PROPERTY CXX_COMPILER_LAUNCHER
+           "${CMAKE_CURRENT_SOURCE_DIR}/strip-coverage-flags")
+
 set_tests_properties(model_paths_test nesso_facade_test error_test trace_test
-                     nesso_flush_test PROPERTIES LABELS unit)
+                     nesso_flush_test render_json_test PROPERTIES LABELS unit)

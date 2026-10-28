@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include <cli.hpp>
+#include <render_json.hpp>
 
 #include <expected>
 #include <format>
@@ -111,10 +112,8 @@ static LineReport lineReport(const Error &error)
             .jsonField = error.jsonField};
 }
 
-static int render(const TextResults &results)
+static int renderText(const TextResults &results)
 {
-    renderLineCounts(lineReport(results));
-    renderStaleSources(results.staleSources);
     for (const TextMatch &match : results.matches)
     {
         const char *place = match.arrayElement ? "element" : "line";
@@ -128,6 +127,22 @@ static int render(const TextResults &results)
         }
     }
     return 0;
+}
+
+static int renderJson(const TextResults &results)
+{
+    for (size_t index = 0; index < results.matches.size(); ++index)
+    {
+        std::println("{}", renderMatchJson(results.matches[index], index + 1));
+    }
+    return 0;
+}
+
+static int render(const TextResults &results, bool json)
+{
+    renderLineCounts(lineReport(results));
+    renderStaleSources(results.staleSources);
+    return json ? renderJson(results) : renderText(results);
 }
 
 static int render(const IndexSummary &summary, const IndexRequest &request)
@@ -167,7 +182,7 @@ static int report(const std::expected<Result, Error> &outcome, int failureStatus
 int execute(const Nesso &nesso, const GrepRequest &request)
 {
     const auto outcome = nesso.grep(request);
-    return report(outcome, outcome ? 0 : failureStatus(outcome.error()));
+    return outcome ? render(*outcome, request.json) : renderError(outcome.error(), failureStatus(outcome.error()));
 }
 
 int execute(const Nesso &nesso, const IndexRequest &request)
@@ -179,7 +194,7 @@ int execute(const Nesso &nesso, const IndexRequest &request)
 int execute(const Nesso &nesso, const SearchRequest &request)
 {
     const auto outcome = nesso.search(request);
-    return report(outcome, outcome ? 0 : failureStatus(outcome.error()));
+    return outcome ? render(*outcome, request.json) : renderError(outcome.error(), failureStatus(outcome.error()));
 }
 
 } // namespace nesso::cli

@@ -80,6 +80,7 @@ struct TextOptions
     std::string modelDir;
     std::string jsonField = "message";
     bool quiet = false;
+    bool json = false;
     size_t threads = 0;
 };
 
@@ -163,6 +164,7 @@ std::expected<ParsedCommand, int> parseCommandLine(int argc, char **argv)
         ->default_val(5)
         ->check(positiveCount());
     grepCmd->add_flag("--quiet", text.quiet, "Suppress interactive progress output");
+    grepCmd->add_flag("--json", text.json, "Print one JSON object per match");
     const auto *grepThreads = grepCmd->add_option("--threads", text.threads, THREADS_HELP)->check(positiveCount());
     const auto *grepModelDir = grepCmd->add_option("--model-dir", text.modelDir, MODEL_DIR_HELP);
 
@@ -180,6 +182,7 @@ std::expected<ParsedCommand, int> parseCommandLine(int argc, char **argv)
     searchCmd->add_option("-k,--top-k", text.topK, "Maximum number of matches to return")
         ->default_val(5)
         ->check(positiveCount());
+    searchCmd->add_flag("--json", text.json, "Print one JSON object per match");
     const auto *searchThreads = searchCmd->add_option("--threads", text.threads, THREADS_HELP)->check(positiveCount());
     const auto *searchModelDir = searchCmd->add_option("--model-dir", text.modelDir, MODEL_DIR_HELP);
 
@@ -225,7 +228,8 @@ std::expected<ParsedCommand, int> parseCommandLine(int argc, char **argv)
                                                     .files = toPaths(text.files),
                                                     .topK = text.topK,
                                                     .jsonField = text.jsonField,
-                                                    .progress = !text.quiet}};
+                                                    .progress = !text.quiet,
+                                                    .json = text.json}};
     }
     if (indexCmd->parsed())
     {
@@ -235,8 +239,9 @@ std::expected<ParsedCommand, int> parseCommandLine(int argc, char **argv)
                                                      .jsonField = text.jsonField,
                                                      .progress = !text.quiet}};
     }
-    return ParsedCommand{.config = configFrom(*modelDirOpt, text, threads),
-                         .request = SearchRequest{.query = text.query, .index = text.index, .topK = text.topK}};
+    return ParsedCommand{
+        .config = configFrom(*modelDirOpt, text, threads),
+        .request = SearchRequest{.query = text.query, .index = text.index, .topK = text.topK, .json = text.json}};
 }
 
 } // namespace nesso::cli
