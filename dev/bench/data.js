@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793187223277,
+  "lastUpdate": 1793190946818,
   "repoUrl": "https://github.com/lorenzocaprari/nesso",
   "entries": {
     "nesso": [
@@ -2591,6 +2591,60 @@ window.BENCHMARK_DATA = {
           {
             "name": "grep-100000-rss",
             "value": 150020096,
+            "unit": "bytes"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "caprarilorenzo5@gmail.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "committer": {
+            "email": "85455384+lorenzocaprari@users.noreply.github.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "distinct": true,
+          "id": "c7d0df9dbc03791e516e61b2860e1aff23b78a9c",
+          "message": "feat(cli): add usage examples to --help and correct the exit-code footer",
+          "timestamp": "2026-10-28T13:31:01+01:00",
+          "tree_id": "8cfc74314dc3145958cc0f9f7bfd593dafcb5149",
+          "url": "https://github.com/lorenzocaprari/nesso/commit/c7d0df9dbc03791e516e61b2860e1aff23b78a9c"
+        },
+        "date": 1793190946453,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "grep-1000-wall",
+            "value": 0.57,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-1000-rss",
+            "value": 145776640,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-10000-wall",
+            "value": 4.29,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-10000-rss",
+            "value": 149168128,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-100000-wall",
+            "value": 41.5,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-100000-rss",
+            "value": 152150016,
             "unit": "bytes"
           }
         ]
