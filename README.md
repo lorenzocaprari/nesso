@@ -1,5 +1,7 @@
 # Nesso
 
+> *nesso* (/ˈnɛs.so/, NESS-oh) is Italian for "link, connection" — it finds the connection between log lines by meaning, not just by keyword.
+
 [![Pipeline](https://github.com/lorenzocaprari/nesso/actions/workflows/ci.yml/badge.svg)](https://github.com/lorenzocaprari/nesso/actions/workflows/ci.yml)
 [![Nightly](https://img.shields.io/github/actions/workflow/status/lorenzocaprari/nesso/ci.yml?branch=main&event=schedule&label=nightly)](https://github.com/lorenzocaprari/nesso/actions/workflows/ci.yml?query=event%3Aschedule+branch%3Amain)
 [![Latest release](https://img.shields.io/github/v/release/lorenzocaprari/nesso)](https://github.com/lorenzocaprari/nesso/releases/latest)
@@ -12,7 +14,7 @@
 [![GHCR](https://img.shields.io/badge/ghcr.io-lorenzocaprari%2Fnesso-blue.svg)](https://github.com/lorenzocaprari/nesso/pkgs/container/nesso)
 [![Coverage](https://codecov.io/gh/lorenzocaprari/nesso/branch/main/graph/badge.svg)](https://codecov.io/gh/lorenzocaprari/nesso)
 
-grep for meaning: find the log lines you're looking for even when the words differ. Offline, one binary.
+Semantic log search. grep for meaning: find the log lines you're looking for even when the words differ. Offline, one binary.
 
 Semantic grep for logs, fully offline, no server, no cloud, no API keys, [Apache-2.0](LICENSE).
 
