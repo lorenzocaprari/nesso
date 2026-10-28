@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793199070499,
+  "lastUpdate": 1793201351571,
   "repoUrl": "https://github.com/lorenzocaprari/nesso",
   "entries": {
     "nesso": [
@@ -2915,6 +2915,60 @@ window.BENCHMARK_DATA = {
           {
             "name": "grep-100000-rss",
             "value": 154238976,
+            "unit": "bytes"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "caprarilorenzo5@gmail.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "committer": {
+            "email": "85455384+lorenzocaprari@users.noreply.github.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "distinct": true,
+          "id": "692e78072797d501194b0bbec2c423ad8fcb6621",
+          "message": "ci: build with -Werror in CI\n\nPipeline passes -c user.nesso:werror=True on every conan install and conan build. Coverage and fuzz-test set NESSO_WERROR=1.",
+          "timestamp": "2026-10-28T16:23:25+01:00",
+          "tree_id": "cd8ecfa614b92b7a7f8555e5c7209fb72944447e",
+          "url": "https://github.com/lorenzocaprari/nesso/commit/692e78072797d501194b0bbec2c423ad8fcb6621"
+        },
+        "date": 1793201350167,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "grep-1000-wall",
+            "value": 2.14,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-1000-rss",
+            "value": 143781888,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-10000-wall",
+            "value": 10.51,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-10000-rss",
+            "value": 149843968,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-100000-wall",
+            "value": 91.09,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-100000-rss",
+            "value": 153673728,
             "unit": "bytes"
           }
         ]
