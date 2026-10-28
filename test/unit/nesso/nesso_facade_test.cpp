@@ -322,6 +322,40 @@ TEST_CASE("a missing default model lists every directory it tried", "[nesso][tex
     REQUIRE(grepped.error().note.find(',') != std::string::npos);
 }
 
+TEST_CASE("index fails when no chunks are produced and does not replace the corpus", "[nesso][text]")
+{
+    const TempDir dir{"nesso_index_zero_chunks"};
+    auto embedder = std::make_unique<RecordingEmbedder>();
+    const RecordingEmbedder *recorder = embedder.get();
+    const nesso::Nesso app{nesso::Config{}, std::move(embedder)};
+    const auto empty = dir.path() / "empty.log";
+    const auto alsoEmpty = dir.path() / "also-empty.log";
+    const auto kept = dir.path() / "kept.nesso";
+    const auto blockedParent = dir.path() / "not-a-dir";
+    const char keep[] = {'k', 'e', 'e', 'p'};
+    writeBytes(empty, keep, 0);
+    writeBytes(alsoEmpty, keep, 0);
+    writeBytes(kept, keep, sizeof(keep));
+    writeBytes(blockedParent, keep, sizeof(keep));
+
+    const auto several = app.index({.files = {empty, alsoEmpty}, .output = kept});
+    REQUIRE_FALSE(several.has_value());
+    CHECK(several.error().cause == nesso::ErrorCause::EmptyFile);
+    CHECK(several.error().path.empty());
+    CHECK(readFile(kept) == "keep");
+    CHECK_FALSE(std::filesystem::exists(kept.string() + ".records"));
+
+    const auto blocked = app.index({.files = {empty}, .output = dir.path()});
+    REQUIRE_FALSE(blocked.has_value());
+    CHECK(blocked.error().kind == nesso::ErrorKind::CorpusWrite);
+    CHECK(blocked.error().cause == nesso::ErrorCause::FileOpen);
+
+    const auto unopenable = app.index({.files = {empty}, .output = blockedParent / "out.nesso"});
+    REQUIRE_FALSE(unopenable.has_value());
+    CHECK(unopenable.error().kind == nesso::ErrorKind::CorpusWrite);
+    CHECK(recorder->batches().empty());
+}
+
 TEST_CASE("Nesso is movable", "[nesso]")
 {
     const TempDir dir{"nesso_facade_move"};

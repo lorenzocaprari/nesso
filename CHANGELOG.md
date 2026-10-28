@@ -17,6 +17,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `nesso grep` and `nesso index` flush one 32-text window per embedder session, so every int8 session runs. Each flush is still split into the same 32-text windows, and the corpus bytes do not depend on the session count. Indexing 3000 lines from `scripts/demo-log` with the int8 model on a 4-vCPU host took 7.77 s and 7.92 s at `NESSO_THREADS=1` (386 and 379 lines/s, peak RSS 101,620 kB and 94,264 kB) and 8.00 s and 8.12 s at 4 threads (375 and 369 lines/s, peak RSS 218,256 kB and 222,372 kB) before this change. After it, the same input took 7.95 s, 8.88 s, and 8.90 s at 1 thread (377, 338, and 337 lines/s, peak RSS 102,516 kB, 97,832 kB, and 101,976 kB) and 2.38 s, 2.58 s, and 2.62 s at 4 threads (1,261, 1,163, and 1,145 lines/s, peak RSS 332,840 kB, 334,932 kB, and 329,512 kB). Peak RSS at 4 threads rose from 218,256–222,372 kB to 329,512–334,932 kB. Every corpus, before and after, had sha256 `d75a89f8fcfcd8a4ec4fc7fc723ea16b99df29bee57f33f43978af71894cc763`.
 
+### Fixed
+
+- `nesso index` exits 1 when the input produces no chunks. Stderr gets one line naming the input and what to check (the path or `--json-field`); stdout stays empty. The corpus file is not created or replaced. A path that cannot be opened still exits 2. The command used to exit 0 and write an empty corpus.
+
 ## [0.2.1] - 2026-10-27
 
 ### Added

@@ -63,7 +63,8 @@ struct StaleSource
 /// Failure of a Nesso operation.
 ///
 /// `cause` names the layer failure. `path`, the skip counters, and `truncatedLines` are set when the failure concerns
-/// a file or happens after parsing. `note` is an extra sentence, used when the model directories were listed.
+/// a file or happens after parsing. `note` is an extra sentence, used when the model directories were listed. On
+/// `EmptyInput` it is the zero-chunk `index` check hint.
 struct Error
 {
     ErrorKind kind{};
@@ -83,7 +84,7 @@ struct Error
 [[nodiscard]] std::string_view describe(ErrorCause cause);
 
 /// One stderr line for `error`. Empty when the outcome is no match. `EmptyInput` is a reason, without an "Error:"
-/// prefix.
+/// prefix. A non-empty `note` on `EmptyInput` is the zero-chunk `index` line.
 [[nodiscard]] std::string message(const Error &error);
 
 inline constexpr size_t DEFAULT_TEXT_TOP_K = 5;

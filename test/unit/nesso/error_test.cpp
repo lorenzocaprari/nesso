@@ -82,3 +82,26 @@ TEST_CASE("each failure kind names itself", "[nesso][error]")
     REQUIRE(emptyFile.find("in.log") != std::string::npos);
     REQUIRE(text(nesso::ErrorKind::NoMatches, nesso::ErrorCause::None).empty());
 }
+
+TEST_CASE("a zero-chunk index names the path and what to check", "[nesso][error]")
+{
+    const auto text = [](nesso::ErrorCause cause, std::string path)
+    {
+        const nesso::Error error{.kind = nesso::ErrorKind::EmptyInput,
+                                 .cause = cause,
+                                 .path = std::move(path),
+                                 .skippedLines = 0,
+                                 .note = "check the input path or --json-field",
+                                 .staleSources = {}};
+        return nesso::message(error);
+    };
+
+    REQUIRE(text(nesso::ErrorCause::EmptyFile, "empty.log") ==
+            "no indexable lines in 'empty.log': the file is empty; check the input path or --json-field");
+    REQUIRE(text(nesso::ErrorCause::EmptyFile, "") ==
+            "no indexable lines: the file is empty; check the input path or --json-field");
+    REQUIRE(text(nesso::ErrorCause::NothingIndexable, "rows.json") ==
+            "no indexable lines in 'rows.json'; check the input path or --json-field");
+    REQUIRE(text(nesso::ErrorCause::NothingIndexable, "") ==
+            "no indexable lines; check the input path or --json-field");
+}
