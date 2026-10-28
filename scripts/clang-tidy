@@ -14,8 +14,17 @@ fi
 
 echo "clang-tidy: using build directory: $BUILD_DIR"
 
-# Clean compilation database: remove GCC module-specific flags that clang-tidy doesn't understand
-sed -i 's/ -fmodules-ts//g; s/ -fmodule-mapper=[^ ]*//g; s/ -fdeps-format=[^ ]*//g' "$BUILD_DIR/compile_commands.json"
+# GCC module flags and the GCC-only nesso_options warnings are not Clang options.
+# clang-tidy reports those as errors and stops. The GCC build still passes them.
+sed -i \
+  -e 's/ -fmodules-ts//g' \
+  -e 's/ -fmodule-mapper=[^ ]*//g' \
+  -e 's/ -fdeps-format=[^ ]*//g' \
+  -e 's/ -Wduplicated-cond//g' \
+  -e 's/ -Wduplicated-branches//g' \
+  -e 's/ -Wlogical-op//g' \
+  -e 's/ -Wuseless-cast//g' \
+  "$BUILD_DIR/compile_commands.json"
 
 if command -v run-clang-tidy &> /dev/null; then
     echo "clang-tidy: running parallel analysis with run-clang-tidy..."
