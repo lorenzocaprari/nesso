@@ -14,6 +14,8 @@
 
 grep for meaning: find the log lines you're looking for even when the words differ. Offline, one binary.
 
+*Nesso* is Italian for nexus: the meaningful link between things.
+
 Semantic grep for logs, fully offline, no server, no cloud, no API keys, [Apache-2.0](LICENSE).
 
 ## Demo
