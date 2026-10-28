@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793175464145,
+  "lastUpdate": 1793178336965,
   "repoUrl": "https://github.com/lorenzocaprari/nesso",
   "entries": {
     "nesso": [
@@ -2213,6 +2213,60 @@ window.BENCHMARK_DATA = {
           {
             "name": "grep-100000-rss",
             "value": 149962752,
+            "unit": "bytes"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "caprarilorenzo5@gmail.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "committer": {
+            "email": "85455384+lorenzocaprari@users.noreply.github.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "distinct": true,
+          "id": "6679c32cdf0510e46f03572b07fb57e3d77ed72f",
+          "message": "perf(embed): use wider sessions with arena shrink above 4 cores\n\nOn x86, an int8 budget of 4 or less keeps one intra-op thread and that\nmany sessions, and does not shrink the arena. A larger budget uses\nI = min(4, N/2) and S = max(1, N/I) and shrinks the arena after each\nrun. aarch64 keeps at least 2 intra-op threads. The layout is ADR 0014.",
+          "timestamp": "2026-10-28T09:58:59+01:00",
+          "tree_id": "5744b41aee00c0165b690958c60021d8ef0c2c39",
+          "url": "https://github.com/lorenzocaprari/nesso/commit/6679c32cdf0510e46f03572b07fb57e3d77ed72f"
+        },
+        "date": 1793178336273,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "grep-1000-wall",
+            "value": 2.52,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-1000-rss",
+            "value": 147214336,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-10000-wall",
+            "value": 14.16,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-10000-rss",
+            "value": 152997888,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-100000-wall",
+            "value": 128.26,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-100000-rss",
+            "value": 147632128,
             "unit": "bytes"
           }
         ]
