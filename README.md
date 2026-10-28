@@ -46,6 +46,8 @@ Indexed 5000 chunks into 'app.nesso'.
 nesso search "the disk is full" -i app.nesso -k 3
 ```
 
+`--json` on `grep` and `search` prints one JSON object per match. The keys, in order, are `schema_version`, `rank`, `source`, `kind`, `line`, `score`, `text`, and `occurrences`. `schema_version` is 1. `kind` is `line` or `element`. `score` is the shortest decimal that reads back as the same value. Bytes that are not UTF-8 in `source` or `text` are replaced with U+FFFD. Errors, warnings, and counts stay on stderr. With nothing to rank, stdout is empty and the command exits 1. Text output is unchanged. `index` does not accept `--json`.
+
 ```text
 line 869: 0.4736: Oct 18 06:13:11 web-02 app[4900]: write /var/lib/app/queue.db: No space left on device
 line 1494: 0.4694: Oct 22 17:08:04 web-02 app[7918]: write /var/lib/app/queue.db: No space left on device

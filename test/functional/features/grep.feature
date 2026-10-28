@@ -286,3 +286,70 @@ Feature: grep
     And stdout contains "\"source\":\"-\""
     And stdout contains "\"occurrences\":2"
     And stdout contains "\"schema_version\":1"
+
+  # JSON Lines contract. Separate from the scenarios above so a later rebase stays local.
+
+  Scenario: json lines for one file keep key order and repeat
+    Given a file "app.log" with:
+      """
+      database connection refused
+      payment timeout after 30s
+      """
+    When I run nesso with arguments grep "database connection error" --json -k 2 {dir}/app.log
+    Then the exit code is 0
+    And stdout contains "\"source\":\"{dir}/app.log\""
+    And stdout contains "\"kind\":\"line\""
+    And every stdout line is a JSON match
+    And running nesso again prints the same stdout
+    And stderr is empty
+
+  Scenario: json lines name each file
+    Given a file "app.log" with:
+      """
+      database connection refused
+      """
+    And a file "other.log" with:
+      """
+      unrelated noise
+      """
+    When I run nesso with arguments grep "database connection error" --json -k 2 {dir}/app.log {dir}/other.log
+    Then the exit code is 0
+    And stdout contains "\"source\":\"{dir}/app.log\""
+    And stdout contains "\"source\":\"{dir}/other.log\""
+    And every stdout line is a JSON match
+
+  Scenario: json lines read stdin
+    Given stdin is:
+      """
+      database connection refused
+      """
+    When I run nesso with arguments grep "database connection error" --json -
+    Then the exit code is 0
+    And stdout contains "\"source\":\"-\""
+    And stdout contains "\"kind\":\"line\""
+    And every stdout line is a JSON match
+
+  Scenario: json lines mark an array element
+    Given a file "rows.json" with:
+      """
+      [{"message":"first entry"},{"message":"second entry"}]
+      """
+    When I run nesso with arguments grep "second entry" --json {dir}/rows.json
+    Then the exit code is 0
+    And stdout contains "\"kind\":\"element\""
+    And stdout contains "\"line\":2"
+    And stdout contains "second entry"
+    And every stdout line is a JSON match
+
+  Scenario: json lines stop at the result limit
+    Given a file "app.log" with:
+      """
+      database connection refused
+      payment timeout after 30s
+      disk is nearly full
+      """
+    When I run nesso with arguments grep "database connection error" --json -k 1 {dir}/app.log
+    Then the exit code is 0
+    And stdout contains "\"rank\":1"
+    And stdout does not contain "\"rank\":2"
+    And every stdout line is a JSON match

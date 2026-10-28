@@ -209,3 +209,22 @@ Feature: command errors
     Then the exit code is 2
     And stderr contains "failed to read the corpus"
     And stderr contains "the corpus format is not supported by this nesso; re-run nesso index"
+
+  # JSON Lines contract. Separate from the scenarios above so a later rebase stays local.
+
+  Scenario: json grep of an empty file prints nothing
+    Given an empty file "empty.log"
+    When I run nesso with arguments grep "database connection error" --json {dir}/empty.log
+    Then the exit code is 1
+    And stdout is empty
+    And stderr contains "the file is empty"
+
+  Scenario: index rejects json output
+    Given a file "app.log" with:
+      """
+      database connection refused
+      """
+    When I run nesso with arguments index --json -o {dir}/corpus.nesso {dir}/app.log
+    Then the exit code is 2
+    And stdout is empty
+    And stderr contains "--json"

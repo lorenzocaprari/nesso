@@ -205,6 +205,94 @@ func (b *bindings) sharedTextSharesScore() error {
 	return nil
 }
 
+func (b *bindings) stdoutLinesAreJsonMatches() error {
+	text, err := b.stream("stdout")
+	if err != nil {
+		return err
+	}
+	trimmed := strings.TrimRight(text, "\n")
+	if trimmed == "" {
+		return errors.New("stdout has no JSON lines")
+	}
+	want := []string{"schema_version", "rank", "source", "kind", "line", "score", "text", "occurrences"}
+	for index, line := range strings.Split(trimmed, "\n") {
+		decoder := json.NewDecoder(strings.NewReader(line))
+		token, err := decoder.Token()
+		if err != nil {
+			return fmt.Errorf("stdout line %d is not JSON: %s", index+1, line)
+		}
+		delim, ok := token.(json.Delim)
+		if !ok || delim != '{' {
+			return fmt.Errorf("stdout line %d is not a JSON object: %s", index+1, line)
+		}
+		keys := make([]string, 0, len(want))
+		values := map[string]json.RawMessage{}
+		for decoder.More() {
+			keyToken, keyErr := decoder.Token()
+			if keyErr != nil {
+				return fmt.Errorf("stdout line %d: %w", index+1, keyErr)
+			}
+			key, keyOK := keyToken.(string)
+			if !keyOK {
+				return fmt.Errorf("stdout line %d has a non-string key", index+1)
+			}
+			var raw json.RawMessage
+			if decodeErr := decoder.Decode(&raw); decodeErr != nil {
+				return fmt.Errorf("stdout line %d key %s: %w", index+1, key, decodeErr)
+			}
+			keys = append(keys, key)
+			values[key] = raw
+		}
+		end, endErr := decoder.Token()
+		if endErr != nil {
+			return fmt.Errorf("stdout line %d: %w", index+1, endErr)
+		}
+		endDelim, endOK := end.(json.Delim)
+		if !endOK || endDelim != '}' {
+			return fmt.Errorf("stdout line %d does not end the object: %s", index+1, line)
+		}
+		if decoder.More() {
+			return fmt.Errorf("stdout line %d has trailing data: %s", index+1, line)
+		}
+		if len(keys) != len(want) {
+			return fmt.Errorf("stdout line %d keys %v, want %v\n%s", index+1, keys, want, line)
+		}
+		for keyIndex := range want {
+			if keys[keyIndex] != want[keyIndex] {
+				return fmt.Errorf("stdout line %d keys %v, want %v\n%s", index+1, keys, want, line)
+			}
+		}
+		if string(values["schema_version"]) != "1" {
+			return fmt.Errorf("stdout line %d schema_version %s", index+1, values["schema_version"])
+		}
+		if string(values["rank"]) != strconv.Itoa(index+1) {
+			return fmt.Errorf("stdout line %d rank %s, want %d", index+1, values["rank"], index+1)
+		}
+		kind := string(values["kind"])
+		if kind != `"line"` && kind != `"element"` {
+			return fmt.Errorf("stdout line %d kind %s", index+1, kind)
+		}
+		if _, lineErr := strconv.ParseUint(string(values["line"]), 10, 64); lineErr != nil {
+			return fmt.Errorf("stdout line %d line %s", index+1, values["line"])
+		}
+		score := string(values["score"])
+		if _, scoreErr := strconv.ParseFloat(score, 64); scoreErr != nil || strings.ContainsAny(score, "\"',") {
+			return fmt.Errorf("stdout line %d score %s", index+1, score)
+		}
+		if sourceErr := json.Unmarshal(values["source"], new(string)); sourceErr != nil {
+			return fmt.Errorf("stdout line %d source: %w", index+1, sourceErr)
+		}
+		if textErr := json.Unmarshal(values["text"], new(string)); textErr != nil {
+			return fmt.Errorf("stdout line %d text: %w", index+1, textErr)
+		}
+		occurrences, occErr := strconv.ParseUint(string(values["occurrences"]), 10, 32)
+		if occErr != nil || occurrences < 1 {
+			return fmt.Errorf("stdout line %d occurrences %s", index+1, values["occurrences"])
+		}
+	}
+	return nil
+}
+
 func (b *bindings) streamIsEmpty(name string) error {
 	text, err := b.stream(name)
 	if err != nil {
