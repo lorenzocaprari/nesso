@@ -1,0 +1,227 @@
+#!/usr/bin/env python3
+"""Fail when a host dependency ships under a copyleft Conan license.
+
+Reads the JSON from `conan graph info --format=json` or
+`conan install --format=json`. A host-context package that is not a test
+requirement fails when its license is GPL, LGPL, AGPL, SSPL, EUPL, OSL,
+CDDL, EPL, or CPAL, including a bare name with no version. An OR expression
+passes when one side is permissive. AND still fails if either side is
+copyleft. A missing license fails too.
+
+An allow-list entry names one package version and the consumer that must
+directly depend on it (a graph edge with direct=true). A version bump of
+either side drops the entry. Build-context tools and test requirements are
+not the runtime graph.
+
+Exit 0 when the graph is clean, 1 when a license is rejected, 2 on usage
+or when the file is not a Conan graph.
+"""
+
+from __future__ import annotations
+
+import json
+import re
+import sys
+from pathlib import Path
+
+# SPDX ids, plus a bare name or a glued version such as GPLv2 / LGPLv2.1.
+# AGPL and LGPL are listed before GPL, and EUPL before EPL, so the shorter
+# name does not win inside the longer one.
+# The name is case-insensitive. The tail is not: a case-insensitive [^a-z]
+# would treat the "v" in GPLv2 as a letter and miss the id.
+COPYLEFT_ID = re.compile(
+    r"^(?i:agpl|lgpl|gpl|sspl|eupl|osl|cddl|epl|cpal)(?:$|[^A-Za-z].*|[vV]\d.*)$"
+)
+
+# Locked eigen/3.4.0 sets license = ("MPL-2.0", "LGPL-3.0-or-later") while
+# MPL2_only is false (the value in this graph). Conan serializes that tuple
+# as a list. onnxruntime/1.18.1 requires eigen/3.4.0 and configures the
+# upstream cmake/ tree, which includes adjust_global_compile_flags.cmake and
+# adds -DEIGEN_MPL2_ONLY unconditionally. Eigen 3.4.0's NonMPL2.h #errors if
+# a non-MPL2 header is included in that mode.
+ALLOW = {
+    "eigen/3.4.0": (
+        "onnxruntime/1.18.1",
+        "recipe lists LGPL for optional modules; onnxruntime 1.18.1 compiles with "
+        "-DEIGEN_MPL2_ONLY (cmake/adjust_global_compile_flags.cmake), and Eigen's "
+        "NonMPL2.h #errors on any LGPL header, so only MPL-2.0 code is compiled in",
+    ),
+}
+
+
+def package_ref(node: dict) -> str:
+    ref = node.get("ref")
+    if isinstance(ref, str) and ref:
+        return ref.split("#", 1)[0].split("@", 1)[0]
+    name = node.get("name")
+    version = node.get("version")
+    if isinstance(name, str) and name and isinstance(version, str) and version:
+        return f"{name}/{version}"
+    return ""
+
+
+def license_entries(value: object) -> list[str] | None:
+    if isinstance(value, str):
+        text = value.strip()
+        return [text] if text else None
+    if isinstance(value, list) and value and all(isinstance(item, str) and item.strip() for item in value):
+        return [item.strip() for item in value]
+    return None
+
+
+def _tokenize(expr: str) -> list[str]:
+    # AND/OR/WITH are operators only as their own whitespace-delimited token.
+    # Splitting on a bare "OR" would cut the "or" inside "LGPL-3.0-or-later".
+    return expr.replace("(", " ( ").replace(")", " ) ").split()
+
+
+class _Parser:
+    def __init__(self, tokens: list[str]) -> None:
+        self.tokens = tokens
+        self.index = 0
+
+    def peek(self) -> str | None:
+        if self.index >= len(self.tokens):
+            return None
+        return self.tokens[self.index]
+
+    def eat(self, expected: str | None = None) -> str:
+        token = self.peek()
+        if token is None or (expected is not None and token.upper() != expected):
+            raise ValueError(token)
+        self.index += 1
+        return token
+
+    def parse(self) -> tuple:
+        node = self._parse_or()
+        if self.peek() is not None:
+            raise ValueError(self.peek())
+        return node
+
+    def _parse_or(self) -> tuple:
+        node = self._parse_and()
+        while self.peek() is not None and self.peek().upper() == "OR":
+            self.eat()
+            node = ("OR", node, self._parse_and())
+        return node
+
+    def _parse_and(self) -> tuple:
+        node = self._parse_primary()
+        while self.peek() is not None and self.peek().upper() == "AND":
+            self.eat()
+            node = ("AND", node, self._parse_primary())
+        return node
+
+    def _parse_primary(self) -> tuple:
+        token = self.peek()
+        if token == "(":
+            self.eat()
+            node = self._parse_or()
+            self.eat(")")
+            return node
+        if token is None or token.upper() in {"AND", "OR", "WITH", ")"}:
+            raise ValueError(token)
+        self.eat()
+        if self.peek() is not None and self.peek().upper() == "WITH":
+            self.eat()
+            exception = self.eat()
+            return ("WITH", token, exception)
+        return ("ID", token)
+
+
+def _permissive(node: tuple) -> bool:
+    kind = node[0]
+    if kind == "ID":
+        return COPYLEFT_ID.match(node[1]) is None
+    if kind == "WITH":
+        # A linking exception does not drop the copyleft obligation.
+        return COPYLEFT_ID.match(node[1]) is None
+    if kind == "OR":
+        return _permissive(node[1]) or _permissive(node[2])
+    return _permissive(node[1]) and _permissive(node[2])
+
+
+def permissive_expression(expr: str) -> bool:
+    """True when some OR choice satisfies the expression without a copyleft id."""
+    try:
+        return _permissive(_Parser(_tokenize(expr)).parse())
+    except ValueError:
+        return all(COPYLEFT_ID.match(token) is None for token in _tokenize(expr))
+
+
+def direct_consumers(nodes: dict, node_id: str) -> set[str]:
+    found = set()
+    for node in nodes.values():
+        deps = node.get("dependencies") or {}
+        if not isinstance(deps, dict):
+            continue
+        edge = deps.get(node_id)
+        if not isinstance(edge, dict):
+            continue
+        if edge.get("direct", True) is False:
+            continue
+        ref = package_ref(node)
+        if ref:
+            found.add(ref)
+    return found
+
+
+def allowed(nodes: dict, node_id: str, ref: str) -> bool:
+    entry = ALLOW.get(ref)
+    if entry is None:
+        return False
+    consumer, _reason = entry
+    return direct_consumers(nodes, node_id) == {consumer}
+
+
+def graph_nodes(payload: object) -> dict:
+    if not isinstance(payload, dict):
+        raise ValueError("input is not a Conan graph (missing graph.nodes)")
+    graph = payload.get("graph")
+    if not isinstance(graph, dict) or not isinstance(graph.get("nodes"), dict):
+        raise ValueError("input is not a Conan graph (missing graph.nodes)")
+    return graph["nodes"]
+
+
+def violations(nodes: dict) -> list[str]:
+    errors = []
+    for key, node in nodes.items():
+        if str(key) == "0" or not isinstance(node, dict):
+            continue
+        if node.get("context") != "host" or node.get("test"):
+            continue
+        ref = package_ref(node) or f"node {key}"
+        entries = license_entries(node.get("license"))
+        if entries is None:
+            errors.append(f"{ref}: no license metadata")
+            continue
+        bad = [entry for entry in entries if not permissive_expression(entry)]
+        if not bad or allowed(nodes, str(key), ref):
+            continue
+        detail = ""
+        entry = ALLOW.get(ref)
+        if entry is not None:
+            consumers = sorted(direct_consumers(nodes, str(key))) or ["none"]
+            detail = f" (allow-list consumer {entry[0]} is not the only direct dependent; saw {consumers})"
+        errors.append(f"{ref}: copyleft license {bad} in the runtime graph{detail}")
+    return errors
+
+
+def main(argv: list[str]) -> int:
+    if len(argv) != 2:
+        print("usage: check-runtime-licenses CONAN_GRAPH_JSON", file=sys.stderr)
+        return 2
+    path = Path(argv[1])
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        errors = violations(graph_nodes(payload))
+    except (OSError, UnicodeError, json.JSONDecodeError, ValueError) as error:
+        print(f"error: {error}", file=sys.stderr)
+        return 2
+    for error in errors:
+        print(f"error: {error}", file=sys.stderr)
+    return 1 if errors else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))
