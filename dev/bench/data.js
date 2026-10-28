@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793184677627,
+  "lastUpdate": 1793187223277,
   "repoUrl": "https://github.com/lorenzocaprari/nesso",
   "entries": {
     "nesso": [
@@ -2537,6 +2537,60 @@ window.BENCHMARK_DATA = {
           {
             "name": "grep-100000-rss",
             "value": 147718144,
+            "unit": "bytes"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "caprarilorenzo5@gmail.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "committer": {
+            "email": "85455384+lorenzocaprari@users.noreply.github.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "distinct": true,
+          "id": "97f69d35d25d43c4f996fd7969fb10e2bc6b2066",
+          "message": "perf(embed): length-sort fixed windows and fill the session pool\n\ngrep and index flush a fixed window of 1024 texts. Each window is sorted\nby token count and then input order, then cut at 32 texts and 1024 padded\ntokens. The runs are spread across the existing sessions and scattered\nback to input order. int8 bytes still depend on which texts share a run,\nnot on the session count. Corpus bytes change. The format version is\nunchanged; re-index.\n\nINT8_SESSION_BYTES stays 443191296.\n\nIndexing 100000 HDFS lines on this 4-core host went from 270.64 s\n(369.5 lines/s, peak 2180894720 bytes) to 117.66 s (849.9 lines/s, peak\n411512832 bytes) at the default 4 single-thread sessions.",
+          "timestamp": "2026-10-28T12:27:46+01:00",
+          "tree_id": "034c9faccc015338dacd81945d35636f642c831a",
+          "url": "https://github.com/lorenzocaprari/nesso/commit/97f69d35d25d43c4f996fd7969fb10e2bc6b2066"
+        },
+        "date": 1793187222932,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "grep-1000-wall",
+            "value": 2.18,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-1000-rss",
+            "value": 147456000,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-10000-wall",
+            "value": 11.15,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-10000-rss",
+            "value": 155066368,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-100000-wall",
+            "value": 97.41,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-100000-rss",
+            "value": 150020096,
             "unit": "bytes"
           }
         ]
