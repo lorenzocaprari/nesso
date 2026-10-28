@@ -34,5 +34,10 @@ add_executable(amx_guard_test amx_guard_test.cpp)
 target_link_libraries(amx_guard_test PRIVATE nesso_options nesso_embed
                                              Catch2::Catch2WithMain)
 add_test(NAME amx_guard_test COMMAND amx_guard_test)
-set_tests_properties(batch_plan_test onnx_embedder_test session_pool_test
-                     session_policy_test amx_guard_test PROPERTIES LABELS unit)
+add_executable(inference_wave_test inference_wave_test.cpp)
+target_link_libraries(inference_wave_test PRIVATE nesso_options nesso_embed
+                                                  Catch2::Catch2WithMain)
+add_test(NAME inference_wave_test COMMAND inference_wave_test)
+set_tests_properties(
+  batch_plan_test onnx_embedder_test session_pool_test session_policy_test
+  amx_guard_test inference_wave_test PROPERTIES LABELS unit)

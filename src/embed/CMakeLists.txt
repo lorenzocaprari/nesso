@@ -3,8 +3,8 @@ target_include_directories(nesso_tokenizer
                            PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
 target_link_libraries(nesso_tokenizer PRIVATE nesso_options)
 
-add_library(nesso_embed amx_guard.cpp batch_plan.cpp onnx_embedder.cpp
-                        session_policy.cpp)
+add_library(nesso_embed amx_guard.cpp batch_plan.cpp inference_wave.cpp
+                        onnx_embedder.cpp session_policy.cpp)
 target_include_directories(nesso_embed
                            PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
 find_package(onnxruntime CONFIG REQUIRED)
