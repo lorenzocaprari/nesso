@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793182441257,
+  "lastUpdate": 1793183953918,
   "repoUrl": "https://github.com/lorenzocaprari/nesso",
   "entries": {
     "nesso": [
@@ -2429,6 +2429,60 @@ window.BENCHMARK_DATA = {
           {
             "name": "grep-100000-rss",
             "value": 151744512,
+            "unit": "bytes"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "caprarilorenzo5@gmail.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "committer": {
+            "email": "85455384+lorenzocaprari@users.noreply.github.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "distinct": true,
+          "id": "06065697699ca329d7bb878edb756f27f9356379",
+          "message": "docs: add arm64 and container install steps and refresh releases.md",
+          "timestamp": "2026-10-28T11:32:45+01:00",
+          "tree_id": "8cd5bbdc60a284321a6016946b54fa79f61db2f7",
+          "url": "https://github.com/lorenzocaprari/nesso/commit/06065697699ca329d7bb878edb756f27f9356379"
+        },
+        "date": 1793183953563,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "grep-1000-wall",
+            "value": 2.78,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-1000-rss",
+            "value": 143736832,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-10000-wall",
+            "value": 13.74,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-10000-rss",
+            "value": 148586496,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-100000-wall",
+            "value": 127.48,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-100000-rss",
+            "value": 152408064,
             "unit": "bytes"
           }
         ]
