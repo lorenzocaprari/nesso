@@ -141,3 +141,36 @@ Feature: index and search
     And stderr contains "Truncated "
     And stderr contains "Indexed "
     And stderr does not contain "Skipped "
+
+  # JSON Lines contract. Separate from the scenarios above so a later rebase stays local.
+
+  Scenario: json search prints one object per corpus match
+    Given a file "app.log" with:
+      """
+      database connection refused
+      """
+    When I run nesso with arguments index -o {dir}/corpus.nesso {dir}/app.log
+    Then the exit code is 0
+    When I run nesso with arguments search "database connection error" --json -k 1 -i {dir}/corpus.nesso
+    Then the exit code is 0
+    And stdout contains "database connection refused"
+    And stdout contains "\"source\":\"{dir}/app.log\""
+    And stdout contains "\"kind\":\"line\""
+    And every stdout line is a JSON match
+    And running nesso again prints the same stdout
+
+  Scenario: json search keeps a stale-source warning on stderr
+    Given a file "app.log" with:
+      """
+      database connection refused
+      """
+    When I run nesso with arguments index -o {dir}/corpus.nesso {dir}/app.log
+    Then the exit code is 0
+    Given the file "app.log" is touched
+    When I run nesso with arguments search "database connection error" --json -i {dir}/corpus.nesso
+    Then the exit code is 0
+    And stderr contains "changed since indexing"
+    And stderr contains "{dir}/app.log"
+    And stdout does not contain "Warning"
+    And stdout contains "\"source\":\"{dir}/app.log\""
+    And every stdout line is a JSON match

@@ -13,7 +13,8 @@ namespace nesso::cli
 {
 
 /// One JSON Lines object. Keys, in order: schema_version, rank, source, kind, line, score, text, occurrences.
-/// `schema_version` is 1. Invalid UTF-8 in `source` and `text` becomes U+FFFD.
+/// `schema_version` is 1. `score` is the shortest round-trip form of the float, independent of locale.
+/// Invalid UTF-8 in `source` and `text` becomes U+FFFD.
 [[nodiscard]] std::string renderMatchJson(const TextMatch &match, std::size_t rank);
 
 } // namespace nesso::cli
