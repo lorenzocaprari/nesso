@@ -54,12 +54,23 @@ line 3762: 0.4677: Oct 24 23:39:07 web-02 app[2888]: write /var/lib/app/queue.db
 
 ## Install
 
-Ubuntu 26.04+ (glibc 2.43+), amd64. The package includes the MiniLM model.
+Ubuntu 26.04+ (glibc 2.43+), amd64 or arm64. The package includes the MiniLM model.
 
 ```bash
 curl -fL -o nesso_0.2.1_amd64.deb \
   https://github.com/lorenzocaprari/nesso/releases/download/v0.2.1/nesso_0.2.1_amd64.deb
 sudo apt install ./nesso_0.2.1_amd64.deb
+
+curl -fL -o nesso_0.2.1_arm64.deb \
+  https://github.com/lorenzocaprari/nesso/releases/download/v0.2.1/nesso_0.2.1_arm64.deb
+sudo apt install ./nesso_0.2.1_arm64.deb
+```
+
+`ghcr.io/lorenzocaprari/nesso` includes the model at `/usr/share/nesso` (`NESSO_MODEL_DIR`). The entrypoint is `nesso`. Mount the log directory:
+
+```bash
+docker run --rm -v "$PWD:/data:ro" -w /data ghcr.io/lorenzocaprari/nesso:v0.2.1 \
+  grep "the disk is full" app.log
 ```
 
 ## Verify a download
