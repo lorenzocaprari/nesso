@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793134234745,
+  "lastUpdate": 1793174728296,
   "repoUrl": "https://github.com/lorenzocaprari/nesso",
   "entries": {
     "nesso": [
@@ -2105,6 +2105,60 @@ window.BENCHMARK_DATA = {
           {
             "name": "grep-100000-rss",
             "value": 152436736,
+            "unit": "bytes"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "85455384+lorenzocaprari@users.noreply.github.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "857014b5bba51fc26ca131fe5f4d41c0a905dd60",
+          "message": "fix(cli)!: fail index when no chunks were produced (#172)\n\nZero-chunk nesso index used to exit 0 and write an empty corpus. It now\nexits 1 and writes one stderr line that names the input and what to\ncheck. The corpus path is not created or replaced. This is a breaking\nexit-status change. Non-empty indexes keep the same corpus bytes and\nexit 0.",
+          "timestamp": "2026-10-28T08:59:31+01:00",
+          "tree_id": "5e30105e68c3398819149a177f132ca8fd41896e",
+          "url": "https://github.com/lorenzocaprari/nesso/commit/857014b5bba51fc26ca131fe5f4d41c0a905dd60"
+        },
+        "date": 1793174727612,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "grep-1000-wall",
+            "value": 2.5,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-1000-rss",
+            "value": 146657280,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-10000-wall",
+            "value": 14.24,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-10000-rss",
+            "value": 150683648,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-100000-wall",
+            "value": 127.3,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-100000-rss",
+            "value": 148963328,
             "unit": "bytes"
           }
         ]
