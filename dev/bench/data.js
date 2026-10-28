@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793208457382,
+  "lastUpdate": 1793215403057,
   "repoUrl": "https://github.com/lorenzocaprari/nesso",
   "entries": {
     "nesso": [
@@ -3131,6 +3131,60 @@ window.BENCHMARK_DATA = {
           {
             "name": "grep-100000-rss",
             "value": 159744000,
+            "unit": "bytes"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "caprarilorenzo5@gmail.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "committer": {
+            "email": "85455384+lorenzocaprari@users.noreply.github.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "distinct": true,
+          "id": "cc558e9396430b0d63343a2cd9fe63c6fb8352c6",
+          "message": "build(deps): fail on copyleft licenses in the runtime dependency graph",
+          "timestamp": "2026-10-28T20:18:14+01:00",
+          "tree_id": "21f2dfa42c34b64f27f59ed554f83561fd4ae51a",
+          "url": "https://github.com/lorenzocaprari/nesso/commit/cc558e9396430b0d63343a2cd9fe63c6fb8352c6"
+        },
+        "date": 1793215402636,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "grep-1000-wall",
+            "value": 0.67,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-1000-rss",
+            "value": 144052224,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-10000-wall",
+            "value": 5.13,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-10000-rss",
+            "value": 153493504,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-100000-wall",
+            "value": 47.99,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-100000-rss",
+            "value": 154845184,
             "unit": "bytes"
           }
         ]
