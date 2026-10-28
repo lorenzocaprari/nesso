@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793191638813,
+  "lastUpdate": 1793192349558,
   "repoUrl": "https://github.com/lorenzocaprari/nesso",
   "entries": {
     "nesso": [
@@ -2699,6 +2699,60 @@ window.BENCHMARK_DATA = {
           {
             "name": "grep-100000-rss",
             "value": 150245376,
+            "unit": "bytes"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "caprarilorenzo5@gmail.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "committer": {
+            "email": "85455384+lorenzocaprari@users.noreply.github.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "distinct": true,
+          "id": "4ceabb27cbf550bcc9faf626e26f9b5a830d15a4",
+          "message": "build: add a shared compile options target and stop sanitizers on the first error\n\nnesso_options requires C++26 with extensions off and the shared warning set.\nShipped profiles do not pass -Werror. conanfile.py reads user.nesso:werror,\nwhich CI must pass with -c on both conan install and conan build.\ngcc-26-debug passes -fno-sanitize-recover=all.",
+          "timestamp": "2026-10-28T13:54:12+01:00",
+          "tree_id": "83bf9cda166c5c77c57445669cfbeeac05332c1f",
+          "url": "https://github.com/lorenzocaprari/nesso/commit/4ceabb27cbf550bcc9faf626e26f9b5a830d15a4"
+        },
+        "date": 1793192348631,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "grep-1000-wall",
+            "value": 0.68,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-1000-rss",
+            "value": 149721088,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-10000-wall",
+            "value": 5.49,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-10000-rss",
+            "value": 149491712,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-100000-wall",
+            "value": 50,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-100000-rss",
+            "value": 156491776,
             "unit": "bytes"
           }
         ]
