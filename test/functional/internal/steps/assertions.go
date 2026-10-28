@@ -160,6 +160,51 @@ func optionHelpLines(text, flag string) (int, error) {
 
 var textMatchScore = regexp.MustCompile(`(?:line|element) \d+: ([0-9]+\.[0-9]+): (.*)$`)
 
+func matchBodyScore(line string) (string, string, error) {
+	if strings.HasPrefix(strings.TrimSpace(line), "{") {
+		var row struct {
+			Text  string          `json:"text"`
+			Score json.RawMessage `json:"score"`
+		}
+		if err := json.Unmarshal([]byte(line), &row); err != nil {
+			return "", "", fmt.Errorf("stdout row is not JSON: %s", line)
+		}
+		return row.Text, string(row.Score), nil
+	}
+	match := textMatchScore.FindStringSubmatch(line)
+	if match == nil {
+		return "", "", fmt.Errorf("stdout match line has no score: %s", line)
+	}
+	return match[2], match[1], nil
+}
+
+func (b *bindings) idVariantsShareScore() error {
+	text, err := b.stream("stdout")
+	if err != nil {
+		return err
+	}
+	scoreTexts := map[string]map[string]struct{}{}
+	for _, line := range strings.Split(strings.TrimRight(text, "\n"), "\n") {
+		if line == "" {
+			continue
+		}
+		body, score, parseErr := matchBodyScore(line)
+		if parseErr != nil {
+			return parseErr
+		}
+		if scoreTexts[score] == nil {
+			scoreTexts[score] = map[string]struct{}{}
+		}
+		scoreTexts[score][body] = struct{}{}
+	}
+	for _, bodies := range scoreTexts {
+		if len(bodies) >= 2 {
+			return nil
+		}
+	}
+	return fmt.Errorf("no two different lines share a score:\n%s", text)
+}
+
 func (b *bindings) sharedTextSharesScore() error {
 	text, err := b.stream("stdout")
 	if err != nil {

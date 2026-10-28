@@ -21,6 +21,7 @@ flags="${CXXFLAGS:-} -std=c++26 -DNESSO_LIBFUZZER -I/tmp/nlohmann"
 "${CXX}" ${flags} \
   -I"${root}/src/parser/include" \
   "${root}/src/parser/log_chunker.cpp" \
+  "${root}/src/parser/template_mask.cpp" \
   "${root}/test/fuzz/fuzz_parser.cpp" \
   ${LIB_FUZZING_ENGINE} \
   -o "${OUT}/nesso_fuzz_parser"

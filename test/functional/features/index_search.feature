@@ -130,6 +130,23 @@ Feature: index and search
     And lines that share text share a score
     And stderr is empty
 
+  Scenario: search json counts lines that share a masked id
+    Given a file "blocks.log" with:
+      """
+      PacketResponder 1 for block blk_38865049064139660 terminating
+      PacketResponder 0 for block blk_-6952295868487656571 terminating
+      """
+    When I run nesso with arguments index -o {dir}/corpus.nesso {dir}/blocks.log
+    Then the exit code is 0
+    When I run nesso with arguments search "block terminating" --json -k 2 -i {dir}/corpus.nesso
+    Then the exit code is 0
+    And stdout contains "\"schema_version\":1"
+    And stdout contains "\"occurrences\":2"
+    And stdout contains "blk_38865049064139660"
+    And stdout contains "blk_-6952295868487656571"
+    And lines that differ only by an id share a score
+    And stderr is empty
+
   Scenario: indexing reports truncated lines
     Given a file "long.log" with:
       """

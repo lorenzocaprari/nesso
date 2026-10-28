@@ -45,13 +45,24 @@ class TempDir
     std::filesystem::path path_;
 };
 
+std::string letterSuffix(std::size_t index)
+{
+    std::string suffix;
+    do
+    {
+        suffix.push_back(static_cast<char>('a' + static_cast<int>(index % 26)));
+        index /= 26;
+    } while (index > 0);
+    return suffix;
+}
+
 void writeLines(const std::filesystem::path &path, size_t count, std::string_view tag)
 {
     std::ofstream output(path);
     REQUIRE(output);
     for (size_t index = 0; index < count; ++index)
     {
-        output << tag << '-' << index << " database connection\n";
+        output << tag << '-' << letterSuffix(index) << " database connection\n";
     }
     REQUIRE(output);
 }
@@ -368,7 +379,7 @@ TEST_CASE("a duplicate group spanning two windows is embedded once", "[nesso][te
         output << "shared\n";
         for (size_t index = 1; index < nesso::embed::BATCH_WINDOW; ++index)
         {
-            output << "unique-" << index << '\n';
+            output << letterSuffix(index) << '\n';
         }
         output << "shared\n";
         output << "fresh\n";
@@ -391,9 +402,9 @@ TEST_CASE("a duplicate group spanning two windows is embedded once", "[nesso][te
         REQUIRE(output);
         for (size_t index = 0; index < nesso::embed::BATCH_WINDOW; ++index)
         {
-            output << "row-" << index << '\n';
+            output << "row" << letterSuffix(index) << '\n';
         }
-        output << "row-0\n";
+        output << "row" << letterSuffix(0) << '\n';
         REQUIRE(output);
     }
     auto tailEmbedder = std::make_unique<RecordingEmbedder>(1);
@@ -403,12 +414,12 @@ TEST_CASE("a duplicate group spanning two windows is embedded once", "[nesso][te
     REQUIRE(tailIndexed.has_value());
     CHECK(tailIndexed->chunks == nesso::embed::BATCH_WINDOW + 1);
     CHECK(tailRecorder->batches() == std::vector<size_t>{nesso::embed::BATCH_WINDOW});
-    CHECK(std::count(tailRecorder->seen().begin(), tailRecorder->seen().end(), "row-0") == 1);
+    CHECK(std::count(tailRecorder->seen().begin(), tailRecorder->seen().end(), "rowa") == 1);
     const auto stored = nesso::core::readCorpusFile(dir.path() / "tail.nesso");
     REQUIRE(stored.has_value());
     REQUIRE(stored->size() == nesso::embed::BATCH_WINDOW + 1);
-    CHECK(stored->front().chunk.text == "row-0");
-    CHECK(stored->back().chunk.text == "row-0");
+    CHECK(stored->front().chunk.text == "rowa");
+    CHECK(stored->back().chunk.text == "rowa");
     CHECK(stored->front().embedding == stored->back().embedding);
 
     const auto grepped = app.grep({.query = "shared", .files = {log}, .topK = total});
@@ -445,11 +456,11 @@ TEST_CASE("duplicates after a full window are written without another embed", "[
         REQUIRE(output);
         for (size_t index = 0; index < nesso::embed::BATCH_WINDOW; ++index)
         {
-            output << "row-" << index << '\n';
+            output << "row" << letterSuffix(index) << '\n';
         }
         for (size_t index = 0; index < nesso::embed::BATCH_WINDOW; ++index)
         {
-            output << "row-0\n";
+            output << "rowa\n";
         }
         REQUIRE(output);
     }
@@ -461,12 +472,12 @@ TEST_CASE("duplicates after a full window are written without another embed", "[
     REQUIRE(indexed.has_value());
     CHECK(indexed->chunks == total);
     CHECK(recorder->batches() == std::vector<size_t>{nesso::embed::BATCH_WINDOW});
-    CHECK(std::count(recorder->seen().begin(), recorder->seen().end(), "row-0") == 1);
+    CHECK(std::count(recorder->seen().begin(), recorder->seen().end(), "rowa") == 1);
     const auto stored = nesso::core::readCorpusFile(dir.path() / "tail-window.nesso");
     REQUIRE(stored.has_value());
     REQUIRE(stored->size() == total);
-    CHECK(stored->front().chunk.text == "row-0");
-    CHECK(stored->back().chunk.text == "row-0");
+    CHECK(stored->front().chunk.text == "rowa");
+    CHECK(stored->back().chunk.text == "rowa");
     CHECK(stored->front().embedding == stored->back().embedding);
 }
 
@@ -496,4 +507,58 @@ TEST_CASE("stdin duplicates are embedded once", "[nesso][text]")
     REQUIRE(indexed.has_value());
     CHECK(indexed->chunks == 2);
     CHECK(recorder->batches().back() == 1);
+}
+
+TEST_CASE("lines that differ by a masked id are embedded once", "[nesso][text]")
+{
+    const TempDir dir{"nesso_dedup_masked"};
+    const auto log = dir.path() / "blocks.log";
+    {
+        std::ofstream output(log);
+        REQUIRE(output);
+        output << "block blk_10 done\n";
+        output << "block blk_20 done\n";
+        output << "block blk_-3 done\n";
+        REQUIRE(output);
+    }
+
+    auto embedder = std::make_unique<RecordingEmbedder>(1);
+    const RecordingEmbedder *recorder = embedder.get();
+    const nesso::Nesso app{nesso::Config{}, std::move(embedder)};
+    const auto indexed = app.index({.files = {log}, .output = dir.path() / "blocks.nesso"});
+    REQUIRE(indexed.has_value());
+    CHECK(indexed->chunks == 3);
+    CHECK(recorder->seen() == std::vector<std::string>{"block blk_10 done"});
+
+    const auto stored = nesso::core::readCorpusFile(dir.path() / "blocks.nesso");
+    REQUIRE(stored.has_value());
+    REQUIRE(stored->size() == 3);
+    CHECK(stored->at(0).chunk.text == "block blk_10 done");
+    CHECK(stored->at(1).chunk.text == "block blk_20 done");
+    CHECK(stored->at(2).chunk.text == "block blk_-3 done");
+    CHECK(stored->at(0).embedding == stored->at(1).embedding);
+    CHECK(stored->at(1).embedding == stored->at(2).embedding);
+
+    const auto grepped = app.grep({.query = "block", .files = {log}, .topK = 3});
+    REQUIRE(grepped.has_value());
+    REQUIRE(grepped->matches.size() == 3);
+    CHECK(grepped->matches[0].text == "block blk_10 done");
+    CHECK(grepped->matches[1].text == "block blk_20 done");
+    CHECK(grepped->matches[2].text == "block blk_-3 done");
+    for (const nesso::TextMatch &match : grepped->matches)
+    {
+        CHECK(match.occurrences == 3);
+        CHECK(match.score == grepped->matches.front().score);
+    }
+
+    const auto searched = app.search({.query = "block", .index = dir.path() / "blocks.nesso", .topK = 3});
+    REQUIRE(searched.has_value());
+    REQUIRE(searched->matches.size() == 3);
+    CHECK(searched->matches[0].text == "block blk_10 done");
+    CHECK(searched->matches[1].text == "block blk_20 done");
+    CHECK(searched->matches[2].text == "block blk_-3 done");
+    for (const nesso::TextMatch &match : searched->matches)
+    {
+        CHECK(match.occurrences == 3);
+    }
 }

@@ -647,6 +647,7 @@ std::expected<TextResults, Error> Nesso::grep(const GrepRequest &request) const
         std::uint32_t source = 0;
         uint64_t line = 0;
         bool arrayElement = false;
+        std::string text;
     };
     std::vector<Waiting> waiting;
     std::vector<std::string> sources;
@@ -665,7 +666,7 @@ std::expected<TextResults, Error> Nesso::grep(const GrepRequest &request) const
         TextMatch match{.source = sources[item.source],
                         .line = item.line,
                         .score = scores[item.distinctId],
-                        .text = std::string(distinct.text(item.distinctId)),
+                        .text = item.text,
                         .arrayElement = item.arrayElement};
         best.push_back(Candidate{
             .index = item.ordinal, .score = match.score, .distinctId = item.distinctId, .match = std::move(match)});
@@ -741,7 +742,8 @@ std::expected<TextResults, Error> Nesso::grep(const GrepRequest &request) const
                                                                      .distinctId = id,
                                                                      .source = sourceId,
                                                                      .line = chunk.lineNumber,
-                                                                     .arrayElement = chunk.arrayElement};
+                                                                     .arrayElement = chunk.arrayElement,
+                                                                     .text = std::move(chunk.text)};
                                                   if (id < scores.size())
                                                   {
                                                       consider(item);
@@ -833,9 +835,11 @@ std::expected<IndexSummary, Error> Nesso::index(const IndexRequest &request) con
         std::uint32_t source = 0;
         std::uint32_t id = 0;
         bool arrayElement = false;
+        std::string text;
     };
-    // Input order. The text lives once, in `distinct`. A prefix whose ids are already embedded
-    // is written in windows so a short final distinct window does not copy every later line.
+    // Input order. Each slot keeps that line's raw text. The embedded text is the first raw
+    // occurrence of the masked key. A prefix whose ids are already embedded is written in
+    // windows so a short final distinct window does not copy every later line.
     std::vector<Slot> held;
     std::vector<std::string> sources;
     sources.reserve(request.files.size());
@@ -858,8 +862,8 @@ std::expected<IndexSummary, Error> Nesso::index(const IndexRequest &request) con
             written.reserve(count);
             for (std::size_t index = 0; index < count; ++index)
             {
-                const Slot &item = held[offset + index];
-                written.push_back(nesso::core::CorpusChunk{.chunk = {.text = std::string(distinct.text(item.id)),
+                Slot &item = held[offset + index];
+                written.push_back(nesso::core::CorpusChunk{.chunk = {.text = std::move(item.text),
                                                                      .lineNumber = item.lineNumber,
                                                                      .source = sources[item.source],
                                                                      .byteOffset = item.byteOffset,
@@ -924,7 +928,8 @@ std::expected<IndexSummary, Error> Nesso::index(const IndexRequest &request) con
                                                     .byteOffset = chunk.byteOffset,
                                                     .source = sourceId,
                                                     .id = id,
-                                                    .arrayElement = chunk.arrayElement});
+                                                    .arrayElement = chunk.arrayElement,
+                                                    .text = std::move(chunk.text)});
                                 if (distinct.pending().size() == batch)
                                 {
                                     if (const auto flushed = embedOpenWindow(); !flushed)
