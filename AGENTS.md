@@ -8,7 +8,9 @@ Nesso is a Linux-native C++26 CLI for semantic search over local text (`nesso gr
 
 ## Commands
 
-Run these from the repository root. Profiles: `gcc-26` (Release), `gcc-26-debug` (Debug, ASan, UBSan), `gcc-26-fuzz`, `gcc-26-armv8`, `clang-26`, and `code-coverage`.
+Run these from the repository root. Profiles: `gcc-26` (Release), `gcc-26-debug` (Debug, ASan, UBSan, `-fno-sanitize-recover=all`), `gcc-26-fuzz`, `gcc-26-armv8`, `clang-26`, and `code-coverage`.
+
+`nesso_options` in `CMakeLists.txt` is the INTERFACE target every nesso target links: the libraries, the `nesso` binary, the tests, the fuzz harnesses, and `nesso_bench`. It requires `cxx_std_26` with compiler extensions off and holds the warning set. `-Werror` is the CMake option `NESSO_WERROR`, default OFF. No profile sets `user.nesso:werror`. `conanfile.py` copies that conf into `NESSO_WERROR`. `conan build` runs generators again, so `-c user.nesso:werror=True` has to be on both `conan install` and `conan build` or the build step clears it. Optimization, sanitizer, LTO, and visibility flags stay in `user.nesso:cxxflags` and do not reach the ONNX Runtime build. `gcc-26-debug` passes `-fno-sanitize-recover=all` next to `-fsanitize=address,undefined`, so a local debug build stops on the first ASan or UBSan error without `UBSAN_OPTIONS`.
 
 ```bash
 # Conan 2 install. Inside the nesso-build-env image (CONAN_HOME=/opt/conan2) keep --lockfile=conan.lock and --no-remote. Outside that image, drop --no-remote.
@@ -100,7 +102,8 @@ python3 scripts/bench --dataset logdir
 | `python3 scripts/bench` exits on `/usr/bin/time` or a missing binary | It requires GNU time (`/usr/bin/time` from the `time` package) and a built `nesso` (default `build/Release/src/nesso`). The amd64 build-env image includes that package | Outside that image, install `time` and build Release. A tier that does not finish also exits 1 |
 | `conan install --no-remote` misses lockfile packages | The baked cache is `CONAN_HOME=/opt/conan2` inside `nesso-build-env` | Drop `--no-remote` outside that image; keep `--lockfile=conan.lock` |
 | `CMakeUserPresets.json` shows in `git status` | `conan install` writes it and `.gitignore` does not list it | Leave it uncommitted |
-| `prepare-image-amd64` or `prepare-image-arm64` rebuilds for a long time | `scripts/build-env-hash` inputs changed, including `test/functional/go.sum` | Expect that job; its timeout is 360 minutes |
+| A plain `cmake` build uses the compiler default, or a local `gcc-26-debug` run continues after UBSan | `compiler.cppstd` was the only C++ standard, and `gcc-26-debug` had no `-fno-sanitize-recover` | `nesso_options` requires `cxx_std_26` with extensions off. `-Werror` is `NESSO_WERROR`, off unless `conan -c user.nesso:werror=True`. The debug profile stops on the first sanitizer error |
+| `prepare-image-amd64` or `prepare-image-arm64` rebuilds for a long time | `scripts/build-env-hash` inputs changed, including `test/functional/go.sum` and the copied profiles `gcc-26`, `gcc-26-debug`, and `gcc-26-armv8` | Expect that job; its timeout is 360 minutes. Consumer-only `user.nesso:*` edits still change the hash |
 | SLSA provenance fails when the generator `uses` a commit SHA | `.github/workflows/release.yml` calls those workflows by tag | Keep the `vX.Y.Z` tag. The generator checks its own ref |
 | Publishing the Unreleased draft did not publish nesso | That draft's tag name is `unreleased`, which is not `vX.Y.Z`, so `.github/workflows/release.yml` does not run | Bump `version` in `conanfile.py` on `main`, then publish the `vX.Y.Z` draft |
 | Codecov upload warns and `coverage` stays green | `fail_ci_if_error` is false. Forks and Dependabot have no Actions secret. The Codecov GitHub App may be unset, or the org may still require a token for public uploads | Read the `coverage` job log. The floors in `scripts/code-coverage` remain the gate. `.github/codecov.yml` does not add another one |

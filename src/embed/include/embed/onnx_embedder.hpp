@@ -56,7 +56,7 @@ class OnnxEmbedder
 
   private:
     OnnxEmbedder(WordPieceTokenizer tokenizer, const std::filesystem::path &modelPath, const SessionPolicy &policy);
-    struct SessionImpl;
+    class SessionImpl;
     std::unique_ptr<SessionImpl> session_;
     WordPieceTokenizer tokenizer_;
     SessionPolicy policy_{};

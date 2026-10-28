@@ -471,7 +471,7 @@ std::expected<void, EngineError> CorpusWriter::finish()
             sources.push_back(sourceInfoFor(spilled.source));
         }
         ++seen;
-        (void)it;
+        static_cast<void>(it);
     }
     if (seen != chunkCount_ || sources.size() > MAX_SOURCES)
     {
@@ -581,7 +581,7 @@ std::expected<void, EngineError> CorpusWriter::finish()
     {
         return std::unexpected(EngineError::CorruptDatabase);
     }
-    const std::vector<char> matrixPad(static_cast<std::size_t>(matrixOffset - textCursor), '\0');
+    const std::vector<char> matrixPad(matrixOffset - textCursor, '\0');
     if (!writeRaw(output, matrixPad.data(), matrixPad.size()))
     {
         return fail();
@@ -888,7 +888,7 @@ std::expected<MappedCorpus, EngineError> mapCorpusFile(const std::filesystem::pa
     const std::span<const std::byte> stable = impl->file.bytes();
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
     impl->matrix = {reinterpret_cast<const float *>(stable.data() + layout.matrixOffset),
-                    static_cast<std::size_t>(layout.chunkCount * layout.dimensions)};
+                    layout.chunkCount * layout.dimensions};
     return MappedCorpus{std::move(impl)};
 }
 

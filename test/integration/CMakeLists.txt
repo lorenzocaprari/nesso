@@ -2,7 +2,7 @@ add_executable(dependency_link_test dependency_link_test.cpp)
 add_test(NAME dependency_link_test COMMAND dependency_link_test)
 target_link_libraries(
   dependency_link_test
-  PRIVATE Catch2::Catch2WithMain nlohmann_json::nlohmann_json
+  PRIVATE nesso_options Catch2::Catch2WithMain nlohmann_json::nlohmann_json
           onnxruntime::onnxruntime)
 # Linkage smoke test only — keep out of the coverage gate.
 target_compile_options(dependency_link_test PRIVATE -fno-profile-arcs
@@ -10,8 +10,8 @@ target_compile_options(dependency_link_test PRIVATE -fno-profile-arcs
 
 add_executable(grep_integration_test grep_integration_test.cpp)
 target_link_libraries(
-  grep_integration_test PRIVATE nesso_core nesso_embed nesso_parser
-                                Catch2::Catch2WithMain)
+  grep_integration_test PRIVATE nesso_options nesso_core nesso_embed
+                                nesso_parser Catch2::Catch2WithMain)
 target_compile_definitions(
   grep_integration_test PRIVATE NESSO_TEST_FIXTURES="${NESSO_TEST_FIXTURES}"
                                 ${NESSO_MODEL_TEST_DEFS})

@@ -14,7 +14,7 @@ namespace detail
 
 template <SupportedScalar T> T dotProductScalar(std::span<const T> a, std::span<const T> b) noexcept
 {
-    T sum = 0.0;
+    T sum{};
     for (size_t i = 0; i < a.size(); ++i)
     {
         sum += a[i] * b[i];
@@ -24,7 +24,7 @@ template <SupportedScalar T> T dotProductScalar(std::span<const T> a, std::span<
 
 template <SupportedScalar T> T l2SquaredDistanceScalar(std::span<const T> a, std::span<const T> b) noexcept
 {
-    T sum = 0.0;
+    T sum{};
     for (size_t i = 0; i < a.size(); ++i)
     {
         const T delta = a[i] - b[i];
@@ -61,7 +61,7 @@ float dotProductKernel(DistanceKernel kernel, std::span<const float> a, std::spa
         return dotProductAvx2Fma(a, b);
     }
 #else
-    (void)kernel;
+    static_cast<void>(kernel);
 #endif
     return dotProductScalar<float>(a, b);
 }
@@ -74,7 +74,7 @@ float l2SquaredDistanceKernel(DistanceKernel kernel, std::span<const float> a, s
         return l2SquaredDistanceAvx2Fma(a, b);
     }
 #else
-    (void)kernel;
+    static_cast<void>(kernel);
 #endif
     return l2SquaredDistanceScalar<float>(a, b);
 }
@@ -99,9 +99,9 @@ std::expected<T, EngineError> CosineSimilarity::calculate(std::span<const T> a, 
         return std::unexpected(EngineError::DatabaseNotInitialized);
     }
 
-    T dotProduct = 0.0;
-    T normA = 0.0;
-    T normB = 0.0;
+    T dotProduct{};
+    T normA{};
+    T normB{};
 
     for (size_t i = 0; i < a.size(); ++i)
     {
@@ -110,9 +110,9 @@ std::expected<T, EngineError> CosineSimilarity::calculate(std::span<const T> a, 
         normB += b[i] * b[i];
     }
 
-    if (normA == 0.0 || normB == 0.0) [[unlikely]]
+    if (normA == T{} || normB == T{}) [[unlikely]]
     {
-        return 0.0;
+        return T{};
     }
 
     return dotProduct / (std::sqrt(normA) * std::sqrt(normB));

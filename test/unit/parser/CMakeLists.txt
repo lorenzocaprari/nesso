@@ -1,6 +1,6 @@
 add_executable(log_chunker_test log_chunker_test.cpp)
 add_test(NAME log_chunker_test COMMAND log_chunker_test)
-target_link_libraries(log_chunker_test PRIVATE nesso_parser
+target_link_libraries(log_chunker_test PRIVATE nesso_options nesso_parser
                                                Catch2::Catch2WithMain)
 target_compile_definitions(log_chunker_test
                            PRIVATE NESSO_TEST_FIXTURES="${NESSO_TEST_FIXTURES}")

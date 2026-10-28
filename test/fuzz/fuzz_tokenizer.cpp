@@ -39,7 +39,7 @@ extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t *data, std::size_t size
 
     if (auto loaded = nesso::embed::WordPieceTokenizer::fromVocabFile(inputPath))
     {
-        (void)loaded->encode("the quick brown fox");
+        static_cast<void>(loaded->encode("the quick brown fox"));
     }
 
     const auto vocabPath =
@@ -56,7 +56,7 @@ extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t *data, std::size_t size
         {
             capped.resize(kMaxEncodeBytes);
         }
-        (void)tok->encode(capped);
+        static_cast<void>(tok->encode(capped));
     }
 
     std::error_code ec;
