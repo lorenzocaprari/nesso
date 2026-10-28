@@ -22,11 +22,6 @@ enum class EmbedError : uint8_t
 
 inline constexpr size_t DEFAULT_MAX_SEQUENCE_LENGTH = 256;
 inline constexpr size_t MINILM_EMBEDDING_DIMENSIONS = 384;
-// One ONNX Run of the whole corpus, padded to 256, asks for tens of gigabytes.
-// A batch of 32 padded to its own longest sequence stays under a few hundred MB.
-// int8 vectors depend on the other texts in that window, so callers must not
-// change the window size.
-inline constexpr size_t EMBED_BATCH_SIZE = 32;
 inline constexpr std::string_view MINILM_MODEL_ID = "sentence-transformers/all-MiniLM-L6-v2";
 
 } // namespace nesso::embed

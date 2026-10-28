@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include <catch2/catch_all.hpp>
+#include <embed/batch_plan.hpp>
 #include <embed/embedder.hpp>
 #include <nesso.hpp>
 
@@ -173,10 +174,33 @@ TEST_CASE("an exact batch leaves the final flush empty", "[nesso][text]")
 {
     const TempDir dir{"nesso_flush_exact_batch"};
     const auto log = dir.path() / "exact.log";
-    writeLines(log, nesso::embed::EMBED_BATCH_SIZE, "epsilon");
-    const nesso::Nesso app{nesso::Config{}, std::make_unique<RecordingEmbedder>(1)};
+    writeLines(log, nesso::embed::BATCH_WINDOW, "epsilon");
+    auto embedder = std::make_unique<RecordingEmbedder>(1);
+    const RecordingEmbedder *recorder = embedder.get();
+    const nesso::Nesso app{nesso::Config{}, std::move(embedder)};
     REQUIRE(app.index({.files = {log}, .output = dir.path() / "exact.nesso"}).has_value());
+    CHECK(recorder->batches() == std::vector<size_t>{nesso::embed::BATCH_WINDOW});
     REQUIRE(app.grep({.query = "database", .files = {log}}).has_value());
+    CHECK(recorder->batches().size() == 2);
+}
+
+TEST_CASE("index flushes a fixed window for every session count", "[nesso][text]")
+{
+    const TempDir dir{"nesso_flush_window"};
+    const auto log = dir.path() / "window.log";
+    constexpr size_t total = nesso::embed::BATCH_WINDOW + 1;
+    writeLines(log, total, "window");
+    auto singleEmbedder = std::make_unique<RecordingEmbedder>(1);
+    auto multiEmbedder = std::make_unique<RecordingEmbedder>(3);
+    const RecordingEmbedder *single = singleEmbedder.get();
+    const RecordingEmbedder *multi = multiEmbedder.get();
+    const nesso::Nesso singleApp{nesso::Config{}, std::move(singleEmbedder)};
+    const nesso::Nesso multiApp{nesso::Config{}, std::move(multiEmbedder)};
+    REQUIRE(singleApp.index({.files = {log}, .output = dir.path() / "single.nesso"}).has_value());
+    REQUIRE(multiApp.index({.files = {log}, .output = dir.path() / "multi.nesso"}).has_value());
+    const std::vector<size_t> expected{nesso::embed::BATCH_WINDOW, 1};
+    CHECK(single->batches() == expected);
+    CHECK(multi->batches() == expected);
 }
 
 TEST_CASE("a flush reports an embedder error", "[nesso][text]")

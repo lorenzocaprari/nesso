@@ -49,7 +49,7 @@ For the fp32 model, `N` is the intra-op thread count of the one session. The def
 - A file whose first 4 KiB contains a NUL byte is rejected. Directories are rejected.
 - Lines: one chunk per non-empty line. Lines longer than 4096 characters are truncated. A trailing CR is stripped.
 - JSON: only objects with a string field are indexed (`message` by default, or `--json-field`). Malformed lines and documents are skipped. String values longer than 4096 characters are truncated. A JSON array is numbered `element N`, not `line N`.
-- `grep` embeds in batches and keeps the top matches. `index` writes the corpus file. `search` maps that file. Stdin cannot be reread, so that command keeps the stdin text.
+- `grep` embeds a fixed window of 1024 texts, sorted by token count, and keeps the top matches. `index` writes the corpus file. Rebuild a corpus after upgrading so its vectors match that window. `search` maps that file. Stdin cannot be reread, so that command keeps the stdin text.
 - Empty lines and JSON values without that string field are skipped. Overlong log lines and JSON string values are truncated. Skip and truncation counts are printed on stderr.
 - `index` records each file source's size and modification time. `search` warns on stderr when a source changed or is missing; stdin sources are not tracked.
 

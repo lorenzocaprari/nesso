@@ -40,7 +40,7 @@ Chosen option: "v3 with distinct vectors, per-line references, and a policy bloc
 * **Policy block.** It holds sorted UTF-8 `key=value` records:
   * the model sha256, quantization, and vocab sha256;
   * `tokens.max=256` and `truncate=4096-codepoints`;
-  * `batch=window:1024,max:64,tokens:2048,order:length-then-input`;
+  * `batch=window:1024,max:32,tokens:1024,order:length-then-input`;
   * the dedup key and mask rule versions.
 
   Values are constants in the source, never derived from core count or RAM.

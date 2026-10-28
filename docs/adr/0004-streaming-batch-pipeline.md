@@ -33,9 +33,14 @@ merged as [PR #88](https://github.com/lorenzocaprari/nesso/pull/88) on 2026-10-1
 
 * Good, because `grep` keeps at most `topK` matches after each batch (score
   descending, then ascending ordinal) and `index` spills each batch.
-  Each flush is one `EMBED_BATCH_SIZE` window per embedder session.
-  `inferAll` still splits on that window, so the 32-text groups do not
-  follow the session count. `src/cli_parser.cpp` has no batch option.
+  Each flush is one fixed window of 1024 texts
+  (`BATCH_WINDOW` in `src/embed/include/embed/batch_plan.hpp`).
+  That window is sorted by token count and cut at 32 texts and 1024 padded
+  tokens. The groups do not follow the session count.
+  [ADR 0010](0010-corpus-format-v3.md) records the same policy for corpus
+  format v3. This tree still writes the current corpus format, so an
+  existing corpus needs `nesso index` again. `src/cli_parser.cpp` has no
+  batch option.
 * Good, because an embed, score, or spill error returns from that batch.
   `index` replaces the destination only when `CorpusWriter::finish` completes,
   and the destructor removes the spill while the writer is still open.

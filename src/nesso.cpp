@@ -9,6 +9,7 @@
 
 #include <core/corpus_index.hpp>
 #include <core/top_k.hpp>
+#include <embed/batch_plan.hpp>
 #include <embed/embedder.hpp>
 #include <embed/onnx_embedder.hpp>
 #include <parser/log_chunker.hpp>
@@ -568,12 +569,8 @@ std::expected<const nesso::embed::Embedder *, Error> Nesso::embedder() const
     return embedder_.get();
 }
 
-// One 32-text window per session. inferAll splits on EMBED_BATCH_SIZE, so the
-// windows stay the same for every session count and the int8 vectors do not move.
-static size_t streamBatch(const nesso::embed::Embedder &embedder)
-{
-    return embedder.sessions() * nesso::embed::EMBED_BATCH_SIZE;
-}
+// Fixed window. Session count must not change which texts share a padded run.
+static size_t streamBatch() { return nesso::embed::BATCH_WINDOW; }
 
 struct PendingChunk
 {
@@ -644,7 +641,7 @@ std::expected<TextResults, Error> Nesso::grep(const GrepRequest &request) const
     { return left.score != right.score ? left.score > right.score : left.index < right.index; };
 
     std::vector<Candidate> best;
-    const size_t batch = streamBatch(**model);
+    const size_t batch = streamBatch();
     std::vector<PendingChunk> pending;
     pending.reserve(batch);
     ProgressReporter progress(request.progress);
@@ -791,7 +788,7 @@ std::expected<IndexSummary, Error> Nesso::index(const IndexRequest &request) con
         return nothingToIndex(request, *scanned);
     }
 
-    const size_t batch = streamBatch(**model);
+    const size_t batch = streamBatch();
     std::vector<PendingChunk> pending;
     pending.reserve(batch);
     ProgressReporter progress(request.progress);

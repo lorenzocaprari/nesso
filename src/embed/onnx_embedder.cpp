@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include <embed/amx_guard.hpp>
+#include <embed/batch_plan.hpp>
 #include <embed/onnx_embedder.hpp>
 
 #include <algorithm>
@@ -190,7 +191,7 @@ class OnnxEmbedder::SessionImpl
 
   private:
     [[nodiscard]] std::expected<std::vector<std::vector<float>>, EmbedError>
-    infer(Ort::Session &session, std::span<const TokenizedInput> encoded) const;
+    infer(Ort::Session &session, std::span<const TokenizedInput> encoded, std::span<const size_t> indices) const;
 
     Ort::Env env_ = makeEnv();
     std::vector<std::unique_ptr<Ort::Session>> sessions_;
@@ -217,30 +218,31 @@ OnnxEmbedder::SessionImpl::SessionImpl(const std::filesystem::path &modelPath, c
 }
 
 std::expected<std::vector<std::vector<float>>, EmbedError>
-OnnxEmbedder::SessionImpl::infer(Ort::Session &session, std::span<const TokenizedInput> encoded) const
+OnnxEmbedder::SessionImpl::infer(Ort::Session &session, std::span<const TokenizedInput> encoded,
+                                 std::span<const size_t> indices) const
 {
-    if (encoded.empty())
+    if (indices.empty())
     {
         return std::unexpected(EmbedError::InvalidInput);
     }
 
     size_t paddedLength = 0;
-    for (const TokenizedInput &item : encoded)
+    for (const size_t index : indices)
     {
-        paddedLength = std::max(paddedLength, item.inputIds.size());
+        paddedLength = std::max(paddedLength, encoded[index].inputIds.size());
     }
     if (paddedLength == 0)
     {
         return std::unexpected(EmbedError::InferenceFailure);
     }
 
-    const size_t batchSize = encoded.size();
+    const size_t batchSize = indices.size();
     std::vector<int64_t> flatInputIds(batchSize * paddedLength, 0);
     std::vector<int64_t> flatAttentionMask(batchSize * paddedLength, 0);
     std::vector<int64_t> flatTokenTypeIds(batchSize * paddedLength, 0);
     for (size_t batchIndex = 0; batchIndex < batchSize; ++batchIndex)
     {
-        const TokenizedInput &item = encoded[batchIndex];
+        const TokenizedInput &item = encoded[indices[batchIndex]];
         for (size_t token = 0; token < item.inputIds.size(); ++token)
         {
             const size_t offset = (batchIndex * paddedLength) + token;
@@ -324,25 +326,26 @@ OnnxEmbedder::SessionImpl::inferAll(std::span<const TokenizedInput> encoded,
         return std::unexpected(EmbedError::InvalidInput);
     }
 
-    const size_t batchCount = (encoded.size() + EMBED_BATCH_SIZE - 1) / EMBED_BATCH_SIZE;
-    std::vector<std::expected<std::vector<std::vector<float>>, EmbedError>> parts(batchCount);
-    const size_t pool = sessions_.size();
-    for (size_t wave = 0; wave < batchCount; wave += pool)
+    std::vector<size_t> tokenCounts;
+    tokenCounts.reserve(encoded.size());
+    for (const TokenizedInput &item : encoded)
     {
-        const size_t width = std::min(pool, batchCount - wave);
+        tokenCounts.push_back(item.inputIds.size());
+    }
+    const BatchPlan plan = planBatches(tokenCounts);
+    std::vector<std::expected<std::vector<std::vector<float>>, EmbedError>> parts(plan.batches.size());
+    const std::vector<BatchWave> waves = batchWaves(plan.batches.size(), sessions_.size());
+    size_t waveStart = 0;
+    for (const BatchWave &wave : waves)
+    {
         std::vector<std::thread> workers;
-        workers.reserve(width);
-        for (size_t slot = 0; slot < width; ++slot)
+        workers.reserve(wave.batchIndices.size());
+        for (size_t slot = 0; slot < wave.batchIndices.size(); ++slot)
         {
-            const size_t batchIndex = wave + slot;
+            const size_t batchIndex = wave.batchIndices[slot];
             workers.emplace_back(
-                [this, batchIndex, slot, encoded, &parts]
-                {
-                    const size_t offset = batchIndex * EMBED_BATCH_SIZE;
-                    const size_t count = std::min(EMBED_BATCH_SIZE, encoded.size() - offset);
-                    parts[batchIndex] =
-                        infer(*sessions_[slot], std::span<const TokenizedInput>{encoded.data() + offset, count});
-                });
+                [this, batchIndex, slot, encoded, &plan, &parts]
+                { parts[batchIndex] = infer(*sessions_[slot], encoded, plan.batches[batchIndex].indices); });
         }
         for (std::thread &worker : workers)
         {
@@ -351,7 +354,7 @@ OnnxEmbedder::SessionImpl::inferAll(std::span<const TokenizedInput> encoded,
         if (onCompleted)
         {
             size_t completed = 0;
-            for (size_t index = 0; index < wave + width; ++index)
+            for (size_t index = 0; index < waveStart + wave.batchIndices.size(); ++index)
             {
                 if (!parts[index])
                 {
@@ -359,26 +362,27 @@ OnnxEmbedder::SessionImpl::inferAll(std::span<const TokenizedInput> encoded,
                 }
                 completed += parts[index]->size();
                 // A wave runs several batches at once. Report each one so
-                // progress still advances by a batch, in input order.
-                if (index >= wave)
+                // progress still advances by a batch.
+                if (index >= waveStart)
                 {
                     onCompleted(completed);
                 }
             }
         }
+        waveStart += wave.batchIndices.size();
     }
 
-    std::vector<std::vector<float>> embeddings;
-    embeddings.reserve(encoded.size());
+    std::vector<std::vector<float>> planOrder;
+    planOrder.reserve(encoded.size());
     for (const auto &part : parts)
     {
         if (!part)
         {
             return std::unexpected(part.error());
         }
-        embeddings.insert(embeddings.end(), part->begin(), part->end());
+        planOrder.insert(planOrder.end(), part->begin(), part->end());
     }
-    return embeddings;
+    return scatter(plan, std::move(planOrder));
 }
 
 OnnxEmbedder::OnnxEmbedder(WordPieceTokenizer tokenizer, const std::filesystem::path &modelPath, size_t threads)
