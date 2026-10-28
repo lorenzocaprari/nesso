@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793215403057,
+  "lastUpdate": 1793215841629,
   "repoUrl": "https://github.com/lorenzocaprari/nesso",
   "entries": {
     "nesso": [
@@ -3185,6 +3185,60 @@ window.BENCHMARK_DATA = {
           {
             "name": "grep-100000-rss",
             "value": 154845184,
+            "unit": "bytes"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "caprarilorenzo5@gmail.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "committer": {
+            "email": "85455384+lorenzocaprari@users.noreply.github.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "distinct": true,
+          "id": "3d53eddfd1924f36a7f75707e2b4d6a13b96949f",
+          "message": "feat(cli): add --json output to grep and search\n\nRender each grep and search match as one JSON Line. Strings use nlohmann\ndump with error_handler_t::replace, so invalid UTF-8 becomes U+FFFD.\nThe score is the shortest float round-trip from to_chars, independent of\nlocale. occurrences stays after text because main already prints it.\ndense, bm25, lexical, and mode are not added.",
+          "timestamp": "2026-10-28T20:18:31+01:00",
+          "tree_id": "2779da096af6436095b2ad033c0205d49f7e018a",
+          "url": "https://github.com/lorenzocaprari/nesso/commit/3d53eddfd1924f36a7f75707e2b4d6a13b96949f"
+        },
+        "date": 1793215841073,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "grep-1000-wall",
+            "value": 0.63,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-1000-rss",
+            "value": 143712256,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-10000-wall",
+            "value": 4.77,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-10000-rss",
+            "value": 149520384,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-100000-wall",
+            "value": 46.91,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-100000-rss",
+            "value": 154279936,
             "unit": "bytes"
           }
         ]
