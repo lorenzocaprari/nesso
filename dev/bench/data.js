@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793194853464,
+  "lastUpdate": 1793199070499,
   "repoUrl": "https://github.com/lorenzocaprari/nesso",
   "entries": {
     "nesso": [
@@ -2861,6 +2861,60 @@ window.BENCHMARK_DATA = {
           {
             "name": "grep-100000-rss",
             "value": 153214976,
+            "unit": "bytes"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "caprarilorenzo5@gmail.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "committer": {
+            "email": "85455384+lorenzocaprari@users.noreply.github.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "distinct": true,
+          "id": "274a0e7e60b83ab6d72b9fdc857a3de77875bf9c",
+          "message": "fix(embed): join inference workers and contain worker exceptions\n\ninferAll started std::thread workers in a loop. If creating one\nthrew std::system_error, destroying the vector called std::terminate\non the joinable threads already started. bad_alloc from the flat\ninput buffers, or a system_error from the worker, did the same.\n\nJoin with std::jthread so threads that already started are joined\nbefore return. Map only those resource failures to InferenceFailure\nand let any other exception terminate the process.",
+          "timestamp": "2026-10-28T15:45:27+01:00",
+          "tree_id": "71bf493d3e707fdb78cf1811e271cb6d67669f07",
+          "url": "https://github.com/lorenzocaprari/nesso/commit/274a0e7e60b83ab6d72b9fdc857a3de77875bf9c"
+        },
+        "date": 1793199069854,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "grep-1000-wall",
+            "value": 2.17,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-1000-rss",
+            "value": 151384064,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-10000-wall",
+            "value": 10.49,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-10000-rss",
+            "value": 150401024,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-100000-wall",
+            "value": 91.11,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-100000-rss",
+            "value": 154238976,
             "unit": "bytes"
           }
         ]
