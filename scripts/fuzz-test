@@ -45,11 +45,19 @@ unset ASAN_OPTIONS UBSAN_OPTIONS || true
 export CC=afl-clang-lto
 export CXX=afl-clang-lto++
 
+# Off by default. This script configures with cmake after conan install and does
+# not call conan build, so the install toolchain is the one that is used.
+werror_args=()
+if [[ "${NESSO_WERROR:-}" == "1" ]]; then
+  werror_args+=(-c "user.nesso:werror=True")
+fi
+
 conan_install() {
   conan install . -of "${OUT_DIR}" \
     -pr:h "${CONAN_PROFILE}" -pr:b default \
     --lockfile=conan.lock \
     --build=missing \
+    "${werror_args[@]}" \
     "$@"
 }
 

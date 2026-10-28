@@ -23,7 +23,7 @@ Release profile: replace `gcc-26-debug` with `gcc-26`. The binary is `build/Debu
 
 `nesso_options` is an INTERFACE library in `CMakeLists.txt`. Every nesso target links it, including tests, the fuzz harnesses, and the benchmark. It requests C++26 (`cxx_std_26`), turns compiler extensions off, and adds the warning set below for GCC and Clang. Those options are usage requirements of the nesso targets. They are not applied when ONNX Runtime, Catch2, CLI11, or nlohmann-json is built. Profile optimization, sanitizer, and LTO flags stay in `user.nesso:cxxflags` for the same reason.
 
-`-Werror` is off unless `NESSO_WERROR` is ON (`-DNESSO_WERROR=ON` for a plain CMake build). No profile sets it. `conanfile.py` turns it on when the command passes `-c user.nesso:werror=True`. `conan build` writes the toolchain again, so omit the flag there and the build comes back without `-Werror`.
+`-Werror` is off unless `NESSO_WERROR` is ON (`-DNESSO_WERROR=ON` for a plain CMake build). No profile sets it. `conanfile.py` turns it on when the command passes `-c user.nesso:werror=True`. `conan build` writes the toolchain again, so omit the flag there and the build comes back without `-Werror`. `NESSO_WERROR=1` makes `scripts/code-coverage` pass that `-c` on `conan build` and `scripts/fuzz-test` pass it on `conan install`. The default is off.
 
 `conan/profiles/gcc-26-debug` passes `-fno-sanitize-recover=all` with `-fsanitize=address,undefined`. ASan and UBSan stop on the first error without `UBSAN_OPTIONS`.
 
