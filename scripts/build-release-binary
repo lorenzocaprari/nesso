@@ -60,12 +60,13 @@ echo "build-release-binary: SOURCE_DATE_EPOCH=${SOURCE_DATE_EPOCH} ROOT=${ROOT}"
 PROFILE="$(release_conan_profile)"
 echo "build-release-binary: profile=${PROFILE} machine=$(uname -m)"
 conan profile detect --force
-# Graph only, for scripts/third-party-notices. Conan skips the binaries of
-# header-only packages and of libraries nothing links, which leaves them without
-# a package folder; skip_binaries=False keeps the folders and their license files.
-# No --build=missing here: this call must never build anything.
+# Graph only. Conan skips the binaries of header-only packages and of libraries
+# nothing links, which leaves them without a package folder; skip_binaries=False
+# keeps the folders and their license files. No --build=missing here: this call
+# must never build anything. The same JSON feeds the license gate and the notices.
 conan install . -pr:h "${PROFILE}" -pr:b default --lockfile=conan.lock --no-remote \
   -c tools.graph:skip_binaries=False --format=json >"${TMPDIR}/conan-graph.json"
+python3 "${ROOT}/scripts/check-runtime-licenses" "${TMPDIR}/conan-graph.json"
 conan install . -pr:h "${PROFILE}" -pr:b default --lockfile=conan.lock --build=missing --no-remote
 conan build . -pr:h "${PROFILE}" -pr:b default --lockfile=conan.lock --build=missing --no-remote
 
