@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793179560933,
+  "lastUpdate": 1793182441257,
   "repoUrl": "https://github.com/lorenzocaprari/nesso",
   "entries": {
     "nesso": [
@@ -2375,6 +2375,60 @@ window.BENCHMARK_DATA = {
           {
             "name": "grep-100000-rss",
             "value": 157933568,
+            "unit": "bytes"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "caprarilorenzo5@gmail.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "committer": {
+            "email": "85455384+lorenzocaprari@users.noreply.github.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "distinct": true,
+          "id": "e70312dc5adc04efb90ddcfc8a6b514e238c2d94",
+          "message": "docs(adr): extend the command-line contract for stdin, colour, and a positional corpus\n\nRecord the approved stdin, colour, positional corpus, and index -o rules in ADR 0009. No behaviour change.",
+          "timestamp": "2026-10-28T11:09:28+01:00",
+          "tree_id": "a4f76eff3e605d85edd18e6aab3b7f02e82114bb",
+          "url": "https://github.com/lorenzocaprari/nesso/commit/e70312dc5adc04efb90ddcfc8a6b514e238c2d94"
+        },
+        "date": 1793182440533,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "grep-1000-wall",
+            "value": 0.59,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-1000-rss",
+            "value": 148054016,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-10000-wall",
+            "value": 4.31,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-10000-rss",
+            "value": 148684800,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-100000-wall",
+            "value": 40.3,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-100000-rss",
+            "value": 151744512,
             "unit": "bytes"
           }
         ]
