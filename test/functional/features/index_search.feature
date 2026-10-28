@@ -114,6 +114,22 @@ Feature: index and search
     And stdout contains "checked in line"
     And stdout contains "line 1:"
 
+  Scenario: search json rows count lines that share text
+    Given a file "app.log" with:
+      """
+      database connection refused
+      database connection refused
+      """
+    When I run nesso with arguments index -o {dir}/corpus.nesso {dir}/app.log
+    Then the exit code is 0
+    When I run nesso with arguments search "database connection error" --json -k 2 -i {dir}/corpus.nesso
+    Then the exit code is 0
+    And stdout contains "\"schema_version\":1"
+    And stdout contains "\"occurrences\":2"
+    And stdout contains "\"kind\":\"line\""
+    And lines that share text share a score
+    And stderr is empty
+
   Scenario: indexing reports truncated lines
     Given a file "long.log" with:
       """

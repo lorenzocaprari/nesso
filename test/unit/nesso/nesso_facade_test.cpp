@@ -13,6 +13,7 @@
 #include <array>
 #include <cstdint>
 #include <cstdlib>
+#include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
@@ -476,4 +477,77 @@ TEST_CASE("one session and several sessions write the same corpus bytes", "[ness
     REQUIRE(one.index({.files = {log}, .output = oneCorpus}).has_value());
     REQUIRE(many.index({.files = {log}, .output = manyCorpus}).has_value());
     CHECK(readFile(oneCorpus) == readFile(manyCorpus));
+}
+
+TEST_CASE("a distinct text keeps the same vector when duplicates are added", "[nesso][text]")
+{
+    const std::filesystem::path modelDir{NESSO_MODELS_DIR};
+    if (!std::filesystem::is_regular_file(modelDir / "model.onnx") ||
+        !std::filesystem::is_regular_file(modelDir / "vocab.txt"))
+    {
+#ifdef NESSO_REQUIRE_MODEL
+        FAIL("models/ not present; run scripts/fetch-model");
+#else
+        SKIP("models/ not present; run scripts/fetch-model");
+#endif
+    }
+
+    const TempDir dir{"nesso_dedup_vectors"};
+    const auto unique = dir.path() / "unique.log";
+    const auto duplicated = dir.path() / "duplicated.log";
+    {
+        std::ofstream plain(unique);
+        std::ofstream copies(duplicated);
+        REQUIRE(plain);
+        REQUIRE(copies);
+        const std::array<const char *, 3> lines{"alpha line", "beta line", "gamma line"};
+        for (const char *line : lines)
+        {
+            plain << line << '\n';
+            copies << line << '\n';
+            copies << line << '\n';
+        }
+        REQUIRE(plain);
+        REQUIRE(copies);
+    }
+
+    const nesso::Nesso app{nesso::Config{.modelDir = modelDir, .threads = 1}};
+    const auto plainCorpus = dir.path() / "plain.nesso";
+    const auto copyCorpus = dir.path() / "copy.nesso";
+    REQUIRE(app.index({.files = {unique}, .output = plainCorpus}).has_value());
+    REQUIRE(app.index({.files = {duplicated}, .output = copyCorpus}).has_value());
+
+    const auto plainChunks = nesso::core::readCorpusFile(plainCorpus);
+    const auto copyChunks = nesso::core::readCorpusFile(copyCorpus);
+    REQUIRE(plainChunks.has_value());
+    REQUIRE(copyChunks.has_value());
+    REQUIRE(plainChunks->size() == 3);
+    REQUIRE(copyChunks->size() == 6);
+
+    const auto sameBytes = [](const std::vector<float> &left, const std::vector<float> &right)
+    {
+        REQUIRE(left.size() == right.size());
+        REQUIRE_FALSE(left.empty());
+        return std::memcmp(left.data(), right.data(), left.size() * sizeof(float)) == 0;
+    };
+    for (size_t index = 0; index < plainChunks->size(); ++index)
+    {
+        CHECK(sameBytes((*plainChunks)[index].embedding, (*copyChunks)[index * 2].embedding));
+        CHECK(sameBytes((*copyChunks)[index * 2].embedding, (*copyChunks)[index * 2 + 1].embedding));
+    }
+
+    const auto plainHits = app.grep({.query = "alpha", .files = {unique}, .topK = 3});
+    const auto copyHits = app.grep({.query = "alpha", .files = {duplicated}, .topK = 6});
+    REQUIRE(plainHits.has_value());
+    REQUIRE(copyHits.has_value());
+    REQUIRE(plainHits->matches.size() == 3);
+    REQUIRE(copyHits->matches.size() == 6);
+    for (const nesso::TextMatch &match : copyHits->matches)
+    {
+        const auto found = std::ranges::find_if(plainHits->matches, [&match](const nesso::TextMatch &plain)
+                                                { return plain.text == match.text; });
+        REQUIRE(found != plainHits->matches.end());
+        CHECK(match.score == found->score);
+        CHECK(match.occurrences == 2);
+    }
 }

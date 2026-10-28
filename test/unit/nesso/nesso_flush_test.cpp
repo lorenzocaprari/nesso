@@ -2,13 +2,17 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include <catch2/catch_all.hpp>
+#include <core/corpus_index.hpp>
 #include <embed/batch_plan.hpp>
 #include <embed/embedder.hpp>
 #include <nesso.hpp>
 
+#include <algorithm>
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
+#include <iostream>
+#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -68,14 +72,18 @@ class RecordingEmbedder final : public nesso::embed::Embedder
     embedBatch(std::span<const std::string> texts, ProgressCallback) const override
     {
         batches_.push_back(texts.size());
+        seen_.insert(seen_.end(), texts.begin(), texts.end());
         return std::vector<std::vector<float>>(texts.size(), std::vector<float>{1.F, 0.F, 0.F, 0.F});
     }
 
     [[nodiscard]] const std::vector<size_t> &batches() const { return batches_; }
 
+    [[nodiscard]] const std::vector<std::string> &seen() const { return seen_; }
+
   private:
     size_t sessions_;
     mutable std::vector<size_t> batches_;
+    mutable std::vector<std::string> seen_;
 };
 
 enum class BatchBehavior : std::uint8_t
@@ -155,6 +163,24 @@ void requireIndexKind(const std::expected<nesso::IndexSummary, nesso::Error> &re
     CHECK(result.error().cause == cause);
 }
 
+class CinGuard
+{
+  public:
+    explicit CinGuard(std::istream &input) : previous_(std::cin.rdbuf(input.rdbuf())) { std::cin.clear(); }
+
+    CinGuard(const CinGuard &) = delete;
+    CinGuard &operator=(const CinGuard &) = delete;
+
+    ~CinGuard()
+    {
+        std::cin.rdbuf(previous_);
+        std::cin.clear();
+    }
+
+  private:
+    std::streambuf *previous_;
+};
+
 } // namespace
 
 TEST_CASE("zero sessions flush every line in one batch", "[nesso][text]")
@@ -201,6 +227,17 @@ TEST_CASE("index flushes a fixed window for every session count", "[nesso][text]
     const std::vector<size_t> expected{nesso::embed::BATCH_WINDOW, 1};
     CHECK(single->batches() == expected);
     CHECK(multi->batches() == expected);
+}
+
+TEST_CASE("a full window reports the embed error and stops", "[nesso][text]")
+{
+    const TempDir dir{"nesso_flush_window_error"};
+    const auto log = dir.path() / "full.log";
+    writeLines(log, nesso::embed::BATCH_WINDOW + 3, "gamma");
+    const nesso::Nesso app = fallibleApp(BatchBehavior::Error);
+    requireKind(app.grep({.query = "database", .files = {log}}), nesso::ErrorKind::Embed, nesso::ErrorCause::Inference);
+    requireIndexKind(app.index({.files = {log}, .output = dir.path() / "err.nesso"}), nesso::ErrorKind::Embed,
+                     nesso::ErrorCause::Inference);
 }
 
 TEST_CASE("a flush reports an embedder error", "[nesso][text]")
@@ -274,4 +311,189 @@ TEST_CASE("a batch embed exception leaves the flush", "[nesso][text]")
     REQUIRE_THROWS_AS(app.index({.files = {full}, .output = dir.path() / "throw.nesso"}), std::runtime_error);
     REQUIRE_THROWS_AS(app.grep({.query = "database", .files = {tail}}), std::runtime_error);
     REQUIRE_THROWS_AS(app.index({.files = {tail}, .output = dir.path() / "tail-throw.nesso"}), std::runtime_error);
+}
+
+TEST_CASE("identical lines produce one embed call", "[nesso][text]")
+{
+    const TempDir dir{"nesso_dedup_identical"};
+    const auto log = dir.path() / "same.log";
+    {
+        std::ofstream output(log);
+        REQUIRE(output);
+        for (int index = 0; index < 8; ++index)
+        {
+            output << "repeat me\n";
+        }
+        REQUIRE(output);
+    }
+
+    auto embedder = std::make_unique<RecordingEmbedder>(1);
+    const RecordingEmbedder *recorder = embedder.get();
+    const nesso::Nesso app{nesso::Config{}, std::move(embedder)};
+    const auto indexed = app.index({.files = {log}, .output = dir.path() / "same.nesso"});
+    REQUIRE(indexed.has_value());
+    CHECK(indexed->chunks == 8);
+    CHECK(recorder->batches() == std::vector<size_t>{1});
+    CHECK(recorder->seen() == std::vector<std::string>{"repeat me"});
+
+    const auto grepped = app.grep({.query = "repeat", .files = {log}, .topK = 8});
+    REQUIRE(grepped.has_value());
+    REQUIRE(grepped->matches.size() == 8);
+    for (size_t index = 0; index < grepped->matches.size(); ++index)
+    {
+        CHECK(grepped->matches[index].line == index + 1);
+        CHECK(grepped->matches[index].text == "repeat me");
+        CHECK(grepped->matches[index].occurrences == 8);
+        CHECK(grepped->matches[index].score == grepped->matches.front().score);
+    }
+    CHECK(recorder->batches() == std::vector<size_t>{1, 1});
+
+    const auto searched = app.search({.query = "repeat", .index = dir.path() / "same.nesso", .topK = 8});
+    REQUIRE(searched.has_value());
+    REQUIRE(searched->matches.size() == 8);
+    for (const nesso::TextMatch &match : searched->matches)
+    {
+        CHECK(match.occurrences == 8);
+    }
+}
+
+TEST_CASE("a duplicate group spanning two windows is embedded once", "[nesso][text]")
+{
+    const TempDir dir{"nesso_dedup_window"};
+    const auto log = dir.path() / "window.log";
+    const size_t total = nesso::embed::BATCH_WINDOW + 2;
+    {
+        std::ofstream output(log);
+        REQUIRE(output);
+        output << "shared\n";
+        for (size_t index = 1; index < nesso::embed::BATCH_WINDOW; ++index)
+        {
+            output << "unique-" << index << '\n';
+        }
+        output << "shared\n";
+        output << "fresh\n";
+        REQUIRE(output);
+    }
+
+    auto embedder = std::make_unique<RecordingEmbedder>(2);
+    const RecordingEmbedder *recorder = embedder.get();
+    const nesso::Nesso app{nesso::Config{}, std::move(embedder)};
+    const auto indexed = app.index({.files = {log}, .output = dir.path() / "window.nesso"});
+    REQUIRE(indexed.has_value());
+    CHECK(indexed->chunks == total);
+    CHECK(recorder->batches() == std::vector<size_t>{nesso::embed::BATCH_WINDOW, 1});
+    CHECK(std::count(recorder->seen().begin(), recorder->seen().end(), "shared") == 1);
+    CHECK(std::find(recorder->seen().begin(), recorder->seen().end(), "fresh") != recorder->seen().end());
+
+    const auto tail = dir.path() / "tail.log";
+    {
+        std::ofstream output(tail);
+        REQUIRE(output);
+        for (size_t index = 0; index < nesso::embed::BATCH_WINDOW; ++index)
+        {
+            output << "row-" << index << '\n';
+        }
+        output << "row-0\n";
+        REQUIRE(output);
+    }
+    auto tailEmbedder = std::make_unique<RecordingEmbedder>(1);
+    const RecordingEmbedder *tailRecorder = tailEmbedder.get();
+    const nesso::Nesso tailApp{nesso::Config{}, std::move(tailEmbedder)};
+    const auto tailIndexed = tailApp.index({.files = {tail}, .output = dir.path() / "tail.nesso"});
+    REQUIRE(tailIndexed.has_value());
+    CHECK(tailIndexed->chunks == nesso::embed::BATCH_WINDOW + 1);
+    CHECK(tailRecorder->batches() == std::vector<size_t>{nesso::embed::BATCH_WINDOW});
+    CHECK(std::count(tailRecorder->seen().begin(), tailRecorder->seen().end(), "row-0") == 1);
+    const auto stored = nesso::core::readCorpusFile(dir.path() / "tail.nesso");
+    REQUIRE(stored.has_value());
+    REQUIRE(stored->size() == nesso::embed::BATCH_WINDOW + 1);
+    CHECK(stored->front().chunk.text == "row-0");
+    CHECK(stored->back().chunk.text == "row-0");
+    CHECK(stored->front().embedding == stored->back().embedding);
+
+    const auto grepped = app.grep({.query = "shared", .files = {log}, .topK = total});
+    REQUIRE(grepped.has_value());
+    REQUIRE(grepped->matches.size() == total);
+    size_t shared = 0;
+    for (const nesso::TextMatch &match : grepped->matches)
+    {
+        if (match.text == "shared")
+        {
+            ++shared;
+            CHECK(match.occurrences == 2);
+        }
+        else if (match.text == "fresh")
+        {
+            CHECK(match.occurrences == 1);
+        }
+        else
+        {
+            CHECK(match.occurrences == 1);
+        }
+    }
+    CHECK(shared == 2);
+    CHECK(grepped->matches.front().line < grepped->matches.back().line);
+}
+
+TEST_CASE("duplicates after a full window are written without another embed", "[nesso][text]")
+{
+    const TempDir dir{"nesso_dedup_tail_window"};
+    const auto log = dir.path() / "tail-window.log";
+    const size_t total = nesso::embed::BATCH_WINDOW * 2;
+    {
+        std::ofstream output(log);
+        REQUIRE(output);
+        for (size_t index = 0; index < nesso::embed::BATCH_WINDOW; ++index)
+        {
+            output << "row-" << index << '\n';
+        }
+        for (size_t index = 0; index < nesso::embed::BATCH_WINDOW; ++index)
+        {
+            output << "row-0\n";
+        }
+        REQUIRE(output);
+    }
+
+    auto embedder = std::make_unique<RecordingEmbedder>(1);
+    const RecordingEmbedder *recorder = embedder.get();
+    const nesso::Nesso app{nesso::Config{}, std::move(embedder)};
+    const auto indexed = app.index({.files = {log}, .output = dir.path() / "tail-window.nesso"});
+    REQUIRE(indexed.has_value());
+    CHECK(indexed->chunks == total);
+    CHECK(recorder->batches() == std::vector<size_t>{nesso::embed::BATCH_WINDOW});
+    CHECK(std::count(recorder->seen().begin(), recorder->seen().end(), "row-0") == 1);
+    const auto stored = nesso::core::readCorpusFile(dir.path() / "tail-window.nesso");
+    REQUIRE(stored.has_value());
+    REQUIRE(stored->size() == total);
+    CHECK(stored->front().chunk.text == "row-0");
+    CHECK(stored->back().chunk.text == "row-0");
+    CHECK(stored->front().embedding == stored->back().embedding);
+}
+
+TEST_CASE("stdin duplicates are embedded once", "[nesso][text]")
+{
+    const TempDir dir{"nesso_dedup_stdin"};
+    std::stringstream input{"same\nsame\n"};
+    const CinGuard guard{input};
+    auto embedder = std::make_unique<RecordingEmbedder>(1);
+    const RecordingEmbedder *recorder = embedder.get();
+    const nesso::Nesso app{nesso::Config{}, std::move(embedder)};
+    const auto grepped = app.grep({.query = "same", .files = {"-"}, .topK = 2});
+    REQUIRE(grepped.has_value());
+    CHECK(recorder->batches() == std::vector<size_t>{1});
+    CHECK(recorder->seen() == std::vector<std::string>{"same"});
+    REQUIRE(grepped->matches.size() == 2);
+    CHECK(grepped->matches[0].source == "-");
+    CHECK(grepped->matches[0].line == 1);
+    CHECK(grepped->matches[1].line == 2);
+    CHECK(grepped->matches[0].occurrences == 2);
+    CHECK(grepped->matches[1].occurrences == 2);
+    CHECK(grepped->matches[0].score == grepped->matches[1].score);
+
+    std::stringstream again{"same\nsame\n"};
+    const CinGuard indexGuard{again};
+    const auto indexed = app.index({.files = {"-"}, .output = dir.path() / "stdin.nesso"});
+    REQUIRE(indexed.has_value());
+    CHECK(indexed->chunks == 2);
+    CHECK(recorder->batches().back() == 1);
 }

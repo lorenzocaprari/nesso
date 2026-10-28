@@ -4,8 +4,10 @@
 package steps
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
+	"regexp"
 	"runtime"
 	"strconv"
 	"strings"
@@ -154,6 +156,53 @@ func optionHelpLines(text, flag string) (int, error) {
 		count++
 	}
 	return count, nil
+}
+
+var textMatchScore = regexp.MustCompile(`(?:line|element) \d+: ([0-9]+\.[0-9]+): (.*)$`)
+
+func (b *bindings) sharedTextSharesScore() error {
+	text, err := b.stream("stdout")
+	if err != nil {
+		return err
+	}
+	scoreByText := map[string]string{}
+	shared := 0
+	for _, line := range strings.Split(strings.TrimRight(text, "\n"), "\n") {
+		if line == "" {
+			continue
+		}
+		var body, score string
+		if strings.HasPrefix(strings.TrimSpace(line), "{") {
+			var row struct {
+				Text  string          `json:"text"`
+				Score json.RawMessage `json:"score"`
+			}
+			if err := json.Unmarshal([]byte(line), &row); err != nil {
+				return fmt.Errorf("stdout row is not JSON: %s", line)
+			}
+			body = row.Text
+			score = string(row.Score)
+		} else {
+			match := textMatchScore.FindStringSubmatch(line)
+			if match == nil {
+				return fmt.Errorf("stdout match line has no score: %s", line)
+			}
+			score = match[1]
+			body = match[2]
+		}
+		if previous, ok := scoreByText[body]; ok {
+			shared++
+			if previous != score {
+				return fmt.Errorf("text %q scored %s and %s\n%s", body, previous, score, text)
+			}
+		} else {
+			scoreByText[body] = score
+		}
+	}
+	if shared == 0 {
+		return fmt.Errorf("stdout has no repeated text:\n%s", text)
+	}
+	return nil
 }
 
 func (b *bindings) streamIsEmpty(name string) error {

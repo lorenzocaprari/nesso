@@ -96,6 +96,7 @@ struct GrepRequest
     size_t topK = DEFAULT_TEXT_TOP_K;
     std::string jsonField = "message";
     bool progress = false;
+    bool json = false;
 };
 
 struct IndexRequest
@@ -111,6 +112,7 @@ struct SearchRequest
     std::string query;
     std::filesystem::path index;
     size_t topK = DEFAULT_TEXT_TOP_K;
+    bool json = false;
 };
 
 struct TextMatch
@@ -120,6 +122,7 @@ struct TextMatch
     float score = 0.0F;
     std::string text;
     bool arrayElement = false;
+    uint32_t occurrences = 1;
 };
 
 struct TextResults
