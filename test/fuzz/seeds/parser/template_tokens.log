@@ -1,0 +1,4 @@
+PacketResponder 1 for block blk_-6952295868487656571 terminating
+2020-01-02T03:04:05.123Z Jan  2 03:04:05 12:34:56.789
+10.1.2.3:8080 [2001:db8::1]:443 550e8400-e29b-41d4-a716-446655440000
+/tmp/file1.txt deadbeef 0xabcde http2 sha256 abcde

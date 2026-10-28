@@ -3,6 +3,7 @@
 // Licensed under the Apache License, Version 2.0. See LICENSE for details.
 
 #include <parser/log_chunker.hpp>
+#include <parser/template_mask.hpp>
 
 #include <cstdint>
 #include <filesystem>
@@ -28,6 +29,7 @@ std::string bytesFrom(const std::uint8_t *data, std::size_t size)
 extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t *data, std::size_t size)
 {
     const std::string bytes = bytesFrom(data, size);
+    volatile std::size_t sink = nesso::parser::maskTemplate(bytes).size();
 
     const auto dir = std::filesystem::temp_directory_path() / ("nesso-fuzz-parser-" + std::to_string(::getpid()));
     std::error_code ec;
@@ -39,11 +41,18 @@ extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t *data, std::size_t size
         std::ofstream out(path, std::ios::binary | std::ios::trunc);
         out.write(bytes.data(), static_cast<std::streamsize>(bytes.size()));
         out.close();
-        static_cast<void>(nesso::parser::Chunker::fromFile(path));
+        const auto chunks = nesso::parser::Chunker::fromFile(path);
+        if (chunks.has_value())
+        {
+            for (const nesso::parser::ParsedChunk &chunk : *chunks)
+            {
+                sink += nesso::parser::maskTemplate(chunk.text).size();
+            }
+        }
     }
 
     std::filesystem::remove_all(dir, ec);
-    return 0;
+    return sink == static_cast<std::size_t>(-1) && bytes.empty() ? 1 : 0;
 }
 
 // libFuzzer supplies main. The AFL++ CI job keeps this file-input entry point.

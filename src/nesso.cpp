@@ -699,10 +699,10 @@ static std::expected<nesso::core::CorpusPolicy, Error> corpusPolicy(const nesso:
         {"batch", std::format("window:{},max:{},tokens:{},order:length-then-input", nesso::embed::BATCH_WINDOW,
                               nesso::embed::BATCH_MAX_TEXTS, nesso::embed::BATCH_TOKEN_BUDGET)},
         {"bm25", std::string{nesso::core::BM25_POLICY}},
-        {"dedup", "exact-v1"},
+        {"dedup", "masked-v1"},
         {"dimensions", std::to_string(identity->dimensions)},
         {"lexical.terms", std::string{nesso::core::LEXICAL_TERMS_VERSION}},
-        {"mask", "none-v1"},
+        {"mask", "template-v1"},
         {"model.id", identity->modelId},
         {"model.quantization", identity->quantized ? "int8" : "fp32"},
         {"model.sha256", identity->modelSha256},
@@ -858,6 +858,7 @@ std::expected<TextResults, Error> Nesso::grep(const GrepRequest &request) const
         std::uint32_t source = 0;
         uint64_t line = 0;
         bool arrayElement = false;
+        std::string text;
     };
     std::vector<Waiting> waiting;
     std::vector<Waiting> allLines;
@@ -885,7 +886,7 @@ std::expected<TextResults, Error> Nesso::grep(const GrepRequest &request) const
         TextMatch match{.source = sources[item.source],
                         .line = item.line,
                         .score = scores[item.distinctId],
-                        .text = std::string(distinct.text(item.distinctId)),
+                        .text = item.text,
                         .arrayElement = item.arrayElement,
                         .occurrences = 1,
                         .mode = "dense",
@@ -965,7 +966,8 @@ std::expected<TextResults, Error> Nesso::grep(const GrepRequest &request) const
                                                                      .distinctId = id,
                                                                      .source = sourceId,
                                                                      .line = chunk.lineNumber,
-                                                                     .arrayElement = chunk.arrayElement};
+                                                                     .arrayElement = chunk.arrayElement,
+                                                                     .text = std::move(chunk.text)};
                                                   if (needLexical)
                                                   {
                                                       allLines.push_back(item);
@@ -1030,7 +1032,7 @@ std::expected<TextResults, Error> Nesso::grep(const GrepRequest &request) const
     nesso::core::Bm25Index bm25;
     for (const Waiting &item : allLines)
     {
-        const std::vector<std::string> terms = nesso::core::lexicalTerms(distinct.text(item.distinctId));
+        const std::vector<std::string> terms = nesso::core::lexicalTerms(item.text);
         std::unordered_map<std::uint32_t, std::uint32_t> termCounts;
         termCounts.reserve(terms.size());
         for (const std::string &term : terms)
@@ -1072,6 +1074,7 @@ std::expected<TextResults, Error> Nesso::grep(const GrepRequest &request) const
         std::uint32_t source = 0;
         uint64_t line = 0;
         bool arrayElement = false;
+        std::string text;
     };
     std::vector<GrepHit> hits;
     hits.reserve(allLines.size());
@@ -1085,17 +1088,17 @@ std::expected<TextResults, Error> Nesso::grep(const GrepRequest &request) const
                 continue;
             }
             const Waiting &item = allLines[index];
-            const std::string_view text = distinct.text(item.distinctId);
             hits.push_back({.ordinal = item.ordinal,
                             .score = static_cast<float>(bm25Scores[index]),
                             .lexical = static_cast<float>(bm25Scores[index]),
                             .hasLexical = true,
                             .substring = !queryTokens.stripped.empty() &&
-                                         text.find(queryTokens.stripped) != std::string_view::npos,
+                                         item.text.find(queryTokens.stripped) != std::string::npos,
                             .distinctId = item.distinctId,
                             .source = item.source,
                             .line = item.line,
-                            .arrayElement = item.arrayElement});
+                            .arrayElement = item.arrayElement,
+                            .text = item.text});
         }
         std::ranges::sort(hits,
                           [](const GrepHit &left, const GrepHit &right)
@@ -1131,7 +1134,8 @@ std::expected<TextResults, Error> Nesso::grep(const GrepRequest &request) const
                             .distinctId = item.distinctId,
                             .source = item.source,
                             .line = item.line,
-                            .arrayElement = item.arrayElement});
+                            .arrayElement = item.arrayElement,
+                            .text = item.text});
         }
         std::ranges::sort(hits, [](const GrepHit &left, const GrepHit &right)
                           { return betterHit(left.score, left.ordinal, right.score, right.ordinal); });
@@ -1149,7 +1153,7 @@ std::expected<TextResults, Error> Nesso::grep(const GrepRequest &request) const
         TextMatch match{.source = sources[hit.source],
                         .line = hit.line,
                         .score = hit.score,
-                        .text = std::string(distinct.text(hit.distinctId)),
+                        .text = hit.text,
                         .arrayElement = hit.arrayElement,
                         .occurrences = distinct.occurrences(hit.distinctId),
                         .mode = modeLabel,
