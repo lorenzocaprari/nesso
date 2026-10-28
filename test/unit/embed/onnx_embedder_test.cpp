@@ -159,7 +159,7 @@ TEST_CASE("OnnxEmbedder reports completed batches", "[OnnxEmbedder][embed][integ
     REQUIRE(embedder.has_value());
 
     std::vector<std::string> texts;
-    for (int index = 0; index < 33; ++index)
+    for (int index = 0; index < 65; ++index)
     {
         texts.push_back("progress sample " + std::to_string(index));
     }
@@ -168,7 +168,7 @@ TEST_CASE("OnnxEmbedder reports completed batches", "[OnnxEmbedder][embed][integ
     const auto batch = (*embedder)->embedBatch(texts, [&progress](size_t completed, size_t total)
                                                { progress.emplace_back(completed, total); });
     REQUIRE(batch.has_value());
-    REQUIRE(progress == std::vector<std::pair<size_t, size_t>>{{32, 33}, {33, 33}});
+    REQUIRE(progress == std::vector<std::pair<size_t, size_t>>{{32, 65}, {64, 65}, {65, 65}});
 }
 
 TEST_CASE("OnnxEmbedder repeats an embedding", "[OnnxEmbedder][embed][integration]")
@@ -212,8 +212,7 @@ TEST_CASE("OnnxEmbedder int8 pool repeats a two-batch embed byte for byte", "[On
     CHECK(requestErrno == EPERM);
 #endif
 
-    // 64 texts are two batches of 32, which run at the same time on the two
-    // sessions. Each repeat must match the first byte for byte.
+    // These short lines fill two runs of 32. Each repeat must match the first byte for byte.
     std::vector<std::string> texts;
     texts.reserve(64);
     for (int index = 0; index < 64; ++index)
@@ -229,4 +228,27 @@ TEST_CASE("OnnxEmbedder int8 pool repeats a two-batch embed byte for byte", "[On
         REQUIRE(again.has_value());
         REQUIRE(*again == *first);
     }
+}
+
+TEST_CASE("int8 bytes change when texts share a padded batch", "[OnnxEmbedder][embed][integration]")
+{
+    const std::filesystem::path modelDir = modelDirOrSkip();
+
+    const auto embedder = nesso::embed::OnnxEmbedder::create(modelDir, 1);
+    REQUIRE(embedder.has_value());
+    REQUIRE((*embedder)->policy().quantized);
+
+    const std::string anchor = "database connection refused";
+    std::string partner;
+    for (int repeat = 0; repeat < 40; ++repeat)
+    {
+        partner += "upstream database connection timeout while waiting for the replica ";
+    }
+    const std::vector<std::string> together{anchor, partner};
+    const auto batched = (*embedder)->embedBatch(together);
+    const auto alone = (*embedder)->embed(anchor);
+    REQUIRE(batched.has_value());
+    REQUIRE(alone.has_value());
+    REQUIRE(batched->size() == together.size());
+    REQUIRE(batched->front() != *alone);
 }

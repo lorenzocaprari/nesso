@@ -16,10 +16,10 @@ DEFAULT_QUERY = "PAY-E1042"
 DEFAULT_RUNS = 10
 DEFAULT_TOP_K = 1_000_000
 DEFAULT_INPUT_LINES = 3_500
-# Pull requests compare two fresh processes. Eight embed batches (the runtime
-# window is 32) is two waves on a 4-session int8 pool, so the short corpus
-# still crosses a batch boundary and a second pool wave. Main, nightly, and
-# the release gate keep DEFAULT_INPUT_LINES and DEFAULT_RUNS.
+# Pull requests compare two fresh processes. 256 short lines sit in one
+# 1024-text window and cut into eight runs of 32, so a 4-session int8 pool
+# still runs a second wave. Main, nightly, and the release gate keep
+# DEFAULT_INPUT_LINES and DEFAULT_RUNS.
 PR_RUNS = 2
 PR_INDEX_RUNS = 2
 PR_INPUT_LINES = 256

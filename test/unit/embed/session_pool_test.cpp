@@ -178,3 +178,42 @@ TEST_CASE("a wider intra-op pool matches one thread byte for byte", "[session-po
 }
 
 #endif
+
+TEST_CASE("mixed-length batches match across session counts byte for byte", "[session-pool][model]")
+{
+    if (!modelPresent())
+    {
+#ifdef NESSO_REQUIRE_MODEL
+        FAIL("models/ not present; run scripts/fetch-model");
+#else
+        SKIP("models/ not present; run scripts/fetch-model");
+#endif
+    }
+
+    const std::filesystem::path modelDir{NESSO_MODELS_DIR};
+    const auto one = nesso::embed::OnnxEmbedder::create(modelDir, 1);
+    const auto many = nesso::embed::OnnxEmbedder::create(modelDir, 8);
+    REQUIRE(one.has_value());
+    REQUIRE(many.has_value());
+    REQUIRE((*one)->policy().quantized);
+    CHECK((*many)->sessions() > (*one)->sessions());
+
+    std::vector<std::string> texts;
+    texts.reserve(130);
+    for (int index = 0; index < 130; ++index)
+    {
+        if (index % 2 == 0)
+        {
+            texts.push_back("database connection refused " + std::to_string(index));
+        }
+        else
+        {
+            texts.push_back(std::string(80, 'x') + " timeout " + std::to_string(index));
+        }
+    }
+    const auto fromOne = (*one)->embedBatch(texts);
+    const auto fromMany = (*many)->embedBatch(texts);
+    REQUIRE(fromOne.has_value());
+    REQUIRE(fromMany.has_value());
+    REQUIRE(*fromOne == *fromMany);
+}

@@ -3,7 +3,9 @@
 
 #include <catch2/catch_all.hpp>
 #include <core/corpus_index.hpp>
+#include <embed/batch_plan.hpp>
 #include <embed/embedder.hpp>
+#include <embed/onnx_embedder.hpp>
 #include <model_paths.hpp>
 #include <nesso.hpp>
 
@@ -117,9 +119,10 @@ class RecordingEmbedder final : public nesso::embed::Embedder
         batches_.push_back(texts.size());
         std::vector<std::vector<float>> embeddings;
         embeddings.reserve(texts.size());
-        for (size_t offset = 0; offset < texts.size(); offset += nesso::embed::EMBED_BATCH_SIZE)
+        constexpr size_t mixWindow = 32;
+        for (size_t offset = 0; offset < texts.size(); offset += mixWindow)
         {
-            const size_t count = std::min(nesso::embed::EMBED_BATCH_SIZE, texts.size() - offset);
+            const size_t count = std::min(mixWindow, texts.size() - offset);
             std::uint32_t window = 2166136261u;
             for (size_t index = 0; index < count; ++index)
             {
@@ -162,9 +165,9 @@ std::string readFile(const std::filesystem::path &path)
     return {std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>()};
 }
 
-void expectFlushSizes(const std::vector<size_t> &batches, size_t sessions, size_t total)
+void expectFlushSizes(const std::vector<size_t> &batches, size_t total)
 {
-    const size_t flush = sessions * nesso::embed::EMBED_BATCH_SIZE;
+    const size_t flush = nesso::embed::BATCH_WINDOW;
     REQUIRE(flush > 0);
     REQUIRE_FALSE(batches.empty());
     size_t seen = 0;
@@ -368,7 +371,7 @@ TEST_CASE("Nesso is movable", "[nesso]")
     REQUIRE(missing.error().cause == nesso::ErrorCause::FileOpen);
 }
 
-TEST_CASE("a multi-session embedder is flushed one window per session", "[nesso][text]")
+TEST_CASE("a multi-session embedder flushes a fixed window", "[nesso][text]")
 {
     const TempDir dir{"nesso_facade_sessions"};
     const auto first = dir.path() / "a.log";
@@ -397,8 +400,9 @@ TEST_CASE("a multi-session embedder is flushed one window per session", "[nesso]
     REQUIRE(multiIndexed.has_value());
     CHECK(singleIndexed->chunks == total);
     CHECK(multiIndexed->chunks == total);
-    expectFlushSizes(single->batches(), 1, total);
-    expectFlushSizes(multi->batches(), 3, total);
+    expectFlushSizes(single->batches(), total);
+    expectFlushSizes(multi->batches(), total);
+    CHECK(single->batches() == multi->batches());
     CHECK(readFile(singleCorpus) == readFile(multiCorpus));
 
     auto singleGrepEmbedder = std::make_unique<RecordingEmbedder>();
@@ -412,8 +416,9 @@ TEST_CASE("a multi-session embedder is flushed one window per session", "[nesso]
     const auto multiGrepped = multiGrepApp.grep(request);
     REQUIRE(singleGrepped.has_value());
     REQUIRE(multiGrepped.has_value());
-    expectFlushSizes(singleGrep->batches(), 1, total);
-    expectFlushSizes(multiGrep->batches(), 3, total);
+    expectFlushSizes(singleGrep->batches(), total);
+    expectFlushSizes(multiGrep->batches(), total);
+    CHECK(singleGrep->batches() == multiGrep->batches());
     REQUIRE(singleGrepped->matches.size() == multiGrepped->matches.size());
     REQUIRE(singleGrepped->matches.size() == total);
     for (size_t index = 0; index < singleGrepped->matches.size(); ++index)
@@ -426,4 +431,49 @@ TEST_CASE("a multi-session embedder is flushed one window per session", "[nesso]
         CHECK(left.text == right.text);
         CHECK(left.arrayElement == right.arrayElement);
     }
+}
+
+TEST_CASE("one session and several sessions write the same corpus bytes", "[nesso][text]")
+{
+    const std::filesystem::path modelDir{NESSO_MODELS_DIR};
+    if (!std::filesystem::is_regular_file(modelDir / "model.onnx") ||
+        !std::filesystem::is_regular_file(modelDir / "vocab.txt"))
+    {
+#ifdef NESSO_REQUIRE_MODEL
+        FAIL("models/ not present; run scripts/fetch-model");
+#else
+        SKIP("models/ not present; run scripts/fetch-model");
+#endif
+    }
+
+    const auto probe = nesso::embed::OnnxEmbedder::create(modelDir, 1);
+    REQUIRE(probe.has_value());
+    REQUIRE((*probe)->policy().quantized);
+
+    const TempDir dir{"nesso_facade_corpus_bytes"};
+    const auto log = dir.path() / "mixed.log";
+    {
+        std::ofstream output(log);
+        REQUIRE(output);
+        for (int index = 0; index < 130; ++index)
+        {
+            if (index % 2 == 0)
+            {
+                output << "database connection refused " << index << '\n';
+            }
+            else
+            {
+                output << std::string(80, 'x') << " timeout " << index << '\n';
+            }
+        }
+        REQUIRE(output);
+    }
+
+    const nesso::Nesso one{nesso::Config{.modelDir = modelDir, .threads = 1}};
+    const nesso::Nesso many{nesso::Config{.modelDir = modelDir, .threads = 8}};
+    const auto oneCorpus = dir.path() / "one.nesso";
+    const auto manyCorpus = dir.path() / "many.nesso";
+    REQUIRE(one.index({.files = {log}, .output = oneCorpus}).has_value());
+    REQUIRE(many.index({.files = {log}, .output = manyCorpus}).has_value());
+    CHECK(readFile(oneCorpus) == readFile(manyCorpus));
 }
