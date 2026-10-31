@@ -36,6 +36,10 @@ if(NESSO_PYTHON_EXECUTABLE)
            COMMAND "${NESSO_PYTHON_EXECUTABLE}"
                    "${CMAKE_CURRENT_SOURCE_DIR}/fetch_loghub_test.py")
   set_tests_properties(fetch_loghub_test PROPERTIES LABELS unit)
+  add_test(NAME fetch_model_test
+           COMMAND "${NESSO_PYTHON_EXECUTABLE}"
+                   "${CMAKE_CURRENT_SOURCE_DIR}/fetch_model_test.py")
+  set_tests_properties(fetch_model_test PROPERTIES LABELS unit)
   add_test(NAME ci_build_archive_test
            COMMAND "${NESSO_PYTHON_EXECUTABLE}"
                    "${CMAKE_CURRENT_SOURCE_DIR}/ci_build_archive_test.py")
