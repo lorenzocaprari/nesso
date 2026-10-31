@@ -8,13 +8,20 @@ if [[ $# -gt 2 ]]; then
 fi
 MODEL_DIR="${1:-${ROOT}/models}"
 VARIANT="${2:-int8}"
-VOCAB_URL="https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2/resolve/main/vocab.txt"
+XENOVA_COMMIT="751bff37182d3f1213fa05d7196b954e230abad9"
+SENTENCE_TRANSFORMERS_COMMIT="1110a243fdf4706b3f48f1d95db1a4f5529b4d41"
+XENOVA_BASE_URL="https://huggingface.co/Xenova/all-MiniLM-L6-v2"
+SENTENCE_TRANSFORMERS_BASE_URL="https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2"
+VOCAB_URL="${SENTENCE_TRANSFORMERS_BASE_URL}/resolve/${SENTENCE_TRANSFORMERS_COMMIT}/vocab.txt"
+VOCAB_SHA256="07eced375cec144d27c900241f3e339478dec958f92fddbc551f295c992038a3"
 case "${VARIANT}" in
   int8)
-    MODEL_URL="https://huggingface.co/Xenova/all-MiniLM-L6-v2/resolve/main/onnx/model_quantized.onnx"
+    MODEL_URL="${XENOVA_BASE_URL}/resolve/${XENOVA_COMMIT}/onnx/model_quantized.onnx"
+    MODEL_SHA256="afdb6f1a0e45b715d0bb9b11772f032c399babd23bfc31fed1c170afc848bdb1"
     ;;
   fp32)
-    MODEL_URL="https://huggingface.co/Xenova/all-MiniLM-L6-v2/resolve/main/onnx/model.onnx"
+    MODEL_URL="${XENOVA_BASE_URL}/resolve/${XENOVA_COMMIT}/onnx/model.onnx"
+    MODEL_SHA256="759c3cd2b7fe7e93933ad23c4c9181b7396442a2ed746ec7c1d46192c469c46e"
     ;;
   *)
     echo "error: variant must be int8 or fp32, got ${VARIANT}" >&2
@@ -22,17 +29,58 @@ case "${VARIANT}" in
     ;;
 esac
 
-mkdir -p "${MODEL_DIR}"
+for tool in curl sha256sum; do
+  if ! command -v "${tool}" >/dev/null 2>&1; then
+    echo "error: ${tool} is required" >&2
+    exit 2
+  fi
+done
 
-if ! command -v curl >/dev/null 2>&1; then
-  echo "error: curl is required" >&2
-  exit 2
+if ! mkdir -p "${MODEL_DIR}"; then
+  echo "error: could not create model directory ${MODEL_DIR}" >&2
+  exit 1
 fi
 
-echo "fetch-model: downloading vocab.txt"
-curl -fsSL "${VOCAB_URL}" -o "${MODEL_DIR}/vocab.txt"
+fetch_file() {
+  local label="$1"
+  local url="$2"
+  local expected="$3"
+  local dest="$4"
+  local checksum
+  local actual
+  local temporary
 
-echo "fetch-model: downloading ${VARIANT} model.onnx"
-curl -fsSL "${MODEL_URL}" -o "${MODEL_DIR}/model.onnx"
+  if [[ -f "${dest}" ]]; then
+    checksum="$(sha256sum -- "${dest}")"
+    actual="${checksum%% *}"
+    if [[ "${actual}" == "${expected}" ]]; then
+      echo "fetch-model: cached ${label}"
+      return 0
+    fi
+  fi
+
+  temporary="$(mktemp "${dest}.partial.XXXXXX")"
+  if ! curl -fsSL "${url}" -o "${temporary}"; then
+    rm -f -- "${temporary}"
+    echo "error: failed downloading ${label}" >&2
+    return 1
+  fi
+  checksum="$(sha256sum -- "${temporary}")"
+  actual="${checksum%% *}"
+  if [[ "${actual}" != "${expected}" ]]; then
+    rm -f -- "${temporary}"
+    echo "error: sha256 mismatch for ${label}: expected ${expected}, got ${actual}" >&2
+    return 1
+  fi
+  if ! chmod 0644 "${temporary}" || ! mv -f -- "${temporary}" "${dest}"; then
+    rm -f -- "${temporary}"
+    echo "error: could not install verified ${label} at ${dest}" >&2
+    return 1
+  fi
+  echo "fetch-model: downloaded ${label}"
+}
+
+fetch_file "vocab.txt" "${VOCAB_URL}" "${VOCAB_SHA256}" "${MODEL_DIR}/vocab.txt"
+fetch_file "${VARIANT} model.onnx" "${MODEL_URL}" "${MODEL_SHA256}" "${MODEL_DIR}/model.onnx"
 
 echo "fetch-model OK: ${MODEL_DIR}"
