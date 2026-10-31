@@ -312,3 +312,104 @@ TEST_CASE("Chunker strips a carriage return and reads the selected JSON field", 
 
     std::filesystem::remove_all(directory);
 }
+
+namespace
+{
+
+struct Limited
+{
+    std::string text;
+    size_t truncated = 0;
+};
+
+Limited limitedLine(const std::string &line, size_t maxLineLength)
+{
+    const auto directory = std::filesystem::temp_directory_path() / "nesso-chunker-limit";
+    std::filesystem::create_directories(directory);
+    const auto path = directory / "line.log";
+    writeBytes(path, line + "\n");
+    nesso::parser::ParseStats stats{};
+    const auto chunks = nesso::parser::Chunker::fromLogFile(path, maxLineLength, &stats);
+    std::filesystem::remove_all(directory);
+    REQUIRE(chunks.has_value());
+    REQUIRE(chunks->size() == 1);
+    return Limited{.text = (*chunks)[0].text, .truncated = stats.truncatedLines};
+}
+
+} // namespace
+
+TEST_CASE("Chunker truncates at code points, not bytes", "[Chunker][parser][Unit]")
+{
+    SECTION("ASCII keeps the byte behaviour around the limit")
+    {
+        REQUIRE(limitedLine(std::string(4095, 'a'), 4096).truncated == 0);
+        REQUIRE(limitedLine(std::string(4096, 'a'), 4096).truncated == 0);
+        const auto cut = limitedLine(std::string(4097, 'a'), 4096);
+        REQUIRE(cut.text == std::string(4096, 'a'));
+        REQUIRE(cut.truncated == 1);
+    }
+
+    SECTION("multi-byte text up to the limit is kept whole")
+    {
+        std::string text;
+        for (int index = 0; index < 4096; ++index)
+        {
+            text += "\xC3\xA9";
+        }
+        const auto kept = limitedLine(text, 4096);
+        REQUIRE(kept.text == text);
+        REQUIRE(kept.truncated == 0);
+    }
+
+    SECTION("a 2-, 3- or 4-byte character on the boundary is kept whole")
+    {
+        for (const std::string character : {"\xC3\xA9", "\xE2\x82\xAC", "\xF0\x9F\x98\x80"})
+        {
+            const std::string prefix(3, 'a');
+            const auto cut = limitedLine(prefix + character + "zz", 4);
+            REQUIRE(cut.text == prefix + character);
+            REQUIRE(cut.truncated == 1);
+        }
+    }
+
+    SECTION("a character after the limit is dropped whole")
+    {
+        const auto cut = limitedLine("abcd\xF0\x9F\x98\x80", 4);
+        REQUIRE(cut.text == "abcd");
+        REQUIRE(cut.truncated == 1);
+    }
+
+    SECTION("invalid bytes count one each")
+    {
+        const auto lone = limitedLine("\x80\x80\x80\x80\x80", 4);
+        REQUIRE(lone.text == "\x80\x80\x80\x80");
+        REQUIRE(lone.truncated == 1);
+
+        const std::string partial = "a\xE2\x82";
+        const auto broken = limitedLine(partial + "bcd", 4);
+        REQUIRE(broken.text == partial + "b");
+        REQUIRE(broken.truncated == 1);
+    }
+
+    SECTION("a sequence cut short by the end of the line counts byte by byte")
+    {
+        const auto cut = limitedLine("ab\xF0\x9F", 3);
+        REQUIRE(cut.text == "ab\xF0");
+        REQUIRE(cut.truncated == 1);
+    }
+}
+
+TEST_CASE("Chunker truncates JSON values at code points", "[Chunker][parser][Unit]")
+{
+    const auto directory = std::filesystem::temp_directory_path() / "nesso-chunker-json-limit";
+    std::filesystem::create_directories(directory);
+    const auto path = directory / "values.jsonl";
+    writeBytes(path, "{\"message\":\"abc\\u00e9\\u00e9\"}\n");
+    nesso::parser::ParseStats stats{};
+    const auto chunks = nesso::parser::Chunker::fromJsonFile(path, &stats, "message", 4);
+    std::filesystem::remove_all(directory);
+    REQUIRE(chunks.has_value());
+    REQUIRE(chunks->size() == 1);
+    REQUIRE((*chunks)[0].text == "abc\xC3\xA9");
+    REQUIRE(stats.truncatedLines == 1);
+}

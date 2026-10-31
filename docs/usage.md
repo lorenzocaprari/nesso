@@ -47,8 +47,8 @@ For the fp32 model, `N` is the intra-op thread count of the one session. The def
 
 - `.json` and `.jsonl` are JSON, matched without regard to case. Every other name is read as lines: no extension, `.log.N` rotations, `.LOG`, `.txt`, `syslog`. `-` reads stdin as lines, and those matches are prefixed with `-:`.
 - A file whose first 4 KiB contains a NUL byte is rejected. Directories are rejected.
-- Lines: one chunk per non-empty line. Lines longer than 4096 characters are truncated. A trailing CR is stripped.
-- JSON: only objects with a string field are indexed (`message` by default, or `--json-field`). Malformed lines and documents are skipped. String values longer than 4096 characters are truncated. A JSON array is numbered `element N`, not `line N`.
+- Lines: one chunk per non-empty line. Lines longer than 4096 code points are truncated after the 4096th code point; a UTF-8 character is never split. A trailing CR is stripped.
+- JSON: only objects with a string field are indexed (`message` by default, or `--json-field`). Malformed lines and documents are skipped. String values longer than 4096 code points are truncated the same way. A JSON array is numbered `element N`, not `line N`.
 - `grep` and `index` embed each distinct text once, in first-occurrence order, in a fixed window of 1024 texts sorted by token count. Lines that share a text share its score. Ties break by input order. `index` writes one vector per input line. Rebuild a corpus after upgrading so its vectors match that batch. `search` maps that file. Stdin cannot be reread, so that command keeps the stdin text.
 - `--json` on `grep` and `search` prints one JSON object per match. The object adds `occurrences`, how many input lines share that text, always at least 1. `schema_version` stays 1. Text output does not include the count. Counts stay on stderr. `index` has no `--json`.
 - Empty lines and JSON values without that string field are skipped. Overlong log lines and JSON string values are truncated. Skip and truncation counts are printed on stderr.

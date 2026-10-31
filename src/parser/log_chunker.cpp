@@ -111,11 +111,53 @@ static void countTruncation(ParseStats *stats)
     }
 }
 
-static void limitValue(std::string &text, size_t maxLineLength, ParseStats *stats)
+// Bytes in the code point at `index`. A lead byte with its continuation bytes counts as one code point. Any other byte
+// counts on its own, as the tokenizer replaces it with U+FFFD.
+static size_t codePointBytes(std::string_view text, size_t index)
 {
-    if (text.size() > maxLineLength)
+    const auto lead = static_cast<std::uint32_t>(static_cast<unsigned char>(text[index]));
+    size_t length = 1;
+    if ((lead & 0xE0U) == 0xC0U)
     {
-        text.resize(maxLineLength);
+        length = 2;
+    }
+    else if ((lead & 0xF0U) == 0xE0U)
+    {
+        length = 3;
+    }
+    else if ((lead & 0xF8U) == 0xF0U)
+    {
+        length = 4;
+    }
+    if (length == 1 || length > text.size() - index)
+    {
+        return 1;
+    }
+    for (size_t offset = 1; offset < length; ++offset)
+    {
+        const auto byte = static_cast<std::uint32_t>(static_cast<unsigned char>(text[index + offset]));
+        if ((byte & 0xC0U) != 0x80U)
+        {
+            return 1;
+        }
+    }
+    return length;
+}
+
+static void limitValue(std::string &text, size_t maxCodePoints, ParseStats *stats)
+{
+    if (text.size() <= maxCodePoints)
+    {
+        return;
+    }
+    size_t end = 0;
+    for (size_t count = 0; count < maxCodePoints && end < text.size(); ++count)
+    {
+        end += codePointBytes(text, end);
+    }
+    if (end < text.size())
+    {
+        text.resize(end);
         countTruncation(stats);
     }
 }

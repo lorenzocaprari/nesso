@@ -45,6 +45,8 @@ class Chunker
 {
   public:
     /// Invokes `consume` for each kept chunk and does not retain the chunk list.
+    /// `maxLineLength` counts UTF-8 code points, and a longer value is cut after that many without splitting a
+    /// sequence. A byte that does not start a complete sequence counts as one code point.
     [[nodiscard]] static std::expected<void, ParseError> forEach(const std::filesystem::path &path,
                                                                  size_t maxLineLength, ParseStats *stats,
                                                                  std::string_view jsonField,
