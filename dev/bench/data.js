@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793215841629,
+  "lastUpdate": 1793471101168,
   "repoUrl": "https://github.com/lorenzocaprari/nesso",
   "entries": {
     "nesso": [
@@ -3239,6 +3239,60 @@ window.BENCHMARK_DATA = {
           {
             "name": "grep-100000-rss",
             "value": 154279936,
+            "unit": "bytes"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "caprarilorenzo5@gmail.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "committer": {
+            "email": "85455384+lorenzocaprari@users.noreply.github.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "distinct": true,
+          "id": "3cea9aebd81e21a17e8e04b644dfebd062ac9132",
+          "message": "fix(parser): truncate long lines at 4096 code points, not bytes\n\nlimitValue cut a log line or JSON string value at 4096 bytes, so a\nmulti-byte UTF-8 character could be split and --help and docs/usage.md\ndid not match the behaviour (ADR 0009). It now keeps the first 4096\ncode points and never splits a well-formed sequence. A byte that does\nnot start a complete sequence counts as one code point, the same rule\nthe tokenizer uses when it replaces it with U+FFFD. ASCII input is\nunchanged.",
+          "timestamp": "2026-10-31T19:20:04+01:00",
+          "tree_id": "49af5844c4dd4466d9abaa0092601a89df91651b",
+          "url": "https://github.com/lorenzocaprari/nesso/commit/3cea9aebd81e21a17e8e04b644dfebd062ac9132"
+        },
+        "date": 1793471100550,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "grep-1000-wall",
+            "value": 0.65,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-1000-rss",
+            "value": 144650240,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-10000-wall",
+            "value": 5.1,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-10000-rss",
+            "value": 148926464,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-100000-wall",
+            "value": 46.63,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-100000-rss",
+            "value": 156217344,
             "unit": "bytes"
           }
         ]
