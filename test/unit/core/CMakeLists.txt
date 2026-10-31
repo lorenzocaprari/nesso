@@ -32,6 +32,11 @@ target_include_directories(dedup_test
                            PRIVATE "${CMAKE_SOURCE_DIR}/src/embed/include")
 target_link_libraries(dedup_test PRIVATE nesso_core Catch2::Catch2WithMain)
 
+add_executable(sha256_test sha256_test.cpp)
+add_test(NAME sha256_test COMMAND sha256_test)
+target_link_libraries(sha256_test PRIVATE nesso_options nesso_core
+                                          Catch2::Catch2WithMain)
+
 add_executable(lexical_terms_test lexical_terms_test.cpp)
 add_test(NAME lexical_terms_test COMMAND lexical_terms_test)
 target_link_libraries(lexical_terms_test PRIVATE nesso_options nesso_core
@@ -54,6 +59,7 @@ set_tests_properties(
   top_k_test
   search_oracle_test
   dedup_test
+  sha256_test
   lexical_terms_test
   bm25_test
   PROPERTIES LABELS unit)
