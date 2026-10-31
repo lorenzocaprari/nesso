@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793471101168,
+  "lastUpdate": 1793472392689,
   "repoUrl": "https://github.com/lorenzocaprari/nesso",
   "entries": {
     "nesso": [
@@ -3293,6 +3293,60 @@ window.BENCHMARK_DATA = {
           {
             "name": "grep-100000-rss",
             "value": 156217344,
+            "unit": "bytes"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "caprarilorenzo5@gmail.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "committer": {
+            "email": "85455384+lorenzocaprari@users.noreply.github.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "distinct": true,
+          "id": "facb2f8ddff301733037b2b29599b7ccde7c39ee",
+          "message": "build(model): pin the fetched model by commit\n\nPin the int8 and fp32 model files and vocabulary to immutable\nHugging Face revisions. Verify each downloaded artifact's SHA-256\nbefore atomically replacing the destination, and reuse only matching\ncached files. Add offline tests for both variants, cache behavior, and\nchecksum failures.",
+          "timestamp": "2026-10-31T19:40:54+01:00",
+          "tree_id": "1d84d79dfff3963a2e7ad847d694cf6652651df3",
+          "url": "https://github.com/lorenzocaprari/nesso/commit/facb2f8ddff301733037b2b29599b7ccde7c39ee"
+        },
+        "date": 1793472392333,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "grep-1000-wall",
+            "value": 2.14,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-1000-rss",
+            "value": 147771392,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-10000-wall",
+            "value": 10.46,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-10000-rss",
+            "value": 141148160,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-100000-wall",
+            "value": 90,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-100000-rss",
+            "value": 153288704,
             "unit": "bytes"
           }
         ]
