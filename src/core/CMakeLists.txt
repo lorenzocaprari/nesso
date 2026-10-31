@@ -1,5 +1,5 @@
 add_library(nesso_core distance.cpp corpus_index.cpp dedup.cpp bm25.cpp
-                       lexical_terms.cpp)
+                       lexical_terms.cpp sha256.cpp)
 target_include_directories(nesso_core
                            PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
 target_link_libraries(

@@ -26,8 +26,12 @@ struct ParsedChunk
 {
     std::string text;
     uint64_t lineNumber = 0;
+    /// Raw line range, excluding the newline but including a trailing carriage return.
+    /// JSON documents use zero ranges and a one-based object or array-element ordinal.
     uint64_t byteOffset = 0;
     bool arrayElement = false;
+    bool skipped = false;
+    uint64_t byteLength = 0;
 };
 
 /// Counts for one parse. `skippedLines` is the sum of the reason counters. `truncatedLines` were kept after cutting
@@ -51,6 +55,18 @@ class Chunker
                                                                  size_t maxLineLength, ParseStats *stats,
                                                                  std::string_view jsonField,
                                                                  const std::function<void(ParsedChunk)> &consume);
+
+    /// Also visits skipped input records, in source order.
+    [[nodiscard]] static std::expected<void, ParseError> forEachRecord(const std::filesystem::path &path,
+                                                                       size_t maxLineLength, ParseStats *stats,
+                                                                       std::string_view jsonField,
+                                                                       const std::function<void(ParsedChunk)> &consume);
+
+    /// Re-read a kept file record using its source metadata, field and code-point limit.
+    /// JSON values are decoded; stdin records cannot be re-read this way.
+    [[nodiscard]] static std::expected<std::string, ParseError>
+    readRecord(const std::filesystem::path &path, uint64_t byteOffset, uint64_t byteLength, uint64_t lineNumber,
+               bool arrayElement, std::string_view jsonField, size_t maxLineLength);
 
     [[nodiscard]] static std::expected<std::vector<ParsedChunk>, ParseError>
     fromFile(const std::filesystem::path &path, size_t maxLineLength = 4096, ParseStats *stats = nullptr,

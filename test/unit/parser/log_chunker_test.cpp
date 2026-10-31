@@ -3,8 +3,16 @@
 
 #include <filesystem>
 #include <fstream>
+#include <iostream>
+#include <limits>
+#include <sstream>
+#include <stdexcept>
+#include <streambuf>
 #include <string>
 #include <string_view>
+#include <unistd.h>
+#include <utility>
+#include <vector>
 
 namespace
 {
@@ -16,11 +24,66 @@ void writeBytes(const std::filesystem::path &path, std::string_view bytes)
     output.write(bytes.data(), static_cast<std::streamsize>(bytes.size()));
 }
 
+class FailingInput final : public std::streambuf
+{
+  private:
+    int_type underflow() override { throw std::ios_base::failure("read failed"); }
+};
+
+class FailingAfterPrefix final : public std::streambuf
+{
+  public:
+    FailingAfterPrefix()
+    {
+        char *begin = prefix_.data();
+        setg(begin, begin, begin + prefix_.size());
+    }
+
+  private:
+    int_type underflow() override { throw std::ios_base::failure("read failed after probe"); }
+    std::string prefix_ = std::string(4096, 'a');
+};
+
+class ScopedCin
+{
+  public:
+    explicit ScopedCin(std::streambuf &buffer) : original_(std::cin.rdbuf()), state_(std::cin.rdstate())
+    {
+        std::cin.rdbuf(&buffer);
+        std::cin.clear();
+    }
+
+    ~ScopedCin()
+    {
+        std::cin.rdbuf(original_);
+        std::cin.clear(state_);
+    }
+    ScopedCin(const ScopedCin &) = delete;
+    ScopedCin &operator=(const ScopedCin &) = delete;
+    ScopedCin(ScopedCin &&) = delete;
+    ScopedCin &operator=(ScopedCin &&) = delete;
+
+  private:
+    std::streambuf *original_;
+    std::ios::iostate state_;
+};
+
 } // namespace
 
 #ifndef NESSO_TEST_FIXTURES
 #error "NESSO_TEST_FIXTURES must be defined"
 #endif
+
+TEST_CASE("ParsedChunk preserves positional aggregate initialization", "[Chunker][parser][Unit]")
+{
+    const nesso::parser::ParsedChunk chunk{"message", 7, 20, true};
+    CHECK(chunk.text == "message");
+    CHECK(chunk.lineNumber == 7);
+    CHECK(chunk.byteOffset == 20);
+    CHECK(chunk.arrayElement);
+    CHECK_FALSE(chunk.skipped);
+    CHECK(chunk.byteLength == 0);
+}
 
 TEST_CASE("Chunker parses .log files line-by-line", "[Chunker][parser][Unit]")
 {
@@ -411,5 +474,266 @@ TEST_CASE("Chunker truncates JSON values at code points", "[Chunker][parser][Uni
     REQUIRE(chunks.has_value());
     REQUIRE(chunks->size() == 1);
     REQUIRE((*chunks)[0].text == "abc\xC3\xA9");
+    REQUIRE(stats.truncatedLines == 1);
+}
+
+TEST_CASE("Chunker reports stdin read failures", "[Chunker][parser][Unit]")
+{
+    SECTION("before the binary probe finishes")
+    {
+        FailingInput input;
+        const ScopedCin redirected{input};
+        const auto result =
+            nesso::parser::Chunker::forEachRecord("-", 4096, nullptr, "message", [](nesso::parser::ParsedChunk) {});
+        REQUIRE_FALSE(result);
+        REQUIRE(result.error() == nesso::parser::ParseError::FileOpenFailure);
+    }
+    SECTION("after the binary probe finishes")
+    {
+        FailingAfterPrefix input;
+        const ScopedCin redirected{input};
+        const auto result = nesso::parser::Chunker::fromFile("-");
+        REQUIRE_FALSE(result);
+        REQUIRE(result.error() == nesso::parser::ParseError::FileOpenFailure);
+    }
+}
+
+TEST_CASE("Chunker preserves stdin probe and record behavior", "[Chunker][parser][Unit]")
+{
+    SECTION("empty input")
+    {
+        std::istringstream input;
+        const ScopedCin redirected{*input.rdbuf()};
+        const auto chunks = nesso::parser::Chunker::fromFile("-");
+        REQUIRE(chunks);
+        REQUIRE(chunks->empty());
+    }
+    SECTION("an exact probe-sized input")
+    {
+        std::istringstream input{std::string(4096, 'a')};
+        const ScopedCin redirected{*input.rdbuf()};
+        const auto chunks = nesso::parser::Chunker::fromFile("-", 4096);
+        REQUIRE(chunks);
+        REQUIRE(chunks->size() == 1);
+        REQUIRE(chunks->front().text == std::string(4096, 'a'));
+    }
+    SECTION("lines span the probe boundary")
+    {
+        std::istringstream input{std::string(4096, 'a') + "\nlast\n"};
+        const ScopedCin redirected{*input.rdbuf()};
+        std::vector<nesso::parser::ParsedChunk> records;
+        REQUIRE(nesso::parser::Chunker::forEachRecord("-", 5, nullptr, "message",
+                                                      [&records](nesso::parser::ParsedChunk record)
+                                                      { records.push_back(std::move(record)); }));
+        REQUIRE(records.size() == 2);
+        REQUIRE(records[0].text == "aaaaa");
+        REQUIRE(records[0].byteLength == 4096);
+        REQUIRE(records[1].text == "last");
+        REQUIRE(records[1].byteOffset == 4097);
+    }
+    SECTION("a NUL in the probe is rejected")
+    {
+        std::istringstream input{std::string("ab\0cd", 5)};
+        const ScopedCin redirected{*input.rdbuf()};
+        const auto chunks = nesso::parser::Chunker::fromFile("-");
+        REQUIRE_FALSE(chunks);
+        REQUIRE(chunks.error() == nesso::parser::ParseError::BinaryFile);
+    }
+    SECTION("a NUL after the probe retains the existing behavior")
+    {
+        std::string bytes(4096, 'a');
+        bytes.push_back('\0');
+        bytes += "tail";
+        std::istringstream input{bytes};
+        const ScopedCin redirected{*input.rdbuf()};
+        const auto chunks = nesso::parser::Chunker::fromFile("-", 5000);
+        REQUIRE(chunks);
+        REQUIRE(chunks->size() == 1);
+        REQUIRE(chunks->front().text == bytes);
+    }
+}
+
+TEST_CASE("Chunker re-reads long records without splitting code points", "[Chunker][parser][Unit]")
+{
+    const auto path =
+        std::filesystem::temp_directory_path() / ("nesso-long-record-" + std::to_string(getpid()) + ".log");
+    const std::string line = "\xC3\xA9\xE2\x82\xAC\xF0\x9F\x98\x80" + std::string(200, 'z');
+    writeBytes(path, line + "\r\n");
+    const auto chunks = nesso::parser::Chunker::fromFile(path, 2);
+    REQUIRE(chunks);
+    REQUIRE(chunks->size() == 1);
+    const auto &chunk = chunks->front();
+    const auto truncated = nesso::parser::Chunker::readRecord(path, chunk.byteOffset, chunk.byteLength,
+                                                              chunk.lineNumber, false, "message", 2);
+    REQUIRE(truncated);
+    REQUIRE(*truncated == chunk.text);
+    REQUIRE(*truncated == "\xC3\xA9\xE2\x82\xAC");
+    const auto complete = nesso::parser::Chunker::readRecord(path, chunk.byteOffset, chunk.byteLength, chunk.lineNumber,
+                                                             false, "message", std::numeric_limits<size_t>::max());
+    REQUIRE(complete);
+    REQUIRE(*complete == line);
+    const auto outOfRange =
+        nesso::parser::Chunker::readRecord(path, std::numeric_limits<uint64_t>::max(), 1, 1, false, "message", 4096);
+    REQUIRE_FALSE(outOfRange);
+    REQUIRE(outOfRange.error() == nesso::parser::ParseError::FileOpenFailure);
+    std::filesystem::remove(path);
+}
+
+TEST_CASE("Chunker rejects invalid JSON source ranges", "[Chunker][parser][Unit]")
+{
+    const auto path =
+        std::filesystem::temp_directory_path() / ("nesso-invalid-json-range-" + std::to_string(getpid()) + ".json");
+    writeBytes(path, "[{\"message\":\"first\"}]");
+    const auto first = nesso::parser::Chunker::readRecord(path, 0, 0, 1, true, "message", 4096);
+    REQUIRE(first);
+    REQUIRE(*first == "first");
+    const auto offset = nesso::parser::Chunker::readRecord(path, 1, 0, 1, true, "message", 4096);
+    REQUIRE_FALSE(offset);
+    REQUIRE(offset.error() == nesso::parser::ParseError::UnsupportedFormat);
+    const auto length = nesso::parser::Chunker::readRecord(path, 0, 1, 1, true, "message", 4096);
+    REQUIRE_FALSE(length);
+    REQUIRE(length.error() == nesso::parser::ParseError::UnsupportedFormat);
+    REQUIRE_FALSE(nesso::parser::Chunker::readRecord(path, 0, 0, 0, true, "message", 4096));
+    writeBytes(path, "{\"message\":\"object\"}");
+    REQUIRE_FALSE(nesso::parser::Chunker::readRecord(path, 0, 1, 1, false, "message", 4096));
+    writeBytes(path, "{\"message\":42}");
+    const auto nonString = nesso::parser::Chunker::readRecord(path, 0, 0, 1, false, "message", 4096);
+    REQUIRE_FALSE(nonString);
+    REQUIRE(nonString.error() == nesso::parser::ParseError::UnsupportedFormat);
+    std::filesystem::remove(path);
+
+    const auto jsonl =
+        std::filesystem::temp_directory_path() / ("nesso-invalid-json-line-" + std::to_string(getpid()) + ".jsonl");
+    constexpr std::string_view line = "{\"message\":42}";
+    writeBytes(jsonl, line);
+    const auto nonStringLine = nesso::parser::Chunker::readRecord(jsonl, 0, line.size(), 1, false, "message", 4096);
+    REQUIRE_FALSE(nonStringLine);
+    REQUIRE(nonStringLine.error() == nesso::parser::ParseError::UnsupportedFormat);
+    std::filesystem::remove(jsonl);
+}
+
+TEST_CASE("Chunker reports unreadable JSON source records", "[Chunker][parser][Unit]")
+{
+    const auto directory =
+        std::filesystem::temp_directory_path() / ("nesso-unreadable-json-" + std::to_string(getpid()) + ".json");
+    REQUIRE(std::filesystem::create_directory(directory));
+    const auto record = nesso::parser::Chunker::readRecord(directory, 0, 0, 1, false, "message", 4096);
+    std::filesystem::remove(directory);
+    REQUIRE_FALSE(record);
+    REQUIRE(record.error() == nesso::parser::ParseError::FileOpenFailure);
+}
+
+TEST_CASE("Chunker does not re-read stdin records as files", "[Chunker][parser][Unit]")
+{
+    const auto record = nesso::parser::Chunker::readRecord("-", 0, 4, 1, false, "message", 4096);
+    REQUIRE_FALSE(record);
+    CHECK(record.error() == nesso::parser::ParseError::UnsupportedFormat);
+}
+
+TEST_CASE("Chunker reports non-rewindable file input", "[Chunker][parser][Unit]")
+{
+    int descriptors[2]{};
+    REQUIRE(pipe(descriptors) == 0);
+    constexpr std::string_view message = "message\n";
+    REQUIRE(write(descriptors[1], message.data(), message.size()) == static_cast<ssize_t>(message.size()));
+    REQUIRE(close(descriptors[1]) == 0);
+    const auto path = std::filesystem::path("/proc/self/fd") / std::to_string(descriptors[0]);
+    const auto chunks = nesso::parser::Chunker::fromFile(path);
+    REQUIRE(close(descriptors[0]) == 0);
+    REQUIRE_FALSE(chunks);
+    REQUIRE(chunks.error() == nesso::parser::ParseError::FileOpenFailure);
+
+    REQUIRE(pipe(descriptors) == 0);
+    const auto source = std::filesystem::path("/proc/self/fd") / std::to_string(descriptors[0]);
+    const auto record = nesso::parser::Chunker::readRecord(source, 0, 1, 1, false, "message", 4096);
+    REQUIRE(close(descriptors[0]) == 0);
+    REQUIRE(close(descriptors[1]) == 0);
+    REQUIRE_FALSE(record);
+    REQUIRE(record.error() == nesso::parser::ParseError::FileOpenFailure);
+}
+
+TEST_CASE("Chunker propagates consumer failures for kept and skipped records", "[Chunker][parser][Unit]")
+{
+    const auto directory =
+        std::filesystem::temp_directory_path() / ("nesso-callback-errors-" + std::to_string(getpid()));
+    REQUIRE(std::filesystem::create_directory(directory));
+    const auto log = directory / "records.log";
+    const auto jsonl = directory / "records.jsonl";
+    const auto json = directory / "records.json";
+    writeBytes(log, "kept\n\n");
+    writeBytes(jsonl, "{bad\n");
+    writeBytes(json, "[{\"message\":\"kept\"},{\"missing\":1}]");
+    const auto failKept = [](nesso::parser::ParsedChunk) { throw std::runtime_error("consumer failed"); };
+    const auto failSkipped = [](const nesso::parser::ParsedChunk &record)
+    {
+        if (record.skipped)
+        {
+            throw std::runtime_error("consumer failed");
+        }
+    };
+
+    SECTION("kept log record")
+    {
+        REQUIRE_THROWS_AS(nesso::parser::Chunker::forEachRecord(log, 4096, nullptr, "message", failKept),
+                          std::runtime_error);
+    }
+    SECTION("legacy kept-record API")
+    {
+        REQUIRE_THROWS_AS(nesso::parser::Chunker::forEach(log, 4096, nullptr, "message", failKept), std::runtime_error);
+    }
+    SECTION("skipped log record")
+    {
+        REQUIRE_THROWS_AS(nesso::parser::Chunker::forEachRecord(log, 4096, nullptr, "message", failSkipped),
+                          std::runtime_error);
+    }
+    SECTION("kept stdin record")
+    {
+        std::istringstream input{"kept\n"};
+        const ScopedCin redirected{*input.rdbuf()};
+        REQUIRE_THROWS_AS(nesso::parser::Chunker::forEachRecord("-", 4096, nullptr, "message", failKept),
+                          std::runtime_error);
+    }
+    SECTION("malformed JSONL record")
+    {
+        nesso::parser::ParseStats stats{};
+        REQUIRE_THROWS_AS(nesso::parser::Chunker::forEachRecord(jsonl, 4096, &stats, "message", failSkipped),
+                          std::runtime_error);
+        REQUIRE(stats.malformedLines == 1);
+    }
+    SECTION("JSON array element with a missing field")
+    {
+        nesso::parser::ParseStats stats{};
+        REQUIRE_THROWS_AS(nesso::parser::Chunker::forEachRecord(json, 4096, &stats, "message", failSkipped),
+                          std::runtime_error);
+        REQUIRE(stats.missingFieldLines == 1);
+    }
+    SECTION("kept JSON object")
+    {
+        writeBytes(json, "{\"message\":\"kept\"}");
+        REQUIRE_THROWS_AS(nesso::parser::Chunker::forEachRecord(json, 4096, nullptr, "message", failKept),
+                          std::runtime_error);
+    }
+    SECTION("consumer I/O exceptions are not input failures")
+    {
+        const auto failIo = [](nesso::parser::ParsedChunk) { throw std::ios_base::failure("consumer I/O failure"); };
+        REQUIRE_THROWS_AS(nesso::parser::Chunker::forEachRecord(json, 4096, nullptr, "message", failIo),
+                          std::ios_base::failure);
+        REQUIRE_THROWS_AS(nesso::parser::Chunker::forEachRecord(jsonl, 4096, nullptr, "message", failIo),
+                          std::ios_base::failure);
+    }
+    std::filesystem::remove_all(directory);
+}
+
+TEST_CASE("Chunker preserves kept records with a zero code-point limit", "[Chunker][parser][Unit]")
+{
+    const auto path =
+        std::filesystem::temp_directory_path() / ("nesso-zero-limit-" + std::to_string(getpid()) + ".log");
+    writeBytes(path, "value\n");
+    nesso::parser::ParseStats stats{};
+    const auto chunks = nesso::parser::Chunker::fromLogFile(path, 0, &stats);
+    std::filesystem::remove(path);
+    REQUIRE(chunks);
+    REQUIRE(chunks->size() == 1);
+    REQUIRE(chunks->front().text.empty());
     REQUIRE(stats.truncatedLines == 1);
 }
