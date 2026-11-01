@@ -19,12 +19,12 @@ Feature: grep
       """
     When I run nesso with arguments grep "database connection" {dir}/controls.log
     Then the exit code is 0
-    And stdout contains "database connection refused\\x1B[2J\\x07"
+    And stdout contains "database connection refused\x1B[2J\x07"
     When I run nesso with arguments index -o {dir}/controls.nesso {dir}/controls.log
     Then the exit code is 0
     When I run nesso with arguments search "database connection" -i {dir}/controls.nesso
     Then the exit code is 0
-    And stdout contains "database connection refused\\x1B[2J\\x07"
+    And stdout contains "database connection refused\x1B[2J\x07"
 
   Scenario: the same grep prints the same scores
     Given a file "app.log" with:
