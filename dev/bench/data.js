@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793570769879,
+  "lastUpdate": 1793574058430,
   "repoUrl": "https://github.com/lorenzocaprari/nesso",
   "entries": {
     "nesso": [
@@ -3617,6 +3617,60 @@ window.BENCHMARK_DATA = {
           {
             "name": "grep-100000-rss",
             "value": 153485312,
+            "unit": "bytes"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "caprarilorenzo5@gmail.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "committer": {
+            "email": "85455384+lorenzocaprari@users.noreply.github.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "distinct": true,
+          "id": "5dca165261594beff142a84e198a4934f0779caf",
+          "message": "fix: identify untagged builds",
+          "timestamp": "2026-11-01T23:55:18+01:00",
+          "tree_id": "e226a514cfa4107ad48889988ac764806fc27a7b",
+          "url": "https://github.com/lorenzocaprari/nesso/commit/5dca165261594beff142a84e198a4934f0779caf"
+        },
+        "date": 1793574058073,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "grep-1000-wall",
+            "value": 2.14,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-1000-rss",
+            "value": 145281024,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-10000-wall",
+            "value": 10.51,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-10000-rss",
+            "value": 156520448,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-100000-wall",
+            "value": 90.77,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-100000-rss",
+            "value": 160780288,
             "unit": "bytes"
           }
         ]
