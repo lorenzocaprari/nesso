@@ -49,6 +49,7 @@ enum class ErrorCause : uint8_t
     CorruptFile,
     UnsupportedCorpusVersion,
     ModelMismatch,
+    SourceChanged,
     EmptyFile,
     NothingIndexable,
     EmptyCorpus
@@ -58,6 +59,7 @@ struct StaleSource
 {
     std::string path;
     bool missing = false;
+    bool unreadable = false;
 };
 
 /// Failure of a Nesso operation.
@@ -78,6 +80,8 @@ struct Error
     std::string jsonField = "message";
     std::string note;
     std::vector<StaleSource> staleSources;
+    bool policyMismatch = false;
+    std::optional<std::uint32_t> corpusVersion;
 };
 
 /// Phrase for `cause`, used after the operation sentence.
@@ -136,6 +140,7 @@ struct TextResults
     std::string jsonField = "message";
     bool multipleSources = false;
     std::vector<StaleSource> staleSources;
+    bool policyMismatch = false;
 };
 
 struct IndexSummary

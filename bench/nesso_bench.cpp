@@ -137,17 +137,41 @@ void readCorpus(benchmark::State &state)
 {
     const std::filesystem::path path = std::filesystem::temp_directory_path() / "nesso-bench-corpus.nessc";
     std::mt19937 rng{1};
-    std::vector<nesso::core::CorpusChunk> chunks;
-    chunks.reserve(CORPUS_CHUNKS);
+    nesso::core::CorpusPolicy policy{{"batch", "window:1024,max:32,tokens:1024,order:length-then-input"},
+                                     {"dedup", "exact-v1"},
+                                     {"dimensions", std::to_string(EMBEDDING_DIMENSIONS)},
+                                     {"mask", "none-v1"},
+                                     {"model.id", "benchmark"},
+                                     {"model.quantization", "int8"},
+                                     {"model.sha256", std::string(64, 'a')},
+                                     {"tokens.max", "256"},
+                                     {"truncate", "4096-codepoints"},
+                                     {"vocab.sha256", std::string(64, 'b')}};
+    auto writer = nesso::core::CorpusWriter::create(path, std::move(policy));
+    if (!writer || !writer->addSource({.path = "bench.log"}))
+    {
+        state.SkipWithError("failed to create bench corpus");
+        return;
+    }
     for (uint64_t index = 0; index < CORPUS_CHUNKS; ++index)
     {
-        chunks.push_back(
-            {.chunk = {.text = "database connection refused", .lineNumber = index + 1, .source = "bench.log"},
-             .embedding = randomVector(rng, EMBEDDING_DIMENSIONS)});
+        const auto id = writer->addDistinct("database connection refused " + std::to_string(index),
+                                            randomVector(rng, EMBEDDING_DIMENSIONS));
+        if (!id)
+        {
+            state.SkipWithError("failed to write bench vector");
+            return;
+        }
+        const nesso::core::CorpusLine line{.lineNumber = index + 1, .distinctId = *id};
+        if (!writer->addLines(std::span{&line, 1}))
+        {
+            state.SkipWithError("failed to write bench line");
+            return;
+        }
     }
-    if (!nesso::core::writeCorpusFile(path, chunks, "bench"))
+    if (!writer->finish())
     {
-        state.SkipWithError("failed to write bench corpus");
+        state.SkipWithError("failed to finish bench corpus");
         return;
     }
 

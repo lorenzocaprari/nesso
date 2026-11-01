@@ -7,6 +7,8 @@
 #include <embed/embedder.hpp>
 #include <nesso.hpp>
 
+#include "test_embedder_identity.hpp"
+
 #include <algorithm>
 #include <cstdint>
 #include <filesystem>
@@ -63,6 +65,11 @@ class RecordingEmbedder final : public nesso::embed::Embedder
 
     [[nodiscard]] size_t sessions() const noexcept override { return sessions_; }
 
+    [[nodiscard]] std::expected<nesso::embed::EmbedderIdentity, nesso::embed::EmbedError> identity() const override
+    {
+        return testEmbedderIdentity();
+    }
+
     [[nodiscard]] std::expected<std::vector<float>, nesso::embed::EmbedError> embed(std::string_view) const override
     {
         return std::vector<float>{1.F, 0.F, 0.F, 0.F};
@@ -102,6 +109,11 @@ class FallibleEmbedder final : public nesso::embed::Embedder
     explicit FallibleEmbedder(BatchBehavior batch) : batch_(batch) {}
 
     [[nodiscard]] size_t sessions() const noexcept override { return 1; }
+
+    [[nodiscard]] std::expected<nesso::embed::EmbedderIdentity, nesso::embed::EmbedError> identity() const override
+    {
+        return testEmbedderIdentity();
+    }
 
     [[nodiscard]] std::expected<std::vector<float>, nesso::embed::EmbedError> embed(std::string_view) const override
     {

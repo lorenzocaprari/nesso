@@ -16,6 +16,15 @@
 namespace nesso::embed
 {
 
+struct EmbedderIdentity
+{
+    std::string modelId;
+    std::string modelSha256;
+    std::string vocabSha256;
+    bool quantized = false;
+    size_t dimensions = 0;
+};
+
 /// Text embedder used by grep, index, and search.
 class Embedder
 {
@@ -29,6 +38,9 @@ class Embedder
     virtual ~Embedder() = default;
 
     [[nodiscard]] virtual size_t sessions() const noexcept = 0;
+
+    /// Identity of the loaded model and vocabulary. Only index and search need to compute it.
+    [[nodiscard]] virtual std::expected<EmbedderIdentity, EmbedError> identity() const = 0;
 
     [[nodiscard]] virtual std::expected<std::vector<float>, EmbedError> embed(std::string_view text) const = 0;
 
