@@ -195,8 +195,8 @@ Feature: command errors
   Scenario: a corpus with the wrong dimensions cannot be searched
     When I run nesso with arguments search "database connection error" -i {fixture}/mismatch.nesso
     Then the exit code is 2
-    And stderr contains "failed to search"
-    And stderr contains "the embedding width does not match"
+    And stderr contains "failed to read the corpus"
+    And stderr contains "the corpus was built with a different model; re-run nesso index"
 
   Scenario: a corpus built with another model cannot be searched
     When I run nesso with arguments search "database connection error" -i {fixture}/other-model.nesso
@@ -208,7 +208,13 @@ Feature: command errors
     When I run nesso with arguments search "database connection error" -i {fixture}/future-version.nesso
     Then the exit code is 2
     And stderr contains "failed to read the corpus"
-    And stderr contains "the corpus format is not supported by this nesso; re-run nesso index"
+    And stderr contains "corpus format v4 is not supported; re-run nesso index"
+
+  Scenario: a corpus in format v2 must be re-indexed
+    When I run nesso with arguments search "database connection error" -i {fixture}/v2.nesso
+    Then the exit code is 2
+    And stderr contains "failed to read the corpus"
+    And stderr contains "corpus format v2 is not supported; re-run nesso index"
 
   # JSON Lines contract. Separate from the scenarios above so a later rebase stays local.
 

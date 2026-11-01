@@ -45,6 +45,6 @@ record.
 | 0007 | Release amd64 and arm64 Linux | accepted | 2026-10-26 |
 | 0008 | Build release binaries on a glibc 2.34 baseline | proposed | 2026-10-28 |
 | 0009 | Keep a stable command-line contract and add JSON Lines output | proposed | 2026-10-28 |
-| 0010 | Corpus format v3: one vector per distinct text and a recorded embedding policy | proposed | 2026-10-26 |
+| 0010 | Corpus format v3: one vector per distinct text and a recorded embedding policy | accepted | 2026-10-26 |
 | 0011 | Hybrid dense and BM25 search with identifier routing | proposed | 2026-10-28 |
 | 0014 | int8 session and thread policy | proposed | 2026-10-28 |

@@ -9,8 +9,10 @@
 #include <cstdint>
 #include <expected>
 #include <filesystem>
-#include <fstream>
+#include <limits>
+#include <map>
 #include <memory>
+#include <optional>
 #include <span>
 #include <string>
 #include <string_view>
@@ -19,7 +21,10 @@
 namespace nesso::core
 {
 
-inline constexpr std::uint32_t CORPUS_VERSION = 2;
+inline constexpr std::uint32_t CORPUS_VERSION = 3;
+inline constexpr std::uint32_t NO_DISTINCT = std::numeric_limits<std::uint32_t>::max();
+
+using CorpusPolicy = std::map<std::string, std::string, std::less<>>;
 
 struct LogChunk
 {
@@ -28,6 +33,7 @@ struct LogChunk
     std::string source;
     std::uint64_t byteOffset = 0;
     bool arrayElement = false;
+    std::uint64_t byteLength = 0;
 };
 
 struct CorpusChunk
@@ -42,10 +48,26 @@ struct SourceInfo
     std::uint64_t size = 0;
     std::int64_t modifiedTime = 0;
     bool tracked = false;
+    std::string jsonField = "message";
+    bool storedOnly = false;
 };
 
-/// A corpus mapped so the float block is the top-k matrix. Chunk text is owned;
-/// `matrix` views the mapping.
+struct CorpusLine
+{
+    std::uint64_t lineNumber = 0;
+    std::uint64_t byteOffset = 0;
+    std::uint64_t byteLength = 0;
+    std::uint32_t sourceIndex = 0;
+    std::uint32_t distinctId = NO_DISTINCT;
+    bool arrayElement = false;
+    std::optional<std::string_view> storedText = std::nullopt;
+};
+
+/// Capture metadata used to detect changes before re-reading a source.
+[[nodiscard]] std::expected<SourceInfo, EngineError> sourceInfoFor(const std::filesystem::path &path,
+                                                                   std::string_view jsonField);
+
+/// Text and matrix views remain valid while the mapped corpus is alive.
 class MappedCorpus
 {
   public:
@@ -55,51 +77,55 @@ class MappedCorpus
     MappedCorpus(MappedCorpus &&) noexcept;
     MappedCorpus &operator=(MappedCorpus &&) noexcept;
 
-    [[nodiscard]] std::string_view modelId() const noexcept;
+    [[nodiscard]] const CorpusPolicy &policy() const noexcept;
     [[nodiscard]] std::uint32_t dimensions() const noexcept;
-    [[nodiscard]] std::span<const CorpusChunk> chunks() const noexcept;
     [[nodiscard]] std::span<const SourceInfo> sources() const noexcept;
+    [[nodiscard]] std::span<const CorpusLine> lines() const noexcept;
+    [[nodiscard]] std::span<const std::string_view> texts() const noexcept;
     [[nodiscard]] std::span<const float> matrix() const noexcept;
 
   private:
     struct Impl;
-    friend std::expected<MappedCorpus, EngineError> mapCorpusFile(const std::filesystem::path &path);
+    friend std::expected<MappedCorpus, EngineError> mapCorpusFile(const std::filesystem::path &path,
+                                                                  std::uint32_t *observedVersion);
     explicit MappedCorpus(std::unique_ptr<Impl> impl);
     std::unique_ptr<Impl> impl_;
 };
 
-[[nodiscard]] std::expected<void, EngineError>
-writeCorpusFile(const std::filesystem::path &path, std::span<const CorpusChunk> chunks, std::string_view modelId);
-
-/// Writes a corpus from batches. Embeddings are spilled to a side file so the caller can drop each batch.
+/// Spills ordered line records and distinct texts/vectors before atomically replacing the destination.
 class CorpusWriter
 {
   public:
     ~CorpusWriter();
     CorpusWriter(const CorpusWriter &) = delete;
     CorpusWriter &operator=(const CorpusWriter &) = delete;
-    CorpusWriter(CorpusWriter &&other) noexcept;
+    CorpusWriter(CorpusWriter &&) noexcept;
     CorpusWriter &operator=(CorpusWriter &&other) noexcept;
 
     [[nodiscard]] static std::expected<CorpusWriter, EngineError> create(const std::filesystem::path &path,
-                                                                         std::string_view modelId);
-    [[nodiscard]] std::expected<void, EngineError> add(std::span<const CorpusChunk> chunks);
+                                                                         CorpusPolicy policy);
+    [[nodiscard]] std::expected<std::uint32_t, EngineError> addSource(SourceInfo source);
+    /// Reserve a distinct id before its embedding is available, so lines can be streamed immediately.
+    [[nodiscard]] std::expected<std::uint32_t, EngineError> reserveDistinct(std::string_view text);
+    /// Write vectors in distinct-id order. Every reserved id must have a vector before finish.
+    [[nodiscard]] std::expected<void, EngineError> addVector(std::uint32_t id, std::span<const float> embedding);
+    [[nodiscard]] std::expected<std::uint32_t, EngineError> addDistinct(std::string_view text,
+                                                                        std::span<const float> embedding);
+    [[nodiscard]] std::expected<void, EngineError> addLines(std::span<const CorpusLine> lines);
     [[nodiscard]] std::expected<void, EngineError> finish();
 
   private:
-    CorpusWriter() = default;
-
-    std::filesystem::path destination_;
-    std::filesystem::path recordsPath_;
-    std::ofstream records_;
-    std::string modelId_;
-    std::uint32_t dimensions_ = 0;
-    std::uint64_t chunkCount_ = 0;
-    bool open_ = false;
+    struct Impl;
+    explicit CorpusWriter(std::unique_ptr<Impl> impl);
+    static void discardSpills(Impl *impl) noexcept;
+    std::unique_ptr<Impl> impl_;
 };
 
-[[nodiscard]] std::expected<MappedCorpus, EngineError> mapCorpusFile(const std::filesystem::path &path);
+/// When supplied, `observedVersion` receives the version even when it is unsupported.
+[[nodiscard]] std::expected<MappedCorpus, EngineError> mapCorpusFile(const std::filesystem::path &path,
+                                                                     std::uint32_t *observedVersion = nullptr);
 
+/// Expands distinct vectors for callers that need owned per-line chunks.
 [[nodiscard]] std::expected<std::vector<CorpusChunk>, EngineError> readCorpusFile(const std::filesystem::path &path);
 
 } // namespace nesso::core

@@ -9,6 +9,8 @@
 #include <model_paths.hpp>
 #include <nesso.hpp>
 
+#include "test_embedder_identity.hpp"
+
 #include <algorithm>
 #include <array>
 #include <cstdint>
@@ -63,7 +65,34 @@ void writeBytes(const std::filesystem::path &path, const void *data, size_t size
     REQUIRE(output);
 }
 
-void writeEmptyCorpus(const std::filesystem::path &path) { REQUIRE(nesso::core::writeCorpusFile(path, {}, "model")); }
+nesso::core::CorpusPolicy testPolicy()
+{
+    const auto identity = testEmbedderIdentity();
+    return {{"batch", "window:1024,max:32,tokens:1024,order:length-then-input"},
+            {"dedup", "exact-v1"},
+            {"dimensions", std::to_string(identity.dimensions)},
+            {"mask", "none-v1"},
+            {"model.id", identity.modelId},
+            {"model.quantization", identity.quantized ? "int8" : "fp32"},
+            {"model.sha256", identity.modelSha256},
+            {"tokens.max", "256"},
+            {"truncate", "4096-codepoints"},
+            {"vocab.sha256", identity.vocabSha256}};
+}
+
+void writeFixtureCorpus(const std::filesystem::path &path, nesso::core::CorpusPolicy policy, bool empty = false)
+{
+    auto writer = nesso::core::CorpusWriter::create(path, std::move(policy));
+    REQUIRE(writer);
+    if (!empty)
+    {
+        REQUIRE(writer->addSource({.path = "a.log", .storedOnly = true}) == 0);
+        REQUIRE(writer->addDistinct("alpha", std::array<float, 4>{1.F, 0.F, 0.F, 0.F}) == 0);
+        const nesso::core::CorpusLine line{.lineNumber = 1, .distinctId = 0, .storedText = "alpha"};
+        REQUIRE(writer->addLines(std::span{&line, 1}));
+    }
+    REQUIRE(writer->finish());
+}
 
 nesso::Nesso withMissingModel(const std::filesystem::path &root)
 {
@@ -105,9 +134,17 @@ std::vector<float> vectorFor(std::string_view text, std::uint32_t window)
 class RecordingEmbedder final : public nesso::embed::Embedder
 {
   public:
-    explicit RecordingEmbedder(size_t sessions = 1) : sessions_(sessions) {}
+    explicit RecordingEmbedder(size_t sessions = 1, nesso::embed::EmbedderIdentity identity = testEmbedderIdentity())
+        : sessions_(sessions), identity_(std::move(identity))
+    {
+    }
 
     [[nodiscard]] size_t sessions() const noexcept override { return sessions_; }
+
+    [[nodiscard]] std::expected<nesso::embed::EmbedderIdentity, nesso::embed::EmbedError> identity() const override
+    {
+        return identity_;
+    }
 
     [[nodiscard]] std::expected<std::vector<float>, nesso::embed::EmbedError> embed(std::string_view) const override
     {
@@ -145,6 +182,7 @@ class RecordingEmbedder final : public nesso::embed::Embedder
 
   private:
     size_t sessions_;
+    nesso::embed::EmbedderIdentity identity_;
     mutable std::vector<size_t> batches_;
 };
 
@@ -195,17 +233,16 @@ TEST_CASE("text operations report model and corpus failures", "[nesso][text]")
     const auto futureVersion = dir.path() / "future-version.nesso";
     const std::array<char, 4> junk{'b', 'a', 'd', '!'};
     writeBytes(corrupt, junk.data(), junk.size());
-    writeEmptyCorpus(empty);
-    const nesso::core::CorpusChunk chunk{.chunk = {.text = "alpha", .lineNumber = 1, .source = "a.log"},
-                                         .embedding = {1.F}};
-    REQUIRE(
-        nesso::core::writeCorpusFile(otherModel, std::span<const nesso::core::CorpusChunk>(&chunk, 1), "other/model"));
-    REQUIRE(nesso::core::writeCorpusFile(futureVersion, std::span<const nesso::core::CorpusChunk>(&chunk, 1), "model"));
+    writeFixtureCorpus(empty, testPolicy(), true);
+    auto otherPolicy = testPolicy();
+    otherPolicy["model.id"] = "other/model";
+    writeFixtureCorpus(otherModel, std::move(otherPolicy));
+    writeFixtureCorpus(futureVersion, testPolicy());
     {
         std::fstream patch(futureVersion, std::ios::binary | std::ios::in | std::ios::out);
         REQUIRE(patch);
         patch.seekp(4);
-        const std::array<char, 4> version{3, 0, 0, 0};
+        const std::array<char, 4> version{4, 0, 0, 0};
         patch.write(version.data(), version.size());
         REQUIRE(patch);
     }
@@ -233,7 +270,8 @@ TEST_CASE("text operations report model and corpus failures", "[nesso][text]")
     REQUIRE(nothing.error().kind == nesso::ErrorKind::EmptyInput);
     REQUIRE(nothing.error().cause == nesso::ErrorCause::EmptyCorpus);
 
-    const auto mismatched = app.search({.query = "database", .index = otherModel});
+    const nesso::Nesso fakeApp{nesso::Config{}, std::make_unique<RecordingEmbedder>()};
+    const auto mismatched = fakeApp.search({.query = "database", .index = otherModel});
     REQUIRE_FALSE(mismatched.has_value());
     REQUIRE(mismatched.error().kind == nesso::ErrorKind::CorpusRead);
     REQUIRE(mismatched.error().cause == nesso::ErrorCause::ModelMismatch);

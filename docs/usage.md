@@ -49,10 +49,11 @@ For the fp32 model, `N` is the intra-op thread count of the one session. The def
 - A file whose first 4 KiB contains a NUL byte is rejected. Directories are rejected.
 - Lines: one chunk per non-empty line. Lines longer than 4096 code points are truncated after the 4096th code point; a UTF-8 character is never split. A trailing CR is stripped.
 - JSON: only objects with a string field are indexed (`message` by default, or `--json-field`). Malformed lines and documents are skipped. String values longer than 4096 code points are truncated the same way. A JSON array is numbered `element N`, not `line N`.
-- `grep` and `index` embed each distinct text once, in first-occurrence order, in a fixed window of 1024 texts sorted by token count. Lines that share a text share its score. Ties break by input order. `index` writes one vector per input line. Rebuild a corpus after upgrading so its vectors match that batch. `search` maps that file. Stdin cannot be reread, so that command keeps the stdin text.
+- `grep` and `index` embed each distinct text once, in first-occurrence order, in a fixed window of 1024 texts sorted by token count. Lines that share a text share its score. Ties break by input order. `index` writes corpus format v3: one vector per distinct text, every input line in order (skipped lines included), each source's size and modification time, and the indexing policy. Stdin cannot be reread, so its text is stored in the corpus. `search` maps that file, scores each distinct vector once, and lists matching lines by score, then input order.
 - `--json` on `grep` and `search` prints one JSON object per match. The object adds `occurrences`, how many input lines share that text, always at least 1. `schema_version` stays 1. Text output does not include the count. Counts stay on stderr. `index` has no `--json`.
 - Empty lines and JSON values without that string field are skipped. Overlong log lines and JSON string values are truncated. Skip and truncation counts are printed on stderr.
-- `index` records each file source's size and modification time. `search` warns on stderr when a source changed or is missing; stdin sources are not tracked.
+- `search` re-reads each matching line from its source file. When a source changed, is missing, or cannot be read, `search` warns on stderr and prints the indexed text instead. Stdin sources are not tracked.
+- `search` refuses a corpus written by an older format (v2) or a different model, vocabulary, quantization, or vector size; re-run `nesso index`. When only the batch, truncation, or dedup policy differs, it warns once on stderr and continues.
 
 ## What this is not
 

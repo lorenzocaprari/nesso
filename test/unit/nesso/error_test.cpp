@@ -53,8 +53,14 @@ TEST_CASE("each failure kind names itself", "[nesso][error]")
 {
     const auto text = [](nesso::ErrorKind kind, nesso::ErrorCause cause)
     {
-        const nesso::Error error{
-            .kind = kind, .cause = cause, .path = "in.log", .skippedLines = 0, .note = {}, .staleSources = {}};
+        const nesso::Error error{.kind = kind,
+                                 .cause = cause,
+                                 .path = "in.log",
+                                 .skippedLines = 0,
+                                 .note = {},
+                                 .staleSources = {},
+                                 .policyMismatch = false,
+                                 .corpusVersion = {}};
         return nesso::message(error);
     };
 
@@ -92,7 +98,9 @@ TEST_CASE("a zero-chunk index names the path and what to check", "[nesso][error]
                                  .path = std::move(path),
                                  .skippedLines = 0,
                                  .note = "check the input path or --json-field",
-                                 .staleSources = {}};
+                                 .staleSources = {},
+                                 .policyMismatch = false,
+                                 .corpusVersion = {}};
         return nesso::message(error);
     };
 

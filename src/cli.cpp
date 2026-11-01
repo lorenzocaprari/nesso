@@ -80,8 +80,24 @@ static void renderStaleSources(const std::vector<StaleSource> &sources)
 {
     for (const StaleSource &source : sources)
     {
-        const std::string_view status = source.missing ? "is missing" : "changed since indexing";
+        std::string_view status = "changed since indexing";
+        if (source.unreadable)
+        {
+            status = "could not be read";
+        }
+        else if (source.missing)
+        {
+            status = "is missing";
+        }
         std::println(std::cerr, "Warning: source '{}' {}.", source.path, status);
+    }
+}
+
+static void renderPolicyWarning(bool mismatch)
+{
+    if (mismatch)
+    {
+        std::println(std::cerr, "Warning: corpus indexing policy differs from this nesso; search results may differ.");
     }
 }
 
@@ -141,6 +157,7 @@ static int renderJson(const TextResults &results)
 static int render(const TextResults &results, bool json)
 {
     renderLineCounts(lineReport(results));
+    renderPolicyWarning(results.policyMismatch);
     renderStaleSources(results.staleSources);
     return json ? renderJson(results) : renderText(results);
 }
@@ -160,6 +177,7 @@ static int renderError(const Error &error, int status)
         std::println(std::cerr, "{}", text);
     }
     renderLineCounts(lineReport(error));
+    renderPolicyWarning(error.policyMismatch);
     renderStaleSources(error.staleSources);
     return status;
 }
