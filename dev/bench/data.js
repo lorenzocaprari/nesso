@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793567722599,
+  "lastUpdate": 1793568427852,
   "repoUrl": "https://github.com/lorenzocaprari/nesso",
   "entries": {
     "nesso": [
@@ -3455,6 +3455,60 @@ window.BENCHMARK_DATA = {
           {
             "name": "grep-100000-rss",
             "value": 153632768,
+            "unit": "bytes"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "caprarilorenzo5@gmail.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "committer": {
+            "email": "85455384+lorenzocaprari@users.noreply.github.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "distinct": true,
+          "id": "05e9555d2638a565cc9ec8ea5f1351df55883296",
+          "message": "fix(core): verify a corpus checksum on load\n\nStore the first 16 bytes of a SHA-256 over the whole corpus in the reserved header bytes 112-127, hashed with that field zeroed. search rejects a file whose checksum does not match as corrupt before reading any other field.",
+          "timestamp": "2026-11-01T22:22:20+01:00",
+          "tree_id": "5902fa475cb46012997cbee45a407d937268eb91",
+          "url": "https://github.com/lorenzocaprari/nesso/commit/05e9555d2638a565cc9ec8ea5f1351df55883296"
+        },
+        "date": 1793568427289,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "grep-1000-wall",
+            "value": 0.67,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-1000-rss",
+            "value": 146350080,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-10000-wall",
+            "value": 4.77,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-10000-rss",
+            "value": 154296320,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-100000-wall",
+            "value": 46.33,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-100000-rss",
+            "value": 158289920,
             "unit": "bytes"
           }
         ]
