@@ -17,6 +17,7 @@ target_link_libraries(
 add_executable(nesso main.cpp cli_parser.cpp cli.cpp)
 target_link_libraries(nesso PRIVATE nesso_options nesso_lib nesso_embed
                                     CLI11::CLI11 nlohmann_json::nlohmann_json)
-if(NESSO_VERSION)
-  target_compile_definitions(nesso PRIVATE "NESSO_VERSION=\"${NESSO_VERSION}\"")
+if(NESSO_BUILD_VERSION)
+  target_compile_definitions(nesso
+                             PRIVATE "NESSO_VERSION=\"${NESSO_BUILD_VERSION}\"")
 endif()

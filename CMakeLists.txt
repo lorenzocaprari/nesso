@@ -2,6 +2,31 @@ cmake_minimum_required(VERSION 4.2)
 
 project(nesso LANGUAGES CXX)
 
+if(DEFINED NESSO_VERSION AND NOT NESSO_VERSION STREQUAL "")
+  set(NESSO_BUILD_VERSION "${NESSO_VERSION}")
+  find_package(Git QUIET)
+  if(GIT_FOUND)
+    execute_process(
+      COMMAND "${GIT_EXECUTABLE}" describe --exact-match --tags --match
+              "v${NESSO_VERSION}" HEAD
+      WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+      RESULT_VARIABLE NESSO_RELEASE_TAG_RESULT
+      OUTPUT_QUIET ERROR_QUIET)
+    if(NOT NESSO_RELEASE_TAG_RESULT STREQUAL "0")
+      execute_process(
+        COMMAND "${GIT_EXECUTABLE}" rev-parse --short=12 HEAD
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        RESULT_VARIABLE NESSO_GIT_REVISION_RESULT
+        OUTPUT_VARIABLE NESSO_GIT_REVISION
+        OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET)
+      if(NESSO_GIT_REVISION_RESULT STREQUAL "0" AND NESSO_GIT_REVISION MATCHES
+                                                    "^[0-9a-f]+$")
+        string(APPEND NESSO_BUILD_VERSION "+g${NESSO_GIT_REVISION}")
+      endif()
+    endif()
+  endif()
+endif()
+
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 # CXX_EXTENSIONS does not propagate through an INTERFACE library, so a target

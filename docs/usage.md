@@ -4,6 +4,8 @@
 
 Matches go to stdout. Skipped lines, the index summary, and errors go to stderr. Every command exits 0 when matches are printed or a corpus is written, 1 when there is nothing to search or index, and 2 on error. Argument errors, including `-k 0`, also exit 2. `--help` lists these codes. A missing model names the directories that were tried and suggests `scripts/fetch-model` or `--model-dir`.
 
+With Git metadata available, `nesso --version` prints the package version plus `+g<short-commit>` for builds not made from the matching `vX.Y.Z` release tag. A tagged release prints `X.Y.Z`.
+
 ## Model
 
 The `.deb` and the container image ship the MiniLM files in `/usr/share/nesso`. A source build downloads them once:
