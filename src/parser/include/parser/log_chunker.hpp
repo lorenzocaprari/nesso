@@ -34,8 +34,8 @@ struct ParsedChunk
     uint64_t byteLength = 0;
 };
 
-/// Counts for one parse. `skippedLines` is the sum of the reason counters. `truncatedLines` were kept after cutting
-/// the value to the maximum length.
+/// Counts for one parse. `skippedLines` is the sum of the reason counters. `emptyLines` includes ASCII-whitespace-only
+/// lines and JSON string values. `truncatedLines` were kept after cutting the value to the maximum length.
 struct ParseStats
 {
     size_t skippedLines = 0;

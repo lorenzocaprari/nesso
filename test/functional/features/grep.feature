@@ -116,6 +116,87 @@ Feature: grep
     And stderr contains "Skipped 1 empty line."
     And stderr contains "Truncated 1 line."
 
+  Scenario: whitespace-only log lines are not searched or indexed
+    Given a file "spaces.log" with hex:
+      """
+      20 20 20 0a 09 20 0d 0a 20 6b 65 65 70 20 74 68 69 73 20 6c 69 6e 65 20 0a
+      """
+    When I run nesso with arguments grep keep {dir}/spaces.log
+    Then the exit code is 0
+    And stdout contains "line 3:"
+    And stdout contains " keep this line"
+    And stdout does not contain "line 1:"
+    And stdout does not contain "line 2:"
+    And stderr contains "Skipped 2 empty lines."
+    When I run nesso with arguments index -o {dir}/spaces.nesso {dir}/spaces.log
+    Then the exit code is 0
+    And stderr contains "Skipped 2 empty lines."
+    When I run nesso with arguments search keep -i {dir}/spaces.nesso
+    Then the exit code is 0
+    And stdout contains "line 3:"
+    And stdout does not contain "line 1:"
+    And stdout does not contain "line 2:"
+
+  Scenario: blank JSONL lines and string values are skipped
+    Given a file "rows.jsonl" with hex:
+      """
+      20 09 0d 0a
+      7b 22 6d 65 73 73 61 67 65 22 3a 22 22 7d 0a
+      7b 22 6d 65 73 73 61 67 65 22 3a 22 20 5c 74 20 22 7d 0a
+      7b 22 6d 65 73 73 61 67 65 22 3a 22 6b 65 65 70 20 6a 73 6f 6e 22 7d 0a
+      """
+    When I run nesso with arguments grep keep {dir}/rows.jsonl
+    Then the exit code is 0
+    And stdout contains "line 4:"
+    And stdout does not contain "line 2:"
+    And stdout does not contain "line 3:"
+    And stderr contains "Skipped 3 empty lines."
+    And stderr does not contain "malformed"
+    When I run nesso with arguments index -o {dir}/rows.nesso {dir}/rows.jsonl
+    Then the exit code is 0
+    And stderr contains "Skipped 3 empty lines."
+    When I run nesso with arguments search keep -i {dir}/rows.nesso
+    Then the exit code is 0
+    And stdout contains "line 4:"
+    And stdout does not contain "line 2:"
+    And stdout does not contain "line 3:"
+
+  Scenario: blank JSON array values retain the remaining element number
+    Given a file "rows.json" with:
+      """
+      [{"message":""},{"message":"   "},{"message":"keep json"}]
+      """
+    When I run nesso with arguments grep keep {dir}/rows.json
+    Then the exit code is 0
+    And stdout contains "element 3:"
+    And stdout does not contain "element 1:"
+    And stdout does not contain "element 2:"
+    And stderr contains "Skipped 2 empty lines."
+    When I run nesso with arguments index -o {dir}/rows.nesso {dir}/rows.json
+    Then the exit code is 0
+    And stderr contains "Skipped 2 empty lines."
+    When I run nesso with arguments search keep -i {dir}/rows.nesso
+    Then the exit code is 0
+    And stdout contains "element 3:"
+    And stdout does not contain "element 1:"
+    And stdout does not contain "element 2:"
+
+  Scenario: whitespace-only stdin lines are skipped
+    Given stdin is hex:
+      """
+      20 09 0d 0a 6b 65 65 70 0a 20 09
+      """
+    When I run nesso with arguments grep keep -
+    Then the exit code is 0
+    And stdout contains "-:line 2:"
+    And stderr contains "Skipped 2 empty lines."
+    When I run nesso with arguments index -o {dir}/stdin.nesso -
+    Then the exit code is 0
+    And stderr contains "Skipped 2 empty lines."
+    When I run nesso with arguments search keep -i {dir}/stdin.nesso
+    Then the exit code is 0
+    And stdout contains "-:line 2:"
+
   Scenario: json-field selects which string is ranked
     Given a file "rows.jsonl" with:
       """

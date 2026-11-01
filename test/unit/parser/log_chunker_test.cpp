@@ -104,6 +104,27 @@ TEST_CASE("Chunker parses .log files line-by-line", "[Chunker][parser][Unit]")
     REQUIRE(stats.truncatedLines == 1);
 }
 
+TEST_CASE("Chunker skips ASCII-whitespace-only log lines", "[Chunker][parser][Unit]")
+{
+    const auto path =
+        std::filesystem::temp_directory_path() / ("nesso-chunker-blank-" + std::to_string(getpid()) + ".log");
+    const std::string source = std::string("\n \t\r\n\v\f\t \n  keep \t\n") + std::string(4097, ' ') + "\n\xC2\xA0\n\t";
+    writeBytes(path, source);
+    nesso::parser::ParseStats stats{};
+    const auto chunks = nesso::parser::Chunker::fromLogFile(path, 4096, &stats);
+    std::filesystem::remove(path);
+
+    REQUIRE(chunks.has_value());
+    REQUIRE(chunks->size() == 2);
+    CHECK((*chunks)[0].text == "  keep \t");
+    CHECK((*chunks)[0].lineNumber == 4);
+    CHECK((*chunks)[1].text == "\xC2\xA0");
+    CHECK((*chunks)[1].lineNumber == 6);
+    CHECK(stats.skippedLines == 5);
+    CHECK(stats.emptyLines == 5);
+    CHECK(stats.truncatedLines == 0);
+}
+
 TEST_CASE("Chunker extracts message fields from jsonl", "[Chunker][parser][Unit]")
 {
     const std::filesystem::path path = std::filesystem::path(NESSO_TEST_FIXTURES) / "sample.jsonl";
@@ -317,6 +338,60 @@ TEST_CASE("Chunker skips blank jsonl lines and non-string messages", "[Chunker][
     std::filesystem::remove_all(directory);
 }
 
+TEST_CASE("Chunker skips blank JSON lines and string values", "[Chunker][parser][Unit]")
+{
+    const auto jsonl =
+        std::filesystem::temp_directory_path() / ("nesso-chunker-blank-" + std::to_string(getpid()) + ".jsonl");
+    writeBytes(jsonl, " \t\r\n"
+                      "{\"msg\":\"\"}\n"
+                      "{\"msg\":\" \\t\\r\\n\\f\\u000b\"}\n"
+                      "{\"msg\":\"  keep \\t\"}\n"
+                      "{\"msg\":\"\\u00a0\"}\n"
+                      "{\"message\":\"missing\"}\n"
+                      "{bad\n"
+                      "\t");
+    nesso::parser::ParseStats jsonlStats{};
+    const auto lines = nesso::parser::Chunker::fromJsonFile(jsonl, &jsonlStats, "msg");
+    const auto uncounted = nesso::parser::Chunker::fromJsonFile(jsonl, nullptr, "msg");
+    std::filesystem::remove(jsonl);
+
+    REQUIRE(lines.has_value());
+    REQUIRE(lines->size() == 2);
+    REQUIRE(uncounted.has_value());
+    CHECK(uncounted->size() == 2);
+    CHECK((*lines)[0].text == "  keep \t");
+    CHECK((*lines)[0].lineNumber == 4);
+    CHECK((*lines)[1].text == "\xC2\xA0");
+    CHECK((*lines)[1].lineNumber == 5);
+    CHECK(jsonlStats.skippedLines == 6);
+    CHECK(jsonlStats.emptyLines == 4);
+    CHECK(jsonlStats.malformedLines == 1);
+    CHECK(jsonlStats.missingFieldLines == 1);
+
+    const auto json =
+        std::filesystem::temp_directory_path() / ("nesso-chunker-blank-" + std::to_string(getpid()) + ".json");
+    writeBytes(json, "{\"msg\":\"" + std::string(4097, ' ') + "\"}");
+    nesso::parser::ParseStats objectStats{};
+    const auto object = nesso::parser::Chunker::fromJsonFile(json, &objectStats, "msg");
+    REQUIRE(object.has_value());
+    CHECK(object->empty());
+    CHECK(objectStats.skippedLines == 1);
+    CHECK(objectStats.emptyLines == 1);
+    CHECK(objectStats.truncatedLines == 0);
+
+    writeBytes(json, "[{\"msg\":\"\"},{\"msg\":\" \\t\"},{\"msg\":\"keep\"}]");
+    nesso::parser::ParseStats arrayStats{};
+    const auto array = nesso::parser::Chunker::fromJsonFile(json, &arrayStats, "msg");
+    std::filesystem::remove(json);
+    REQUIRE(array.has_value());
+    REQUIRE(array->size() == 1);
+    CHECK(array->front().text == "keep");
+    CHECK(array->front().lineNumber == 3);
+    CHECK(array->front().arrayElement);
+    CHECK(arrayStats.skippedLines == 2);
+    CHECK(arrayStats.emptyLines == 2);
+}
+
 TEST_CASE("Chunker skips invalid documents when stats are not collected", "[Chunker][parser][Unit]")
 {
     const auto directory = std::filesystem::temp_directory_path() / "nesso-chunker-invalid";
@@ -507,6 +582,19 @@ TEST_CASE("Chunker preserves stdin probe and record behavior", "[Chunker][parser
         const auto chunks = nesso::parser::Chunker::fromFile("-");
         REQUIRE(chunks);
         REQUIRE(chunks->empty());
+    }
+    SECTION("whitespace-only lines")
+    {
+        std::istringstream input{" \t\r\n  kept \t\n \t"};
+        const ScopedCin redirected{*input.rdbuf()};
+        nesso::parser::ParseStats stats{};
+        const auto chunks = nesso::parser::Chunker::fromFile("-", 4096, &stats);
+        REQUIRE(chunks);
+        REQUIRE(chunks->size() == 1);
+        CHECK(chunks->front().text == "  kept \t");
+        CHECK(chunks->front().lineNumber == 2);
+        CHECK(stats.skippedLines == 2);
+        CHECK(stats.emptyLines == 2);
     }
     SECTION("an exact probe-sized input")
     {
