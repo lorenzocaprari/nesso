@@ -3,6 +3,7 @@
 
 #include <cli.hpp>
 #include <render_json.hpp>
+#include <render_text.hpp>
 
 #include <expected>
 #include <format>
@@ -135,11 +136,12 @@ static int renderText(const TextResults &results)
         const char *place = match.arrayElement ? "element" : "line";
         if (results.multipleSources || match.source == "-")
         {
-            std::println("{}:{} {}: {:.4f}: {}", match.source, place, match.line, match.score, match.text);
+            std::println("{}:{} {}: {:.4f}: {}", escapeTerminalControls(match.source), place, match.line, match.score,
+                         escapeTerminalControls(match.text));
         }
         else
         {
-            std::println("{} {}: {:.4f}: {}", place, match.line, match.score, match.text);
+            std::println("{} {}: {:.4f}: {}", place, match.line, match.score, escapeTerminalControls(match.text));
         }
     }
     return 0;
