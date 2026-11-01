@@ -68,6 +68,92 @@ TEST_CASE("Chunker visits skipped lines with source byte ranges", "[Chunker][par
     std::filesystem::remove_all(directory);
 }
 
+TEST_CASE("Blank records retain their source ranges and array ordinals", "[Chunker][parser][Unit]")
+{
+    const auto directory =
+        std::filesystem::temp_directory_path() / ("nesso-chunker-blank-records-" + std::to_string(getpid()));
+    REQUIRE(std::filesystem::create_directory(directory));
+    const auto log = directory / "records.log";
+    const std::string blank = " \t\r\n";
+    const std::string kept = "  keep \t\r\n";
+    const std::string tail = "\t ";
+    writeBytes(log, blank + kept + tail);
+
+    nesso::parser::ParseStats stats{};
+    std::vector<nesso::parser::ParsedChunk> records;
+    REQUIRE(nesso::parser::Chunker::forEachRecord(log, 4096, &stats, "message",
+                                                  [&records](nesso::parser::ParsedChunk record)
+                                                  { records.push_back(std::move(record)); }));
+    REQUIRE(records.size() == 3);
+    CHECK(records[0].skipped);
+    CHECK(records[0].lineNumber == 1);
+    CHECK(records[0].byteOffset == 0);
+    CHECK(records[0].byteLength == blank.size() - 1);
+    CHECK_FALSE(records[1].skipped);
+    CHECK(records[1].text == "  keep \t");
+    CHECK(records[1].lineNumber == 2);
+    CHECK(records[1].byteOffset == blank.size());
+    CHECK(records[1].byteLength == kept.size() - 1);
+    CHECK(records[2].skipped);
+    CHECK(records[2].lineNumber == 3);
+    CHECK(records[2].byteOffset == blank.size() + kept.size());
+    CHECK(records[2].byteLength == tail.size());
+    CHECK(stats.skippedLines == 2);
+    CHECK(stats.emptyLines == 2);
+    CHECK(stats.truncatedLines == 0);
+    const auto reread = nesso::parser::Chunker::readRecord(log, records[1].byteOffset, records[1].byteLength,
+                                                           records[1].lineNumber, false, "message", 4096);
+    REQUIRE(reread);
+    CHECK(*reread == "  keep \t");
+
+    const auto jsonl = directory / "records.jsonl";
+    const std::string blankValue = "{\"msg\":\" \\t\"}\r\n";
+    const std::string keptValue = "{\"msg\":\"keep\"}\n";
+    writeBytes(jsonl, blank + blankValue + keptValue);
+    nesso::parser::ParseStats jsonlStats{};
+    std::vector<nesso::parser::ParsedChunk> jsonlRecords;
+    REQUIRE(nesso::parser::Chunker::forEachRecord(jsonl, 4096, &jsonlStats, "msg",
+                                                  [&jsonlRecords](nesso::parser::ParsedChunk record)
+                                                  { jsonlRecords.push_back(std::move(record)); }));
+    REQUIRE(jsonlRecords.size() == 3);
+    CHECK(jsonlRecords[0].skipped);
+    CHECK(jsonlRecords[0].byteOffset == 0);
+    CHECK(jsonlRecords[0].byteLength == blank.size() - 1);
+    CHECK(jsonlRecords[1].skipped);
+    CHECK(jsonlRecords[1].lineNumber == 2);
+    CHECK(jsonlRecords[1].byteOffset == blank.size());
+    CHECK(jsonlRecords[1].byteLength == blankValue.size() - 1);
+    CHECK_FALSE(jsonlRecords[2].skipped);
+    CHECK(jsonlRecords[2].lineNumber == 3);
+    CHECK(jsonlRecords[2].byteOffset == blank.size() + blankValue.size());
+    CHECK(jsonlRecords[2].text == "keep");
+    CHECK(jsonlStats.skippedLines == 2);
+    CHECK(jsonlStats.emptyLines == 2);
+    CHECK(jsonlStats.malformedLines == 0);
+
+    const auto json = directory / "records.json";
+    writeBytes(json, "[{\"msg\":\"\"},{\"msg\":\" \\t\"},{\"msg\":\"keep\"}]");
+    nesso::parser::ParseStats jsonStats{};
+    std::vector<nesso::parser::ParsedChunk> jsonRecords;
+    REQUIRE(nesso::parser::Chunker::forEachRecord(json, 4096, &jsonStats, "msg",
+                                                  [&jsonRecords](nesso::parser::ParsedChunk record)
+                                                  { jsonRecords.push_back(std::move(record)); }));
+    REQUIRE(jsonRecords.size() == 3);
+    CHECK(jsonRecords[0].skipped);
+    CHECK(jsonRecords[0].arrayElement);
+    CHECK(jsonRecords[0].lineNumber == 1);
+    CHECK(jsonRecords[1].skipped);
+    CHECK(jsonRecords[1].arrayElement);
+    CHECK(jsonRecords[1].lineNumber == 2);
+    CHECK_FALSE(jsonRecords[2].skipped);
+    CHECK(jsonRecords[2].arrayElement);
+    CHECK(jsonRecords[2].lineNumber == 3);
+    CHECK(jsonRecords[2].text == "keep");
+    CHECK(jsonStats.skippedLines == 2);
+    CHECK(jsonStats.emptyLines == 2);
+    std::filesystem::remove_all(directory);
+}
+
 TEST_CASE("Chunker re-reads decoded JSON values by field and array ordinal", "[Chunker][parser][Unit]")
 {
     const auto directory =
