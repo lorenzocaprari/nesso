@@ -12,6 +12,20 @@ Feature: grep
     And stdout contains "database connection refused"
     And stderr is empty
 
+  Scenario: text output escapes terminal controls in grep and search
+    Given a file "controls.log" with hex:
+      """
+      64 61 74 61 62 61 73 65 20 63 6f 6e 6e 65 63 74 69 6f 6e 20 72 65 66 75 73 65 64 1b 5b 32 4a 07 0a
+      """
+    When I run nesso with arguments grep "database connection" {dir}/controls.log
+    Then the exit code is 0
+    And stdout contains "database connection refused\\x1B[2J\\x07"
+    When I run nesso with arguments index -o {dir}/controls.nesso {dir}/controls.log
+    Then the exit code is 0
+    When I run nesso with arguments search "database connection" -i {dir}/controls.nesso
+    Then the exit code is 0
+    And stdout contains "database connection refused\\x1B[2J\\x07"
+
   Scenario: the same grep prints the same scores
     Given a file "app.log" with:
       """

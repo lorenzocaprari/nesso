@@ -31,6 +31,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `nesso grep` and `nesso search` escape terminal control characters in text output, so control sequences embedded in log lines are displayed instead of being interpreted by the terminal.
 - `nesso grep` and `nesso index` report input read failures instead of treating a failed read as empty or silently stopping.
 - Log lines and JSON string values longer than 4096 code points are cut after the 4096th code point. The cut used to fall at 4096 bytes, so a multi-byte UTF-8 character could be split and a line could keep fewer than 4096 characters. A byte that does not start a complete UTF-8 sequence counts as one code point. ASCII input is unchanged. Re-index a corpus to apply the new cut to lines longer than 4096 bytes.
 - A corpus whose source-table, chunk-table, or matrix offset is outside the file, or out of order, is rejected as corrupt. The command exits 2 and prints `the file is corrupt`. The reader used to follow those offsets past the end of the file.

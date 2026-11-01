@@ -48,5 +48,16 @@ set_property(
   PROPERTY CXX_COMPILER_LAUNCHER
            "${CMAKE_CURRENT_SOURCE_DIR}/strip-coverage-flags")
 
-set_tests_properties(model_paths_test nesso_facade_test error_test trace_test
-                     nesso_flush_test render_json_test PROPERTIES LABELS unit)
+add_executable(render_text_test render_text_test.cpp)
+add_test(NAME render_text_test COMMAND render_text_test)
+target_link_libraries(render_text_test PRIVATE nesso_lib Catch2::Catch2WithMain)
+
+set_tests_properties(
+  model_paths_test
+  nesso_facade_test
+  error_test
+  trace_test
+  nesso_flush_test
+  render_json_test
+  render_text_test
+  PROPERTIES LABELS unit)
