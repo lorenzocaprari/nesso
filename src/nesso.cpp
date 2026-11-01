@@ -158,6 +158,8 @@ std::string_view describe(ErrorCause cause)
         return "no indexable lines";
     case ErrorCause::EmptyCorpus:
         return "the corpus is empty";
+    case ErrorCause::OutputIsInput:
+        return "the output is one of the inputs";
     }
     std::unreachable();
 }
@@ -876,6 +878,14 @@ std::expected<TextResults, Error> Nesso::grep(const GrepRequest &request) const
 std::expected<IndexSummary, Error> Nesso::index(const IndexRequest &request) const
 {
     const TraceSession session;
+    for (const std::filesystem::path &path : request.files)
+    {
+        std::error_code error;
+        if (path != "-" && std::filesystem::equivalent(path, request.output, error))
+        {
+            return std::unexpected(makeError(ErrorKind::CorpusWrite, ErrorCause::OutputIsInput, request.output, {}));
+        }
+    }
     const auto model = embedder();
     if (!model)
     {

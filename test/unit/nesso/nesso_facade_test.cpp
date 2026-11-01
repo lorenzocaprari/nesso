@@ -398,6 +398,32 @@ TEST_CASE("index fails when no chunks are produced and does not replace the corp
     CHECK(recorder->batches().empty());
 }
 
+TEST_CASE("index refuses an output that is one of its inputs", "[nesso][text]")
+{
+    const TempDir dir{"nesso_index_output_is_input"};
+    auto embedder = std::make_unique<RecordingEmbedder>();
+    const RecordingEmbedder *recorder = embedder.get();
+    const nesso::Nesso app{nesso::Config{}, std::move(embedder)};
+    const auto log = dir.path() / "app.log";
+    const auto other = dir.path() / "other.log";
+    const auto link = dir.path() / "link.log";
+    const char text[] = {'o', 'k', '\n'};
+    writeBytes(log, text, sizeof(text));
+    writeBytes(other, text, sizeof(text));
+    std::filesystem::create_hard_link(log, link);
+
+    for (const auto &output : {log, dir.path() / "." / "app.log", link})
+    {
+        const auto refused = app.index({.files = {other, log}, .output = output});
+        REQUIRE_FALSE(refused.has_value());
+        CHECK(refused.error().kind == nesso::ErrorKind::CorpusWrite);
+        CHECK(refused.error().cause == nesso::ErrorCause::OutputIsInput);
+        CHECK(refused.error().path == output);
+        CHECK(readFile(log) == "ok\n");
+    }
+    CHECK(recorder->batches().empty());
+}
+
 TEST_CASE("Nesso is movable", "[nesso]")
 {
     const TempDir dir{"nesso_facade_move"};

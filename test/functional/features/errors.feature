@@ -186,6 +186,19 @@ Feature: command errors
     And stderr contains "failed to read the corpus"
     And stderr contains "the file is corrupt"
 
+  Scenario: the corpus cannot overwrite one of its inputs
+    Given a file "app.log" with:
+      """
+      database connection refused
+      """
+    When I run nesso with arguments index -o {dir}/app.log {dir}/app.log
+    Then the exit code is 2
+    And stderr contains "failed to write the corpus"
+    And stderr contains "the output is one of the inputs"
+    When I run nesso with arguments grep "connection" {dir}/app.log
+    Then the exit code is 0
+    And stdout contains "database connection refused"
+
   Scenario: the corpus cannot be written onto a directory
     Given a file "app.log" with:
       """
