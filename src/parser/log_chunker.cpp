@@ -94,6 +94,8 @@ static bool stripCarriageReturn(std::string &line)
     return true;
 }
 
+static bool isBlank(std::string_view text) { return text.find_first_not_of(" \t\n\r\f\v") == std::string_view::npos; }
+
 enum class SkipReason : uint8_t
 {
     Empty,
@@ -201,7 +203,7 @@ static std::expected<void, ParseError> readLogStream(std::istream &input, size_t
         ++lineNumber;
         const bool hadCarriageReturn = stripCarriageReturn(line);
         const size_t fileBytes = line.size() + (hadCarriageReturn ? 1U : 0U);
-        if (line.empty())
+        if (isBlank(line))
         {
             countSkip(stats, SkipReason::Empty);
             consume(ParsedChunk{.text = {},
@@ -236,18 +238,27 @@ static std::expected<void, ParseError> readJsonStream(std::istream &input, bool 
     const auto appendValue = [&](const nlohmann::json &document, uint64_t sourceLine, uint64_t byteOffset,
                                  uint64_t byteLength, bool arrayElement)
     {
-        if (!document.contains(field) || !document.at(field).is_string())
+        const auto skip = [&](SkipReason reason)
         {
-            countSkip(stats, SkipReason::MissingField);
+            countSkip(stats, reason);
             consume(ParsedChunk{.text = {},
                                 .lineNumber = sourceLine,
                                 .byteOffset = byteOffset,
                                 .arrayElement = arrayElement,
                                 .skipped = true,
                                 .byteLength = byteLength});
+        };
+        if (!document.contains(field) || !document.at(field).is_string())
+        {
+            skip(SkipReason::MissingField);
             return;
         }
         std::string text = document.at(field).get<std::string>();
+        if (isBlank(text))
+        {
+            skip(SkipReason::Empty);
+            return;
+        }
         limitValue(text, maxLineLength, stats);
         consume(ParsedChunk{.text = std::move(text),
                             .lineNumber = sourceLine,
@@ -264,7 +275,7 @@ static std::expected<void, ParseError> readJsonStream(std::istream &input, bool 
             ++lineNumber;
             const bool hadCarriageReturn = stripCarriageReturn(line);
             const size_t fileBytes = line.size() + (hadCarriageReturn ? 1U : 0U);
-            if (line.empty())
+            if (isBlank(line))
             {
                 countSkip(stats, SkipReason::Empty);
                 consume(ParsedChunk{.text = {},

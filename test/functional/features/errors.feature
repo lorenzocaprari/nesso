@@ -116,11 +116,21 @@ Feature: command errors
   Scenario: a log of only blank lines has nothing to index
     Given a file "blank.log" with hex:
       """
-      0a0a
+      0a 20 09 0d 0a 20 09
       """
     When I run nesso with arguments grep "database connection error" {dir}/blank.log
     Then the exit code is 1
+    And stdout is empty
     And stderr contains "no indexable lines"
+    And stderr contains "Skipped 3 empty lines."
+    When I run nesso with arguments index -o {dir}/blank.nesso {dir}/blank.log
+    Then the exit code is 1
+    And stdout is empty
+    And stderr contains "no indexable lines"
+    And stderr contains "Skipped 3 empty lines."
+    When I run nesso with arguments search "database connection error" -i {dir}/blank.nesso
+    Then the exit code is 2
+    And stderr contains "File does not exist"
 
   Scenario: a malformed JSON document is skipped
     Given a file "bad.json" with:
