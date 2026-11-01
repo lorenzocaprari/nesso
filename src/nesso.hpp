@@ -52,7 +52,8 @@ enum class ErrorCause : uint8_t
     SourceChanged,
     EmptyFile,
     NothingIndexable,
-    EmptyCorpus
+    EmptyCorpus,
+    OutputIsInput
 };
 
 struct StaleSource

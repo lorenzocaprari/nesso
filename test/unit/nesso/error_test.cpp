@@ -47,6 +47,7 @@ TEST_CASE("each cause has a readable phrase", "[nesso][error]")
     REQUIRE(nesso::describe(nesso::ErrorCause::EmptyFile) == "the file is empty");
     REQUIRE(nesso::describe(nesso::ErrorCause::NothingIndexable) == "no indexable lines");
     REQUIRE(nesso::describe(nesso::ErrorCause::EmptyCorpus) == "the corpus is empty");
+    REQUIRE(nesso::describe(nesso::ErrorCause::OutputIsInput) == "the output is one of the inputs");
 }
 
 TEST_CASE("each failure kind names itself", "[nesso][error]")

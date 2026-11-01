@@ -31,6 +31,8 @@ nesso index -o corpus.nesso app.log events.jsonl
 nesso search "payment timeout" -i corpus.nesso -k 5
 ```
 
+`index` exits 2 without writing when `-o` names one of the input files, including through a hard link or symlink.
+
 From a source tree the binary is `build/Debug/src/nesso` or `build/Release/src/nesso`.
 
 ## Threads
