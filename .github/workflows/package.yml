@@ -74,6 +74,8 @@ concurrency:
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
   REGISTRY: ghcr.io
+  NESSO_BUILD_SHA: ${{ github.sha }}
+  NESSO_BUILD_REF: ${{ github.ref }}
 
 permissions: {}
 
