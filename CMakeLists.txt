@@ -2,6 +2,57 @@ cmake_minimum_required(VERSION 4.2)
 
 project(nesso LANGUAGES CXX)
 
+if(NESSO_VERSION)
+  set(NESSO_BUILD_VERSION "${NESSO_VERSION}")
+  set(NESSO_BUILD_REVISION "")
+  set(_nesso_build_sha "$ENV{NESSO_BUILD_SHA}")
+  set(_nesso_build_ref "$ENV{NESSO_BUILD_REF}")
+  if(NOT _nesso_build_sha)
+    set(_nesso_build_sha "$ENV{GITHUB_SHA}")
+  endif()
+  if(NOT _nesso_build_ref)
+    set(_nesso_build_ref "$ENV{GITHUB_REF}")
+  endif()
+  string(LENGTH "${_nesso_build_sha}" _nesso_build_sha_length)
+  if(_nesso_build_sha_length EQUAL 40 AND _nesso_build_sha MATCHES
+                                          "^[0-9a-fA-F]+$")
+    if(NOT _nesso_build_ref STREQUAL "refs/tags/v${NESSO_VERSION}")
+      string(TOLOWER "${_nesso_build_sha}" _nesso_build_sha)
+      string(SUBSTRING "${_nesso_build_sha}" 0 12 NESSO_BUILD_REVISION)
+    endif()
+  else()
+    find_package(Git QUIET)
+    if(GIT_FOUND)
+      execute_process(
+        COMMAND "${GIT_EXECUTABLE}" describe --exact-match --tags HEAD
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        OUTPUT_VARIABLE _nesso_git_tag
+        OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET
+        RESULT_VARIABLE _nesso_git_tag_result)
+      if(NOT _nesso_git_tag_result EQUAL 0 OR NOT _nesso_git_tag STREQUAL
+                                              "v${NESSO_VERSION}")
+        execute_process(
+          COMMAND "${GIT_EXECUTABLE}" rev-parse HEAD
+          WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+          OUTPUT_VARIABLE _nesso_build_sha
+          OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET
+          RESULT_VARIABLE _nesso_git_sha_result)
+        string(LENGTH "${_nesso_build_sha}" _nesso_build_sha_length)
+        if(_nesso_git_sha_result EQUAL 0
+           AND _nesso_build_sha_length EQUAL 40
+           AND _nesso_build_sha MATCHES "^[0-9a-fA-F]+$")
+          string(TOLOWER "${_nesso_build_sha}" _nesso_build_sha)
+          string(SUBSTRING "${_nesso_build_sha}" 0 12 NESSO_BUILD_REVISION)
+        endif()
+      endif()
+    endif()
+  endif()
+
+  if(NESSO_BUILD_REVISION)
+    string(APPEND NESSO_BUILD_VERSION "+g${NESSO_BUILD_REVISION}")
+  endif()
+endif()
+
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 # CXX_EXTENSIONS does not propagate through an INTERFACE library, so a target

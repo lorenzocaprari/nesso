@@ -35,6 +35,10 @@ nesso search "payment timeout" -i corpus.nesso -k 5
 
 From a source tree the binary is `build/Debug/src/nesso` or `build/Release/src/nesso`.
 
+## Version
+
+`nesso --version` reports the package version. Builds from an untagged commit also include `+g` and the first 12 characters of its commit SHA, for example `0.2.1+g0123456789ab`. A build from its matching `vX.Y.Z` release tag reports only `X.Y.Z`.
+
 ## Threads
 
 `--threads` and `NESSO_THREADS` set the same CPU budget `N`. `--threads` wins when both are set.
