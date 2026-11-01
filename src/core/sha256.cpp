@@ -141,6 +141,16 @@ Sha256Digest sha256(std::span<const std::byte> bytes)
     return hash.finish();
 }
 
+Sha256Digest sha256(std::span<const std::span<const std::byte>> parts)
+{
+    Sha256 hash;
+    for (const std::span<const std::byte> part : parts)
+    {
+        hash.update(part);
+    }
+    return hash.finish();
+}
+
 std::expected<Sha256Digest, HashError> sha256File(const std::filesystem::path &path)
 {
     std::ifstream input(path, std::ios::binary);

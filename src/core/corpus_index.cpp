@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include <core/corpus_index.hpp>
+#include <core/sha256.hpp>
 
 #include <platform/file.hpp>
 
@@ -421,6 +422,39 @@ static bool isZero(std::span<const std::byte> bytes, std::uint64_t begin, std::u
                                [](std::byte value) { return value == std::byte{0}; });
 }
 
+CorpusChecksum corpusChecksum(std::span<const std::byte> file)
+{
+    constexpr std::array<std::byte, CORPUS_CHECKSUM_BYTES> zeros{};
+    const std::array<std::span<const std::byte>, 3> parts{file.first(CORPUS_CHECKSUM_OFFSET), zeros,
+                                                          file.subspan(CORPUS_CHECKSUM_OFFSET + CORPUS_CHECKSUM_BYTES)};
+    const Sha256Digest digest = sha256(parts);
+    CorpusChecksum checksum{};
+    std::ranges::transform(std::span{digest}.first(CORPUS_CHECKSUM_BYTES), checksum.begin(),
+                           [](std::uint8_t value) { return std::byte{value}; });
+    return checksum;
+}
+
+static bool sealCorpus(const std::filesystem::path &path)
+{
+    CorpusChecksum checksum{};
+    {
+        auto mapped = nesso::platform::MappedFile::open(path);
+        if (!mapped || mapped->bytes().size() < HEADER_BYTES)
+        {
+            return false;
+        }
+        checksum = corpusChecksum(mapped->bytes());
+    }
+    std::fstream file(path, std::ios::binary | std::ios::in | std::ios::out);
+    file.seekp(static_cast<std::streamoff>(CORPUS_CHECKSUM_OFFSET));
+    if (!writeRaw(file, checksum.data(), checksum.size()))
+    {
+        return false;
+    }
+    file.close();
+    return !file.fail();
+}
+
 std::expected<SourceInfo, EngineError> sourceInfoFor(const std::filesystem::path &path, std::string_view jsonField)
 {
     SourceInfo source{.path = path.string(), .jsonField = std::string{jsonField}};
@@ -817,7 +851,7 @@ std::expected<void, EngineError> CorpusWriter::finish()
         return fail();
     }
     output.close();
-    if (!output)
+    if (!output || !sealCorpus(impl_->temporary))
     {
         return fail();
     }
@@ -877,9 +911,16 @@ std::expected<MappedCorpus, EngineError> mapCorpusFile(const std::filesystem::pa
     {
         return std::unexpected(EngineError::UnsupportedVersion);
     }
+    if (bytes.size() < HEADER_BYTES)
+    {
+        return std::unexpected(EngineError::CorruptDatabase);
+    }
+    const CorpusChecksum checksum = corpusChecksum(bytes);
+    if (!std::ranges::equal(checksum, bytes.subspan(CORPUS_CHECKSUM_OFFSET, CORPUS_CHECKSUM_BYTES)))
+    {
+        return std::unexpected(EngineError::CorruptDatabase);
+    }
     Layout layout;
-    std::uint64_t reserved1 = 0;
-    std::uint64_t reserved2 = 0;
     if (bytes.size() < HEADER_BYTES || !readU32(bytes, 8, layout.policyBytes) ||
         !readU32(bytes, 12, layout.dimensions) || !readU64(bytes, 16, layout.sourceCount) ||
         !readU64(bytes, 24, layout.lineCount) || !readU64(bytes, 32, layout.sourceOffset) ||
@@ -887,15 +928,14 @@ std::expected<MappedCorpus, EngineError> mapCorpusFile(const std::filesystem::pa
         !readU64(bytes, 56, layout.distinctCount) || !readU64(bytes, 64, layout.distinctOffset) ||
         !readU64(bytes, 72, layout.textOffset) || !readU64(bytes, 80, layout.storedOffset) ||
         !readU64(bytes, 88, layout.lexicalOffset) || !readU64(bytes, 96, layout.lexicalBytes) ||
-        !readU64(bytes, 104, layout.policyOffset) || !readU64(bytes, 112, reserved1) || !readU64(bytes, 120, reserved2))
+        !readU64(bytes, 104, layout.policyOffset))
     {
         return std::unexpected(EngineError::CorruptDatabase);
     }
     if (layout.policyBytes > MAX_POLICY_BYTES || layout.dimensions > MAX_DIMENSIONS ||
         layout.sourceCount > MAX_SOURCES || layout.lineCount > MAX_LINES || layout.distinctCount > MAX_DISTINCT ||
         (layout.distinctCount > 0 && layout.dimensions == 0) || layout.lexicalOffset != 0 || layout.lexicalBytes != 0 ||
-        layout.policyOffset != HEADER_BYTES || reserved1 != 0 || reserved2 != 0 ||
-        layout.sourceOffset != alignUp(HEADER_BYTES + layout.policyBytes, 8) ||
+        layout.policyOffset != HEADER_BYTES || layout.sourceOffset != alignUp(HEADER_BYTES + layout.policyBytes, 8) ||
         layout.sourceOffset > layout.lineOffset || layout.lineOffset > layout.distinctOffset ||
         layout.distinctOffset > layout.textOffset || layout.textOffset > layout.storedOffset ||
         layout.storedOffset > layout.matrixOffset || layout.matrixOffset > bytes.size() ||

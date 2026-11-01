@@ -11,6 +11,7 @@
 #include <fstream>
 #include <iterator>
 #include <limits>
+#include <span>
 #include <string>
 #include <string_view>
 #include <unistd.h>
@@ -95,6 +96,13 @@ void putU64(std::string &bytes, std::size_t offset, std::uint64_t value)
 {
     REQUIRE(offset + sizeof(value) <= bytes.size());
     std::memcpy(bytes.data() + offset, &value, sizeof(value));
+}
+
+void reseal(std::string &bytes)
+{
+    REQUIRE(bytes.size() >= nesso::core::CORPUS_CHECKSUM_OFFSET + nesso::core::CORPUS_CHECKSUM_BYTES);
+    const auto checksum = nesso::core::corpusChecksum(std::as_bytes(std::span{bytes}));
+    std::memcpy(bytes.data() + nesso::core::CORPUS_CHECKSUM_OFFSET, checksum.data(), checksum.size());
 }
 
 void writeExample(const std::filesystem::path &corpus, const std::filesystem::path &source)
@@ -370,6 +378,7 @@ TEST_CASE("v3 rejects unsupported versions and malformed files", "[corpus][core]
     const auto textOffset = getU64(bytes, 72);
     const auto storedOffset = getU64(bytes, 80);
     EngineError expected = EngineError::CorruptDatabase;
+    bool sealed = true;
 
     SECTION("v2")
     {
@@ -382,7 +391,11 @@ TEST_CASE("v3 rejects unsupported versions and malformed files", "[corpus][core]
         expected = EngineError::UnsupportedVersion;
     }
     SECTION("bad magic") { bytes[0] = 'X'; }
-    SECTION("short header") { bytes.resize(12); }
+    SECTION("short header")
+    {
+        bytes.resize(12);
+        sealed = false;
+    }
     SECTION("truncated matrix") { bytes.pop_back(); }
     SECTION("trailing bytes") { bytes.push_back('x'); }
     SECTION("misaligned matrix") { putU64(bytes, 48, matrixOffset + 1); }
@@ -398,7 +411,21 @@ TEST_CASE("v3 rejects unsupported versions and malformed files", "[corpus][core]
     SECTION("reserved lexical offset") { putU64(bytes, 88, 1); }
     SECTION("reserved lexical length") { putU64(bytes, 96, 1); }
     SECTION("bad policy offset") { putU64(bytes, 104, 0); }
-    SECTION("reserved header") { putU64(bytes, 112, 1); }
+    SECTION("checksum mismatch")
+    {
+        bytes[matrixOffset] = static_cast<char>(bytes[matrixOffset] ^ 1);
+        sealed = false;
+    }
+    SECTION("checksum field")
+    {
+        bytes[nesso::core::CORPUS_CHECKSUM_OFFSET] = static_cast<char>(bytes[nesso::core::CORPUS_CHECKSUM_OFFSET] ^ 1);
+        sealed = false;
+    }
+    SECTION("header byte changed")
+    {
+        bytes[8] = static_cast<char>(bytes[8] ^ 1);
+        sealed = false;
+    }
     SECTION("policy ordering") { bytes[128] = 'z'; }
     SECTION("malformed hash")
     {
@@ -428,6 +455,10 @@ TEST_CASE("v3 rejects unsupported versions and malformed files", "[corpus][core]
     {
         putU32(bytes, lineOffset + 2 * 56 + 28, 0);
         putU32(bytes, lineOffset + 4 * 56 + 28, 0);
+    }
+    if (sealed)
+    {
+        reseal(bytes);
     }
     writeBytes(path, bytes);
     std::uint32_t observed = 0;

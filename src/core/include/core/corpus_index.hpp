@@ -6,6 +6,8 @@
 
 #include <core/core_types.hpp>
 
+#include <array>
+#include <cstddef>
 #include <cstdint>
 #include <expected>
 #include <filesystem>
@@ -23,6 +25,10 @@ namespace nesso::core
 
 inline constexpr std::uint32_t CORPUS_VERSION = 3;
 inline constexpr std::uint32_t NO_DISTINCT = std::numeric_limits<std::uint32_t>::max();
+inline constexpr std::size_t CORPUS_CHECKSUM_OFFSET = 112;
+inline constexpr std::size_t CORPUS_CHECKSUM_BYTES = 16;
+
+using CorpusChecksum = std::array<std::byte, CORPUS_CHECKSUM_BYTES>;
 
 using CorpusPolicy = std::map<std::string, std::string, std::less<>>;
 
@@ -126,6 +132,10 @@ class CorpusWriter
                                                                      std::uint32_t *observedVersion = nullptr);
 
 /// Expands distinct vectors for callers that need owned per-line chunks.
+/// First 16 bytes of the SHA-256 of a whole corpus file, with the checksum field itself read as zeros.
+/// `file` must be at least one header long.
+[[nodiscard]] CorpusChecksum corpusChecksum(std::span<const std::byte> file);
+
 [[nodiscard]] std::expected<std::vector<CorpusChunk>, EngineError> readCorpusFile(const std::filesystem::path &path);
 
 } // namespace nesso::core
