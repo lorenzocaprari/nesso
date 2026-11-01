@@ -482,6 +482,98 @@ TEST_CASE("duplicates after a full window are written without another embed", "[
     CHECK(stored->front().embedding == stored->back().embedding);
 }
 
+TEST_CASE("blank log lines and JSON values are not embedded or returned", "[nesso][text]")
+{
+    const TempDir dir{"nesso_blank_records"};
+    const auto log = dir.path() / "lines.log";
+    const auto json = dir.path() / "values.json";
+    {
+        std::ofstream output(log, std::ios::binary);
+        REQUIRE(output);
+        output << " \t\r\n  keep log \t\n \t";
+        REQUIRE(output);
+    }
+    {
+        std::ofstream output(json, std::ios::binary);
+        REQUIRE(output);
+        output << R"([{"message":""},{"message":" \t "},{"message":"keep json"}])";
+        REQUIRE(output);
+    }
+
+    auto embedder = std::make_unique<RecordingEmbedder>(1);
+    const RecordingEmbedder *recorder = embedder.get();
+    const nesso::Nesso app{nesso::Config{}, std::move(embedder)};
+    const auto checkMatches = [&](const std::vector<nesso::TextMatch> &matches)
+    {
+        REQUIRE(matches.size() == 2);
+        const auto logMatch = std::find_if(matches.begin(), matches.end(),
+                                           [&](const auto &match) { return match.source == log.string(); });
+        REQUIRE(logMatch != matches.end());
+        CHECK(logMatch->line == 2);
+        CHECK(logMatch->text == "  keep log \t");
+        CHECK_FALSE(logMatch->arrayElement);
+        const auto jsonMatch = std::find_if(matches.begin(), matches.end(),
+                                            [&](const auto &match) { return match.source == json.string(); });
+        REQUIRE(jsonMatch != matches.end());
+        CHECK(jsonMatch->line == 3);
+        CHECK(jsonMatch->text == "keep json");
+        CHECK(jsonMatch->arrayElement);
+    };
+
+    const auto grepped = app.grep({.query = "keep", .files = {log, json}, .topK = 8});
+    REQUIRE(grepped.has_value());
+    CHECK(grepped->skippedLines == 4);
+    CHECK(grepped->emptyLines == 4);
+    checkMatches(grepped->matches);
+    CHECK(recorder->seen().size() == 2);
+    CHECK(std::count(recorder->seen().begin(), recorder->seen().end(), "  keep log \t") == 1);
+    CHECK(std::count(recorder->seen().begin(), recorder->seen().end(), "keep json") == 1);
+
+    const auto corpus = dir.path() / "records.nesso";
+    const auto indexed = app.index({.files = {log, json}, .output = corpus});
+    REQUIRE(indexed.has_value());
+    CHECK(indexed->chunks == 2);
+    CHECK(indexed->skippedLines == 4);
+    CHECK(indexed->emptyLines == 4);
+    CHECK(recorder->seen().size() == 4);
+    CHECK(std::count(recorder->seen().begin(), recorder->seen().end(), "  keep log \t") == 2);
+    CHECK(std::count(recorder->seen().begin(), recorder->seen().end(), "keep json") == 2);
+    const auto searched = app.search({.query = "keep", .index = corpus, .topK = 8});
+    REQUIRE(searched.has_value());
+    checkMatches(searched->matches);
+
+    const auto blank = dir.path() / "blank.log";
+    const auto existing = dir.path() / "existing.nesso";
+    {
+        std::ofstream output(blank, std::ios::binary);
+        REQUIRE(output);
+        output << " \n\t \r\n";
+        REQUIRE(output);
+    }
+    {
+        std::ofstream output(existing, std::ios::binary);
+        REQUIRE(output);
+        output << "preserve";
+        REQUIRE(output);
+    }
+    const auto emptyGrep = app.grep({.query = "keep", .files = {blank}});
+    REQUIRE_FALSE(emptyGrep.has_value());
+    CHECK(emptyGrep.error().kind == nesso::ErrorKind::EmptyInput);
+    CHECK(emptyGrep.error().cause == nesso::ErrorCause::NothingIndexable);
+    CHECK(emptyGrep.error().emptyLines == 2);
+    const auto emptyIndex = app.index({.files = {blank}, .output = existing});
+    REQUIRE_FALSE(emptyIndex.has_value());
+    CHECK(emptyIndex.error().kind == nesso::ErrorKind::EmptyInput);
+    CHECK(emptyIndex.error().cause == nesso::ErrorCause::NothingIndexable);
+    CHECK(emptyIndex.error().emptyLines == 2);
+    std::ifstream preserved(existing, std::ios::binary);
+    REQUIRE(preserved);
+    std::string content;
+    std::getline(preserved, content);
+    CHECK(content == "preserve");
+    CHECK(recorder->seen().size() == 4);
+}
+
 TEST_CASE("stdin duplicates are embedded once", "[nesso][text]")
 {
     const TempDir dir{"nesso_dedup_stdin"};
