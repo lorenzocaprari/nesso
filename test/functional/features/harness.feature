@@ -4,6 +4,7 @@ Feature: Harness smoke test
   Scenario: nesso reports its version
     When I run nesso with arguments --version
     Then the exit code is 0
+    And stdout contains "0.3.0"
     And stderr is empty
 
   Scenario: NESSO_THREADS sets the CPU budget
