@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793477435749,
+  "lastUpdate": 1793567722599,
   "repoUrl": "https://github.com/lorenzocaprari/nesso",
   "entries": {
     "nesso": [
@@ -3401,6 +3401,60 @@ window.BENCHMARK_DATA = {
           {
             "name": "grep-100000-rss",
             "value": 154345472,
+            "unit": "bytes"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "caprarilorenzo5@gmail.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "committer": {
+            "email": "85455384+lorenzocaprari@users.noreply.github.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "distinct": true,
+          "id": "f69f74ca180d51e8d2831ac19cbd1f14c8849b91",
+          "message": "feat(core)!: store corpora in format v3\n\nIndex one vector per distinct text and keep ordered line records, source\nmetadata, stored text for stdin, and the indexing policy. Search scores\neach distinct vector once and expands hits to lines.\n\nBREAKING CHANGE: corpus format v2 is no longer read. Re-index existing\ncorpora.",
+          "timestamp": "2026-11-01T22:09:53+01:00",
+          "tree_id": "8fe52c7cc2d4c0eaac2a7a938fb55838efb24de3",
+          "url": "https://github.com/lorenzocaprari/nesso/commit/f69f74ca180d51e8d2831ac19cbd1f14c8849b91"
+        },
+        "date": 1793567722050,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "grep-1000-wall",
+            "value": 2.13,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-1000-rss",
+            "value": 137150464,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-10000-wall",
+            "value": 10.7,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-10000-rss",
+            "value": 153616384,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-100000-wall",
+            "value": 90.05,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-100000-rss",
+            "value": 153632768,
             "unit": "bytes"
           }
         ]
