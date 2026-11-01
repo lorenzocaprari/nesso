@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793568427852,
+  "lastUpdate": 1793569097079,
   "repoUrl": "https://github.com/lorenzocaprari/nesso",
   "entries": {
     "nesso": [
@@ -3509,6 +3509,60 @@ window.BENCHMARK_DATA = {
           {
             "name": "grep-100000-rss",
             "value": 158289920,
+            "unit": "bytes"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "caprarilorenzo5@gmail.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "committer": {
+            "email": "85455384+lorenzocaprari@users.noreply.github.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "distinct": true,
+          "id": "7f1b42d6746ce4305521465fd91043db1af5d209",
+          "message": "fix(index): refuse an output that is one of the inputs\n\nindex -o a.log a.log replaced the log with the corpus. Check each input against the output with std::filesystem::equivalent before loading the model and exit 2 with \"the output is one of the inputs\".",
+          "timestamp": "2026-11-01T22:32:14+01:00",
+          "tree_id": "b3380d4c1ab3a1a361753b43c1de26dd72c2030a",
+          "url": "https://github.com/lorenzocaprari/nesso/commit/7f1b42d6746ce4305521465fd91043db1af5d209"
+        },
+        "date": 1793569096586,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "grep-1000-wall",
+            "value": 2.15,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-1000-rss",
+            "value": 146145280,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-10000-wall",
+            "value": 10.5,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-10000-rss",
+            "value": 148676608,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-100000-wall",
+            "value": 92.1,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-100000-rss",
+            "value": 158461952,
             "unit": "bytes"
           }
         ]
