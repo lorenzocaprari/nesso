@@ -180,6 +180,12 @@ Feature: command errors
     And stderr contains "failed to read the corpus"
     And stderr contains "the file is corrupt"
 
+  Scenario: a corpus with a changed byte cannot be searched
+    When I run nesso with arguments search "database connection error" -i {fixture}/damaged.nesso
+    Then the exit code is 2
+    And stderr contains "failed to read the corpus"
+    And stderr contains "the file is corrupt"
+
   Scenario: the corpus cannot be written onto a directory
     Given a file "app.log" with:
       """

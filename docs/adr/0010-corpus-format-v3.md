@@ -35,7 +35,7 @@ How should the format change so that users re-index once and a corpus built unde
 
 Chosen option: "v3 with distinct vectors, per-line references, and a policy block; refuse v2", because one reader stays small and a v2 vector was built under other rules anyway.
 
-* **Layout.** The file starts with `NESC`, version 3, and a fixed header of counts and section offsets. Then come the source table (path, size, and mtime, as the current v2 writer stores them), line records, the distinct texts, stored line texts, and one f32 vector per distinct text, in a block aligned to 64 bytes and mapped as the top-k matrix.
+* **Layout.** The file starts with `NESC`, version 3, and a fixed header of counts and section offsets. Header bytes 112 to 127 hold the first 16 bytes of the SHA-256 of the whole file, computed with those 16 bytes set to zero. Then come the source table (path, size, and mtime, as the current v2 writer stores them), line records, the distinct texts, stored line texts, and one f32 vector per distinct text, in a block aligned to 64 bytes and mapped as the top-k matrix.
 * **Line records.** One record per input line, in source order and then line order, including skipped lines: source, line number, byte offset, length, flags, and a distinct id (none for a skipped line). A line from a source that cannot be re-read (stdin, an entry inside an archive) also points at its own stored text.
 * **Policy block.** It holds sorted UTF-8 `key=value` records:
   * the model sha256, quantization, and vocab sha256;
@@ -45,6 +45,7 @@ Chosen option: "v3 with distinct vectors, per-line references, and a policy bloc
 
   Values are constants in the source, never derived from core count or RAM.
 * **On open.**
+  * A file whose checksum does not match exits 2 with "the file is corrupt", before any other field is read.
   * A version other than 3 exits 2 with "corpus format vN is not supported; re-run `nesso index`" ([ADR 0009](0009-command-line-contract-and-json-lines.md)).
   * A different model sha256, quantization, dimension count, or vocab also exits 2.
   * A different batch, truncation, dedup, or mask rule prints one stderr warning, then searches. The query is embedded alone, so it stays comparable.
