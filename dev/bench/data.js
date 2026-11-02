@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793605542907,
+  "lastUpdate": 1793657897253,
   "repoUrl": "https://github.com/lorenzocaprari/nesso",
   "entries": {
     "nesso": [
@@ -3725,6 +3725,60 @@ window.BENCHMARK_DATA = {
           {
             "name": "grep-100000-rss",
             "value": 154374144,
+            "unit": "bytes"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "85455384+lorenzocaprari@users.noreply.github.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "committer": {
+            "email": "85455384+lorenzocaprari@users.noreply.github.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "distinct": true,
+          "id": "c49c95a1fc3ec46c9b5573c7f3fb00271346626e",
+          "message": "Set GitHub Sponsors username in FUNDING.yml\n\nUpdated GitHub Sponsors username for funding.",
+          "timestamp": "2026-11-02T23:12:22+01:00",
+          "tree_id": "9ddca12b99a1964a4aadfa65fa0813b85a901d13",
+          "url": "https://github.com/lorenzocaprari/nesso/commit/c49c95a1fc3ec46c9b5573c7f3fb00271346626e"
+        },
+        "date": 1793657896569,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "grep-1000-wall",
+            "value": 0.65,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-1000-rss",
+            "value": 143319040,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-10000-wall",
+            "value": 5.05,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-10000-rss",
+            "value": 152330240,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-100000-wall",
+            "value": 45.98,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-100000-rss",
+            "value": 158146560,
             "unit": "bytes"
           }
         ]
