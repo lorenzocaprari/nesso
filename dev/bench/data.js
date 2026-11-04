@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793657897253,
+  "lastUpdate": 1793795628642,
   "repoUrl": "https://github.com/lorenzocaprari/nesso",
   "entries": {
     "nesso": [
@@ -3779,6 +3779,60 @@ window.BENCHMARK_DATA = {
           {
             "name": "grep-100000-rss",
             "value": 158146560,
+            "unit": "bytes"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "49699333+dependabot[bot]@users.noreply.github.com",
+            "name": "dependabot[bot]",
+            "username": "dependabot[bot]"
+          },
+          "committer": {
+            "email": "85455384+lorenzocaprari@users.noreply.github.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "distinct": true,
+          "id": "655bbc49f1690b3e984cf2ddbc5267874431dc74",
+          "message": "build(deps): bump the github-actions group with 2 updates\n\nBumps the github-actions group with 2 updates: [step-security/harden-runner](https://github.com/step-security/harden-runner) and [docker/login-action](https://github.com/docker/login-action).\n\n\nUpdates `step-security/harden-runner` from 2.22.2 to 2.22.3\n- [Release notes](https://github.com/step-security/harden-runner/releases)\n- [Commits](https://github.com/step-security/harden-runner/compare/dc2769abcc0fcfbadfc1df54081c1608579ef6b2...46b06cea07f9e64621fdf066ba77ac6915163d43)\n\nUpdates `docker/login-action` from 4.6.0 to 4.7.0\n- [Release notes](https://github.com/docker/login-action/releases)\n- [Commits](https://github.com/docker/login-action/compare/dbcb813823bdd20940b903addbd779551569679f...81c6f93d4bc991e510b342a00b419b3bb4efc5c6)\n\n---\nupdated-dependencies:\n- dependency-name: step-security/harden-runner\n  dependency-version: 2.22.3\n  dependency-type: direct:production\n  update-type: version-update:semver-patch\n  dependency-group: github-actions\n- dependency-name: docker/login-action\n  dependency-version: 4.7.0\n  dependency-type: direct:production\n  update-type: version-update:semver-minor\n  dependency-group: github-actions\n...\n\nSigned-off-by: dependabot[bot] <support@github.com>",
+          "timestamp": "2026-11-04T13:29:06+01:00",
+          "tree_id": "8943cdd4cd2592ffde3c8218ff2460dd56024e3c",
+          "url": "https://github.com/lorenzocaprari/nesso/commit/655bbc49f1690b3e984cf2ddbc5267874431dc74"
+        },
+        "date": 1793795628200,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "grep-1000-wall",
+            "value": 0.41,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-1000-rss",
+            "value": 154152960,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-10000-wall",
+            "value": 2.77,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-10000-rss",
+            "value": 152825856,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-100000-wall",
+            "value": 26.96,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-100000-rss",
+            "value": 154144768,
             "unit": "bytes"
           }
         ]
