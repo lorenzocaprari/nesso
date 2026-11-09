@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794246237713,
+  "lastUpdate": 1794252273269,
   "repoUrl": "https://github.com/lorenzocaprari/nesso",
   "entries": {
     "nesso": [
@@ -4211,6 +4211,60 @@ window.BENCHMARK_DATA = {
           {
             "name": "grep-100000-rss",
             "value": 179642368,
+            "unit": "bytes"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "caprarilorenzo5@gmail.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "committer": {
+            "email": "85455384+lorenzocaprari@users.noreply.github.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "distinct": true,
+          "id": "b5116da2b8efe7b90998fa7715850fcc5b462eab",
+          "message": "perf(parser): mask variable tokens in dedup keys\n\nGroup lines by a masked dedup key and embed the first raw line of each key.\nEach line still renders its own text, and occurrences counts masked groups.\nThe 4000-line thread-scale grep keeps a letter id so each line stays distinct.",
+          "timestamp": "2026-11-09T20:19:41+01:00",
+          "tree_id": "061e6ae62f7d07e5e299b8fe4d2857f2d5030c79",
+          "url": "https://github.com/lorenzocaprari/nesso/commit/b5116da2b8efe7b90998fa7715850fcc5b462eab"
+        },
+        "date": 1794252272338,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "grep-1000-wall",
+            "value": 0.18,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-1000-rss",
+            "value": 118542336,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-10000-wall",
+            "value": 0.16,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-10000-rss",
+            "value": 117264384,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-100000-wall",
+            "value": 0.36,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-100000-rss",
+            "value": 157765632,
             "unit": "bytes"
           }
         ]
