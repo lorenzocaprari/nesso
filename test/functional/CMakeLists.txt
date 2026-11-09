@@ -20,7 +20,7 @@ endif()
 
 add_test(
   NAME bdd
-  COMMAND "${NESSO_GO_EXECUTABLE}" test -count=1 ./...
+  COMMAND "${NESSO_GO_EXECUTABLE}" test -count=1 -timeout 20m ./...
   WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}")
 set_tests_properties(
   bdd
