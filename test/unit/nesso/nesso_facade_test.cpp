@@ -2,7 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include <catch2/catch_all.hpp>
+#include <core/bm25.hpp>
 #include <core/corpus_index.hpp>
+#include <core/lexical_terms.hpp>
 #include <embed/batch_plan.hpp>
 #include <embed/embedder.hpp>
 #include <embed/onnx_embedder.hpp>
@@ -69,8 +71,10 @@ nesso::core::CorpusPolicy testPolicy()
 {
     const auto identity = testEmbedderIdentity();
     return {{"batch", "window:1024,max:32,tokens:1024,order:length-then-input"},
+            {"bm25", std::string{nesso::core::BM25_POLICY}},
             {"dedup", "exact-v1"},
             {"dimensions", std::to_string(identity.dimensions)},
+            {"lexical.terms", std::string{nesso::core::LEXICAL_TERMS_VERSION}},
             {"mask", "none-v1"},
             {"model.id", identity.modelId},
             {"model.quantization", identity.quantized ? "int8" : "fp32"},
@@ -89,7 +93,8 @@ void writeFixtureCorpus(const std::filesystem::path &path, nesso::core::CorpusPo
         REQUIRE(writer->addSource({.path = "a.log", .storedOnly = true}) == 0);
         REQUIRE(writer->addDistinct("alpha", std::array<float, 4>{1.F, 0.F, 0.F, 0.F}) == 0);
         const nesso::core::CorpusLine line{.lineNumber = 1, .distinctId = 0, .storedText = "alpha"};
-        REQUIRE(writer->addLines(std::span{&line, 1}));
+        const std::vector<std::string> terms = nesso::core::lexicalTerms("alpha");
+        REQUIRE(writer->addLines(std::span{&line, 1}, std::span{&terms, 1}));
     }
     REQUIRE(writer->finish());
 }

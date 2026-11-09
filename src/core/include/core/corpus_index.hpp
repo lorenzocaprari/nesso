@@ -18,6 +18,7 @@
 #include <span>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 namespace nesso::core
@@ -69,6 +70,13 @@ struct CorpusLine
     std::optional<std::string_view> storedText = std::nullopt;
 };
 
+/// One corpus line's BM25 postings: `|D|` and unique `(termId, tf)` pairs.
+struct LexicalLinePostings
+{
+    std::uint32_t length = 0;
+    std::vector<std::pair<std::uint32_t, std::uint32_t>> entries;
+};
+
 /// Capture metadata used to detect changes before re-reading a source.
 [[nodiscard]] std::expected<SourceInfo, EngineError> sourceInfoFor(const std::filesystem::path &path,
                                                                    std::string_view jsonField);
@@ -89,6 +97,10 @@ class MappedCorpus
     [[nodiscard]] std::span<const CorpusLine> lines() const noexcept;
     [[nodiscard]] std::span<const std::string_view> texts() const noexcept;
     [[nodiscard]] std::span<const float> matrix() const noexcept;
+    /// Sorted unique lexical terms; ids in `lexicalPostings()` index this table.
+    [[nodiscard]] std::span<const std::string_view> lexicalDictionary() const noexcept;
+    /// One posting list per corpus line, including skipped lines.
+    [[nodiscard]] std::span<const LexicalLinePostings> lexicalPostings() const noexcept;
 
   private:
     struct Impl;
@@ -117,7 +129,10 @@ class CorpusWriter
     [[nodiscard]] std::expected<void, EngineError> addVector(std::uint32_t id, std::span<const float> embedding);
     [[nodiscard]] std::expected<std::uint32_t, EngineError> addDistinct(std::string_view text,
                                                                         std::span<const float> embedding);
-    [[nodiscard]] std::expected<void, EngineError> addLines(std::span<const CorpusLine> lines);
+    /// `lineTerms.size()` must equal `lines.size()`. Each entry is the term
+    /// multiset for that line (`lexicalTerms`); skipped lines use an empty list.
+    [[nodiscard]] std::expected<void, EngineError> addLines(std::span<const CorpusLine> lines,
+                                                            std::span<const std::vector<std::string>> lineTerms);
     [[nodiscard]] std::expected<void, EngineError> finish();
 
   private:

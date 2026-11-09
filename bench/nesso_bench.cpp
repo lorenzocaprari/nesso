@@ -2,14 +2,17 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include <benchmark/benchmark.h>
+#include <core/bm25.hpp>
 #include <core/corpus_index.hpp>
 #include <core/distance.hpp>
+#include <core/lexical_terms.hpp>
 #include <core/top_k.hpp>
 #include <embed/wordpiece_tokenizer.hpp>
 
 #include <cstdint>
 #include <filesystem>
 #include <random>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -138,8 +141,10 @@ void readCorpus(benchmark::State &state)
     const std::filesystem::path path = std::filesystem::temp_directory_path() / "nesso-bench-corpus.nessc";
     std::mt19937 rng{1};
     nesso::core::CorpusPolicy policy{{"batch", "window:1024,max:32,tokens:1024,order:length-then-input"},
+                                     {"bm25", std::string{nesso::core::BM25_POLICY}},
                                      {"dedup", "exact-v1"},
                                      {"dimensions", std::to_string(EMBEDDING_DIMENSIONS)},
+                                     {"lexical.terms", std::string{nesso::core::LEXICAL_TERMS_VERSION}},
                                      {"mask", "none-v1"},
                                      {"model.id", "benchmark"},
                                      {"model.quantization", "int8"},
@@ -155,15 +160,16 @@ void readCorpus(benchmark::State &state)
     }
     for (uint64_t index = 0; index < CORPUS_CHUNKS; ++index)
     {
-        const auto id = writer->addDistinct("database connection refused " + std::to_string(index),
-                                            randomVector(rng, EMBEDDING_DIMENSIONS));
+        const std::string text = "database connection refused " + std::to_string(index);
+        const auto id = writer->addDistinct(text, randomVector(rng, EMBEDDING_DIMENSIONS));
         if (!id)
         {
             state.SkipWithError("failed to write bench vector");
             return;
         }
         const nesso::core::CorpusLine line{.lineNumber = index + 1, .distinctId = *id};
-        if (!writer->addLines(std::span{&line, 1}))
+        const std::vector<std::string> terms = nesso::core::lexicalTerms(text);
+        if (!writer->addLines(std::span{&line, 1}, std::span{&terms, 1}))
         {
             state.SkipWithError("failed to write bench line");
             return;
