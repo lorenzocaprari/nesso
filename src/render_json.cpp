@@ -14,7 +14,7 @@
 namespace nesso::cli
 {
 
-static constexpr int SCHEMA_VERSION = 1;
+static constexpr int SCHEMA_VERSION = 2;
 
 // nlohmann stores a JSON number as double. Promoting the match float first
 // prints the widened value (0.1 becomes 0.10000000149011612). to_chars on the
@@ -32,10 +32,20 @@ static std::string dumpString(std::string_view text)
     return nlohmann::json(std::string{text}).dump(-1, ' ', false, nlohmann::json::error_handler_t::replace);
 }
 
+static void appendOptionalFloat(std::string &out, std::optional<float> value)
+{
+    if (!value)
+    {
+        out.append("null");
+        return;
+    }
+    out.append(formatScore(*value));
+}
+
 std::string renderMatchJson(const TextMatch &match, std::size_t rank)
 {
     std::string out;
-    out.reserve(match.source.size() + match.text.size() + 96);
+    out.reserve(match.source.size() + match.text.size() + 128);
     out.append("{\"schema_version\":");
     out.append(std::format("{}", SCHEMA_VERSION));
     out.append(",\"rank\":");
@@ -52,6 +62,12 @@ std::string renderMatchJson(const TextMatch &match, std::size_t rank)
     out.append(dumpString(match.text));
     out.append(",\"occurrences\":");
     out.append(std::format("{}", match.occurrences));
+    out.append(",\"mode\":");
+    out.append(dumpString(match.mode));
+    out.append(",\"dense\":");
+    appendOptionalFloat(out, match.dense);
+    out.append(",\"lexical\":");
+    appendOptionalFloat(out, match.lexical);
     out.push_back('}');
     return out;
 }

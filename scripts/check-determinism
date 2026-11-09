@@ -32,6 +32,7 @@ INDEX_QUERIES = (
     "database connection error",
     "payment timeout",
 )
+RANKING_MODES = ("auto", "lexical")
 # --cpu-method all exits the only worker (and then stress-ng) when Apéry's
 # accuracy check fails or a target_clones method takes SIGILL. The default
 # LLC-sized cache mmap can also fail before the first nesso process.
@@ -280,21 +281,84 @@ def model_is_quantized(model_dir: Path) -> bool | None:
     return b"MatMulInteger" in data or b"DynamicQuantizeLinear" in data
 
 
-def search_corpus(options: argparse.Namespace, corpus: Path, query: str, name: str) -> str:
-    return run_process(
-        [
-            options.binary,
-            "search",
-            query,
-            "-i",
-            str(corpus),
-            "-k",
-            str(options.top_k),
-            "--model-dir",
-            str(options.model_dir),
-        ],
-        name,
-    ).stdout
+def search_corpus(
+    options: argparse.Namespace,
+    corpus: Path,
+    query: str,
+    name: str,
+    mode: str | None = None,
+    env: dict[str, str] | None = None,
+) -> str:
+    command = [
+        options.binary,
+        "search",
+        query,
+        "-i",
+        str(corpus),
+        "-k",
+        str(options.top_k),
+        "--model-dir",
+        str(options.model_dir),
+    ]
+    if mode is not None:
+        command.extend(["--mode", mode])
+    return run_process(command, name, env).stdout
+
+
+def grep_input(
+    options: argparse.Namespace,
+    name: str,
+    mode: str | None = None,
+    env: dict[str, str] | None = None,
+) -> str:
+    command = [
+        options.binary,
+        "grep",
+        options.query,
+        str(options.input),
+        "-k",
+        str(options.top_k),
+        "--model-dir",
+        str(options.model_dir),
+    ]
+    if mode is not None:
+        command.extend(["--mode", mode])
+    return run_process(command, name, env).stdout
+
+
+def compare_mode_threads(
+    options: argparse.Namespace,
+    output_dir: Path,
+    threads: int,
+    stress: subprocess.Popen[bytes],
+    stderr_path: Path,
+) -> tuple[str, subprocess.Popen[bytes], Path]:
+    corpus = output_dir / "mode-threads.nesso"
+    stress, stderr_path = refresh_stress(stress, stderr_path, options.stress_command)
+    index_corpus(options, corpus, "index for mode thread check")
+    mode_note = ""
+    for mode in RANKING_MODES:
+        stress, stderr_path = refresh_stress(stress, stderr_path, options.stress_command)
+        one = grep_input(options, f"grep {mode} 1 thread", mode, threads_env(1))
+        stress, stderr_path = refresh_stress(stress, stderr_path, options.stress_command)
+        many = grep_input(options, f"grep {mode} {threads} threads", mode, threads_env(threads))
+        if one != many:
+            raise GateFailure(f"grep --mode {mode} differs between 1 and {threads} threads")
+        stress, stderr_path = refresh_stress(stress, stderr_path, options.stress_command)
+        one = search_corpus(options, corpus, options.query, f"search {mode} 1 thread", mode, threads_env(1))
+        stress, stderr_path = refresh_stress(stress, stderr_path, options.stress_command)
+        many = search_corpus(
+            options,
+            corpus,
+            options.query,
+            f"search {mode} {threads} threads",
+            mode,
+            threads_env(threads),
+        )
+        if one != many:
+            raise GateFailure(f"search --mode {mode} differs between 1 and {threads} threads")
+        mode_note += f"; --mode {mode} grep and search identical across 1 and {threads} threads"
+    return mode_note, stress, stderr_path
 
 
 def check_determinism(options: argparse.Namespace) -> None:
@@ -375,6 +439,10 @@ def check_determinism(options: argparse.Namespace) -> None:
                         f"{digest(one_thread)} != {digest(many_threads)}"
                     )
                 thread_note = f"; 1 and {threads} threads identical"
+                mode_note, stress, stderr_path = compare_mode_threads(
+                    options, output_dir, threads, stress, stderr_path
+                )
+                thread_note += mode_note
     finally:
         stop_stress(stress)
         stderr_path.unlink(missing_ok=True)

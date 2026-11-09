@@ -32,7 +32,7 @@ FAKE_BINARY = textwrap.dedent(
             output.write_bytes(os.environ.get("NESSO_THREADS", "unset").encode())
         else:
             output.write_bytes(b"stable")
-    elif mode == "search":
+    elif mode in ("search", "grep"):
         query = args[1]
         log = pathlib.Path(sys.argv[0]).with_name("searches")
         with log.open("a") as handle:

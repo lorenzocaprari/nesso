@@ -1,6 +1,6 @@
 # Usage
 
-`nesso grep` searches files in one shot. `nesso index` writes a corpus, and `nesso search` queries that file. The embedder is a local ONNX MiniLM model. Ranking is a brute-force scan.
+`nesso grep` searches files in one shot. `nesso index` writes a corpus, and `nesso search` queries that file. The embedder is a local ONNX MiniLM model. Ranking uses dense embeddings, BM25, or hybrid fusion depending on `--mode`.
 
 Matches go to stdout. Skipped lines, the index summary, and errors go to stderr. Every command exits 0 when matches are printed or a corpus is written, 1 when there is nothing to search or index, and 2 on error. Argument errors, including `-k 0`, also exit 2. `--help` lists these codes. A missing model names the directories that were tried and suggests `scripts/fetch-model` or `--model-dir`.
 
@@ -23,6 +23,8 @@ nesso grep "database connection error" app.log
 nesso grep "payment timeout" app.log events.jsonl dump.json -k 5
 nesso grep "auth failure" app.log --model-dir models/
 ```
+
+`grep` and `search` accept `--mode auto|hybrid|dense|lexical` (default `auto`). Under `auto`, a pure identifier query uses lexical ranking; other queries use hybrid fusion. `dense` matches the pre-hybrid ranking. `hybrid` and `lexical` need corpus v3 BM25 postings from `nesso index` (grep builds terms in memory); without postings, or with a different term-rule version, those modes exit 2. Forced `lexical` with no BM25 hit falls back to hybrid and prints `Warning: no lexical match for the query; using hybrid`.
 
 Index the same files once, then search the corpus. `-o` and `-i` are required:
 
@@ -56,7 +58,8 @@ For the fp32 model, `N` is the intra-op thread count of the one session. The def
 - Lines: one chunk per nonblank line. Lines longer than 4096 code points are truncated after the 4096th code point; a UTF-8 character is never split. A trailing CR is stripped.
 - JSON: only objects with a nonblank string field are indexed (`message` by default, or `--json-field`). Malformed lines and documents are skipped. String values longer than 4096 code points are truncated the same way. A JSON array is numbered `element N`, not `line N`.
 - `grep` and `index` embed each distinct text once, in first-occurrence order, in a fixed window of 1024 texts sorted by token count. Lines that share a text share its score. Ties break by input order. `index` writes corpus format v3: one vector per distinct text, every input line in order (skipped lines included), each source's size and modification time, and the indexing policy. Stdin cannot be reread, so its text is stored in the corpus. `search` maps that file, scores each distinct vector once, and lists matching lines by score, then input order.
-- `--json` on `grep` and `search` prints one JSON object per match. The object adds `occurrences`, how many input lines share that text, always at least 1. `schema_version` stays 1. Text output does not include the count. Counts stay on stderr. `index` has no `--json`.
+- `--json` on `grep` and `search` prints one JSON object per match. Keys, in order: `schema_version` (2), `rank`, `source`, `kind`, `line`, `score`, `text`, `occurrences`, `mode`, `dense`, `lexical`. `mode` is the effective mode after routing. `dense` and `lexical` are the raw dot product and BM25 score, or `null` when not computed. `score` is the value used for ranking in that mode. The object adds `occurrences`, how many input lines share that text, always at least 1. Text output does not include the count. Counts stay on stderr. `index` has no `--json`.
+- Hybrid and lexical `grep` keep per-line terms and BM25 state in memory for the duration of the command; large inputs use more RAM than dense-only search.
 - Empty and ASCII-whitespace-only lines and JSON string values are skipped and counted as empty lines. ASCII whitespace is space, tab, newline, carriage return, vertical tab, and form feed; other Unicode whitespace is not treated as blank. Nonblank text is not trimmed. JSON values without the selected string field are also skipped. Overlong log lines and JSON string values are truncated. Skip and truncation counts are printed on stderr. Re-index an existing corpus to remove previously indexed blank records.
 - `search` re-reads each matching line from its source file. When a source changed, is missing, or cannot be read, `search` warns on stderr and prints the indexed text instead. Stdin sources are not tracked.
 - `search` refuses a corpus written by an older format (v2) or a different model, vocabulary, quantization, or vector size; re-run `nesso index`. When only the batch, truncation, or dedup policy differs, it warns once on stderr and continues.

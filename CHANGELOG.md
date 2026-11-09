@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `nesso grep` and `nesso search` accept `--mode auto|hybrid|dense|lexical` (default `auto`). Pure identifier queries route to lexical scoring; mixed and natural-language queries use hybrid fusion (`0.8` dense + `0.2` BM25 after z-scores) unless the mode is forced. Lexical mode ranks exact substring hits first by BM25; with no BM25 hit it falls back to hybrid. Scores are computed in double and stored/printed as float.
 - `nesso index` stores per-line BM25 postings in the reserved corpus v3 lexical section (term dictionary plus delta/varint `(termId, tf)` lists), and records `lexical.terms=v1` and `bm25=k1:1.5,b:0.75` in the policy block. Dense `grep`/`search` rankings are unchanged. Re-index so corpora include the postings before the first tagged v3 release.
 - Untagged builds report the package version with a `+g` and 12-character commit identifier suffix. A build from its matching `vX.Y.Z` release tag keeps the plain release version.
 - `nesso grep` and `nesso search` accept `--json` and print one JSON object per match. The keys are `schema_version`, `rank`, `source`, `kind`, `line`, `score`, `text`, and `occurrences`, in that order. `schema_version` is 1. `kind` is `line` or `element`. `score` is the shortest decimal that reads back as the same value, in any locale. Bytes that are not UTF-8 in `source` or `text` are replaced with U+FFFD. Errors, warnings, and counts stay on stderr. With nothing to rank, stdout is empty and the command exits 1. Text output is unchanged. `nesso index` does not accept `--json`.
@@ -18,6 +19,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `scripts/bench --dataset hdfs` measures indexing throughput on the Loghub HDFS_v1 2k sample. `scripts/fetch-loghub` downloads that sample into `build/bench/` and checks a pinned sha256. The run repeats it to 100000 lines unless `--lines` is set, and records lines per second, peak RSS, corpus bytes relative to input bytes, the CPU model, `nproc`, and `NESSO_THREADS`. The sample stays out of the repository.
 
 ### Changed
+
+- **Breaking:** `--json` on `grep` and `search` sets `schema_version` to 2 and appends `mode`, `dense`, and `lexical` after `occurrences`. Default `--mode auto` changes rankings relative to dense-only search. JSON `score` is the effective-mode ranking score. `--mode dense` keeps the previous ranking. Lexical/`hybrid`/`auto` exit 2 on a corpus without postings or with a mismatched `lexical.terms` version; dense still maps those corpora.
 
 - Contributor scripts stay under `scripts/`. Pipeline helpers moved to `scripts/ci/` (`build-env-hash`, `ci-build-archive`, `download-pinned`, next to the existing Go `ci` tool). Release, `.deb`, image, Trivy, and notice helpers moved to `packaging/scripts/`. Call sites in workflows and docs were updated; there are no path shims.
 - `nesso search` scores a large corpus on the `--threads` / `NESSO_THREADS` budget. The scan splits the matrix into contiguous row chunks, keeps a private top k in each chunk, and merges by score descending and then input order. One thread, or a small corpus, stays on the caller. Scores and the ranking match the single-thread scan. Corpus bytes are unchanged.

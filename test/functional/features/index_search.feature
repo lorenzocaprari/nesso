@@ -109,7 +109,7 @@ Feature: index and search
     And stderr contains "File does not exist"
 
   Scenario: search reads a checked-in corpus
-    When I run nesso with arguments search "database connection error" -i {fixture}/one-chunk.nesso
+    When I run nesso with arguments search "database connection error" -i {fixture}/one-chunk.nesso --mode dense
     Then the exit code is 0
     And stdout contains "checked in line"
     And stdout contains "line 1:"
@@ -124,7 +124,7 @@ Feature: index and search
     Then the exit code is 0
     When I run nesso with arguments search "database connection error" --json -k 2 -i {dir}/corpus.nesso
     Then the exit code is 0
-    And stdout contains "\"schema_version\":1"
+    And stdout contains "\"schema_version\":2"
     And stdout contains "\"occurrences\":2"
     And stdout contains "\"kind\":\"line\""
     And lines that share text share a score

@@ -11,8 +11,8 @@ decision-makers: Lorenzo Caprari
 `grep` and `search` embed the query and rank by dot product ([ADR 0001](0001-exact-brute-force-search.md)).
 Since [#185](https://github.com/lorenzocaprari/nesso/pull/185), each distinct text is embedded once, so lines that share a text share a score.
 `index` writes corpus format v3 ([ADR 0010](0010-corpus-format-v3.md)): one vector per distinct text, line records, a policy block, and (since [#212](https://github.com/lorenzocaprari/nesso/pull/212)) per-line lexical postings.
-The lexical term rules and Okapi BM25 scorer are on `main` ([#191](https://github.com/lorenzocaprari/nesso/pull/191)); there is still no `--mode`, no hybrid fusion, and no query routing.
-JSON `schema_version` is 1, with `score` and `occurrences`, and the order is score descending, then ascending input ordinal ([ADR 0009](0009-command-line-contract-and-json-lines.md)).
+The lexical term rules and Okapi BM25 scorer are on `main` ([#191](https://github.com/lorenzocaprari/nesso/pull/191)); `grep` and `search` now expose `--mode` and hybrid fusion with query-class routing.
+JSON `schema_version` is 2, with `mode`, `dense`, `lexical`, and a `score` whose meaning follows the effective mode. The order is score descending, then ascending input ordinal ([ADR 0009](0009-command-line-contract-and-json-lines.md)).
 A query such as `blk_-1608999687919862906` or `0a000086` is embedded as WordPiece fragments, so the line that contains it is often not ranked first.
 Measured on an internal evaluation set, hybrid improved ranking quality over dense-only, and on exact-identifier queries BM25 clearly outperformed both dense and hybrid.
 A later internal evaluation showed that a fixed fusion weight that helps keyword-style natural-language queries can hurt paraphrase-style ones, and that those two kinds of query cannot be told apart from the query string alone.
@@ -61,7 +61,16 @@ Chosen option: "z-score weighted fusion with query-class routing", because fusio
   * Rows gain `mode` (the effective mode after routing), plus `dense` and `lexical`: the raw dense dot product and the BM25 score, `null` when not computed.
   * `score` becomes the score of the effective mode. That changes its meaning, which ADR 0009 counts as breaking, so `schema_version` becomes 2 in the same minor release.
   * Text keeps its `{:.4f}` line shape and prints that score.
-* **Storage.** Per-line postings live in the corpus v3 lexical section (delta plus varint). New writers always emit that section and record `lexical.terms` and `bm25` in the policy block ([#212](https://github.com/lorenzocaprari/nesso/pull/212)). A different term version exits 2 for lexical modes, while `dense` keeps working. Pre-postings v3 files with an empty lexical section stay readable for dense search; lexical modes on a corpus without postings exit 2 with "re-run `nesso index`".
+* **Storage.** Per-line postings live in the corpus v3 lexical section (delta plus varint). New writers always emit that section and record `lexical.terms` and `bm25` in the policy block ([#212](https://github.com/lorenzocaprari/nesso/pull/212)). `MappedCorpus::lexicalStatus()` records `missing` when the lexical section is empty, and `version_mismatch` when `lexical.terms` or `bm25` in the policy block does not match this build. `dense` ignores that status; `auto`, `hybrid`, and `lexical` exit 2 with `Error: corpus has no lexical postings; re-run `nesso index`` or `Error: corpus lexical terms are version …; re-run `nesso index`` when the map is not ready.
+* **Classifier details.**
+  * IPv6 identifiers use the hand-rolled parser in `query_class.cpp`, not a library call.
+  * Absolute Unix paths use deterministic segment rules (two or more path segments).
+  * Lexical fallback triggers when no line has BM25 > 0; stderr prints `Warning: no lexical match for the query; using hybrid`.
+  * Lexical errors use `Error:` prefixes on stderr, including the missing-postings and terms-version strings above.
+  * `--json` always emits `schema_version` 2 with `mode`, `dense`, and `lexical` after `occurrences`.
+  * The lexical JSON field is BM25 computed in double, cast to `float` once for storage and printing.
+  * Hybrid z-scores use the mean and population standard deviation over rankable lines only (lines with a distinct vector).
+  * Scores are computed in double and stored and printed as `float`.
 
 ### Consequences
 
