@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794229494976,
+  "lastUpdate": 1794233331011,
   "repoUrl": "https://github.com/lorenzocaprari/nesso",
   "entries": {
     "nesso": [
@@ -3941,6 +3941,60 @@ window.BENCHMARK_DATA = {
           {
             "name": "grep-100000-rss",
             "value": 153567232,
+            "unit": "bytes"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "caprarilorenzo5@gmail.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "committer": {
+            "email": "85455384+lorenzocaprari@users.noreply.github.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "distinct": true,
+          "id": "1bf2de169fc69cf905546fecbbfb6618ced0589a",
+          "message": "fix(core): accept empty lexical slots and tidy postings encode\n\nKeep pre-postings v3 fixtures readable for dense search, fix the\nrepeated-finish distinct id assert, and clear clang-tidy findings in\nthe lexical encode/decode path.",
+          "timestamp": "2026-11-09T15:03:27+01:00",
+          "tree_id": "d91903df7b49d959fa2f2038ca718499461c6f1b",
+          "url": "https://github.com/lorenzocaprari/nesso/commit/1bf2de169fc69cf905546fecbbfb6618ced0589a"
+        },
+        "date": 1794233330229,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "grep-1000-wall",
+            "value": 0.65,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-1000-rss",
+            "value": 144838656,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-10000-wall",
+            "value": 5.06,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-10000-rss",
+            "value": 149442560,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-100000-wall",
+            "value": 46.73,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-100000-rss",
+            "value": 158466048,
             "unit": "bytes"
           }
         ]
