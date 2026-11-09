@@ -1,4 +1,9 @@
-# Nesso
+<h1 align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/nesso-logo-dark.svg">
+    <img alt="nesso" src="docs/assets/nesso-logo-light.svg" width="320">
+  </picture>
+</h1>
 
 > *nesso* (/ˈnɛs.so/, NESS-oh) is Italian for "link, connection" — it finds the connection between log lines by meaning, not just by keyword.
 
