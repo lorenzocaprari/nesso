@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794224475779,
+  "lastUpdate": 1794229494976,
   "repoUrl": "https://github.com/lorenzocaprari/nesso",
   "entries": {
     "nesso": [
@@ -3887,6 +3887,60 @@ window.BENCHMARK_DATA = {
           {
             "name": "grep-100000-rss",
             "value": 152657920,
+            "unit": "bytes"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "caprarilorenzo5@gmail.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "committer": {
+            "email": "85455384+lorenzocaprari@users.noreply.github.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "distinct": true,
+          "id": "2fa132896b2da1dc7217810c23c9554533b58cf6",
+          "message": "chore: split contributor, CI, and packaging scripts\n\nKeep local gates under scripts/, move pipeline helpers into scripts/ci/,\nand place release/deb/image tooling under packaging/scripts/.",
+          "timestamp": "2026-11-09T13:59:00+01:00",
+          "tree_id": "6837ed3b8ae5055cef9b7b1b51dbc48c59236993",
+          "url": "https://github.com/lorenzocaprari/nesso/commit/2fa132896b2da1dc7217810c23c9554533b58cf6"
+        },
+        "date": 1794229494102,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "grep-1000-wall",
+            "value": 2.19,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-1000-rss",
+            "value": 142938112,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-10000-wall",
+            "value": 10.29,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-10000-rss",
+            "value": 156119040,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-100000-wall",
+            "value": 91.9,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-100000-rss",
+            "value": 153567232,
             "unit": "bytes"
           }
         ]
