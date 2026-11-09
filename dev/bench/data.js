@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794241944879,
+  "lastUpdate": 1794246237713,
   "repoUrl": "https://github.com/lorenzocaprari/nesso",
   "entries": {
     "nesso": [
@@ -4157,6 +4157,60 @@ window.BENCHMARK_DATA = {
           {
             "name": "grep-100000-rss",
             "value": 198025216,
+            "unit": "bytes"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "caprarilorenzo5@gmail.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "committer": {
+            "email": "85455384+lorenzocaprari@users.noreply.github.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "distinct": true,
+          "id": "dd9de8d58a1c2579b0b14835c8d705c664af2e1d",
+          "message": "perf(core): score BM25 from term ids without copying\n\nHybrid mode rematerialised corpus postings as per-line strings and kept\nstring maps in Bm25Index, blowing the main-only 100k RSS gate. Intern\nonce, score mapped (termId, tf) rows in place, keep score bits identical.",
+          "timestamp": "2026-11-09T18:35:42+01:00",
+          "tree_id": "293f0a8bde54fff81b466bdcc987f5142be0f191",
+          "url": "https://github.com/lorenzocaprari/nesso/commit/dd9de8d58a1c2579b0b14835c8d705c664af2e1d"
+        },
+        "date": 1794246237148,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "grep-1000-wall",
+            "value": 0.67,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-1000-rss",
+            "value": 150106112,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-10000-wall",
+            "value": 5.13,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-10000-rss",
+            "value": 155013120,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-100000-wall",
+            "value": 47.5,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-100000-rss",
+            "value": 179642368,
             "unit": "bytes"
           }
         ]
