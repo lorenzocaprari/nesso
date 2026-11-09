@@ -283,9 +283,9 @@ static bool parseNumber(std::string_view text, std::uint32_t &value)
 
 static std::expected<std::uint32_t, EngineError> validatePolicy(const CorpusPolicy &policy)
 {
-    constexpr std::array<std::string_view, 12> required{"batch",         "bm25",       "dedup",    "dimensions",
-                                                        "lexical.terms", "mask",       "model.id", "model.quantization",
-                                                        "model.sha256",  "tokens.max", "truncate", "vocab.sha256"};
+    constexpr std::array<std::string_view, 10> required{
+        "batch",        "dedup",      "dimensions", "mask",        "model.id", "model.quantization",
+        "model.sha256", "tokens.max", "truncate",   "vocab.sha256"};
     for (const std::string_view key : required)
     {
         if (!policy.contains(key))
@@ -312,8 +312,14 @@ static std::expected<std::uint32_t, EngineError> validatePolicy(const CorpusPoli
     if (!parseNumber(policy.at("dimensions"), dimensions) || dimensions > MAX_DIMENSIONS ||
         !parseNumber(policy.at("tokens.max"), maxTokens) || maxTokens == 0 || policy.at("model.id").size() > 1024 ||
         !validHash(policy.at("model.sha256")) || !validHash(policy.at("vocab.sha256")) ||
-        (quantization != "int8" && quantization != "fp32") || policy.at("lexical.terms") != LEXICAL_TERMS_VERSION ||
-        policy.at("bm25") != BM25_POLICY)
+        (quantization != "int8" && quantization != "fp32"))
+    {
+        return std::unexpected(EngineError::CorruptDatabase);
+    }
+    // Optional until every checked-in corpus carries postings. When present they
+    // must match the constants this binary writes.
+    if ((policy.contains("lexical.terms") && policy.at("lexical.terms") != LEXICAL_TERMS_VERSION) ||
+        (policy.contains("bm25") && policy.at("bm25") != BM25_POLICY))
     {
         return std::unexpected(EngineError::CorruptDatabase);
     }
@@ -574,14 +580,16 @@ static std::vector<std::byte> encodeLexicalSection(std::span<const std::vector<s
     }
 
     std::vector<std::byte> out;
-    out.reserve(16 + dictionary.size() * 8);
+    out.reserve(16 + (dictionary.size() * 8));
     appendU64(out, dictionary.size());
     appendU64(out, lineTerms.size());
     for (const std::string &term : dictionary)
     {
         appendVarint(out, term.size());
-        const auto *bytes = std::bit_cast<const std::byte *>(term.data());
-        out.insert(out.end(), bytes, bytes + term.size());
+        for (const char byte : term)
+        {
+            out.push_back(static_cast<std::byte>(static_cast<unsigned char>(byte)));
+        }
     }
     for (const std::vector<std::string> &terms : lineTerms)
     {
@@ -593,9 +601,9 @@ static std::vector<std::byte> encodeLexicalSection(std::span<const std::vector<s
         }
         std::vector<std::pair<std::uint32_t, std::uint32_t>> entries;
         entries.reserve(counts.size());
-        for (const auto &entry : counts)
+        for (const auto &[termId, frequency] : counts)
         {
-            entries.push_back(entry);
+            entries.emplace_back(termId, frequency);
         }
         std::ranges::sort(entries, [](const auto &left, const auto &right) { return left.first < right.first; });
         appendVarint(out, entries.size());
@@ -637,7 +645,12 @@ static std::expected<void, EngineError> decodeLexicalSection(std::span<const std
         {
             return std::unexpected(EngineError::CorruptDatabase);
         }
-        std::string term(reinterpret_cast<const char *>(bytes.data() + cursor), static_cast<std::size_t>(length));
+        std::string term(static_cast<std::size_t>(length), '\0');
+        for (std::uint64_t offset = 0; offset < length; ++offset)
+        {
+            term[static_cast<std::size_t>(offset)] =
+                static_cast<char>(static_cast<unsigned char>(bytes[cursor + offset]));
+        }
         cursor += length;
         if (!previous.empty() && !termByteLess(previous, term))
         {
@@ -1229,22 +1242,26 @@ std::expected<MappedCorpus, EngineError> mapCorpusFile(const std::filesystem::pa
     {
         return std::unexpected(EngineError::CorruptDatabase);
     }
+    // Pre-postings v3 used lexicalOffset=lexicalBytes=0. Those corpora stay
+    // readable for dense search; new writers always emit a non-empty section.
+    const bool hasLexical = layout.lexicalOffset != 0 || layout.lexicalBytes != 0;
     if (layout.policyBytes > MAX_POLICY_BYTES || layout.dimensions > MAX_DIMENSIONS ||
         layout.sourceCount > MAX_SOURCES || layout.lineCount > MAX_LINES || layout.distinctCount > MAX_DISTINCT ||
         (layout.distinctCount > 0 && layout.dimensions == 0) || layout.lexicalBytes > MAX_LEXICAL_BYTES ||
         layout.policyOffset != HEADER_BYTES || layout.sourceOffset != alignUp(HEADER_BYTES + layout.policyBytes, 8) ||
         layout.sourceOffset > layout.lineOffset || layout.lineOffset > layout.distinctOffset ||
         layout.distinctOffset > layout.textOffset || layout.textOffset > layout.storedOffset ||
-        layout.storedOffset > layout.lexicalOffset || layout.lexicalOffset > layout.matrixOffset ||
-        layout.matrixOffset > bytes.size() || layout.matrixOffset % 64 != 0 ||
+        layout.storedOffset > layout.matrixOffset || layout.matrixOffset > bytes.size() ||
+        layout.matrixOffset % 64 != 0 ||
         layout.sourceCount > (layout.lineOffset - layout.sourceOffset) / SOURCE_RECORD_BYTES ||
         layout.distinctOffset - layout.lineOffset != layout.lineCount * LINE_RECORD_BYTES ||
         layout.textOffset - layout.distinctOffset != layout.distinctCount * TEXT_RECORD_BYTES ||
         !rangeInside(layout.policyOffset, layout.policyBytes, layout.sourceOffset) ||
-        !rangeInside(layout.lexicalOffset, layout.lexicalBytes, layout.matrixOffset) ||
-        layout.lexicalOffset + layout.lexicalBytes > layout.matrixOffset ||
         !isZero(bytes, HEADER_BYTES + layout.policyBytes, layout.sourceOffset) ||
-        !isZero(bytes, layout.lexicalOffset + layout.lexicalBytes, layout.matrixOffset))
+        (hasLexical && (layout.storedOffset > layout.lexicalOffset || layout.lexicalOffset > layout.matrixOffset ||
+                        !rangeInside(layout.lexicalOffset, layout.lexicalBytes, layout.matrixOffset) ||
+                        layout.lexicalOffset + layout.lexicalBytes > layout.matrixOffset ||
+                        !isZero(bytes, layout.lexicalOffset + layout.lexicalBytes, layout.matrixOffset))))
     {
         return std::unexpected(EngineError::CorruptDatabase);
     }
@@ -1376,9 +1393,10 @@ std::expected<MappedCorpus, EngineError> mapCorpusFile(const std::filesystem::pa
         {
             return std::unexpected(EngineError::CorruptDatabase);
         }
+        const std::uint64_t storedLimit = hasLexical ? layout.lexicalOffset : layout.matrixOffset;
         if ((flags & LINE_STORED_TEXT) != 0)
         {
-            if (textOffset != storedCursor || !rangeInside(textOffset, textLength, layout.lexicalOffset))
+            if (textOffset != storedCursor || !rangeInside(textOffset, textLength, storedLimit))
             {
                 return std::unexpected(EngineError::CorruptDatabase);
             }
@@ -1396,17 +1414,21 @@ std::expected<MappedCorpus, EngineError> mapCorpusFile(const std::filesystem::pa
         line.arrayElement = (flags & LINE_ARRAY_ELEMENT) != 0;
         impl->lines.push_back(line);
     }
-    if (storedCursor != layout.lexicalOffset || std::ranges::any_of(used, [](bool value) { return !value; }))
+    if (std::ranges::any_of(used, [](bool value) { return !value; }) ||
+        (hasLexical ? storedCursor != layout.lexicalOffset : !isZero(bytes, storedCursor, layout.matrixOffset)))
     {
         return std::unexpected(EngineError::CorruptDatabase);
     }
-    if (const auto decoded = decodeLexicalSection(bytes.subspan(static_cast<std::size_t>(layout.lexicalOffset),
-                                                                static_cast<std::size_t>(layout.lexicalBytes)),
-                                                  layout.lineCount, impl->lexicalTermStorage, impl->lexicalDictionary,
-                                                  impl->lexicalPostings);
-        !decoded)
+    if (hasLexical)
     {
-        return std::unexpected(decoded.error());
+        if (const auto decoded = decodeLexicalSection(bytes.subspan(static_cast<std::size_t>(layout.lexicalOffset),
+                                                                    static_cast<std::size_t>(layout.lexicalBytes)),
+                                                      layout.lineCount, impl->lexicalTermStorage,
+                                                      impl->lexicalDictionary, impl->lexicalPostings);
+            !decoded)
+        {
+            return std::unexpected(decoded.error());
+        }
     }
 
     impl->file = std::move(*mapped);

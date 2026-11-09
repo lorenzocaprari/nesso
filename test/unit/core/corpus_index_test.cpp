@@ -589,7 +589,7 @@ TEST_CASE("v3 corpus bytes match across repeated finishes", "[corpus][core]")
         REQUIRE(info);
         REQUIRE(writer->addSource(*info) == 0);
         REQUIRE(writer->addDistinct("alpha", std::array<float, 2>{1.F, 0.F}) == 0);
-        REQUIRE(writer->addDistinct("bravo", std::array<float, 2>{0.F, 1.F}) == 0);
+        REQUIRE(writer->addDistinct("bravo", std::array<float, 2>{0.F, 1.F}) == 1);
         const std::array<CorpusLine, 3> lines{
             CorpusLine{.lineNumber = 1, .byteOffset = 0, .byteLength = 5, .distinctId = 0},
             CorpusLine{.lineNumber = 2, .byteOffset = 6, .byteLength = 5, .distinctId = 1},
