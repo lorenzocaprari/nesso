@@ -10,6 +10,7 @@
 #include <array>
 #include <cmath>
 #include <cstdint>
+#include <cstdio>
 #include <cstring>
 #include <format>
 #include <fstream>
@@ -132,11 +133,12 @@ static Ort::SessionOptions makeSessionOptions(int intraOpThreads)
 }
 
 // ORT picks its int8 GEMM kernel once per process, so the AMX refusal goes in
-// before the first environment and session. A host where it cannot be
-// installed keeps the ORT default.
+// before the first environment and session. A false result means the filter
+// was not installed or tile permission was already granted, so the int8 model
+// may use the AMX kernel. That case is one stderr line. A refusal stays quiet.
 static Ort::Env makeEnv()
 {
-    static_cast<void>(denyAmxTiles());
+    reportAmxGuard(denyAmxTiles(), stderr);
     return Ort::Env{ORT_LOGGING_LEVEL_WARNING, "nesso-embed"};
 }
 

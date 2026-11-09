@@ -3,6 +3,9 @@
 
 #include <embed/amx_guard.hpp>
 
+#include <cstdio>
+#include <print>
+
 #if defined(__linux__) && defined(__x86_64__)
 #include <array>
 #include <cerrno>
@@ -18,6 +21,15 @@
 
 namespace nesso::embed
 {
+
+void reportAmxGuard(bool guardInEffect, std::FILE *err)
+{
+    if (guardInEffect)
+    {
+        return;
+    }
+    std::println(err, "Warning: the AMX guard is not in effect; the int8 model may use the AMX kernel");
+}
 
 #if defined(__linux__) && defined(__x86_64__)
 

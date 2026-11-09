@@ -51,6 +51,8 @@ For the int8 model on x86, a budget of 4 or less is one intra-op thread and `N` 
 
 For the fp32 model, `N` is the intra-op thread count of the one session. The default is the logical CPU count. On aarch64 that count is at least 2, including when `N` is 1.
 
+On x86-64 Linux, nesso refuses Intel AMX tile data for this process before the first ONNX session, so the int8 model uses the AVX-512 VNNI or AVX2 kernel. When that refusal is not in effect, because the filter could not be installed or tile permission was already granted, stderr gets one line, `Warning: the AMX guard is not in effect; the int8 model may use the AMX kernel`, and the command continues. Stdout and `--json` do not include it. Other builds do not print it.
+
 `nesso --version --verbose` prints the policy for both models.
 
 ## Files
