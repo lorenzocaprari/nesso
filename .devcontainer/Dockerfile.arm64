@@ -6,7 +6,7 @@
 # Clang, AFL, and the x86_64 compiler-rt symlinks are omitted. This image
 # only has to configure, build, and run the Release tests.
 
-FROM ubuntu:26.04
+FROM ubuntu:26.04@sha256:6a06111c3b0a8600feadb270aec771dc239bf407b25625f93f44ab00e11f4d3c
 
 ENV DEBIAN_FRONTEND=noninteractive
 
@@ -21,8 +21,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-15 100 \
     && update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-15 100
 
-RUN pip install conan --break-system-packages \
-    && rm -rf /root/.cache/pip
+# Install Conan 2 and pre-commit. Hashes are required; Dependabot updates them.
+COPY .devcontainer/requirements.txt /tmp/nesso-pip-requirements.txt
+# --ignore-installed: Ubuntu's python3-pip ships Debian packaging without a
+# pip RECORD, so upgrading it fails unless pip overlays instead of uninstalling.
+RUN pip install --require-hashes --break-system-packages --ignore-installed \
+      -r /tmp/nesso-pip-requirements.txt \
+    && rm -rf /root/.cache/pip /tmp/nesso-pip-requirements.txt
 
 # GitHub Actions container jobs override HOME, so the cache lives at CONAN_HOME.
 ENV CONAN_HOME=/opt/conan2
