@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794258422767,
+  "lastUpdate": 1794258983070,
   "repoUrl": "https://github.com/lorenzocaprari/nesso",
   "entries": {
     "nesso": [
@@ -4373,6 +4373,60 @@ window.BENCHMARK_DATA = {
           {
             "name": "grep-100000-rss",
             "value": 158212096,
+            "unit": "bytes"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "caprarilorenzo5@gmail.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "committer": {
+            "email": "85455384+lorenzocaprari@users.noreply.github.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "distinct": true,
+          "id": "d503f1a35df1a5f9b924c80993823bda488f7d9b",
+          "message": "feat(cli): add --group to show one line per distinct text\n\nPrint one row per masked dedup key from grep and search. The row is the first raw line, occurrences is the group size, and -k counts groups. The score is the best member's ranking score for the effective mode. schema_version stays 2.",
+          "timestamp": "2026-11-09T22:03:16+01:00",
+          "tree_id": "46f99c85946a8cdafae14bd90127da579a94eb3d",
+          "url": "https://github.com/lorenzocaprari/nesso/commit/d503f1a35df1a5f9b924c80993823bda488f7d9b"
+        },
+        "date": 1794258982690,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "grep-1000-wall",
+            "value": 0.19,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-1000-rss",
+            "value": 118939648,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-10000-wall",
+            "value": 0.18,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-10000-rss",
+            "value": 118284288,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-100000-wall",
+            "value": 0.4,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-100000-rss",
+            "value": 158380032,
             "unit": "bytes"
           }
         ]
