@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794241489453,
+  "lastUpdate": 1794241944879,
   "repoUrl": "https://github.com/lorenzocaprari/nesso",
   "entries": {
     "nesso": [
@@ -4103,6 +4103,60 @@ window.BENCHMARK_DATA = {
           {
             "name": "grep-100000-rss",
             "value": 199032832,
+            "unit": "bytes"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "caprarilorenzo5@gmail.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "committer": {
+            "email": "85455384+lorenzocaprari@users.noreply.github.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "distinct": true,
+          "id": "92dd521c1ac79106209fbf6fb1ded0e0ec47751d",
+          "message": "docs: add nesso logo to README",
+          "timestamp": "2026-11-09T17:26:40+01:00",
+          "tree_id": "7e658e930aaf538621896b6d77366781b905a558",
+          "url": "https://github.com/lorenzocaprari/nesso/commit/92dd521c1ac79106209fbf6fb1ded0e0ec47751d"
+        },
+        "date": 1794241944453,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "grep-1000-wall",
+            "value": 0.45,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-1000-rss",
+            "value": 144674816,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-10000-wall",
+            "value": 2.69,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-10000-rss",
+            "value": 150081536,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-100000-wall",
+            "value": 24.51,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-100000-rss",
+            "value": 198025216,
             "unit": "bytes"
           }
         ]
