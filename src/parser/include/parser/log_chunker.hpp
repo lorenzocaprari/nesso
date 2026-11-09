@@ -19,7 +19,8 @@ enum class ParseError : uint8_t
 {
     FileOpenFailure,
     UnsupportedFormat,
-    BinaryFile
+    BinaryFile,
+    CorruptGzip
 };
 
 struct ParsedChunk

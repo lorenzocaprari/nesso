@@ -13,6 +13,10 @@ directly depend on it (a graph edge with direct=true). A version bump of
 either side drops the entry. Build-context tools and test requirements are
 not the runtime graph.
 
+zlib/1.3.2 is a direct nesso dependency for gzip input. Its Conan license is
+Zlib, which is permissive, so it has no allow-list entry. A copyleft license
+on that package still fails.
+
 Exit 0 when the graph is clean, 1 when a license is rejected, 2 on usage
 or when the file is not a Conan graph.
 """

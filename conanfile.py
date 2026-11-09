@@ -22,6 +22,9 @@ class Nesso(ConanFile):
         self.requires("cli11/2.6.2")
         self.requires("nlohmann_json/3.11.3")
         self.requires("onnxruntime/1.18.1")
+        # Direct, so gzip input links zlib and the license gate sees it as nesso's dependency.
+        # The revision is the one already locked for onnxruntime's graph.
+        self.requires("zlib/1.3.2")
 
     def build_requirements(self):
         self.test_requires("catch2/3.14.0")
@@ -32,6 +35,8 @@ class Nesso(ConanFile):
         # Static: shared ORT can hide OrtGetApiBase under -fvisibility=hidden,
         # and that package ID survives the consumer-only flag split.
         self.options["onnxruntime"].shared = False
+        # The release binary's NEEDED list has no libz. Keep zlib in the binary.
+        self.options["zlib"].shared = False
 
     def generate(self):
         tc = CMakeToolchain(self)

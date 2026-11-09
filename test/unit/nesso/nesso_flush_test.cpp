@@ -668,3 +668,117 @@ TEST_CASE("lines that differ by a masked id are embedded once", "[nesso][text]")
         CHECK(match.occurrences == 3);
     }
 }
+
+void writeBytes(const std::filesystem::path &path, std::string_view bytes)
+{
+    std::filesystem::create_directories(path.parent_path());
+    std::ofstream output(path, std::ios::binary);
+    REQUIRE(output);
+    output.write(bytes.data(), static_cast<std::streamsize>(bytes.size()));
+    REQUIRE(output);
+}
+
+std::string unhex(std::string_view hex)
+{
+    std::string out;
+    out.reserve(hex.size() / 2);
+    const auto nibble = [](char character) -> int
+    {
+        if (character >= '0' && character <= '9')
+        {
+            return character - '0';
+        }
+        if (character >= 'a' && character <= 'f')
+        {
+            return character - 'a' + 10;
+        }
+        return -1;
+    };
+    for (size_t index = 0; index + 1 < hex.size(); index += 2)
+    {
+        const int high = nibble(hex[index]);
+        const int low = nibble(hex[index + 1]);
+        REQUIRE(high >= 0);
+        REQUIRE(low >= 0);
+        out.push_back(static_cast<char>((high << 4) | low));
+    }
+    return out;
+}
+
+TEST_CASE("directories are read in unsigned path order", "[nesso][text]")
+{
+    const TempDir dir{"nesso_dir_order"};
+    const auto root = dir.path() / "logs";
+    writeBytes(root / "b.log", "beta database\n");
+    writeBytes(root / "nested" / "c.log", "gamma database\n");
+    writeBytes(root / "a.log", "alpha database\n");
+    auto embedder = std::make_unique<RecordingEmbedder>(1);
+    const RecordingEmbedder *recorder = embedder.get();
+    const nesso::Nesso app{nesso::Config{}, std::move(embedder)};
+    const auto indexed = app.index({.files = {root}, .output = dir.path() / "logs.nesso"});
+    REQUIRE(indexed.has_value());
+    CHECK(recorder->seen() == std::vector<std::string>{"alpha database", "beta database", "gamma database"});
+
+    const auto grepped = app.grep({.query = "database", .files = {root}});
+    REQUIRE(grepped.has_value());
+    REQUIRE(grepped->matches.size() == 3);
+}
+
+TEST_CASE("a gzip input is stored with its line text", "[nesso][text]")
+{
+    const TempDir dir{"nesso_gzip_index"};
+    const auto path = dir.path() / "app.log.gz";
+    writeBytes(
+        path,
+        unhex("1f8b0800f722f26a02ff4b492c494c4a2c4e5548cecfcb4b4d2ec9cccf53284a4d2b2d4e4de10200e756bf4f1c000000"));
+    auto embedder = std::make_unique<RecordingEmbedder>(1);
+    const nesso::Nesso app{nesso::Config{}, std::move(embedder)};
+    const auto corpus = dir.path() / "app.nesso";
+    REQUIRE(app.index({.files = {path}, .output = corpus}).has_value());
+    const auto mapped = nesso::core::mapCorpusFile(corpus);
+    REQUIRE(mapped);
+    REQUIRE(mapped->sources().size() == 1);
+    CHECK(mapped->sources()[0].storedOnly);
+    CHECK_FALSE(mapped->sources()[0].tracked);
+    bool found = false;
+    for (const nesso::core::CorpusLine &line : mapped->lines())
+    {
+        if (line.storedText && *line.storedText == "database connection refused")
+        {
+            found = true;
+        }
+    }
+    CHECK(found);
+
+    const auto searched = app.search({.query = "database", .index = corpus, .mode = nesso::SearchMode::Dense});
+    REQUIRE(searched.has_value());
+    REQUIRE_FALSE(searched->matches.empty());
+    CHECK(searched->matches.front().text == "database connection refused");
+    CHECK(searched->staleSources.empty());
+}
+
+TEST_CASE("a truncated gzip fails the parse", "[nesso][text]")
+{
+    const TempDir dir{"nesso_gzip_bad"};
+    const auto path = dir.path() / "bad.gz";
+    writeBytes(path, std::string{"\x1f\x8b\x08\x00", 4});
+    const nesso::Nesso app = fallibleApp(BatchBehavior::Error);
+    const auto indexed = app.index({.files = {path}, .output = dir.path() / "bad.nesso"});
+    REQUIRE_FALSE(indexed);
+    CHECK(indexed.error().kind == nesso::ErrorKind::Parse);
+    CHECK(indexed.error().cause == nesso::ErrorCause::CorruptGzip);
+    CHECK(nesso::message(indexed.error()).find("truncated or corrupt") != std::string::npos);
+}
+
+TEST_CASE("a dangling symlink inside a directory fails the walk", "[nesso][text]")
+{
+    const TempDir dir{"nesso_dir_dangling"};
+    const auto root = dir.path() / "logs";
+    std::filesystem::create_directories(root);
+    std::filesystem::create_symlink(root / "missing.log", root / "link.log");
+    const nesso::Nesso app{nesso::Config{}, std::make_unique<RecordingEmbedder>(1)};
+    const auto indexed = app.index({.files = {root}, .output = dir.path() / "logs.nesso"});
+    REQUIRE_FALSE(indexed);
+    CHECK(indexed.error().kind == nesso::ErrorKind::Parse);
+    CHECK(indexed.error().cause == nesso::ErrorCause::FileOpen);
+}

@@ -1,6 +1,7 @@
 // Copyright (c) 2026 Lorenzo Caprari
 // SPDX-License-Identifier: Apache-2.0
 
+#include <parser/gzip_reader.hpp>
 #include <parser/log_chunker.hpp>
 
 #include <algorithm>
@@ -349,61 +350,49 @@ static std::expected<void, ParseError> readJsonStream(std::istream &input, bool 
     return {};
 }
 
-std::expected<void, ParseError> Chunker::forEach(const std::filesystem::path &path, size_t maxLineLength,
-                                                 ParseStats *stats, std::string_view jsonField,
-                                                 const std::function<void(ParsedChunk)> &consume)
+static ParseError gzipParseError(GzipError error)
 {
-    return forEachRecord(path, maxLineLength, stats, jsonField,
-                         [&consume](ParsedChunk chunk)
-                         {
-                             if (!chunk.skipped)
-                             {
-                                 consume(std::move(chunk));
-                             }
-                         });
+    switch (error)
+    {
+    case GzipError::OpenFailure:
+        return ParseError::FileOpenFailure;
+    case GzipError::Corrupt:
+        return ParseError::CorruptGzip;
+    }
+    std::unreachable();
 }
 
-std::expected<void, ParseError> Chunker::forEachRecord(const std::filesystem::path &path, size_t maxLineLength,
-                                                       ParseStats *stats, std::string_view jsonField,
-                                                       const std::function<void(ParsedChunk)> &consume)
+// `.gz` is one layer. The extension under it selects lines, JSON, or JSONL.
+static std::string formatExtension(const std::filesystem::path &path)
 {
-    if (path == "-")
+    if (isGzipPath(path))
     {
-        auto bytes = readStdinChecked();
-        if (!bytes)
-        {
-            return std::unexpected(bytes.error());
-        }
-        std::istringstream input{*bytes};
-        return readLogStream(input, maxLineLength, stats, consume);
+        return extensionLower(path.stem());
     }
-    auto input = openChecked(path);
-    if (!input)
-    {
-        return std::unexpected(input.error());
-    }
-    const std::string extension = extensionLower(path);
+    return extensionLower(path);
+}
+
+static std::expected<void, ParseError> dispatchStream(std::istream &input, const std::string &extension,
+                                                      size_t maxLineLength, ParseStats *stats,
+                                                      std::string_view jsonField,
+                                                      const std::function<void(ParsedChunk)> &consume)
+{
     if (extension == ".json" || extension == ".jsonl")
     {
-        return readJsonStream(*input, extension == ".jsonl", stats, jsonField, maxLineLength, consume);
+        return readJsonStream(input, extension == ".jsonl", stats, jsonField, maxLineLength, consume);
     }
-    return readLogStream(*input, maxLineLength, stats, consume);
+    return readLogStream(input, maxLineLength, stats, consume);
 }
 
-std::expected<std::string, ParseError> Chunker::readRecord(const std::filesystem::path &path, uint64_t byteOffset,
-                                                           uint64_t byteLength, uint64_t lineNumber, bool arrayElement,
-                                                           std::string_view jsonField, size_t maxLineLength)
+static std::expected<std::string, ParseError> readOpenedRecord(std::istream &input, const std::string &extension,
+                                                               uint64_t byteOffset, uint64_t byteLength,
+                                                               uint64_t lineNumber, bool arrayElement,
+                                                               std::string_view jsonField, size_t maxLineLength)
 {
-    if (path == "-")
-    {
-        return std::unexpected(ParseError::UnsupportedFormat);
-    }
-    std::ifstream input(path, std::ios::binary);
     if (!input || byteOffset > static_cast<uint64_t>(std::numeric_limits<std::streamoff>::max()))
     {
         return std::unexpected(ParseError::FileOpenFailure);
     }
-    const std::string extension = extensionLower(path);
     if (arrayElement && extension != ".json")
     {
         return std::unexpected(ParseError::UnsupportedFormat);
@@ -491,6 +480,85 @@ std::expected<std::string, ParseError> Chunker::readRecord(const std::filesystem
     }
     limitValue(text, maxLineLength, nullptr);
     return text;
+}
+
+std::expected<void, ParseError> Chunker::forEach(const std::filesystem::path &path, size_t maxLineLength,
+                                                 ParseStats *stats, std::string_view jsonField,
+                                                 const std::function<void(ParsedChunk)> &consume)
+{
+    return forEachRecord(path, maxLineLength, stats, jsonField,
+                         [&consume](ParsedChunk chunk)
+                         {
+                             if (!chunk.skipped)
+                             {
+                                 consume(std::move(chunk));
+                             }
+                         });
+}
+
+std::expected<void, ParseError> Chunker::forEachRecord(const std::filesystem::path &path, size_t maxLineLength,
+                                                       ParseStats *stats, std::string_view jsonField,
+                                                       const std::function<void(ParsedChunk)> &consume)
+{
+    if (path == "-")
+    {
+        auto bytes = readStdinChecked();
+        if (!bytes)
+        {
+            return std::unexpected(bytes.error());
+        }
+        std::istringstream input{*bytes};
+        return readLogStream(input, maxLineLength, stats, consume);
+    }
+    if (isGzipPath(path))
+    {
+        auto bytes = readGzip(path);
+        if (!bytes)
+        {
+            return std::unexpected(gzipParseError(bytes.error()));
+        }
+        const std::size_t probe = std::min(bytes->size(), BINARY_PROBE_BYTES);
+        if (containsNul(std::string_view(*bytes).substr(0, probe)))
+        {
+            return std::unexpected(ParseError::BinaryFile);
+        }
+        std::istringstream input{*bytes};
+        return dispatchStream(input, formatExtension(path), maxLineLength, stats, jsonField, consume);
+    }
+    auto input = openChecked(path);
+    if (!input)
+    {
+        return std::unexpected(input.error());
+    }
+    return dispatchStream(*input, extensionLower(path), maxLineLength, stats, jsonField, consume);
+}
+
+std::expected<std::string, ParseError> Chunker::readRecord(const std::filesystem::path &path, uint64_t byteOffset,
+                                                           uint64_t byteLength, uint64_t lineNumber, bool arrayElement,
+                                                           std::string_view jsonField, size_t maxLineLength)
+{
+    if (path == "-")
+    {
+        return std::unexpected(ParseError::UnsupportedFormat);
+    }
+    if (isGzipPath(path))
+    {
+        auto bytes = readGzip(path);
+        if (!bytes)
+        {
+            return std::unexpected(gzipParseError(bytes.error()));
+        }
+        std::istringstream input{std::move(*bytes)};
+        return readOpenedRecord(input, formatExtension(path), byteOffset, byteLength, lineNumber, arrayElement,
+                                jsonField, maxLineLength);
+    }
+    std::ifstream input(path, std::ios::binary);
+    if (!input)
+    {
+        return std::unexpected(ParseError::FileOpenFailure);
+    }
+    return readOpenedRecord(input, extensionLower(path), byteOffset, byteLength, lineNumber, arrayElement, jsonField,
+                            maxLineLength);
 }
 
 // cppcheck-suppress unusedFunction

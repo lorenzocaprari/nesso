@@ -2,8 +2,9 @@
 # Parser and tokenizer only. A full `conan install` also builds onnxruntime
 # (boost, protobuf, eigen, ...) and the project CMakeLists requires CMake >= 4.2
 # while base-builder ships 3.29. nlohmann_json 3.11.3 is header-only and is the
-# only dependency those two targets link; the commit matches the v3.11.3 tag
-# recorded in conanfile.py / conan.lock.
+# only dependency the tokenizer links. The parser fuzzer also links zlib for
+# gzip input (system libz; the product build uses the locked Conan package).
+# The json commit matches the v3.11.3 tag recorded in conanfile.py / conan.lock.
 
 JSON_COMMIT=9cca280a4d0ccf0c08f47a99aa71d1b0e52f8d03
 JSON_SHA256=9bea4c8066ef4a1c206b2be5a36302f8926f7fdc6087af5d20b417d0cf103ea6
@@ -15,6 +16,12 @@ curl -fsSL \
   -o "${json_header}"
 echo "${JSON_SHA256}  ${json_header}" | sha256sum -c -
 
+# gzip_reader links zlib. base-builder may not ship the headers.
+if [[ ! -f /usr/include/zlib.h ]]; then
+  apt-get update
+  apt-get install -y zlib1g-dev
+fi
+
 root="${SRC}/nesso"
 flags="${CXXFLAGS:-} -std=c++26 -DNESSO_LIBFUZZER -I/tmp/nlohmann"
 
@@ -22,8 +29,10 @@ flags="${CXXFLAGS:-} -std=c++26 -DNESSO_LIBFUZZER -I/tmp/nlohmann"
   -I"${root}/src/parser/include" \
   "${root}/src/parser/log_chunker.cpp" \
   "${root}/src/parser/template_mask.cpp" \
+  "${root}/src/parser/gzip_reader.cpp" \
   "${root}/test/fuzz/fuzz_parser.cpp" \
   ${LIB_FUZZING_ENGINE} \
+  -lz \
   -o "${OUT}/nesso_fuzz_parser"
 
 "${CXX}" ${flags} \

@@ -76,6 +76,18 @@ class CheckRuntimeLicensesTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stderr, "")
 
+    def test_direct_zlib_stays_permissive_without_an_allowance(self) -> None:
+        nodes = permissive_graph()
+        nodes["2"]["license"] = "Zlib"
+        passed = run(nodes)
+        self.assertEqual(passed.returncode, 0, passed.stderr)
+
+        nodes["2"]["license"] = "GPL-3.0-or-later"
+        denied = run(nodes)
+        self.assertEqual(denied.returncode, 1)
+        self.assertIn("zlib/1.3.2: copyleft license ['GPL-3.0-or-later'] in the runtime graph", denied.stderr)
+        self.assertNotIn("allow-list", denied.stderr)
+
     def test_libiconv_lgpl_in_host_fails(self) -> None:
         nodes = with_package(permissive_graph(), "4", "libiconv/1.17", "LGPL-2.1-or-later")
         result = run(nodes)
