@@ -5,6 +5,8 @@ add_library(
   dedup.cpp
   bm25.cpp
   lexical_terms.cpp
+  query_class.cpp
+  score_fusion.cpp
   sha256.cpp
   top_k.cpp)
 find_package(Threads REQUIRED)

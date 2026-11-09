@@ -161,6 +161,10 @@ static int render(const TextResults &results, bool json)
     renderLineCounts(lineReport(results));
     renderPolicyWarning(results.policyMismatch);
     renderStaleSources(results.staleSources);
+    if (results.lexicalFallback)
+    {
+        std::println(std::cerr, "Warning: no lexical match for the query; using hybrid");
+    }
     return json ? renderJson(results) : renderText(results);
 }
 

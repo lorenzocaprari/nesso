@@ -363,7 +363,7 @@ Feature: grep
       """
     When I run nesso with arguments grep "database connection error" --json -k 3 {dir}/app.log
     Then the exit code is 0
-    And stdout contains "\"schema_version\":1"
+    And stdout contains "\"schema_version\":2"
     And stdout contains "\"occurrences\":2"
     And stdout contains "\"occurrences\":1"
     And stdout contains "\"kind\":\"line\""
@@ -380,7 +380,7 @@ Feature: grep
     Then the exit code is 0
     And stdout contains "\"source\":\"-\""
     And stdout contains "\"occurrences\":2"
-    And stdout contains "\"schema_version\":1"
+    And stdout contains "\"schema_version\":2"
 
   # JSON Lines contract. Separate from the scenarios above so a later rebase stays local.
 

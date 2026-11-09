@@ -53,7 +53,18 @@ enum class ErrorCause : uint8_t
     EmptyFile,
     NothingIndexable,
     EmptyCorpus,
-    OutputIsInput
+    OutputIsInput,
+    NoLexicalPostings,
+    LexicalTermsMismatch
+};
+
+/// Ranking mode requested on `grep` / `search` (`--mode`).
+enum class SearchMode : uint8_t
+{
+    Auto,
+    Hybrid,
+    Dense,
+    Lexical
 };
 
 struct StaleSource
@@ -102,6 +113,7 @@ struct GrepRequest
     std::string jsonField = "message";
     bool progress = false;
     bool json = false;
+    SearchMode mode = SearchMode::Auto;
 };
 
 struct IndexRequest
@@ -118,6 +130,7 @@ struct SearchRequest
     std::filesystem::path index;
     size_t topK = DEFAULT_TEXT_TOP_K;
     bool json = false;
+    SearchMode mode = SearchMode::Auto;
 };
 
 struct TextMatch
@@ -128,6 +141,10 @@ struct TextMatch
     std::string text;
     bool arrayElement = false;
     uint32_t occurrences = 1;
+    /// Effective mode after routing: `dense`, `hybrid`, or `lexical`.
+    std::string mode = "dense";
+    std::optional<float> dense;
+    std::optional<float> lexical;
 };
 
 struct TextResults
@@ -142,6 +159,8 @@ struct TextResults
     bool multipleSources = false;
     std::vector<StaleSource> staleSources;
     bool policyMismatch = false;
+    /// When true, CLI prints the lexical→hybrid fallback warning.
+    bool lexicalFallback = false;
 };
 
 struct IndexSummary

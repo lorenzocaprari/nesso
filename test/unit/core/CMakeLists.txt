@@ -38,6 +38,16 @@ add_executable(bm25_test bm25_test.cpp)
 add_test(NAME bm25_test COMMAND bm25_test)
 target_link_libraries(bm25_test PRIVATE nesso_options nesso_core
                                         Catch2::Catch2WithMain)
+
+add_executable(query_class_test query_class_test.cpp)
+add_test(NAME query_class_test COMMAND query_class_test)
+target_link_libraries(query_class_test PRIVATE nesso_options nesso_core
+                                               Catch2::Catch2WithMain)
+
+add_executable(score_fusion_test score_fusion_test.cpp)
+add_test(NAME score_fusion_test COMMAND score_fusion_test)
+target_link_libraries(score_fusion_test PRIVATE nesso_options nesso_core
+                                                Catch2::Catch2WithMain)
 # Catch2 checks add uncoverable branches. The library this calls stays in the
 # floor.
 set_property(
@@ -54,4 +64,6 @@ set_tests_properties(
   sha256_test
   lexical_terms_test
   bm25_test
+  query_class_test
+  score_fusion_test
   PROPERTIES LABELS unit)

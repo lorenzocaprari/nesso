@@ -316,14 +316,22 @@ static std::expected<std::uint32_t, EngineError> validatePolicy(const CorpusPoli
     {
         return std::unexpected(EngineError::CorruptDatabase);
     }
-    // Optional until every checked-in corpus carries postings. When present they
-    // must match the constants this binary writes.
-    if ((policy.contains("lexical.terms") && policy.at("lexical.terms") != LEXICAL_TERMS_VERSION) ||
-        (policy.contains("bm25") && policy.at("bm25") != BM25_POLICY))
-    {
-        return std::unexpected(EngineError::CorruptDatabase);
-    }
     return dimensions;
+}
+
+static LexicalStatus lexicalStatusOf(bool hasLexical, const CorpusPolicy &policy)
+{
+    if (!hasLexical)
+    {
+        return LexicalStatus::Missing;
+    }
+    const bool termsOk = policy.contains("lexical.terms") && policy.at("lexical.terms") == LEXICAL_TERMS_VERSION;
+    const bool bm25Ok = policy.contains("bm25") && policy.at("bm25") == BM25_POLICY;
+    if (!termsOk || !bm25Ok)
+    {
+        return LexicalStatus::VersionMismatch;
+    }
+    return LexicalStatus::Ok;
 }
 
 static std::expected<void, EngineError> validateVector(std::span<const float> embedding, std::uint32_t dimensions)
@@ -1181,6 +1189,8 @@ struct MappedCorpus::Impl
     std::vector<std::string> lexicalTermStorage;
     std::vector<std::string_view> lexicalDictionary;
     std::vector<LexicalLinePostings> lexicalPostings;
+    LexicalStatus lexicalStatus = LexicalStatus::Missing;
+    std::string corpusLexicalTermsVersion;
 };
 
 MappedCorpus::MappedCorpus(std::unique_ptr<Impl> impl) : impl_(std::move(impl)) {}
@@ -1196,6 +1206,8 @@ std::span<const std::string_view> MappedCorpus::texts() const noexcept { return 
 std::span<const float> MappedCorpus::matrix() const noexcept { return impl_->matrix; }
 std::span<const std::string_view> MappedCorpus::lexicalDictionary() const noexcept { return impl_->lexicalDictionary; }
 std::span<const LexicalLinePostings> MappedCorpus::lexicalPostings() const noexcept { return impl_->lexicalPostings; }
+LexicalStatus MappedCorpus::lexicalStatus() const noexcept { return impl_->lexicalStatus; }
+std::string_view MappedCorpus::corpusLexicalTermsVersion() const noexcept { return impl_->corpusLexicalTermsVersion; }
 
 std::expected<MappedCorpus, EngineError> mapCorpusFile(const std::filesystem::path &path,
                                                        std::uint32_t *observedVersion)
@@ -1430,6 +1442,11 @@ std::expected<MappedCorpus, EngineError> mapCorpusFile(const std::filesystem::pa
             return std::unexpected(decoded.error());
         }
     }
+    if (impl->policy.contains("lexical.terms"))
+    {
+        impl->corpusLexicalTermsVersion = impl->policy.at("lexical.terms");
+    }
+    impl->lexicalStatus = lexicalStatusOf(hasLexical, impl->policy);
 
     impl->file = std::move(*mapped);
     const auto stable = impl->file.bytes();

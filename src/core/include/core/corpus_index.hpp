@@ -77,6 +77,15 @@ struct LexicalLinePostings
     std::vector<std::pair<std::uint32_t, std::uint32_t>> entries;
 };
 
+/// Lexical readiness of a mapped corpus for hybrid/lexical/`auto` search.
+/// Corrupt postings still fail at map time; only missing or stale policy is soft.
+enum class LexicalStatus : std::uint8_t
+{
+    Ok,
+    Missing,
+    VersionMismatch
+};
+
 /// Capture metadata used to detect changes before re-reading a source.
 [[nodiscard]] std::expected<SourceInfo, EngineError> sourceInfoFor(const std::filesystem::path &path,
                                                                    std::string_view jsonField);
@@ -101,6 +110,10 @@ class MappedCorpus
     [[nodiscard]] std::span<const std::string_view> lexicalDictionary() const noexcept;
     /// One posting list per corpus line, including skipped lines.
     [[nodiscard]] std::span<const LexicalLinePostings> lexicalPostings() const noexcept;
+    /// Soft lexical gate for non-dense modes. Dense search ignores this.
+    [[nodiscard]] LexicalStatus lexicalStatus() const noexcept;
+    /// Corpus `lexical.terms` policy value when present; empty when absent.
+    [[nodiscard]] std::string_view corpusLexicalTermsVersion() const noexcept;
 
   private:
     struct Impl;

@@ -168,17 +168,20 @@ TEST_CASE("search rankings match across thread counts and corpus bytes do not ch
     const std::array<size_t, 4> limits{1, 8, uniqueLines, uniqueLines + 10};
     for (const size_t limit : limits)
     {
-        const auto serial = app(1).search({.query = "database connection", .index = corpus, .topK = limit});
+        const auto serial = app(1).search(
+            {.query = "database connection", .index = corpus, .topK = limit, .mode = nesso::SearchMode::Dense});
         REQUIRE(serial.has_value());
         REQUIRE_FALSE(serial->matches.empty());
         const std::vector<Seen> expected = freeze(*serial);
         for (const size_t threads : budgets)
         {
-            const auto ranked = app(threads).search({.query = "database connection", .index = corpus, .topK = limit});
+            const auto ranked = app(threads).search(
+                {.query = "database connection", .index = corpus, .topK = limit, .mode = nesso::SearchMode::Dense});
             REQUIRE(ranked.has_value());
             CHECK(freeze(*ranked) == expected);
         }
-        const auto grepped = app(4).grep({.query = "database connection", .files = {log}, .topK = limit});
+        const auto grepped = app(4).grep(
+            {.query = "database connection", .files = {log}, .topK = limit, .mode = nesso::SearchMode::Dense});
         REQUIRE(grepped.has_value());
         CHECK(freeze(*grepped) == expected);
     }
@@ -193,12 +196,15 @@ TEST_CASE("search rankings match across thread counts and corpus bytes do not ch
     writeLog(smallLog, 12);
     const auto smallCorpus = dir.path() / "small.nesso";
     REQUIRE(app(1).index({.files = {smallLog}, .output = smallCorpus}).has_value());
-    const auto smallSerial = app(1).search({.query = "database connection", .index = smallCorpus, .topK = 6});
-    const auto smallParallel = app(7).search({.query = "database connection", .index = smallCorpus, .topK = 6});
+    const auto smallSerial = app(1).search(
+        {.query = "database connection", .index = smallCorpus, .topK = 6, .mode = nesso::SearchMode::Dense});
+    const auto smallParallel = app(7).search(
+        {.query = "database connection", .index = smallCorpus, .topK = 6, .mode = nesso::SearchMode::Dense});
     REQUIRE(smallSerial.has_value());
     REQUIRE(smallParallel.has_value());
     CHECK(freeze(*smallParallel) == freeze(*smallSerial));
-    const auto smallGrep = app(3).grep({.query = "database connection", .files = {smallLog}, .topK = 6});
+    const auto smallGrep =
+        app(3).grep({.query = "database connection", .files = {smallLog}, .topK = 6, .mode = nesso::SearchMode::Dense});
     REQUIRE(smallGrep.has_value());
     CHECK(freeze(*smallGrep) == freeze(*smallSerial));
 }

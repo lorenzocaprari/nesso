@@ -214,7 +214,7 @@ func (b *bindings) stdoutLinesAreJsonMatches() error {
 	if trimmed == "" {
 		return errors.New("stdout has no JSON lines")
 	}
-	want := []string{"schema_version", "rank", "source", "kind", "line", "score", "text", "occurrences"}
+	want := []string{"schema_version", "rank", "source", "kind", "line", "score", "text", "occurrences", "mode", "dense", "lexical"}
 	for index, line := range strings.Split(trimmed, "\n") {
 		decoder := json.NewDecoder(strings.NewReader(line))
 		token, err := decoder.Token()
@@ -262,7 +262,7 @@ func (b *bindings) stdoutLinesAreJsonMatches() error {
 				return fmt.Errorf("stdout line %d keys %v, want %v\n%s", index+1, keys, want, line)
 			}
 		}
-		if string(values["schema_version"]) != "1" {
+		if string(values["schema_version"]) != "2" {
 			return fmt.Errorf("stdout line %d schema_version %s", index+1, values["schema_version"])
 		}
 		if string(values["rank"]) != strconv.Itoa(index+1) {
@@ -289,6 +289,20 @@ func (b *bindings) stdoutLinesAreJsonMatches() error {
 		if occErr != nil || occurrences < 1 {
 			return fmt.Errorf("stdout line %d occurrences %s", index+1, values["occurrences"])
 		}
+		modeRaw := string(values["mode"])
+		if modeRaw != `"dense"` && modeRaw != `"hybrid"` && modeRaw != `"lexical"` {
+			return fmt.Errorf("stdout line %d mode %s", index+1, modeRaw)
+		}
+		for _, key := range []string{"dense", "lexical"} {
+			raw := string(values[key])
+			if raw == "null" {
+				continue
+			}
+			if _, err := strconv.ParseFloat(raw, 64); err != nil || strings.ContainsAny(raw, "\"',") {
+				return fmt.Errorf("stdout line %d %s %s", index+1, key, raw)
+			}
+		}
+
 	}
 	return nil
 }

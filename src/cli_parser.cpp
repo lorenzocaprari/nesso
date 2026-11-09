@@ -82,7 +82,25 @@ struct TextOptions
     bool quiet = false;
     bool json = false;
     size_t threads = 0;
+    std::string mode = "auto";
 };
+
+static SearchMode parseSearchMode(std::string_view mode)
+{
+    if (mode == "hybrid")
+    {
+        return SearchMode::Hybrid;
+    }
+    if (mode == "dense")
+    {
+        return SearchMode::Dense;
+    }
+    if (mode == "lexical")
+    {
+        return SearchMode::Lexical;
+    }
+    return SearchMode::Auto;
+}
 
 static std::vector<std::filesystem::path> toPaths(const std::vector<std::string> &args)
 {
@@ -165,6 +183,9 @@ std::expected<ParsedCommand, int> parseCommandLine(int argc, char **argv)
         ->check(positiveCount());
     grepCmd->add_flag("--quiet", text.quiet, "Suppress interactive progress output");
     grepCmd->add_flag("--json", text.json, "Print one JSON object per match");
+    grepCmd->add_option("--mode", text.mode, "Ranking mode: auto, hybrid, dense, or lexical")
+        ->default_val("auto")
+        ->check(CLI::IsMember({"auto", "hybrid", "dense", "lexical"}));
     const auto *grepThreads = grepCmd->add_option("--threads", text.threads, THREADS_HELP)->check(positiveCount());
     const auto *grepModelDir = grepCmd->add_option("--model-dir", text.modelDir, MODEL_DIR_HELP);
 
@@ -183,6 +204,9 @@ std::expected<ParsedCommand, int> parseCommandLine(int argc, char **argv)
         ->default_val(5)
         ->check(positiveCount());
     searchCmd->add_flag("--json", text.json, "Print one JSON object per match");
+    searchCmd->add_option("--mode", text.mode, "Ranking mode: auto, hybrid, dense, or lexical")
+        ->default_val("auto")
+        ->check(CLI::IsMember({"auto", "hybrid", "dense", "lexical"}));
     const auto *searchThreads = searchCmd->add_option("--threads", text.threads, THREADS_HELP)->check(positiveCount());
     const auto *searchModelDir = searchCmd->add_option("--model-dir", text.modelDir, MODEL_DIR_HELP);
 
@@ -229,7 +253,8 @@ std::expected<ParsedCommand, int> parseCommandLine(int argc, char **argv)
                                                     .topK = text.topK,
                                                     .jsonField = text.jsonField,
                                                     .progress = !text.quiet,
-                                                    .json = text.json}};
+                                                    .json = text.json,
+                                                    .mode = parseSearchMode(text.mode)}};
     }
     if (indexCmd->parsed())
     {
@@ -239,9 +264,12 @@ std::expected<ParsedCommand, int> parseCommandLine(int argc, char **argv)
                                                      .jsonField = text.jsonField,
                                                      .progress = !text.quiet}};
     }
-    return ParsedCommand{
-        .config = configFrom(*modelDirOpt, text, threads),
-        .request = SearchRequest{.query = text.query, .index = text.index, .topK = text.topK, .json = text.json}};
+    return ParsedCommand{.config = configFrom(*modelDirOpt, text, threads),
+                         .request = SearchRequest{.query = text.query,
+                                                  .index = text.index,
+                                                  .topK = text.topK,
+                                                  .json = text.json,
+                                                  .mode = parseSearchMode(text.mode)}};
 }
 
 } // namespace nesso::cli
