@@ -39,6 +39,7 @@ enum class ErrorCause : uint8_t
     FileOpen,
     UnsupportedFormat,
     BinaryFile,
+    CorruptGzip,
     VocabLoad,
     Tokenization,
     ModelLoad,
@@ -206,8 +207,8 @@ class Nesso
     Nesso(Nesso &&) noexcept;
     Nesso &operator=(Nesso &&) noexcept;
 
-    [[nodiscard]] std::expected<TextResults, Error> grep(const GrepRequest &request) const;
-    [[nodiscard]] std::expected<IndexSummary, Error> index(const IndexRequest &request) const;
+    [[nodiscard]] std::expected<TextResults, Error> grep(const GrepRequest &input) const;
+    [[nodiscard]] std::expected<IndexSummary, Error> index(const IndexRequest &input) const;
     [[nodiscard]] std::expected<TextResults, Error> search(const SearchRequest &request) const;
 
   private:

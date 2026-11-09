@@ -35,7 +35,7 @@ extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t *data, std::size_t size
     std::error_code ec;
     std::filesystem::create_directories(dir, ec);
 
-    for (const char *ext : {".log", ".json", ".jsonl"})
+    for (const char *ext : {".log", ".json", ".jsonl", ".gz"})
     {
         const std::filesystem::path path = dir / (std::string("input") + ext);
         std::ofstream out(path, std::ios::binary | std::ios::trunc);

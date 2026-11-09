@@ -58,7 +58,9 @@ class Fixture:
                                                      "libs": True, "direct": direct}
 
     def run(self, out: str = "out", binary_symbols: list[str] | None = None, order=None) -> subprocess.CompletedProcess:
-        self.symbols[str(self.binary)] = binary_symbols if binary_symbols is not None else ["0 T OrtRun", "0 W shared_tmpl"]
+        # inflate stands in for the zlib symbols nesso defines after linking gzip support.
+        self.symbols[str(self.binary)] = binary_symbols if binary_symbols is not None else [
+            "0 T OrtRun", "0 T inflate", "0 W shared_tmpl"]
         fixture = self.directory / "nm.json"
         fixture.write_text(json.dumps(self.symbols))
         nodes = self.nodes if order is None else dict(order(list(self.nodes.items())))
@@ -99,9 +101,10 @@ class ThirdPartyNoticesTest(unittest.TestCase):
     def test_lists_only_components_shipped_in_the_binary(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             f = shipped_graph(pathlib.Path(temp))
-            first = f.run("first")
+            linked = ["0 T OrtRun", "0 T inflate", "0 W shared_tmpl"]
+            first = f.run("first", binary_symbols=linked)
             self.assertEqual(first.returncode, 0, first.stderr)
-            second = f.run("second", order=lambda items: [items[0]] + list(reversed(items[1:])))
+            second = f.run("second", binary_symbols=linked, order=lambda items: [items[0]] + list(reversed(items[1:])))
             self.assertEqual(second.returncode, 0, second.stderr)
             notices = (f.directory / "first" / "THIRD_PARTY_NOTICES").read_text()
             self.assertEqual(notices, (f.directory / "second" / "THIRD_PARTY_NOTICES").read_text())
@@ -115,7 +118,8 @@ class ThirdPartyNoticesTest(unittest.TestCase):
             ])
             self.assertTrue(any("all-MiniLM-L6-v2" in line for line in listed))
             self.assertTrue(any("Unicode-3.0" in line for line in listed))
-            for absent in ("libcurl", "zlib", "bzip2", "cmake", "catch2"):
+            self.assertIn("- zlib 1.3.2 (Zlib)", notices)
+            for absent in ("libcurl", "bzip2", "cmake", "catch2"):
                 self.assertNotIn(f"- {absent} ", notices)
 
             self.assertLess(notices.index("--- licenses/COPYING.BSD ---"), notices.index("--- licenses/COPYING.MPL2 ---"))
@@ -143,6 +147,17 @@ class ThirdPartyNoticesTest(unittest.TestCase):
             self.assertIn("ms-gsl/4.0.0 has no package_folder", result.stderr)
             self.assertIn("skip_binaries=False", result.stderr)
 
+    def test_zlib_must_be_linked_to_ship(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            f = shipped_graph(pathlib.Path(temp))
+            bare = f.run("bare", binary_symbols=["0 T OrtRun"])
+            self.assertEqual(bare.returncode, 1)
+            self.assertIn("zlib/1.3.2 is a header requirement of shipped code but is not linked", bare.stderr)
+
+            linked = f.run("linked", binary_symbols=["0 T OrtRun", "0 T inflate"])
+            self.assertEqual(linked.returncode, 0, linked.stderr)
+            self.assertIn("- zlib 1.3.2 (Zlib)", (f.directory / "linked" / "THIRD_PARTY_NOTICES").read_text())
+
     def test_weak_symbols_do_not_count_as_linked(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             f = shipped_graph(pathlib.Path(temp))
@@ -152,7 +167,7 @@ class ThirdPartyNoticesTest(unittest.TestCase):
             self.assertEqual(result.returncode, 1)
             self.assertIn("re2/20231101 is a header requirement of shipped code but is not linked", result.stderr)
 
-            linked = f.run("linked", binary_symbols=["0 T OrtRun", "0 t re2_only"])
+            linked = f.run("linked", binary_symbols=["0 T OrtRun", "0 T inflate", "0 t re2_only"])
             self.assertEqual(linked.returncode, 0, linked.stderr)
             self.assertIn("- re2 20231101", (f.directory / "linked" / "THIRD_PARTY_NOTICES").read_text())
 

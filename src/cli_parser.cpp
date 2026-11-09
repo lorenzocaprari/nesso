@@ -31,13 +31,14 @@ static CLI::Validator inputFile()
                                   return std::string{};
                               }
                               std::error_code error;
-                              if (!std::filesystem::is_regular_file(value, error))
+                              if (std::filesystem::is_regular_file(value, error) ||
+                                  std::filesystem::is_directory(value, error))
                               {
-                                  return std::string{"file does not exist"};
+                                  return std::string{};
                               }
-                              return std::string{};
+                              return std::string{"file does not exist"};
                           },
-                          "FILE", "existing file, or - for stdin"};
+                          "FILE", "existing file or directory, or - for stdin"};
 }
 
 static CLI::Validator positiveCount()
@@ -57,7 +58,7 @@ static CLI::Validator positiveCount()
 static constexpr const char *MODEL_DIR_HELP = "Directory containing model.onnx and vocab.txt. "
                                               "Default: NESSO_MODEL_DIR, ./models, XDG data, /usr/share/nesso";
 
-static constexpr const char *TEXT_FILES_HELP = "Text files to read. - reads stdin as lines";
+static constexpr const char *TEXT_FILES_HELP = "Text files or directories to read. - reads stdin as lines";
 
 static constexpr const char *THREADS_HELP = "CPU budget N. The full rules are in docs/usage.md.";
 

@@ -54,7 +54,6 @@ HEADER_CODE = {
 # into the binary. Same keying.
 NO_HEADER_CODE = {
     ("boost", "1.83.0"): "onnxruntime uses only Boost.Mp11 type lists, which generate no code",
-    ("zlib", "1.3.2"): "protobuf includes zlib.h only in gzip_stream.cc, which is not linked",
     ("libcurl", "8.21.0"): "only date's time-zone library includes curl, and it is not linked",
 }
 

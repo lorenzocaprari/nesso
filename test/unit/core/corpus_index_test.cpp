@@ -313,6 +313,27 @@ TEST_CASE("empty v3 corpora and source metadata are handled explicitly", "[corpu
     CHECK(stdinInfo->storedOnly);
     CHECK_FALSE(stdinInfo->tracked);
     CHECK_FALSE(nesso::core::sourceInfoFor(dir.path() / "missing", "message"));
+
+    const auto gzip = dir.path() / "APP.LOG.GZ";
+    {
+        std::ofstream output(gzip, std::ios::binary);
+        const std::array<unsigned char, 4> bytes{0x1f, 0x8b, 0x08, 0x00};
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+        output.write(reinterpret_cast<const char *>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
+        REQUIRE(output);
+    }
+    const auto gzipInfo = nesso::core::sourceInfoFor(gzip, "host");
+    REQUIRE(gzipInfo);
+    CHECK(gzipInfo->storedOnly);
+    CHECK_FALSE(gzipInfo->tracked);
+    CHECK(gzipInfo->jsonField == "host");
+    CHECK(gzipInfo->size == std::filesystem::file_size(gzip));
+    const auto plain = dir.path() / "plain.log";
+    writeBytes(plain, "alpha\n");
+    const auto plainInfo = nesso::core::sourceInfoFor(plain, "message");
+    REQUIRE(plainInfo);
+    CHECK(plainInfo->tracked);
+    CHECK_FALSE(plainInfo->storedOnly);
 }
 
 TEST_CASE("v3 writer rejects invalid policies and unusable destinations", "[corpus][core]")

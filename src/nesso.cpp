@@ -19,6 +19,7 @@
 #include <embed/batch_plan.hpp>
 #include <embed/embedder.hpp>
 #include <embed/onnx_embedder.hpp>
+#include <parser/input_walk.hpp>
 #include <parser/log_chunker.hpp>
 
 #include <algorithm>
@@ -87,6 +88,8 @@ ErrorCause causeOf(nesso::parser::ParseError error)
         return ErrorCause::UnsupportedFormat;
     case nesso::parser::ParseError::BinaryFile:
         return ErrorCause::BinaryFile;
+    case nesso::parser::ParseError::CorruptGzip:
+        return ErrorCause::CorruptGzip;
     }
     std::unreachable();
 }
@@ -139,6 +142,8 @@ std::string_view describe(ErrorCause cause)
         return "unsupported format";
     case ErrorCause::BinaryFile:
         return "the file is binary";
+    case ErrorCause::CorruptGzip:
+        return "the gzip stream is truncated or corrupt";
     case ErrorCause::VocabLoad:
         return "could not load the vocabulary";
     case ErrorCause::Tokenization:
@@ -802,9 +807,27 @@ static bool betterHit(float leftScore, uint64_t leftIndex, float rightScore, uin
     return leftScore != rightScore ? leftScore > rightScore : leftIndex < rightIndex;
 }
 
-std::expected<TextResults, Error> Nesso::grep(const GrepRequest &request) const
+static std::expected<std::vector<std::filesystem::path>, Error>
+expandRequestFiles(std::span<const std::filesystem::path> files)
+{
+    auto expanded = nesso::parser::expandInputs(files);
+    if (!expanded)
+    {
+        return std::unexpected(makeError(ErrorKind::Parse, ErrorCause::FileOpen, expanded.error().path, {}));
+    }
+    return std::move(*expanded);
+}
+
+std::expected<TextResults, Error> Nesso::grep(const GrepRequest &input) const
 {
     const TraceSession session;
+    auto expanded = expandRequestFiles(input.files);
+    if (!expanded)
+    {
+        return std::unexpected(expanded.error());
+    }
+    GrepRequest request = input;
+    request.files = std::move(*expanded);
     const auto model = embedder();
     if (!model)
     {
@@ -1241,9 +1264,16 @@ std::expected<TextResults, Error> Nesso::grep(const GrepRequest &request) const
     return results;
 }
 
-std::expected<IndexSummary, Error> Nesso::index(const IndexRequest &request) const
+std::expected<IndexSummary, Error> Nesso::index(const IndexRequest &input) const
 {
     const TraceSession session;
+    auto expanded = expandRequestFiles(input.files);
+    if (!expanded)
+    {
+        return std::unexpected(expanded.error());
+    }
+    IndexRequest request = input;
+    request.files = std::move(*expanded);
     for (const std::filesystem::path &path : request.files)
     {
         std::error_code error;
