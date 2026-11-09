@@ -352,6 +352,26 @@ func (b *bindings) stdoutLinesAreJsonMatches() error {
 	return nil
 }
 
+func (b *bindings) stdoutLineCountIs(want string) error {
+	text, err := b.stream("stdout")
+	if err != nil {
+		return err
+	}
+	expected, convErr := strconv.Atoi(want)
+	if convErr != nil {
+		return convErr
+	}
+	trimmed := strings.TrimRight(text, "\n")
+	count := 0
+	if trimmed != "" {
+		count = strings.Count(trimmed, "\n") + 1
+	}
+	if count != expected {
+		return fmt.Errorf("stdout has %d lines, want %d\n%s", count, expected, text)
+	}
+	return nil
+}
+
 func (b *bindings) streamIsEmpty(name string) error {
 	text, err := b.stream(name)
 	if err != nil {
