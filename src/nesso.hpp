@@ -114,6 +114,8 @@ struct GrepRequest
     bool progress = false;
     bool json = false;
     SearchMode mode = SearchMode::Auto;
+    /// One row per masked dedup key. `-k` then counts groups.
+    bool group = false;
 };
 
 struct IndexRequest
@@ -131,6 +133,8 @@ struct SearchRequest
     size_t topK = DEFAULT_TEXT_TOP_K;
     bool json = false;
     SearchMode mode = SearchMode::Auto;
+    /// One row per masked dedup key. `-k` then counts groups.
+    bool group = false;
 };
 
 struct TextMatch
@@ -161,6 +165,8 @@ struct TextResults
     bool policyMismatch = false;
     /// When true, CLI prints the lexical→hybrid fallback warning.
     bool lexicalFallback = false;
+    /// When true, each match is one masked dedup key and text output prints `occurrences`.
+    bool grouped = false;
 };
 
 struct IndexSummary

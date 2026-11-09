@@ -81,6 +81,7 @@ struct TextOptions
     std::string jsonField = "message";
     bool quiet = false;
     bool json = false;
+    bool group = false;
     size_t threads = 0;
     std::string mode = "auto";
 };
@@ -178,11 +179,12 @@ std::expected<ParsedCommand, int> parseCommandLine(int argc, char **argv)
     grepCmd->add_option("query", text.query, "Natural-language query")->required();
     grepCmd->add_option("files", text.files, TEXT_FILES_HELP)->required()->expected(1, -1)->check(inputFile());
     grepCmd->add_option("--json-field", text.jsonField, "JSON object field to read")->default_val("message");
-    grepCmd->add_option("-k,--top-k", text.topK, "Maximum number of matches to return")
+    grepCmd->add_option("-k,--top-k", text.topK, "Maximum number of matches to return, or groups with --group")
         ->default_val(5)
         ->check(positiveCount());
     grepCmd->add_flag("--quiet", text.quiet, "Suppress interactive progress output");
     grepCmd->add_flag("--json", text.json, "Print one JSON object per match");
+    grepCmd->add_flag("--group", text.group, "Print one row per masked dedup group");
     grepCmd->add_option("--mode", text.mode, "Ranking mode: auto, hybrid, dense, or lexical")
         ->default_val("auto")
         ->check(CLI::IsMember({"auto", "hybrid", "dense", "lexical"}));
@@ -200,10 +202,11 @@ std::expected<ParsedCommand, int> parseCommandLine(int argc, char **argv)
     auto *searchCmd = app.add_subcommand("search", "Semantic search of a corpus file. Prints matches only.");
     searchCmd->add_option("query", text.query, "Natural-language query")->required();
     searchCmd->add_option("-i,--index", text.index, "Corpus file to search")->required()->check(CLI::ExistingFile);
-    searchCmd->add_option("-k,--top-k", text.topK, "Maximum number of matches to return")
+    searchCmd->add_option("-k,--top-k", text.topK, "Maximum number of matches to return, or groups with --group")
         ->default_val(5)
         ->check(positiveCount());
     searchCmd->add_flag("--json", text.json, "Print one JSON object per match");
+    searchCmd->add_flag("--group", text.group, "Print one row per masked dedup group");
     searchCmd->add_option("--mode", text.mode, "Ranking mode: auto, hybrid, dense, or lexical")
         ->default_val("auto")
         ->check(CLI::IsMember({"auto", "hybrid", "dense", "lexical"}));
@@ -254,7 +257,8 @@ std::expected<ParsedCommand, int> parseCommandLine(int argc, char **argv)
                                                     .jsonField = text.jsonField,
                                                     .progress = !text.quiet,
                                                     .json = text.json,
-                                                    .mode = parseSearchMode(text.mode)}};
+                                                    .mode = parseSearchMode(text.mode),
+                                                    .group = text.group}};
     }
     if (indexCmd->parsed())
     {
@@ -269,7 +273,8 @@ std::expected<ParsedCommand, int> parseCommandLine(int argc, char **argv)
                                                   .index = text.index,
                                                   .topK = text.topK,
                                                   .json = text.json,
-                                                  .mode = parseSearchMode(text.mode)}};
+                                                  .mode = parseSearchMode(text.mode),
+                                                  .group = text.group}};
 }
 
 } // namespace nesso::cli

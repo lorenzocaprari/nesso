@@ -75,5 +75,6 @@ func InitializeScenario(sc *godog.ScenarioContext) {
 	sc.Step(`^lines that share text share a score$`, b.sharedTextSharesScore)
 	sc.Step(`^lines that differ only by an id share a score$`, b.idVariantsShareScore)
 	sc.Step(`^every stdout line is a JSON match$`, b.stdoutLinesAreJsonMatches)
+	sc.Step(`^stdout line count is (\d+)$`, b.stdoutLineCountIs)
 	sc.Step(`^(stdout|stderr) is empty$`, b.streamIsEmpty)
 }

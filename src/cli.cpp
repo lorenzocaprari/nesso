@@ -134,14 +134,29 @@ static int renderText(const TextResults &results)
     for (const TextMatch &match : results.matches)
     {
         const char *place = match.arrayElement ? "element" : "line";
-        if (results.multipleSources || match.source == "-")
+        const bool prefixed = results.multipleSources || match.source == "-";
+        if (!results.grouped)
         {
-            std::println("{}:{} {}: {:.4f}: {}", escapeTerminalControls(match.source), place, match.line, match.score,
-                         escapeTerminalControls(match.text));
+            if (prefixed)
+            {
+                std::println("{}:{} {}: {:.4f}: {}", escapeTerminalControls(match.source), place, match.line,
+                             match.score, escapeTerminalControls(match.text));
+            }
+            else
+            {
+                std::println("{} {}: {:.4f}: {}", place, match.line, match.score, escapeTerminalControls(match.text));
+            }
+            continue;
+        }
+        if (prefixed)
+        {
+            std::println("{}:{} {} ({}): {:.4f}: {}", escapeTerminalControls(match.source), place, match.line,
+                         match.occurrences, match.score, escapeTerminalControls(match.text));
         }
         else
         {
-            std::println("{} {}: {:.4f}: {}", place, match.line, match.score, escapeTerminalControls(match.text));
+            std::println("{} {} ({}): {:.4f}: {}", place, match.line, match.occurrences, match.score,
+                         escapeTerminalControls(match.text));
         }
     }
     return 0;
