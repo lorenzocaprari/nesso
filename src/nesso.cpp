@@ -35,6 +35,7 @@
 #include <string>
 #include <sys/stat.h>
 #include <unistd.h>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -772,25 +773,6 @@ static std::expected<void, Error> requireLexicalReady(nesso::core::LexicalStatus
     return std::unexpected(std::move(error));
 }
 
-static nesso::core::Bm25Index bm25FromPostings(const nesso::core::MappedCorpus &corpus)
-{
-    nesso::core::Bm25Index index;
-    for (const nesso::core::LexicalLinePostings &row : corpus.lexicalPostings())
-    {
-        std::vector<std::string_view> tokens;
-        tokens.reserve(row.length);
-        for (const auto &[termId, frequency] : row.entries)
-        {
-            for (std::uint32_t copy = 0; copy < frequency; ++copy)
-            {
-                tokens.push_back(corpus.lexicalDictionary()[termId]);
-            }
-        }
-        index.addLine(tokens);
-    }
-    return index;
-}
-
 static std::vector<std::string_view> queryTermViews(const std::vector<std::string> &terms)
 {
     std::vector<std::string_view> views;
@@ -800,6 +782,19 @@ static std::vector<std::string_view> queryTermViews(const std::vector<std::strin
         views.push_back(term);
     }
     return views;
+}
+
+static std::vector<double> bm25ScoresFromCorpus(const nesso::core::MappedCorpus &corpus,
+                                                std::span<const std::string_view> query)
+{
+    const std::span<const nesso::core::LexicalLinePostings> rows = corpus.lexicalPostings();
+    std::vector<nesso::core::Bm25LinePostings> lines;
+    lines.reserve(rows.size());
+    for (const nesso::core::LexicalLinePostings &row : rows)
+    {
+        lines.push_back(nesso::core::Bm25LinePostings{.length = row.length, .entries = row.entries});
+    }
+    return nesso::core::scoresFromPostings(corpus.lexicalDictionary(), lines, query);
 }
 
 static bool betterHit(float leftScore, uint64_t leftIndex, float rightScore, uint64_t rightIndex) noexcept
@@ -1036,7 +1031,19 @@ std::expected<TextResults, Error> Nesso::grep(const GrepRequest &request) const
     for (const Waiting &item : allLines)
     {
         const std::vector<std::string> terms = nesso::core::lexicalTerms(distinct.text(item.distinctId));
-        bm25.addLine(queryTermViews(terms));
+        std::unordered_map<std::uint32_t, std::uint32_t> termCounts;
+        termCounts.reserve(terms.size());
+        for (const std::string &term : terms)
+        {
+            ++termCounts[bm25.internTerm(term)];
+        }
+        std::vector<std::pair<std::uint32_t, std::uint32_t>> entries;
+        entries.reserve(termCounts.size());
+        for (const auto &[termId, frequency] : termCounts)
+        {
+            entries.emplace_back(termId, frequency);
+        }
+        bm25.addLinePostings(entries, static_cast<std::uint32_t>(terms.size()));
     }
     const std::vector<std::string> queryTerms = nesso::core::lexicalTerms(queryTokens.stripped);
     const std::vector<double> bm25Scores = bm25.scores(queryTermViews(queryTerms));
@@ -1698,9 +1705,8 @@ std::expected<TextResults, Error> Nesso::search(const SearchRequest &request) co
     std::vector<double> bm25Scores;
     if (effective != EffectiveMode::Dense)
     {
-        const nesso::core::Bm25Index bm25 = bm25FromPostings(*corpus);
         const std::vector<std::string> queryTerms = nesso::core::lexicalTerms(queryTokens.stripped);
-        bm25Scores = bm25.scores(queryTermViews(queryTerms));
+        bm25Scores = bm25ScoresFromCorpus(*corpus, queryTermViews(queryTerms));
     }
 
     if (effective == EffectiveMode::Lexical)
