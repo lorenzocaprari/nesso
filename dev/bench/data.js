@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794235244427,
+  "lastUpdate": 1794241489453,
   "repoUrl": "https://github.com/lorenzocaprari/nesso",
   "entries": {
     "nesso": [
@@ -4049,6 +4049,60 @@ window.BENCHMARK_DATA = {
           {
             "name": "grep-100000-rss",
             "value": 152109056,
+            "unit": "bytes"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "caprarilorenzo5@gmail.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "committer": {
+            "email": "85455384+lorenzocaprari@users.noreply.github.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "distinct": true,
+          "id": "b83142e8379e86e45e8fd3a0e43e5bfe64c21df3",
+          "message": "feat(cli)!: add --mode with hybrid fusion and query-class routing",
+          "timestamp": "2026-11-09T17:20:21+01:00",
+          "tree_id": "1c4df5fdfc58202361f0a49c3a49daac89e8d01a",
+          "url": "https://github.com/lorenzocaprari/nesso/commit/b83142e8379e86e45e8fd3a0e43e5bfe64c21df3"
+        },
+        "date": 1794241488494,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "grep-1000-wall",
+            "value": 0.42,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-1000-rss",
+            "value": 144707584,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-10000-wall",
+            "value": 3.09,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-10000-rss",
+            "value": 153694208,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-100000-wall",
+            "value": 28.22,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-100000-rss",
+            "value": 199032832,
             "unit": "bytes"
           }
         ]
