@@ -7,9 +7,11 @@
 #include <model_paths.hpp>
 #include <trace.hpp>
 
+#include <core/bm25.hpp>
 #include <core/corpus_index.hpp>
 #include <core/dedup.hpp>
 #include <core/distance.hpp>
+#include <core/lexical_terms.hpp>
 #include <core/sha256.hpp>
 #include <core/top_k.hpp>
 #include <embed/batch_plan.hpp>
@@ -669,8 +671,10 @@ static std::expected<nesso::core::CorpusPolicy, Error> corpusPolicy(const nesso:
     return nesso::core::CorpusPolicy{
         {"batch", std::format("window:{},max:{},tokens:{},order:length-then-input", nesso::embed::BATCH_WINDOW,
                               nesso::embed::BATCH_MAX_TEXTS, nesso::embed::BATCH_TOKEN_BUDGET)},
+        {"bm25", std::string{nesso::core::BM25_POLICY}},
         {"dedup", "exact-v1"},
         {"dimensions", std::to_string(identity->dimensions)},
+        {"lexical.terms", std::string{nesso::core::LEXICAL_TERMS_VERSION}},
         {"mask", "none-v1"},
         {"model.id", identity->modelId},
         {"model.quantization", identity->quantized ? "int8" : "fp32"},
@@ -1015,7 +1019,9 @@ std::expected<IndexSummary, Error> Nesso::index(const IndexRequest &request) con
                     {
                         line.storedText = chunk.text;
                     }
-                    if (const auto added = writer->addLines(std::span{&line, 1}); !added)
+                    std::vector<std::string> terms =
+                        chunk.skipped ? std::vector<std::string>{} : nesso::core::lexicalTerms(chunk.text);
+                    if (const auto added = writer->addLines(std::span{&line, 1}, std::span{&terms, 1}); !added)
                     {
                         failed = makeError(ErrorKind::CorpusWrite, causeOf(added.error()), request.output, counts);
                         return;

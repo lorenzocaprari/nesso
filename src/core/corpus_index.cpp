@@ -1,7 +1,9 @@
 // Copyright (c) 2026 Lorenzo Caprari
 // SPDX-License-Identifier: Apache-2.0
 
+#include <core/bm25.hpp>
 #include <core/corpus_index.hpp>
+#include <core/lexical_terms.hpp>
 #include <core/sha256.hpp>
 
 #include <platform/file.hpp>
@@ -19,6 +21,7 @@
 #include <limits>
 #include <system_error>
 #include <unistd.h>
+#include <unordered_map>
 #include <unordered_set>
 #include <utility>
 
@@ -36,6 +39,8 @@ constexpr std::uint64_t MAX_TEXT_BYTES = 8ULL * 1024ULL * 1024ULL;
 constexpr std::uint64_t MAX_SOURCES = 1'000'000;
 constexpr std::uint64_t MAX_LINES = 10'000'000;
 constexpr std::uint64_t MAX_DISTINCT = 1'000'000;
+constexpr std::uint64_t MAX_LEXICAL_TERMS = 4'000'000;
+constexpr std::uint64_t MAX_LEXICAL_BYTES = 512ULL * 1024ULL * 1024ULL;
 constexpr std::uint32_t MAX_DIMENSIONS = 65536;
 constexpr std::array<char, 4> MAGIC{'N', 'E', 'S', 'C'};
 constexpr std::uint32_t SOURCE_TRACKED = 1U;
@@ -87,6 +92,70 @@ static bool rangeInside(std::uint64_t offset, std::uint64_t length, std::uint64_
 static std::uint64_t alignUp(std::uint64_t value, std::uint64_t alignment)
 {
     return (value + alignment - 1) & ~(alignment - 1);
+}
+
+static bool termByteLess(std::string_view left, std::string_view right) noexcept
+{
+    const std::size_t count = left.size() < right.size() ? left.size() : right.size();
+    for (std::size_t index = 0; index < count; ++index)
+    {
+        const auto leftByte = static_cast<unsigned char>(left[index]);
+        const auto rightByte = static_cast<unsigned char>(right[index]);
+        if (leftByte != rightByte)
+        {
+            return leftByte < rightByte;
+        }
+    }
+    return left.size() < right.size();
+}
+
+static bool appendVarint(std::vector<std::byte> &out, std::uint64_t value)
+{
+    while (value >= 0x80)
+    {
+        out.push_back(static_cast<std::byte>((value & 0x7FU) | 0x80U));
+        value >>= 7U;
+    }
+    out.push_back(static_cast<std::byte>(value));
+    return true;
+}
+
+static bool readVarint(std::span<const std::byte> bytes, std::uint64_t &cursor, std::uint64_t &value)
+{
+    value = 0;
+    for (unsigned shift = 0; shift < 64; shift += 7)
+    {
+        if (cursor >= bytes.size())
+        {
+            return false;
+        }
+        const auto piece = static_cast<std::uint64_t>(bytes[cursor++]);
+        value |= (piece & 0x7FU) << shift;
+        if ((piece & 0x80U) == 0)
+        {
+            return shift < 63 || piece <= 1;
+        }
+    }
+    return false;
+}
+
+static bool appendU64(std::vector<std::byte> &out, std::uint64_t value)
+{
+    std::array<std::byte, sizeof(value)> raw{};
+    std::memcpy(raw.data(), &value, sizeof(value));
+    out.insert(out.end(), raw.begin(), raw.end());
+    return true;
+}
+
+static bool readU64At(std::span<const std::byte> bytes, std::uint64_t &cursor, std::uint64_t &value)
+{
+    if (!rangeInside(cursor, sizeof(value), bytes.size()))
+    {
+        return false;
+    }
+    std::memcpy(&value, bytes.data() + cursor, sizeof(value));
+    cursor += sizeof(value);
+    return true;
 }
 
 static bool writeRaw(std::ostream &output, const void *data, std::size_t size)
@@ -214,9 +283,9 @@ static bool parseNumber(std::string_view text, std::uint32_t &value)
 
 static std::expected<std::uint32_t, EngineError> validatePolicy(const CorpusPolicy &policy)
 {
-    constexpr std::array<std::string_view, 10> required{
-        "batch",        "dedup",      "dimensions", "mask",        "model.id", "model.quantization",
-        "model.sha256", "tokens.max", "truncate",   "vocab.sha256"};
+    constexpr std::array<std::string_view, 12> required{"batch",         "bm25",       "dedup",    "dimensions",
+                                                        "lexical.terms", "mask",       "model.id", "model.quantization",
+                                                        "model.sha256",  "tokens.max", "truncate", "vocab.sha256"};
     for (const std::string_view key : required)
     {
         if (!policy.contains(key))
@@ -243,7 +312,8 @@ static std::expected<std::uint32_t, EngineError> validatePolicy(const CorpusPoli
     if (!parseNumber(policy.at("dimensions"), dimensions) || dimensions > MAX_DIMENSIONS ||
         !parseNumber(policy.at("tokens.max"), maxTokens) || maxTokens == 0 || policy.at("model.id").size() > 1024 ||
         !validHash(policy.at("model.sha256")) || !validHash(policy.at("vocab.sha256")) ||
-        (quantization != "int8" && quantization != "fp32"))
+        (quantization != "int8" && quantization != "fp32") || policy.at("lexical.terms") != LEXICAL_TERMS_VERSION ||
+        policy.at("bm25") != BM25_POLICY)
     {
         return std::unexpected(EngineError::CorruptDatabase);
     }
@@ -479,6 +549,147 @@ std::expected<SourceInfo, EngineError> sourceInfoFor(const std::filesystem::path
     return source;
 }
 
+static std::vector<std::byte> encodeLexicalSection(std::span<const std::vector<std::string>> lineTerms)
+{
+    std::vector<std::string> dictionary;
+    {
+        std::unordered_set<std::string> seen;
+        for (const std::vector<std::string> &terms : lineTerms)
+        {
+            for (const std::string &term : terms)
+            {
+                if (seen.insert(term).second)
+                {
+                    dictionary.push_back(term);
+                }
+            }
+        }
+    }
+    std::ranges::sort(dictionary, termByteLess);
+    std::unordered_map<std::string, std::uint32_t> ids;
+    ids.reserve(dictionary.size());
+    for (std::uint32_t index = 0; index < dictionary.size(); ++index)
+    {
+        ids.emplace(dictionary[index], index);
+    }
+
+    std::vector<std::byte> out;
+    out.reserve(16 + dictionary.size() * 8);
+    appendU64(out, dictionary.size());
+    appendU64(out, lineTerms.size());
+    for (const std::string &term : dictionary)
+    {
+        appendVarint(out, term.size());
+        const auto *bytes = std::bit_cast<const std::byte *>(term.data());
+        out.insert(out.end(), bytes, bytes + term.size());
+    }
+    for (const std::vector<std::string> &terms : lineTerms)
+    {
+        std::unordered_map<std::uint32_t, std::uint32_t> counts;
+        counts.reserve(terms.size());
+        for (const std::string &term : terms)
+        {
+            ++counts[ids.at(term)];
+        }
+        std::vector<std::pair<std::uint32_t, std::uint32_t>> entries;
+        entries.reserve(counts.size());
+        for (const auto &entry : counts)
+        {
+            entries.push_back(entry);
+        }
+        std::ranges::sort(entries, [](const auto &left, const auto &right) { return left.first < right.first; });
+        appendVarint(out, entries.size());
+        std::uint32_t previous = 0;
+        for (const auto &[termId, frequency] : entries)
+        {
+            appendVarint(out, static_cast<std::uint64_t>(termId) - previous);
+            appendVarint(out, frequency);
+            previous = termId;
+        }
+        appendVarint(out, terms.size());
+    }
+    return out;
+}
+
+static std::expected<void, EngineError> decodeLexicalSection(std::span<const std::byte> bytes, std::uint64_t lineCount,
+                                                             std::vector<std::string> &ownedTerms,
+                                                             std::vector<std::string_view> &dictionary,
+                                                             std::vector<LexicalLinePostings> &postings)
+{
+    std::uint64_t cursor = 0;
+    std::uint64_t termCount = 0;
+    std::uint64_t postingLines = 0;
+    if (!readU64At(bytes, cursor, termCount) || !readU64At(bytes, cursor, postingLines) ||
+        termCount > MAX_LEXICAL_TERMS || postingLines != lineCount)
+    {
+        return std::unexpected(EngineError::CorruptDatabase);
+    }
+    ownedTerms.clear();
+    dictionary.clear();
+    postings.clear();
+    ownedTerms.reserve(static_cast<std::size_t>(termCount));
+    dictionary.reserve(static_cast<std::size_t>(termCount));
+    std::string previous;
+    for (std::uint64_t index = 0; index < termCount; ++index)
+    {
+        std::uint64_t length = 0;
+        if (!readVarint(bytes, cursor, length) || length > MAX_TEXT_BYTES || !rangeInside(cursor, length, bytes.size()))
+        {
+            return std::unexpected(EngineError::CorruptDatabase);
+        }
+        std::string term(reinterpret_cast<const char *>(bytes.data() + cursor), static_cast<std::size_t>(length));
+        cursor += length;
+        if (!previous.empty() && !termByteLess(previous, term))
+        {
+            return std::unexpected(EngineError::CorruptDatabase);
+        }
+        previous = term;
+        ownedTerms.push_back(std::move(term));
+        dictionary.emplace_back(ownedTerms.back());
+    }
+    postings.resize(static_cast<std::size_t>(postingLines));
+    for (std::uint64_t line = 0; line < postingLines; ++line)
+    {
+        std::uint64_t unique = 0;
+        if (!readVarint(bytes, cursor, unique) || unique > termCount)
+        {
+            return std::unexpected(EngineError::CorruptDatabase);
+        }
+        LexicalLinePostings &row = postings[static_cast<std::size_t>(line)];
+        row.entries.reserve(static_cast<std::size_t>(unique));
+        std::uint64_t previousId = 0;
+        std::uint64_t lengthSum = 0;
+        for (std::uint64_t index = 0; index < unique; ++index)
+        {
+            std::uint64_t delta = 0;
+            std::uint64_t frequency = 0;
+            if (!readVarint(bytes, cursor, delta) || !readVarint(bytes, cursor, frequency) || frequency == 0 ||
+                delta > termCount || previousId + delta >= termCount || (index > 0 && delta == 0))
+            {
+                return std::unexpected(EngineError::CorruptDatabase);
+            }
+            previousId += delta;
+            lengthSum += frequency;
+            if (lengthSum > MAX_TEXT_BYTES)
+            {
+                return std::unexpected(EngineError::CorruptDatabase);
+            }
+            row.entries.emplace_back(static_cast<std::uint32_t>(previousId), static_cast<std::uint32_t>(frequency));
+        }
+        std::uint64_t length = 0;
+        if (!readVarint(bytes, cursor, length) || length != lengthSum || length > MAX_TEXT_BYTES)
+        {
+            return std::unexpected(EngineError::CorruptDatabase);
+        }
+        row.length = static_cast<std::uint32_t>(length);
+    }
+    if (cursor != bytes.size())
+    {
+        return std::unexpected(EngineError::CorruptDatabase);
+    }
+    return {};
+}
+
 struct CorpusWriter::Impl
 {
     std::filesystem::path destination;
@@ -488,6 +699,7 @@ struct CorpusWriter::Impl
     SpillFile lines;
     SpillFile texts;
     SpillFile vectors;
+    SpillFile terms;
     std::vector<SourceInfo> sources;
     std::unordered_set<std::string> distinctTexts;
     std::vector<std::uint32_t> uses;
@@ -512,9 +724,11 @@ void CorpusWriter::discardSpills(Impl *impl) noexcept
     impl->lines.output.close();
     impl->texts.output.close();
     impl->vectors.output.close();
+    impl->terms.output.close();
     removeFile(impl->lines.path);
     removeFile(impl->texts.path);
     removeFile(impl->vectors.path);
+    removeFile(impl->terms.path);
     removeFile(impl->temporary);
 }
 
@@ -564,6 +778,12 @@ std::expected<CorpusWriter, EngineError> CorpusWriter::create(const std::filesys
         return std::unexpected(vectors.error());
     }
     impl->vectors = std::move(*vectors);
+    auto terms = createSpill(path, "terms");
+    if (!terms)
+    {
+        return std::unexpected(terms.error());
+    }
+    impl->terms = std::move(*terms);
     return CorpusWriter{std::move(impl)};
 }
 
@@ -642,24 +862,35 @@ std::expected<std::uint32_t, EngineError> CorpusWriter::addDistinct(std::string_
     return *id;
 }
 
-std::expected<void, EngineError> CorpusWriter::addLines(std::span<const CorpusLine> lines)
+std::expected<void, EngineError> CorpusWriter::addLines(std::span<const CorpusLine> lines,
+                                                        std::span<const std::vector<std::string>> lineTerms)
 {
-    if (impl_->failed || impl_->finished || lines.size() > MAX_LINES - impl_->lineCount)
+    if (impl_->failed || impl_->finished || lines.size() != lineTerms.size() ||
+        lines.size() > MAX_LINES - impl_->lineCount)
     {
         return std::unexpected(EngineError::CorruptDatabase);
     }
     auto lastSource = impl_->lastSource;
     auto lastLine = impl_->lastLine;
     bool hasLastLine = impl_->hasLastLine;
-    for (const CorpusLine &line : lines)
+    for (std::size_t index = 0; index < lines.size(); ++index)
     {
+        const CorpusLine &line = lines[index];
         if (line.sourceIndex >= impl_->sources.size() || line.lineNumber == 0 ||
             (line.distinctId != NO_DISTINCT && line.distinctId >= impl_->uses.size()) ||
             (line.storedText && line.storedText->size() > MAX_TEXT_BYTES) ||
+            (line.distinctId == NO_DISTINCT && !lineTerms[index].empty()) ||
             (hasLastLine &&
              (line.sourceIndex < lastSource || (line.sourceIndex == lastSource && line.lineNumber <= lastLine))))
         {
             return std::unexpected(EngineError::CorruptDatabase);
+        }
+        for (const std::string &term : lineTerms[index])
+        {
+            if (term.empty() || term.size() > MAX_TEXT_BYTES || term.find('\0') != std::string::npos)
+            {
+                return std::unexpected(EngineError::CorruptDatabase);
+            }
         }
         const SourceInfo &source = impl_->sources[line.sourceIndex];
         if ((source.storedOnly && !line.storedText) ||
@@ -671,8 +902,9 @@ std::expected<void, EngineError> CorpusWriter::addLines(std::span<const CorpusLi
         lastLine = line.lineNumber;
         hasLastLine = true;
     }
-    for (const CorpusLine &line : lines)
+    for (std::size_t index = 0; index < lines.size(); ++index)
     {
+        const CorpusLine &line = lines[index];
         const std::uint32_t flags = (line.arrayElement ? LINE_ARRAY_ELEMENT : 0U) |
                                     (line.storedText ? LINE_STORED_TEXT : 0U) |
                                     (line.distinctId == NO_DISTINCT ? LINE_SKIPPED : 0U);
@@ -685,6 +917,20 @@ std::expected<void, EngineError> CorpusWriter::addLines(std::span<const CorpusLi
         {
             impl_->failed = true;
             return std::unexpected(EngineError::FileOpenFailure);
+        }
+        if (!writeU32(impl_->terms.output, static_cast<std::uint32_t>(lineTerms[index].size())))
+        {
+            impl_->failed = true;
+            return std::unexpected(EngineError::FileOpenFailure);
+        }
+        for (const std::string &term : lineTerms[index])
+        {
+            if (!writeU32(impl_->terms.output, static_cast<std::uint32_t>(term.size())) ||
+                !writeRaw(impl_->terms.output, term.data(), term.size()))
+            {
+                impl_->failed = true;
+                return std::unexpected(EngineError::FileOpenFailure);
+            }
         }
         if (line.distinctId != NO_DISTINCT)
         {
@@ -709,7 +955,8 @@ std::expected<void, EngineError> CorpusWriter::finish()
     impl_->lines.output.close();
     impl_->texts.output.close();
     impl_->vectors.output.close();
-    if (!impl_->lines.output || !impl_->texts.output || !impl_->vectors.output)
+    impl_->terms.output.close();
+    if (!impl_->lines.output || !impl_->texts.output || !impl_->vectors.output || !impl_->terms.output)
     {
         impl_->failed = true;
         return std::unexpected(EngineError::FileOpenFailure);
@@ -717,10 +964,52 @@ std::expected<void, EngineError> CorpusWriter::finish()
     std::ifstream lines(impl_->lines.path, std::ios::binary);
     std::ifstream texts(impl_->texts.path, std::ios::binary);
     std::ifstream vectors(impl_->vectors.path, std::ios::binary);
-    if (!lines || !texts || !vectors)
+    std::ifstream terms(impl_->terms.path, std::ios::binary);
+    if (!lines || !texts || !vectors || !terms)
     {
         impl_->failed = true;
         return std::unexpected(EngineError::FileOpenFailure);
+    }
+    std::vector<std::vector<std::string>> lineTerms;
+    lineTerms.reserve(static_cast<std::size_t>(impl_->lineCount));
+    for (std::uint64_t index = 0; index < impl_->lineCount; ++index)
+    {
+        std::uint32_t count = 0;
+        if (!readU32Stream(terms, count))
+        {
+            impl_->failed = true;
+            return std::unexpected(EngineError::FileOpenFailure);
+        }
+        std::vector<std::string> row;
+        row.reserve(count);
+        for (std::uint32_t termIndex = 0; termIndex < count; ++termIndex)
+        {
+            std::uint32_t length = 0;
+            if (!readU32Stream(terms, length) || length > MAX_TEXT_BYTES)
+            {
+                impl_->failed = true;
+                return std::unexpected(EngineError::FileOpenFailure);
+            }
+            std::string term(length, '\0');
+            if (length != 0 && !terms.read(term.data(), static_cast<std::streamsize>(length)))
+            {
+                impl_->failed = true;
+                return std::unexpected(EngineError::FileOpenFailure);
+            }
+            row.push_back(std::move(term));
+        }
+        lineTerms.push_back(std::move(row));
+    }
+    if (!atEnd(terms))
+    {
+        impl_->failed = true;
+        return std::unexpected(EngineError::CorruptDatabase);
+    }
+    const std::vector<std::byte> lexical = encodeLexicalSection(lineTerms);
+    if (lexical.size() > MAX_LEXICAL_BYTES)
+    {
+        impl_->failed = true;
+        return std::unexpected(EngineError::CorruptDatabase);
     }
     auto temporary = createSpill(impl_->destination, "tmp");
     if (!temporary)
@@ -746,17 +1035,18 @@ std::expected<void, EngineError> CorpusWriter::finish()
     const std::uint64_t distinctOffset = lineOffset + (impl_->lineCount * LINE_RECORD_BYTES);
     const std::uint64_t textOffset = distinctOffset + (impl_->uses.size() * TEXT_RECORD_BYTES);
     const std::uint64_t storedOffset = textOffset + impl_->textBytes;
-    const std::uint64_t matrixOffset = alignUp(storedOffset + impl_->storedBytes, 64);
+    const std::uint64_t lexicalOffset = storedOffset + impl_->storedBytes;
+    const std::uint64_t lexicalBytes = lexical.size();
+    const std::uint64_t matrixOffset = alignUp(lexicalOffset + lexicalBytes, 64);
     const std::uint64_t matrixBytes =
         impl_->uses.size() * static_cast<std::uint64_t>(impl_->dimensions) * sizeof(float);
 
-    // The two zero fields reserve a lexical-section slot without introducing a section directory.
     if (!writeRaw(output, MAGIC.data(), MAGIC.size()) || !writeU32(output, CORPUS_VERSION) ||
         !writeU32(output, static_cast<std::uint32_t>(policy.size())) || !writeU32(output, impl_->dimensions) ||
         !writeU64(output, impl_->sources.size()) || !writeU64(output, impl_->lineCount) ||
         !writeU64(output, sourceOffset) || !writeU64(output, lineOffset) || !writeU64(output, matrixOffset) ||
         !writeU64(output, impl_->uses.size()) || !writeU64(output, distinctOffset) || !writeU64(output, textOffset) ||
-        !writeU64(output, storedOffset) || !writeU64(output, 0) || !writeU64(output, 0) ||
+        !writeU64(output, storedOffset) || !writeU64(output, lexicalOffset) || !writeU64(output, lexicalBytes) ||
         !writeU64(output, HEADER_BYTES) || !writeU64(output, 0) || !writeU64(output, 0) ||
         !writeRaw(output, policy.data(), policy.size()) ||
         !writePadding(output, sourceOffset - HEADER_BYTES - policy.size()))
@@ -846,7 +1136,9 @@ std::expected<void, EngineError> CorpusWriter::finish()
         }
     }
     if (!atEnd(lines) || storedCursor != storedOffset + impl_->storedBytes ||
-        !writePadding(output, matrixOffset - storedCursor) || !copyBytes(vectors, output, matrixBytes))
+        !writeRaw(output, lexical.data(), lexical.size()) ||
+        !writePadding(output, matrixOffset - (lexicalOffset + lexicalBytes)) ||
+        !copyBytes(vectors, output, matrixBytes))
     {
         return fail();
     }
@@ -873,6 +1165,9 @@ struct MappedCorpus::Impl
     std::vector<CorpusLine> lines;
     std::vector<std::string_view> texts;
     std::span<const float> matrix;
+    std::vector<std::string> lexicalTermStorage;
+    std::vector<std::string_view> lexicalDictionary;
+    std::vector<LexicalLinePostings> lexicalPostings;
 };
 
 MappedCorpus::MappedCorpus(std::unique_ptr<Impl> impl) : impl_(std::move(impl)) {}
@@ -886,6 +1181,8 @@ std::span<const SourceInfo> MappedCorpus::sources() const noexcept { return impl
 std::span<const CorpusLine> MappedCorpus::lines() const noexcept { return impl_->lines; }
 std::span<const std::string_view> MappedCorpus::texts() const noexcept { return impl_->texts; }
 std::span<const float> MappedCorpus::matrix() const noexcept { return impl_->matrix; }
+std::span<const std::string_view> MappedCorpus::lexicalDictionary() const noexcept { return impl_->lexicalDictionary; }
+std::span<const LexicalLinePostings> MappedCorpus::lexicalPostings() const noexcept { return impl_->lexicalPostings; }
 
 std::expected<MappedCorpus, EngineError> mapCorpusFile(const std::filesystem::path &path,
                                                        std::uint32_t *observedVersion)
@@ -934,17 +1231,20 @@ std::expected<MappedCorpus, EngineError> mapCorpusFile(const std::filesystem::pa
     }
     if (layout.policyBytes > MAX_POLICY_BYTES || layout.dimensions > MAX_DIMENSIONS ||
         layout.sourceCount > MAX_SOURCES || layout.lineCount > MAX_LINES || layout.distinctCount > MAX_DISTINCT ||
-        (layout.distinctCount > 0 && layout.dimensions == 0) || layout.lexicalOffset != 0 || layout.lexicalBytes != 0 ||
+        (layout.distinctCount > 0 && layout.dimensions == 0) || layout.lexicalBytes > MAX_LEXICAL_BYTES ||
         layout.policyOffset != HEADER_BYTES || layout.sourceOffset != alignUp(HEADER_BYTES + layout.policyBytes, 8) ||
         layout.sourceOffset > layout.lineOffset || layout.lineOffset > layout.distinctOffset ||
         layout.distinctOffset > layout.textOffset || layout.textOffset > layout.storedOffset ||
-        layout.storedOffset > layout.matrixOffset || layout.matrixOffset > bytes.size() ||
-        layout.matrixOffset % 64 != 0 ||
+        layout.storedOffset > layout.lexicalOffset || layout.lexicalOffset > layout.matrixOffset ||
+        layout.matrixOffset > bytes.size() || layout.matrixOffset % 64 != 0 ||
         layout.sourceCount > (layout.lineOffset - layout.sourceOffset) / SOURCE_RECORD_BYTES ||
         layout.distinctOffset - layout.lineOffset != layout.lineCount * LINE_RECORD_BYTES ||
         layout.textOffset - layout.distinctOffset != layout.distinctCount * TEXT_RECORD_BYTES ||
         !rangeInside(layout.policyOffset, layout.policyBytes, layout.sourceOffset) ||
-        !isZero(bytes, HEADER_BYTES + layout.policyBytes, layout.sourceOffset))
+        !rangeInside(layout.lexicalOffset, layout.lexicalBytes, layout.matrixOffset) ||
+        layout.lexicalOffset + layout.lexicalBytes > layout.matrixOffset ||
+        !isZero(bytes, HEADER_BYTES + layout.policyBytes, layout.sourceOffset) ||
+        !isZero(bytes, layout.lexicalOffset + layout.lexicalBytes, layout.matrixOffset))
     {
         return std::unexpected(EngineError::CorruptDatabase);
     }
@@ -1078,7 +1378,7 @@ std::expected<MappedCorpus, EngineError> mapCorpusFile(const std::filesystem::pa
         }
         if ((flags & LINE_STORED_TEXT) != 0)
         {
-            if (textOffset != storedCursor || !rangeInside(textOffset, textLength, layout.matrixOffset))
+            if (textOffset != storedCursor || !rangeInside(textOffset, textLength, layout.lexicalOffset))
             {
                 return std::unexpected(EngineError::CorruptDatabase);
             }
@@ -1096,10 +1396,17 @@ std::expected<MappedCorpus, EngineError> mapCorpusFile(const std::filesystem::pa
         line.arrayElement = (flags & LINE_ARRAY_ELEMENT) != 0;
         impl->lines.push_back(line);
     }
-    if (std::ranges::any_of(used, [](bool value) { return !value; }) ||
-        !isZero(bytes, storedCursor, layout.matrixOffset))
+    if (storedCursor != layout.lexicalOffset || std::ranges::any_of(used, [](bool value) { return !value; }))
     {
         return std::unexpected(EngineError::CorruptDatabase);
+    }
+    if (const auto decoded = decodeLexicalSection(bytes.subspan(static_cast<std::size_t>(layout.lexicalOffset),
+                                                                static_cast<std::size_t>(layout.lexicalBytes)),
+                                                  layout.lineCount, impl->lexicalTermStorage, impl->lexicalDictionary,
+                                                  impl->lexicalPostings);
+        !decoded)
+    {
+        return std::unexpected(decoded.error());
     }
 
     impl->file = std::move(*mapped);

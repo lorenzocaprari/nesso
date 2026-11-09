@@ -21,6 +21,9 @@ inline constexpr double BM25_K1 = 1.5;
 /// Okapi BM25 `b`.
 inline constexpr double BM25_B = 0.75;
 
+/// Policy-block value for these BM25 constants (`bm25=…`).
+inline constexpr std::string_view BM25_POLICY{"k1:1.5,b:0.75"};
+
 /// In-memory Okapi BM25 over lines.
 ///
 /// `idf = ln(1 + (N - df + 0.5) / (df + 0.5))`, with `std::log`. `|D|` is the
