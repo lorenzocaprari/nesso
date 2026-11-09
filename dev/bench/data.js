@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794261961134,
+  "lastUpdate": 1794263499856,
   "repoUrl": "https://github.com/lorenzocaprari/nesso",
   "entries": {
     "nesso": [
@@ -4481,6 +4481,60 @@ window.BENCHMARK_DATA = {
           {
             "name": "grep-100000-rss",
             "value": 157433856,
+            "unit": "bytes"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "caprarilorenzo5@gmail.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "committer": {
+            "email": "85455384+lorenzocaprari@users.noreply.github.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "distinct": true,
+          "id": "065ac78dbf988c38b4aaf81769ffa4721df4a160",
+          "message": "feat(embed): report when the AMX guard is not in effect\n\nWhen the seccomp filter cannot be installed, or AMX tile permission was\nalready granted, print one stderr warning so support can see that the\nint8 model may use the AMX kernel. Stdout and JSON stay unchanged. The\nnon-x86-64 stub still treats the guard as in effect and stays quiet.",
+          "timestamp": "2026-11-09T23:27:10+01:00",
+          "tree_id": "594bc95e73b2f6819d06f4c56f1e6892f341aef8",
+          "url": "https://github.com/lorenzocaprari/nesso/commit/065ac78dbf988c38b4aaf81769ffa4721df4a160"
+        },
+        "date": 1794263499125,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "grep-1000-wall",
+            "value": 0.2,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-1000-rss",
+            "value": 118165504,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-10000-wall",
+            "value": 0.16,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-10000-rss",
+            "value": 118730752,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-100000-wall",
+            "value": 0.35,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-100000-rss",
+            "value": 159289344,
             "unit": "bytes"
           }
         ]
