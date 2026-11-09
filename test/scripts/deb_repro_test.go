@@ -92,7 +92,7 @@ func writeDoc(t *testing.T, binary string) {
 func packageDeb(t *testing.T, epoch, binary, models string) []byte {
 	t.Helper()
 	outDir := t.TempDir()
-	cmd := exec.Command(filepath.Join(repoRoot(t), "scripts", "package-deb"), "0.1.0", binary, models, outDir)
+	cmd := exec.Command(filepath.Join(repoRoot(t), "packaging", "scripts", "package-deb"), "0.1.0", binary, models, outDir)
 	cmd.Env = append(envWithout("SOURCE_DATE_EPOCH", "TZ", "LC_ALL", "DOC_DIR"), "SOURCE_DATE_EPOCH="+epoch, "TZ=UTC", "LC_ALL=C")
 	out, err := cmd.CombinedOutput()
 	if err != nil {
@@ -228,7 +228,7 @@ func TestPackageDebRejectsABadEpoch(t *testing.T) {
 	dir := t.TempDir()
 	binary := compileHello(t, dir)
 	models := writeModels(t, dir, 'a')
-	cmd := exec.Command(filepath.Join(repoRoot(t), "scripts", "package-deb"), "0.1.0", binary, models, dir)
+	cmd := exec.Command(filepath.Join(repoRoot(t), "packaging", "scripts", "package-deb"), "0.1.0", binary, models, dir)
 	cmd.Env = append(envWithout("SOURCE_DATE_EPOCH"), "SOURCE_DATE_EPOCH=yesterday")
 	out, err := cmd.CombinedOutput()
 	if err == nil {
@@ -261,7 +261,7 @@ func TestPackageDebArchitectureFollowsTheElfMachine(t *testing.T) {
 			writeDoc(t, binary)
 			models := writeModels(t, dir, 'a')
 			outDir := filepath.Join(dir, "out")
-			cmd := exec.Command(filepath.Join(root, "scripts", "package-deb"), "0.1.0", binary, models, outDir)
+			cmd := exec.Command(filepath.Join(root, "packaging", "scripts", "package-deb"), "0.1.0", binary, models, outDir)
 			cmd.Env = append(envWithout("PATH", "SOURCE_DATE_EPOCH"), "PATH="+stubObjdump(t, dir)+string(os.PathListSeparator)+os.Getenv("PATH"), "SOURCE_DATE_EPOCH=1700000000")
 			out, err := cmd.CombinedOutput()
 			if err != nil {
@@ -290,7 +290,7 @@ func TestPackageDebRejectsANonElfOrUnknownMachine(t *testing.T) {
 	if err := os.WriteFile(binary, []byte("not-an-elf-file-at-all!!"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	cmd := exec.Command(filepath.Join(root, "scripts", "package-deb"), "0.1.0", binary, models, dir)
+	cmd := exec.Command(filepath.Join(root, "packaging", "scripts", "package-deb"), "0.1.0", binary, models, dir)
 	cmd.Env = append(envWithout("SOURCE_DATE_EPOCH"), "SOURCE_DATE_EPOCH=1700000000")
 	out, err := cmd.CombinedOutput()
 	if err == nil {
@@ -301,7 +301,7 @@ func TestPackageDebRejectsANonElfOrUnknownMachine(t *testing.T) {
 	}
 
 	writeELF(t, binary, 21)
-	cmd = exec.Command(filepath.Join(root, "scripts", "package-deb"), "0.1.0", binary, models, dir)
+	cmd = exec.Command(filepath.Join(root, "packaging", "scripts", "package-deb"), "0.1.0", binary, models, dir)
 	cmd.Env = append(envWithout("PATH", "SOURCE_DATE_EPOCH"), "PATH="+stubObjdump(t, dir)+string(os.PathListSeparator)+os.Getenv("PATH"), "SOURCE_DATE_EPOCH=1700000000")
 	out, err = cmd.CombinedOutput()
 	if err == nil {
@@ -313,7 +313,7 @@ func TestPackageDebRejectsANonElfOrUnknownMachine(t *testing.T) {
 }
 
 func TestReleaseConanProfile(t *testing.T) {
-	script := filepath.Join(repoRoot(t), "scripts", "build-release-binary")
+	script := filepath.Join(repoRoot(t), "packaging", "scripts", "build-release-binary")
 	for _, tc := range []struct {
 		machine string
 		profile string
@@ -345,7 +345,7 @@ func TestReleaseConanProfile(t *testing.T) {
 
 func TestPublishRuntimeIndex(t *testing.T) {
 	root := repoRoot(t)
-	script := filepath.Join(root, "scripts", "publish-runtime-index")
+	script := filepath.Join(root, "packaging", "scripts", "publish-runtime-index")
 	amd64 := "sha256:" + strings.Repeat("ab", 32)
 	arm64 := "sha256:" + strings.Repeat("cd", 32)
 	index := "sha256:" + strings.Repeat("01", 32)
@@ -425,7 +425,7 @@ func TestPublishRuntimeIndex(t *testing.T) {
 
 func TestCompareDeb(t *testing.T) {
 	root := repoRoot(t)
-	script := filepath.Join(root, "scripts", "compare-deb")
+	script := filepath.Join(root, "packaging", "scripts", "compare-deb")
 	dir := t.TempDir()
 	left := filepath.Join(dir, "left.deb")
 	right := filepath.Join(dir, "right.deb")
@@ -486,7 +486,7 @@ func TestSmokeDebRecordsInstallAndPurge(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(stubDir, "docker"), []byte(stub), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	cmd := exec.Command(filepath.Join(root, "scripts", "smoke-deb"), deb, "ubuntu:26.10")
+	cmd := exec.Command(filepath.Join(root, "packaging", "scripts", "smoke-deb"), deb, "ubuntu:26.10")
 	cmd.Env = append(envWithout("PATH"), "PATH="+stubDir+string(os.PathListSeparator)+os.Getenv("PATH"))
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("smoke-deb: %v\n%s", err, out)
@@ -509,7 +509,7 @@ func TestSmokeDebRecordsInstallAndPurge(t *testing.T) {
 		}
 	}
 
-	cmd = exec.Command(filepath.Join(root, "scripts", "smoke-deb"), deb)
+	cmd = exec.Command(filepath.Join(root, "packaging", "scripts", "smoke-deb"), deb)
 	cmd.Env = append(envWithout("PATH"), "PATH="+stubDir+string(os.PathListSeparator)+os.Getenv("PATH"))
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("default image: %v\n%s", err, out)

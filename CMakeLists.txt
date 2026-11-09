@@ -101,10 +101,10 @@ target_compile_options(
     "$<$<AND:$<COMPILE_LANG_AND_ID:CXX,GNU,Clang,AppleClang>,$<BOOL:${NESSO_WERROR}>>:-Werror>"
 )
 
-# Set by scripts/build-release-binary and packaging/Dockerfile.runtime. Pipeline
-# leaves it unset and keeps the profile's -flto=auto, which follows the CPU
-# count. The longer prefix is first so the build directory is not rewritten
-# twice.
+# Set by packaging/scripts/build-release-binary and
+# packaging/Dockerfile.runtime. Pipeline leaves it unset and keeps the profile's
+# -flto=auto, which follows the CPU count. The longer prefix is first so the
+# build directory is not rewritten twice.
 if("$ENV{NESSO_REPRODUCIBLE}" MATCHES "^(1|ON|on|TRUE|true)$")
   add_compile_options(
     "-ffile-prefix-map=${CMAKE_BINARY_DIR}=/nesso/build"

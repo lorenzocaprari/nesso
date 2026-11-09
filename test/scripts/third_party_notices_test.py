@@ -8,7 +8,7 @@ import unittest
 
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
-SCRIPT = ROOT / "scripts" / "third-party-notices"
+SCRIPT = ROOT / "packaging" / "scripts" / "third-party-notices"
 
 # Stands in for nm: prints the lines stored for a path in NM_FIXTURE.
 FAKE_NM = """#!/usr/bin/env python3

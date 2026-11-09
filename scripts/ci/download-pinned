@@ -3,7 +3,7 @@
 # archive, checks the pinned sha256, and caches the binary under the version.
 
 if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
-  echo "error: source scripts/download-pinned from another script" >&2
+  echo "error: source scripts/ci/download-pinned from another script" >&2
   exit 1
 fi
 

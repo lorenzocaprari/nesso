@@ -27,7 +27,7 @@ if [[ $# -ne 1 ]]; then
 fi
 
 OUT_BIN="$1"
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "${ROOT}"
 
 export LC_ALL=C
@@ -66,14 +66,14 @@ conan profile detect --force
 # must never build anything. The same JSON feeds the license gate and the notices.
 conan install . -pr:h "${PROFILE}" -pr:b default --lockfile=conan.lock --no-remote \
   -c tools.graph:skip_binaries=False --format=json >"${TMPDIR}/conan-graph.json"
-python3 "${ROOT}/scripts/check-runtime-licenses" "${TMPDIR}/conan-graph.json"
+python3 "${ROOT}/packaging/scripts/check-runtime-licenses" "${TMPDIR}/conan-graph.json"
 conan install . -pr:h "${PROFILE}" -pr:b default --lockfile=conan.lock --build=missing --no-remote
 conan build . -pr:h "${PROFILE}" -pr:b default --lockfile=conan.lock --build=missing --no-remote
 
 install -D -m 0755 "${ROOT}/build/Release/src/nesso" "${OUT_BIN}"
 # copyright and THIRD_PARTY_NOTICES for the .deb and the runtime image.
 DOC_DIR="${DOC_DIR:-$(dirname "${OUT_BIN}")/doc}"
-python3 "${ROOT}/scripts/third-party-notices" "${TMPDIR}/conan-graph.json" "${OUT_BIN}" "${DOC_DIR}"
+python3 "${ROOT}/packaging/scripts/third-party-notices" "${TMPDIR}/conan-graph.json" "${OUT_BIN}" "${DOC_DIR}"
 
 # Unix Makefiles write CMakeFiles/nesso.dir/link.txt. Ninja keeps the link
 # command in build.ninja, so ask ninja for that command. @rsp arguments are
@@ -131,7 +131,7 @@ if grep -E "(^|[^A-Za-z0-9_])${escaped}(/|$)" "${TMPDIR}/nesso-strings.txt"; the
 fi
 rm -f "${TMPDIR}/nesso-strings.txt"
 # No RPATH or RUNPATH: an empty entry would make ld.so search the working directory.
-python3 "${ROOT}/scripts/check-no-runpath" "${OUT_BIN}"
+python3 "${ROOT}/packaging/scripts/check-no-runpath" "${OUT_BIN}"
 # curl and OpenSSL stay in the Conan graph and out of the binary.
-python3 "${ROOT}/scripts/check-network-free" "${OUT_BIN}"
+python3 "${ROOT}/packaging/scripts/check-network-free" "${OUT_BIN}"
 echo "${OUT_BIN}"

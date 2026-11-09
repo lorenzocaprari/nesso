@@ -126,7 +126,7 @@ func TestRuntimeScanDockerfileRejectsDrift(t *testing.T) {
 }
 
 func TestRuntimeCopyPathsMatchPackageDeb(t *testing.T) {
-	body, err := os.ReadFile(filepath.Join("..", "package-deb"))
+	body, err := os.ReadFile(filepath.Join("..", "..", "packaging", "scripts", "package-deb"))
 	if err != nil {
 		t.Fatal(err)
 	}

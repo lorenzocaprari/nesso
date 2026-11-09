@@ -5,7 +5,7 @@ ARG BUILD_IMAGE
 FROM ${BUILD_IMAGE} AS build
 
 # Commit timestamp from the caller. BuildKit also reads this name. An empty
-# value fails scripts/build-release-binary instead of inventing a clock.
+# value fails packaging/scripts/build-release-binary instead of inventing a clock.
 ARG SOURCE_DATE_EPOCH
 ENV SOURCE_DATE_EPOCH=${SOURCE_DATE_EPOCH}
 ARG NESSO_BUILD_SHA
@@ -20,7 +20,7 @@ ENV TZ=UTC
 # /usr/src, which the leak check would then flag.
 WORKDIR /nesso-src
 COPY . .
-RUN DOC_DIR=/opt/nesso/doc ./scripts/build-release-binary /opt/nesso/bin/nesso \
+RUN DOC_DIR=/opt/nesso/doc ./packaging/scripts/build-release-binary /opt/nesso/bin/nesso \
     && ./scripts/fetch-model /opt/nesso/models
 
 # OCI index, not a single-platform manifest. BuildKit selects linux/amd64 or

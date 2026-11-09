@@ -41,22 +41,22 @@ on:
       - "conanfile.py"
       - "conan.lock"
       - "LICENSE"
-      - "scripts/build-release-binary"
-      - "scripts/package-deb"
-      - "scripts/compare-deb"
-      - "scripts/smoke-deb"
+      - "packaging/scripts/build-release-binary"
+      - "packaging/scripts/package-deb"
+      - "packaging/scripts/compare-deb"
+      - "packaging/scripts/smoke-deb"
       - "scripts/fetch-model"
-      - "scripts/check-no-runpath"
-      - "scripts/check-network-free"
-      - "scripts/check-network-free.allow"
-      - "scripts/publish-runtime-index"
-      - "scripts/trivy"
-      - "scripts/scan-runtime-image"
+      - "packaging/scripts/check-no-runpath"
+      - "packaging/scripts/check-network-free"
+      - "packaging/scripts/check-network-free.allow"
+      - "packaging/scripts/publish-runtime-index"
+      - "packaging/scripts/trivy"
+      - "packaging/scripts/scan-runtime-image"
       - "scripts/ci/trivy.go"
       - "scripts/ci/runtime_scan.go"
       - "scripts/ci/wait_build_env.go"
-      - "scripts/smoke-runtime-image"
-      - "scripts/third-party-notices"
+      - "packaging/scripts/smoke-runtime-image"
+      - "packaging/scripts/third-party-notices"
       - "packaging/notices/**"
   workflow_dispatch:
   workflow_call:
@@ -110,7 +110,7 @@ jobs:
           owner_lc="$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')"
           reg="${{ env.REGISTRY }}/${owner_lc}/nesso-build-env"
           for arch in amd64 arm64; do
-            deps_hash="$(./scripts/build-env-hash "${arch}")"
+            deps_hash="$(./scripts/ci/build-env-hash "${arch}")"
             suffix=""
             if [[ "${arch}" == "arm64" ]]; then
               suffix="-arm64"
@@ -244,8 +244,8 @@ jobs:
           rm -rf "${WORKDIR}"
           mkdir -p "${WORKDIR}"
           git archive HEAD | tar -x -C "${WORKDIR}"
-          chmod +x "${WORKDIR}/scripts/build-release-binary" \
-            "${WORKDIR}/scripts/package-deb" \
+          chmod +x "${WORKDIR}/packaging/scripts/build-release-binary" \
+            "${WORKDIR}/packaging/scripts/package-deb" \
             "${WORKDIR}/scripts/fetch-model" \
             "${WORKDIR}/scripts/check-versions"
           # Slot b is a later clock and fresh mtimes. Slot a keeps the
@@ -278,7 +278,7 @@ jobs:
         id: build
         run: |
           set -euo pipefail
-          "${WORKDIR}/scripts/build-release-binary" "${WORKDIR}/out/nesso"
+          "${WORKDIR}/packaging/scripts/build-release-binary" "${WORKDIR}/out/nesso"
 
       - name: Stage model
         run: |
@@ -296,7 +296,7 @@ jobs:
         run: |
           set -euo pipefail
           ver="$("${WORKDIR}/scripts/check-versions")"
-          "${WORKDIR}/scripts/package-deb" "${ver}" "${WORKDIR}/out/nesso" "${WORKDIR}/models" "${WORKDIR}/deb"
+          "${WORKDIR}/packaging/scripts/package-deb" "${ver}" "${WORKDIR}/out/nesso" "${WORKDIR}/models" "${WORKDIR}/deb"
           mkdir -p "${GITHUB_WORKSPACE}/repro-deb"
           cp -a "${WORKDIR}/deb/"*.deb "${GITHUB_WORKSPACE}/repro-deb/"
           sha256sum "${GITHUB_WORKSPACE}/repro-deb/"*.deb
@@ -382,7 +382,7 @@ jobs:
       - name: Compare bytes
         run: |
           set -euo pipefail
-          chmod +x scripts/compare-deb
+          chmod +x packaging/scripts/compare-deb
           compare_arch() {
             local arch="$1"
             local -a debs=()
@@ -392,7 +392,7 @@ jobs:
               find repro-debs -type f -print >&2
               return 1
             fi
-            scripts/compare-deb "${debs[0]}" "${debs[1]}" "repro-report/${arch}"
+            packaging/scripts/compare-deb "${debs[0]}" "${debs[1]}" "repro-report/${arch}"
             echo "reproducible ${arch} $(sha256sum "${debs[0]}" | awk '{print $1}')"
           }
           status=0
@@ -475,14 +475,14 @@ jobs:
           ARCH: ${{ matrix.arch }}
         run: |
           set -euo pipefail
-          chmod +x scripts/smoke-deb
+          chmod +x packaging/scripts/smoke-deb
           mapfile -t debs < <(find repro-deb -type f -name "nesso_*_${ARCH}.deb" | sort)
           if [[ "${#debs[@]}" -ne 1 ]]; then
             echo "error: expected 1 ${ARCH} deb, found ${#debs[@]}" >&2
             find repro-deb -type f -print >&2
             exit 1
           fi
-          scripts/smoke-deb "${debs[0]}" "${IMAGE}"
+          packaging/scripts/smoke-deb "${debs[0]}" "${IMAGE}"
           if [[ -n "${GITHUB_STEP_SUMMARY:-}" ]]; then
             echo "Installed, removed, and purged \`${debs[0]}\` on \`${IMAGE}\` (${ARCH})." >> "${GITHUB_STEP_SUMMARY}"
           fi
@@ -543,9 +543,9 @@ jobs:
           path: |
             ${{ runner.temp }}/trivy-db
             ${{ runner.temp }}/nesso-cache/nesso/trivy
-          key: trivy-0.76.1-${{ runner.arch }}-${{ hashFiles('scripts/trivy') }}-${{ steps.trivy-day.outputs.day }}
+          key: trivy-0.76.1-${{ runner.arch }}-${{ hashFiles('packaging/scripts/trivy') }}-${{ steps.trivy-day.outputs.day }}
           restore-keys: |
-            trivy-0.76.1-${{ runner.arch }}-${{ hashFiles('scripts/trivy') }}-
+            trivy-0.76.1-${{ runner.arch }}-${{ hashFiles('packaging/scripts/trivy') }}-
 
       - name: Download .deb
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
@@ -569,14 +569,14 @@ jobs:
             sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends golang-go
           fi
           go build -C scripts/ci -o /tmp/nesso-ci .
-          chmod +x scripts/scan-runtime-image scripts/trivy
+          chmod +x packaging/scripts/scan-runtime-image packaging/scripts/trivy
           mapfile -t debs < <(find repro-deb -type f -name "nesso_*_${ARCH}.deb" | sort)
           if [[ "${#debs[@]}" -ne 1 ]]; then
             echo "error: expected 1 ${ARCH} deb, found ${#debs[@]}" >&2
             find repro-deb -type f -print >&2
             exit 1
           fi
-          ./scripts/scan-runtime-image \
+          ./packaging/scripts/scan-runtime-image \
             --deb "${debs[0]}" \
             --platform "${PLATFORM}" \
             --runtime packaging/Dockerfile.runtime \

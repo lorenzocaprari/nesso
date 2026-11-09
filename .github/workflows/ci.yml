@@ -129,7 +129,7 @@ jobs:
           owner_lc="$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')"
           reg="${{ env.REGISTRY }}/${owner_lc}/nesso-build-env"
           # Shared with prepare-image-arm64 and release.yml.
-          deps_hash="$(./scripts/build-env-hash amd64)"
+          deps_hash="$(./scripts/ci/build-env-hash amd64)"
           # Existing tag. buildcache-arm64 is the arm64 twin. Renaming this
           # would orphan the populated amd64 registry cache.
           cache_ref="${reg}:buildcache"
@@ -442,7 +442,7 @@ jobs:
 
       - name: Archive Release build
         id: archive
-        run: ./scripts/ci-build-archive pack build/Release release-build
+        run: ./scripts/ci/ci-build-archive pack build/Release release-build
 
       - name: Upload Release build
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -536,7 +536,7 @@ jobs:
 
       - name: Archive Debug build
         id: archive
-        run: ./scripts/ci-build-archive pack build/Debug debug-build
+        run: ./scripts/ci/ci-build-archive pack build/Debug debug-build
 
       - name: Upload Debug build
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -598,7 +598,7 @@ jobs:
 
       - name: Extract Release build
         id: extract
-        run: ./scripts/ci-build-archive unpack release-build
+        run: ./scripts/ci/ci-build-archive unpack release-build
 
       - name: Run unit tests
         id: unit
@@ -698,7 +698,7 @@ jobs:
 
       - name: Extract Debug build
         id: extract
-        run: ./scripts/ci-build-archive unpack debug-build
+        run: ./scripts/ci/ci-build-archive unpack debug-build
 
       - name: Run unit tests
         id: unit
@@ -788,7 +788,7 @@ jobs:
 
       - name: Extract Debug build
         id: extract
-        run: ./scripts/ci-build-archive unpack debug-build
+        run: ./scripts/ci/ci-build-archive unpack debug-build
 
       - name: Run functional tests
         id: functional
@@ -1062,7 +1062,7 @@ jobs:
           name: release-build
 
       - name: Extract Release build
-        run: ./scripts/ci-build-archive unpack release-build
+        run: ./scripts/ci/ci-build-archive unpack release-build
 
       - name: Run end-to-end benchmark
         run: |
@@ -1352,7 +1352,7 @@ jobs:
           name: release-build
 
       - name: Extract Release build
-        run: ./scripts/ci-build-archive unpack release-build
+        run: ./scripts/ci/ci-build-archive unpack release-build
 
       - name: Write determinism input
         run: ./scripts/check-determinism --emit-input determinism-input.log
@@ -1520,7 +1520,7 @@ jobs:
 
       - name: Archive Release build
         id: archive
-        run: ./scripts/ci-build-archive pack build/Release release-build-clang
+        run: ./scripts/ci/ci-build-archive pack build/Release release-build-clang
 
       - name: Upload Release build
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -1572,7 +1572,7 @@ jobs:
 
       - name: Extract Release build
         id: extract
-        run: ./scripts/ci-build-archive unpack release-build-clang
+        run: ./scripts/ci/ci-build-archive unpack release-build-clang
 
       - name: Run unit tests
         id: unit
@@ -1659,7 +1659,7 @@ jobs:
           set -euo pipefail
           owner_lc="$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')"
           reg="${{ env.REGISTRY }}/${owner_lc}/nesso-build-env"
-          deps_hash="$(./scripts/build-env-hash arm64)"
+          deps_hash="$(./scripts/ci/build-env-hash arm64)"
           {
             echo "image=${reg}:deps-${deps_hash}-arm64"
             echo "cache_ref=${reg}:buildcache-arm64"
@@ -1851,7 +1851,7 @@ jobs:
 
       - name: Archive Release build
         id: archive
-        run: ./scripts/ci-build-archive pack build/Release release-build-arm64
+        run: ./scripts/ci/ci-build-archive pack build/Release release-build-arm64
 
       - name: Upload Release build
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -1903,7 +1903,7 @@ jobs:
 
       - name: Extract Release build
         id: extract
-        run: ./scripts/ci-build-archive unpack release-build-arm64
+        run: ./scripts/ci/ci-build-archive unpack release-build-arm64
 
       - name: Run unit tests
         id: unit

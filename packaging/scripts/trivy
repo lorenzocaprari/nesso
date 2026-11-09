@@ -10,9 +10,9 @@ if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
   set -euo pipefail
 fi
 
-_trivy_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-# shellcheck source=download-pinned
-source "${_trivy_root}/scripts/download-pinned"
+_trivy_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+# shellcheck source=../../scripts/ci/download-pinned
+source "${_trivy_root}/scripts/ci/download-pinned"
 
 _trivy_version="0.76.1"
 case "$(uname -m)" in

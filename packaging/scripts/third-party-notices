@@ -35,7 +35,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 NOTICES = ROOT / "packaging" / "notices"
 RULE = "=" * 78
 
@@ -171,7 +171,7 @@ def shipped_nodes(nodes: dict, binary_symbols: set[str]) -> dict[str, dict]:
                 elif (name, version) not in NO_HEADER_CODE:
                     raise NoticeError(
                         f"{name}/{version} is a header requirement of shipped code but is not linked; "
-                        "add it to HEADER_CODE or NO_HEADER_CODE in scripts/third-party-notices"
+                        "add it to HEADER_CODE or NO_HEADER_CODE in packaging/scripts/third-party-notices"
                     )
             if dep in shipped and dep not in seen:
                 seen.add(dep)
