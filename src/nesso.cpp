@@ -9,6 +9,7 @@
 
 #include <core/corpus_index.hpp>
 #include <core/dedup.hpp>
+#include <core/distance.hpp>
 #include <core/sha256.hpp>
 #include <core/top_k.hpp>
 #include <embed/batch_plan.hpp>
@@ -22,6 +23,8 @@
 #include <cmath>
 #include <cstdio>
 #include <format>
+#include <limits>
+#include <mutex>
 #include <optional>
 #include <print>
 #include <span>
@@ -29,6 +32,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 #include <utility>
+#include <vector>
 
 namespace nesso
 {
@@ -1066,6 +1070,81 @@ std::expected<IndexSummary, Error> Nesso::index(const IndexRequest &request) con
                         .jsonField = counts.jsonField};
 }
 
+// 0 is the embedder default: usable physical cores. An explicit budget is that
+// many scan workers. The scan runs after the query embedding returns, so these
+// workers do not sit on top of the ONNX intra-op pool.
+static size_t scoringThreads(const Config &config)
+{
+    if (config.threads != 0)
+    {
+        return config.threads;
+    }
+    return nesso::embed::readMachine().physicalCores;
+}
+
+struct CorpusScore
+{
+    std::span<const float> query;
+    std::span<const float> matrix;
+    size_t dimensions = 0;
+    float *scores = nullptr;
+    std::mutex mutex;
+    std::optional<nesso::core::EngineError> dotError;
+    size_t failureAt = std::numeric_limits<size_t>::max();
+    bool nonFinite = false;
+};
+
+static void scoreCorpusRows(void *raw, size_t begin, size_t end)
+{
+    auto *job = static_cast<CorpusScore *>(raw);
+    for (size_t id = begin; id < end; ++id)
+    {
+        const auto row = job->matrix.subspan(id * job->dimensions, job->dimensions);
+        const auto score = nesso::core::math::DistanceMetrics::dotProduct<float>(job->query, row);
+        if (!score)
+        {
+            const std::scoped_lock lock(job->mutex);
+            if (id < job->failureAt)
+            {
+                job->dotError = score.error();
+                job->nonFinite = false;
+                job->failureAt = id;
+            }
+            return;
+        }
+        if (!std::isfinite(*score))
+        {
+            const std::scoped_lock lock(job->mutex);
+            if (id < job->failureAt)
+            {
+                job->dotError.reset();
+                job->nonFinite = true;
+                job->failureAt = id;
+            }
+            return;
+        }
+        job->scores[id] = *score;
+    }
+}
+
+struct LineRank
+{
+    std::span<const nesso::core::CorpusLine> lines;
+    const std::vector<float> *scores = nullptr;
+};
+
+static float lineScore(void *raw, size_t index)
+{
+    const auto *view = static_cast<const LineRank *>(raw);
+    return (*view->scores)[view->lines[index].distinctId];
+}
+
+static bool lineKeep(void *raw, size_t index)
+{
+    const auto *view = static_cast<const LineRank *>(raw);
+    return view->lines[index].distinctId != nesso::core::NO_DISTINCT;
+}
+
 std::expected<TextResults, Error> Nesso::search(const SearchRequest &request) const
 {
     const TraceSession session;
@@ -1137,27 +1216,23 @@ std::expected<TextResults, Error> Nesso::search(const SearchRequest &request) co
     {
         return fail(ErrorKind::Search, ErrorCause::MismatchedDimensions);
     }
-    std::vector<float> scores;
-    scores.reserve(corpus->texts().size());
-    for (size_t id = 0; id < corpus->texts().size(); ++id)
+    const size_t threads = scoringThreads(config_);
+    std::vector<float> scores(corpus->texts().size());
+    CorpusScore scored;
+    scored.query = *queryEmbedding;
+    scored.matrix = corpus->matrix();
+    scored.dimensions = dimensions;
+    scored.scores = scores.data();
+    nesso::core::detail::parallelRows(threads, scores.size(), scoreCorpusRows, &scored);
+    if (scored.dotError)
     {
-        const auto row = corpus->matrix().subspan(id * dimensions, dimensions);
-        const auto score = nesso::core::math::DistanceMetrics::dotProduct<float>(*queryEmbedding, row);
-        if (!score)
-        {
-            return fail(ErrorKind::Search, causeOf(score.error()));
-        }
-        if (!std::isfinite(*score))
-        {
-            return fail(ErrorKind::Search, ErrorCause::InvalidInput);
-        }
-        scores.push_back(*score);
+        return fail(ErrorKind::Search, causeOf(*scored.dotError));
+    }
+    if (scored.nonFinite)
+    {
+        return fail(ErrorKind::Search, ErrorCause::InvalidInput);
     }
 
-    const auto better = [](const nesso::core::Hit &left, const nesso::core::Hit &right)
-    { return left.score != right.score ? left.score > right.score : left.index < right.index; };
-    std::vector<nesso::core::Hit> ranked;
-    ranked.reserve(std::min(request.topK, corpus->lines().size()));
     std::vector<std::uint32_t> occurrences(corpus->texts().size(), 0);
     std::optional<std::string_view> firstSource;
     bool multipleSources = false;
@@ -1178,28 +1253,14 @@ std::expected<TextResults, Error> Nesso::search(const SearchRequest &request) co
         {
             multipleSources = true;
         }
-        if (request.topK == 0)
-        {
-            continue;
-        }
-        const nesso::core::Hit hit{.index = ordinal, .score = scores[line.distinctId]};
-        if (ranked.size() < request.topK)
-        {
-            ranked.push_back(hit);
-            std::ranges::push_heap(ranked, better);
-        }
-        else if (better(hit, ranked.front()))
-        {
-            std::ranges::pop_heap(ranked, better);
-            ranked.back() = hit;
-            std::ranges::push_heap(ranked, better);
-        }
     }
+    LineRank view{.lines = corpus->lines(), .scores = &scores};
+    const std::vector<nesso::core::Hit> ranked =
+        nesso::core::rankTop(corpus->lines().size(), request.topK, threads, lineScore, lineKeep, &view);
     if (ranked.empty())
     {
         return fail(ErrorKind::NoMatches, ErrorCause::None);
     }
-    std::ranges::sort(ranked, better);
 
     TextResults results{};
     results.multipleSources = multipleSources;

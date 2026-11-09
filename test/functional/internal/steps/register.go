@@ -62,6 +62,8 @@ func InitializeScenario(sc *godog.ScenarioContext) {
 	sc.Step(`^I run nesso with arguments (.+)$`, b.runNesso)
 	sc.Step(`^I run nesso without arguments$`, func() error { return b.runNesso("") })
 	sc.Step(`^running nesso again prints the same stdout$`, b.runAgainSameStdout)
+	sc.Step(`^running nesso with arguments (.+) prints the same stdout$`, b.runPrintsSameStdout)
+	sc.Step(`^the files "([^"]+)" and "([^"]+)" have the same bytes$`, b.filesHaveSameBytes)
 	sc.Step(`^the exit code is (\d+)$`, b.exitCodeIs)
 	sc.Step(`^the exit code is not (\d+)$`, b.exitCodeIsNot)
 	// (.*) so a phrase may contain quotes, as in: missing the "message" field.

@@ -159,6 +159,31 @@ Feature: index and search
     And every stdout line is a JSON match
     And running nesso again prints the same stdout
 
+  Scenario: search ranking matches grep for every thread budget
+    Given 40 lines "database connection refused" in "app.log"
+    And 40 lines "payment timeout after retry" in "app.log"
+    When I run nesso with arguments index --threads 1 -o {dir}/one.nesso {dir}/app.log
+    Then the exit code is 0
+    When I run nesso with arguments index --threads 4 -o {dir}/four.nesso {dir}/app.log
+    Then the exit code is 0
+    And the files "{dir}/one.nesso" and "{dir}/four.nesso" have the same bytes
+    When I run nesso with arguments index --threads 7 -o {dir}/seven.nesso {dir}/app.log
+    Then the exit code is 0
+    And the files "{dir}/one.nesso" and "{dir}/seven.nesso" have the same bytes
+    When I run nesso with arguments grep "database connection error" --threads 1 -k 8 {dir}/app.log
+    Then the exit code is 0
+    When running nesso with arguments search "database connection error" --threads 1 -k 8 -i {dir}/one.nesso prints the same stdout
+    When running nesso with arguments search "database connection error" --threads 2 -k 8 -i {dir}/one.nesso prints the same stdout
+    When running nesso with arguments search "database connection error" --threads 3 -k 8 -i {dir}/four.nesso prints the same stdout
+    When running nesso with arguments search "database connection error" --threads 4 -k 8 -i {dir}/seven.nesso prints the same stdout
+    When running nesso with arguments search "database connection error" --threads 7 -k 8 -i {dir}/one.nesso prints the same stdout
+    Given the environment variable "NESSO_THREADS" is "4"
+    When running nesso with arguments search "database connection error" -k 8 -i {dir}/one.nesso prints the same stdout
+    Given the environment variable "NESSO_THREADS" is "7"
+    When running nesso with arguments grep "database connection error" -k 8 {dir}/app.log prints the same stdout
+    Given the environment variable "NESSO_THREADS" is "1"
+    When running nesso with arguments search "database connection error" --threads 3 -k 8 -i {dir}/four.nesso prints the same stdout
+
   Scenario: json search keeps a stale-source warning on stderr
     Given a file "app.log" with:
       """

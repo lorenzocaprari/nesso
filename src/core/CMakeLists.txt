@@ -1,10 +1,18 @@
-add_library(nesso_core distance.cpp corpus_index.cpp dedup.cpp bm25.cpp
-                       lexical_terms.cpp sha256.cpp)
+add_library(
+  nesso_core
+  distance.cpp
+  corpus_index.cpp
+  dedup.cpp
+  bm25.cpp
+  lexical_terms.cpp
+  sha256.cpp
+  top_k.cpp)
+find_package(Threads REQUIRED)
 target_include_directories(nesso_core
                            PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
 target_link_libraries(
   nesso_core
-  PUBLIC nesso_platform
+  PUBLIC nesso_platform Threads::Threads
   PRIVATE nesso_options)
 # AVX2 stays on this translation unit. Applying it to the whole library lets LTO
 # copy those instructions into generic callers and SIGILL on older CPUs.
