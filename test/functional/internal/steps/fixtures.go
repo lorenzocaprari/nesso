@@ -4,6 +4,7 @@
 package steps
 
 import (
+	"bytes"
 	"encoding/hex"
 	"fmt"
 	"os"
@@ -13,6 +14,8 @@ import (
 	"unicode"
 
 	"github.com/cucumber/godog"
+
+	"github.com/lorenzocaprari/nesso/test/functional/internal/normalize"
 )
 
 func (b *bindings) scenarioPath(name string) (string, error) {
@@ -150,6 +153,24 @@ func (b *bindings) writeHexFile(name string, content *godog.DocString) error {
 		return err
 	}
 	return os.WriteFile(target, raw, 0o644)
+}
+
+func (b *bindings) filesHaveSameBytes(left, right string) error {
+	fixture := os.Getenv(fixtureEnv)
+	leftPath := normalize.ExpandDir(left, b.world.Dir, fixture)
+	rightPath := normalize.ExpandDir(right, b.world.Dir, fixture)
+	leftBytes, err := os.ReadFile(leftPath)
+	if err != nil {
+		return err
+	}
+	rightBytes, err := os.ReadFile(rightPath)
+	if err != nil {
+		return err
+	}
+	if !bytes.Equal(leftBytes, rightBytes) {
+		return fmt.Errorf("%s (%d bytes) and %s (%d bytes) differ", leftPath, len(leftBytes), rightPath, len(rightBytes))
+	}
+	return nil
 }
 
 func decodeHex(text string) ([]byte, error) {

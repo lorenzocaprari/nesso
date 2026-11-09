@@ -5,7 +5,6 @@
 #define CORE_TOP_K_HPP
 
 #include <core/core_types.hpp>
-#include <core/distance.hpp>
 
 #include <algorithm>
 #include <cstddef>
@@ -21,6 +20,12 @@ struct Hit
     uint64_t index = 0;
     float score = 0.0F;
 };
+
+/// Row count below which a scan stays on the calling thread.
+inline constexpr size_t PARALLEL_MIN_ROWS = 1024;
+
+/// Upper bound on workers in the process-wide scan pool.
+inline constexpr size_t PARALLEL_MAX_THREADS = 64;
 
 namespace detail
 {
@@ -40,49 +45,34 @@ void selectTopKInPlace(std::vector<ResultT> &results, size_t k, Compare compare)
     results.resize(resultCount);
 }
 
+/// Runs `fn(context, begin, end)` on contiguous pieces of `[0, rows)`.
+///
+/// `threads` counts the caller. One piece when `threads <= 1`, `rows` is below
+/// `PARALLEL_MIN_ROWS`, or a worker cannot be started. The pool is process-wide
+/// and grows to the widest budget seen, capped at `PARALLEL_MAX_THREADS`, so a
+/// later scan does not spawn threads again. `fn` must not call `parallelRows`.
+void parallelRows(size_t threads, size_t rows, void (*fn)(void *context, size_t begin, size_t end), void *context);
+
 } // namespace detail
 
 /// Highest dot-product rows of a row-major `matrix` (`rows * dims` floats).
 /// Text for those rows is the caller's job: a hit carries only `index` and `score`.
-[[nodiscard]] inline std::expected<std::vector<Hit>, EngineError>
-topK(std::span<const float> query, std::span<const float> matrix, size_t dims, size_t k)
-{
-    if (k == 0 || matrix.empty())
-    {
-        return std::vector<Hit>{};
-    }
-    if (dims == 0)
-    {
-        return std::unexpected(EngineError::DatabaseNotInitialized);
-    }
-    if (query.size() != dims)
-    {
-        return std::unexpected(EngineError::MismatchedDimensions);
-    }
-    if (matrix.size() % dims != 0)
-    {
-        return std::unexpected(EngineError::CorruptDatabase);
-    }
+///
+/// `threads` is the CPU budget, including the caller. Each worker scores a
+/// contiguous row chunk and keeps a private top k. The chunks merge by score
+/// descending, then ascending index. A budget of one, or a short matrix, stays
+/// on the caller and produces the same hits.
+[[nodiscard]] std::expected<std::vector<Hit>, EngineError>
+topK(std::span<const float> query, std::span<const float> matrix, size_t dims, size_t k, size_t threads = 1);
 
-    const size_t rows = matrix.size() / dims;
-    std::vector<Hit> hits;
-    hits.reserve(rows);
-    for (size_t row = 0; row < rows; ++row)
-    {
-        const std::span<const float> stored = matrix.subspan(row * dims, dims);
-        const auto score = math::DistanceMetrics::dotProduct(query, stored);
-        if (!score)
-        {
-            return std::unexpected(score.error());
-        }
-        hits.push_back({.index = static_cast<uint64_t>(row), .score = *score});
-    }
-
-    const auto resultOrder = [](const Hit &left, const Hit &right)
-    { return left.score != right.score ? left.score > right.score : left.index < right.index; };
-    detail::selectTopKInPlace(hits, k, resultOrder);
-    return hits;
-}
+/// Exact top k over `count` indices.
+///
+/// `keep` is consulted first. `score` runs once for each kept index. Chunks keep
+/// a private top k and merge by score descending, then ascending index. `threads`
+/// follows the same cutoff as `topK`.
+[[nodiscard]] std::vector<Hit> rankTop(size_t count, size_t k, size_t threads,
+                                       float (*score)(void *context, size_t index),
+                                       bool (*keep)(void *context, size_t index), void *context);
 
 } // namespace nesso::core
 

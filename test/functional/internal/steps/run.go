@@ -49,8 +49,15 @@ func (b *bindings) runAgainSameStdout() error {
 	if !b.world.Ran {
 		return fmt.Errorf("nesso has not been run")
 	}
+	return b.runPrintsSameStdout(b.world.CommandLine)
+}
+
+func (b *bindings) runPrintsSameStdout(commandLine string) error {
+	if !b.world.Ran {
+		return fmt.Errorf("nesso has not been run")
+	}
 	previous := b.world.Result.Stdout
-	if err := b.runNesso(b.world.CommandLine); err != nil {
+	if err := b.runNesso(commandLine); err != nil {
 		return err
 	}
 	if b.world.Result.Stdout != previous {

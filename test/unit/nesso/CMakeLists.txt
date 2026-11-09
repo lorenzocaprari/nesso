@@ -52,6 +52,12 @@ add_executable(render_text_test render_text_test.cpp)
 add_test(NAME render_text_test COMMAND render_text_test)
 target_link_libraries(render_text_test PRIVATE nesso_lib Catch2::Catch2WithMain)
 
+add_executable(scan_threads_test scan_threads_test.cpp)
+add_test(NAME scan_threads_test COMMAND scan_threads_test)
+target_link_libraries(
+  scan_threads_test PRIVATE nesso_options nesso_lib nesso_embed nesso_core
+                            Catch2::Catch2WithMain)
+
 set_tests_properties(
   model_paths_test
   nesso_facade_test
@@ -60,4 +66,5 @@ set_tests_properties(
   nesso_flush_test
   render_json_test
   render_text_test
+  scan_threads_test
   PROPERTIES LABELS unit)
