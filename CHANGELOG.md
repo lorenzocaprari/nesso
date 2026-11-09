@@ -20,6 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The pinned end-to-end `bench/baseline.json` 100k peak RSS is 199032832 bytes (from main after hybrid `--mode`), up from 150110208. 1k and 10k pins and all wall times are unchanged. Default `auto`/`hybrid` scoring holds BM25 postings and dense vectors together, so the main-only 100k tier sits above the previous 1.15× RSS gate while wall time stays faster than the pin.
 - **Breaking:** `--json` on `grep` and `search` sets `schema_version` to 2 and appends `mode`, `dense`, and `lexical` after `occurrences`. Default `--mode auto` changes rankings relative to dense-only search. JSON `score` is the effective-mode ranking score. `--mode dense` keeps the previous ranking. Lexical/`hybrid`/`auto` exit 2 on a corpus without postings or with a mismatched `lexical.terms` version; dense still maps those corpora.
 
 - Contributor scripts stay under `scripts/`. Pipeline helpers moved to `scripts/ci/` (`build-env-hash`, `ci-build-archive`, `download-pinned`, next to the existing Go `ci` tool). Release, `.deb`, image, Trivy, and notice helpers moved to `packaging/scripts/`. Call sites in workflows and docs were updated; there are no path shims.

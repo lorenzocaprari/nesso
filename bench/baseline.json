@@ -22,8 +22,8 @@
       "ok": true,
       "exitCode": 0,
       "wallSeconds": 136.43,
-      "peakRssBytes": 150110208,
-      "sourceSha": "58418eadf6c6fdee253d491860ad65891d8157a7"
+      "peakRssBytes": 199032832,
+      "sourceSha": "b83142e8379e86e45e8fd3a0e43e5bfe64c21df3"
     }
   ]
 }
