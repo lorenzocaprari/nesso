@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794258983070,
+  "lastUpdate": 1794261961134,
   "repoUrl": "https://github.com/lorenzocaprari/nesso",
   "entries": {
     "nesso": [
@@ -4427,6 +4427,60 @@ window.BENCHMARK_DATA = {
           {
             "name": "grep-100000-rss",
             "value": 158380032,
+            "unit": "bytes"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "caprarilorenzo5@gmail.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "committer": {
+            "email": "85455384+lorenzocaprari@users.noreply.github.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "distinct": true,
+          "id": "41f9f2b1caa46f47ae53831bd366dc013cf9c352",
+          "message": "feat(parser): read directories and .gz files\n\nWalk directory inputs in unsigned path order and inflate gzip streams, including concatenated members, through zlib.",
+          "timestamp": "2026-11-09T23:00:28+01:00",
+          "tree_id": "b83419ede19d7eaad047842794b745ccc7a03490",
+          "url": "https://github.com/lorenzocaprari/nesso/commit/41f9f2b1caa46f47ae53831bd366dc013cf9c352"
+        },
+        "date": 1794261960493,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "grep-1000-wall",
+            "value": 0.17,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-1000-rss",
+            "value": 118759424,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-10000-wall",
+            "value": 0.17,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-10000-rss",
+            "value": 118054912,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-100000-wall",
+            "value": 0.38,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-100000-rss",
+            "value": 157433856,
             "unit": "bytes"
           }
         ]
