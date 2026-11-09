@@ -11,7 +11,7 @@ on:
   workflow_dispatch:
     inputs:
       force_image_rebuild:
-        description: Force rebuild of nesso-build-env even if inputs are unchanged
+        description: Force rebuild of nesso-build-env and nesso-build-env-el9 even if inputs are unchanged
         type: boolean
         default: false
 
@@ -32,8 +32,10 @@ env:
   CONAN_WERROR_ARGS: "-c user.nesso:werror=True"
 
 # Read-only default. Jobs that pull nesso-build-env keep packages: read.
-# prepare-image-amd64 and prepare-image-arm64 override packages to write so a
-# same-repo rebuild can push deps-<hash> and the BuildKit registry cache.
+# prepare-image-amd64, prepare-image-arm64, prepare-image-el9-amd64, and
+# prepare-image-el9-arm64 override packages to write so a same-repo rebuild
+# can push deps-<hash> and the BuildKit registry cache. The EL9 jobs push
+# nesso-build-env-el9. The Ubuntu jobs keep nesso-build-env.
 # lint and ci-gate override to contents: read. They do not pull the image.
 # bench-history overrides to contents: write. It runs only on a push to main.
 # coverage adds id-token: write so the Codecov upload can mint an OIDC token.
@@ -1959,6 +1961,260 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
+
+  # Rocky Linux 9 amd64 image. Separate GHCR repository from the Ubuntu
+  # nesso-build-env image so the deps-<hash> and buildcache tags do not
+  # collide. This job only builds the image. It does not compile nesso.
+  prepare-image-el9-amd64:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      image: ${{ steps.select.outputs.image }}
+    steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
+        with:
+          egress-policy: audit
+
+      - name: Checkout Repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Resolve image reference
+        id: select
+        run: |
+          set -euo pipefail
+          owner_lc="$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')"
+          reg="${{ env.REGISTRY }}/${owner_lc}/nesso-build-env-el9"
+          deps_hash="$(./scripts/ci/build-env-hash el9-amd64)"
+          cache_ref="${reg}:buildcache"
+          {
+            echo "image=${reg}:deps-${deps_hash}"
+            echo "cache_ref=${cache_ref}"
+          } >> "${GITHUB_OUTPUT}"
+
+      - name: Log into ${{ env.REGISTRY }}
+        uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - name: Check dependency image
+        id: image
+        env:
+          IMAGE: ${{ steps.select.outputs.image }}
+        run: |
+          if [ '${{ github.event_name == 'workflow_dispatch' && inputs.force_image_rebuild == true }}' != 'true' ] &&
+            docker buildx imagetools inspect "${IMAGE}" >/dev/null 2>&1; then
+            echo "rebuild=false" >> "${GITHUB_OUTPUT}"
+          else
+            echo "rebuild=true" >> "${GITHUB_OUTPUT}"
+          fi
+
+      - name: Free disk space
+        if: steps.image.outputs.rebuild == 'true'
+        run: |
+          set -euo pipefail
+          df -h /
+          avail_kb=$(df -Pk / | awk 'NR==2 {print $4}')
+          # 40 GiB covers a cold BuildKit build of this image. Pull request
+          # #120 (run 40221737043) started at 87 GiB free on a 145 GiB disk.
+          # The previous free-disk action then spent 359s freeing another 31 GiB
+          # the cached rebuild did not use. Below the floor, delete the three
+          # large preinstalled trees in parallel. Skip apt purge and docker
+          # image prune.
+          floor_kb=$((40 * 1024 * 1024))
+          echo "available_kib=${avail_kb} floor_kib=${floor_kb}"
+          if [ "${avail_kb}" -ge "${floor_kb}" ]; then
+            echo "free space already above 40GiB; not deleting"
+            exit 0
+          fi
+          echo "free space below 40GiB; removing android, dotnet, and ghc"
+          pids=()
+          sudo rm -rf /usr/local/lib/android &
+          pids+=("$!")
+          sudo rm -rf /usr/share/dotnet &
+          pids+=("$!")
+          sudo rm -rf /opt/ghc &
+          pids+=("$!")
+          status=0
+          for pid in "${pids[@]}"; do
+            wait "${pid}" || status=1
+          done
+          if [ "${status}" -ne 0 ]; then
+            echo "error: removing a preinstalled tree failed" >&2
+            exit 1
+          fi
+          df -h /
+          avail_kb=$(df -Pk / | awk 'NR==2 {print $4}')
+          echo "available_kib_after=${avail_kb}"
+          if [ "${avail_kb}" -lt "${floor_kb}" ]; then
+            echo "error: still under 40GiB after removing preinstalled trees" >&2
+            exit 1
+          fi
+
+      - name: Build and push nesso-build-env-el9
+        if: steps.image.outputs.rebuild == 'true'
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          file: .devcontainer/Dockerfile.el9
+          push: true
+          tags: ${{ steps.select.outputs.image }}
+          cache-from: type=registry,ref=${{ steps.select.outputs.cache_ref }}
+          cache-to: type=registry,ref=${{ steps.select.outputs.cache_ref }},mode=max
+
+      - name: Verify image architecture
+        env:
+          IMAGE: ${{ steps.select.outputs.image }}
+        run: |
+          set -euo pipefail
+          docker buildx imagetools inspect "${IMAGE}" | tee /tmp/image-inspect.txt
+          grep -Eiq 'amd64|x86_64' /tmp/image-inspect.txt
+
+      - name: Report free disk
+        if: steps.image.outputs.rebuild == 'true'
+        run: |
+          set -euo pipefail
+          df -h /
+          avail_kb=$(df -Pk / | awk 'NR==2 {print $4}')
+          echo "available_kib_after_build=${avail_kb}"
+
+  # Native arm64 EL9 image. The repository stays nesso-build-env-el9.
+  # The amd64 tag stays deps-<hash>; the arm64 tag appends -arm64.
+  prepare-image-el9-arm64:
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 360
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      image: ${{ steps.select.outputs.image }}
+    steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
+        with:
+          egress-policy: audit
+
+      - name: Checkout Repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Resolve image reference
+        id: select
+        run: |
+          set -euo pipefail
+          owner_lc="$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')"
+          reg="${{ env.REGISTRY }}/${owner_lc}/nesso-build-env-el9"
+          deps_hash="$(./scripts/ci/build-env-hash el9-arm64)"
+          {
+            echo "image=${reg}:deps-${deps_hash}-arm64"
+            echo "cache_ref=${reg}:buildcache-arm64"
+          } >> "${GITHUB_OUTPUT}"
+
+      - name: Log into ${{ env.REGISTRY }}
+        uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - name: Check dependency image
+        id: image
+        env:
+          IMAGE: ${{ steps.select.outputs.image }}
+        run: |
+          if [ '${{ github.event_name == 'workflow_dispatch' && inputs.force_image_rebuild == true }}' != 'true' ] &&
+            docker buildx imagetools inspect "${IMAGE}" >/dev/null 2>&1; then
+            echo "rebuild=false" >> "${GITHUB_OUTPUT}"
+          else
+            echo "rebuild=true" >> "${GITHUB_OUTPUT}"
+          fi
+
+      - name: Free disk space
+        if: steps.image.outputs.rebuild == 'true'
+        run: |
+          set -euo pipefail
+          df -h /
+          avail_kb=$(df -Pk / | awk 'NR==2 {print $4}')
+          # 40 GiB covers a cold BuildKit build of this image. Pull request
+          # #120 (run 40221737043) started at 87 GiB free on a 145 GiB disk.
+          # The previous free-disk action then spent 359s freeing another 31 GiB
+          # the cached rebuild did not use. Below the floor, delete the three
+          # large preinstalled trees in parallel. Skip apt purge and docker
+          # image prune.
+          floor_kb=$((40 * 1024 * 1024))
+          echo "available_kib=${avail_kb} floor_kib=${floor_kb}"
+          if [ "${avail_kb}" -ge "${floor_kb}" ]; then
+            echo "free space already above 40GiB; not deleting"
+            exit 0
+          fi
+          echo "free space below 40GiB; removing android, dotnet, and ghc"
+          pids=()
+          sudo rm -rf /usr/local/lib/android &
+          pids+=("$!")
+          sudo rm -rf /usr/share/dotnet &
+          pids+=("$!")
+          sudo rm -rf /opt/ghc &
+          pids+=("$!")
+          status=0
+          for pid in "${pids[@]}"; do
+            wait "${pid}" || status=1
+          done
+          if [ "${status}" -ne 0 ]; then
+            echo "error: removing a preinstalled tree failed" >&2
+            exit 1
+          fi
+          df -h /
+          avail_kb=$(df -Pk / | awk 'NR==2 {print $4}')
+          echo "available_kib_after=${avail_kb}"
+          if [ "${avail_kb}" -lt "${floor_kb}" ]; then
+            echo "error: still under 40GiB after removing preinstalled trees" >&2
+            exit 1
+          fi
+
+      - name: Build and push nesso-build-env-el9 arm64
+        if: steps.image.outputs.rebuild == 'true'
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          file: .devcontainer/Dockerfile.el9.arm64
+          platforms: linux/arm64
+          push: true
+          tags: ${{ steps.select.outputs.image }}
+          cache-from: type=registry,ref=${{ steps.select.outputs.cache_ref }}
+          cache-to: type=registry,ref=${{ steps.select.outputs.cache_ref }},mode=max
+
+      - name: Verify image architecture
+        env:
+          IMAGE: ${{ steps.select.outputs.image }}
+        run: |
+          set -euo pipefail
+          docker buildx imagetools inspect "${IMAGE}" | tee /tmp/image-inspect.txt
+          grep -Eiq 'arm64|aarch64' /tmp/image-inspect.txt
+
+      - name: Report free disk
+        if: steps.image.outputs.rebuild == 'true'
+        run: |
+          set -euo pipefail
+          df -h /
+          avail_kb=$(df -Pk / | awk 'NR==2 {print $4}')
+          echo "available_kib_after_build=${avail_kb}"
+
   # Single status check for a ruleset on main. The check run name is the job
   # name, CI gate. needs is every other job in this file. The lint step
   # ci-gate-needs fails when a job is missing from needs or from JOB_RESULTS,
@@ -1990,6 +2246,8 @@ jobs:
       - prepare-image-arm64
       - build-gcc-26-arm64
       - test-gcc-26-arm64
+      - prepare-image-el9-amd64
+      - prepare-image-el9-arm64
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -2033,4 +2291,6 @@ jobs:
             prepare-image-arm64=${{ needs.prepare-image-arm64.result }}
             build-gcc-26-arm64=${{ needs.build-gcc-26-arm64.result }}
             test-gcc-26-arm64=${{ needs.test-gcc-26-arm64.result }}
+            prepare-image-el9-amd64=${{ needs.prepare-image-el9-amd64.result }}
+            prepare-image-el9-arm64=${{ needs.prepare-image-el9-arm64.result }}
         run: go run -C scripts/ci . ci-gate
