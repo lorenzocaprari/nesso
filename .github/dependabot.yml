@@ -38,6 +38,11 @@ updates:
           - "*"
     cooldown:
       default-days: 7
+    # Rocky 9 is the EL9 baseline. Stay on major 9; digest updates still apply.
+    ignore:
+      - dependency-name: "rockylinux"
+        update-types:
+          - "version-update:semver-major"
 
   - package-ecosystem: pip
     directories:

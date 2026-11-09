@@ -40,7 +40,7 @@ func TestPipelineWorkflowSatisfiesGate(t *testing.T) {
 		}
 	}
 	sort.Strings(always)
-	if strings.Join(always, ",") != "changes,lint,prepare-image-amd64" {
+	if strings.Join(always, ",") != "changes,lint,prepare-image-amd64,prepare-image-el9-amd64" {
 		t.Fatalf("always-run jobs %v", always)
 	}
 	if code := ciGateNeedsMain([]string{"--workflow", pipelinePath(t)}); code != 0 {
@@ -82,14 +82,16 @@ func TestSkipClassification(t *testing.T) {
 			code:  "false",
 			patch: docs,
 			verdict: map[string]string{
-				"changes":             "success",
-				"prepare-image-amd64": "success",
-				"lint":                "success",
-				"clang-tidy":          "skipped, docs-only pull request",
-				"test-gcc-26-amd64":   "skipped, docs-only pull request",
-				"prepare-image-arm64": "skipped, docs-only pull request",
-				"fuzz-test":           "skipped, pull request",
-				"bench-history":       "skipped, not a push to main",
+				"changes":                 "success",
+				"prepare-image-amd64":     "success",
+				"prepare-image-el9-amd64": "success",
+				"prepare-image-el9-arm64": "skipped, docs-only pull request",
+				"lint":                    "success",
+				"clang-tidy":              "skipped, docs-only pull request",
+				"test-gcc-26-amd64":       "skipped, docs-only pull request",
+				"prepare-image-arm64":     "skipped, docs-only pull request",
+				"fuzz-test":               "skipped, pull request",
+				"bench-history":           "skipped, not a push to main",
 			},
 		},
 		{

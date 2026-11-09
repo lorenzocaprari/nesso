@@ -20,6 +20,8 @@ Bugs and feature requests use the issue forms. Vulnerabilities follow [SECURITY.
 
 CI builds `.devcontainer/Dockerfile` (Ubuntu 26.04, GCC 15, Clang 21, AFL++, lld 21, llvm-21, GNU time, Go, Conan 2, pre-commit, ccache, stress-ng, zstd) and pushes `ghcr.io/lorenzocaprari/nesso-build-env:deps-<hash>`. AFL++, lld-21, llvm-21, and GNU time are installed again in the layer after the Conan installs. The compiler layer still has AFL++, Clang 21, and the compiler-rt symlinks. The arm64 image is `.devcontainer/Dockerfile.arm64`, tagged `deps-<hash>-arm64`. The amd64 CI job is `prepare-image-amd64`. `scripts/ci/build-env-hash amd64` covers that Dockerfile, `.devcontainer/requirements.txt`, `conan.lock`, `conan/profiles/gcc-26`, `conan/profiles/gcc-26-debug`, `test/functional/go.mod`, and `test/functional/go.sum`. It includes `conanfile.py` as the resolved dependency spec, not the recipe text. There is no `devcontainer.json`. The image sets `CONAN_HOME=/opt/conan2` with the locked dependencies already installed; CI configures with `--no-remote`. It sets `GOMODCACHE=/opt/go/pkg/mod` with the godog modules already downloaded.
 
+CI also builds `.devcontainer/Dockerfile.el9` and `.devcontainer/Dockerfile.el9.arm64` (Rocky Linux 9, GCC Toolset 15.2.1, CMake 4.4.5, Python 3.12, Ninja from CRB, Go, Conan 2, pre-commit, ccache, zstd). The jobs are `prepare-image-el9-amd64` and `prepare-image-el9-arm64`. They push `ghcr.io/lorenzocaprari/nesso-build-env-el9:deps-<hash>` and `deps-<hash>-arm64`. `scripts/ci/build-env-hash el9-amd64` covers `.devcontainer/Dockerfile.el9`, `.devcontainer/requirements.txt`, `conan.lock`, `conan/profiles/gcc-26-el9`, `test/functional/go.mod`, and `test/functional/go.sum`. The arm64 hash uses `conan/profiles/gcc-26-el9-armv8`. Those images do not compile nesso. Package and Release still use the Ubuntu image.
+
 ```bash
 docker build -f .devcontainer/Dockerfile -t nesso-build-env .
 docker run --rm -it -v "$PWD:/src" -w /src nesso-build-env bash
@@ -35,6 +37,8 @@ Profiles in `conan/profiles/`:
 | `gcc-26-debug` | Debug with ASan and UBSan (`-fno-sanitize-recover=all`) |
 | `gcc-26-fuzz` | AFL++ library harnesses |
 | `gcc-26-armv8` | arm64 Release (`-O3`, `-march=armv8-a`, LTO) |
+| `gcc-26-el9` | EL9 amd64 Release, GCC Toolset 15 (`-O3`, `-march=x86-64-v2`, LTO) |
+| `gcc-26-el9-armv8` | EL9 arm64 Release, GCC Toolset 15 (`-O3`, `-march=armv8-a`, LTO) |
 | `clang-26` | Clang 21 Release with libstdc++, no LTO (`-O3`, `-march=x86-64-v2`) |
 | `code-coverage` | Debug plus `--coverage` |
 

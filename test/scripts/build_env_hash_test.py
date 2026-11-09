@@ -39,14 +39,26 @@ class BuildEnvHashTest(unittest.TestCase):
         module = load_hash()
         for arch, dockerfile in module.DOCKERFILES.items():
             text = (ROOT / dockerfile).read_text()
-            self.assertIn("stress-ng", text)
             self.assertIn("zstd", text)
             self.assertIn("ccache", text)
             self.assertIn("GOMODCACHE=/opt/go/pkg/mod", text)
             self.assertIn("test/functional/go.sum", text)
             conan_at = text.index("conan install .")
-            for marker in ("golang-go", "stress-ng", "zstd", "GOMODCACHE=/opt/go/pkg/mod", "\n    ccache \\"):
+            for marker in ("zstd", "GOMODCACHE=/opt/go/pkg/mod", "\n    ccache \\"):
                 self.assertLess(conan_at, text.index(marker), f"{dockerfile} places {marker!r} before Conan")
+            if arch.startswith("el9"):
+                self.assertIn("gcc-toolset-15-gcc-15.2.1-7.1.el9_8", text)
+                self.assertIn("python3.12", text)
+                self.assertIn("cmake-4.4.5", text)
+                self.assertIn("dnf config-manager --set-enabled crb", text)
+                self.assertIn("--require-hashes", text)
+                self.assertLess(conan_at, text.index("\n    golang \\"))
+                self.assertNotIn("golang-go", text)
+                self.assertNotIn("stress-ng", text)
+            else:
+                self.assertIn("stress-ng", text)
+                self.assertLess(conan_at, text.index("golang-go"), f"{dockerfile} places golang-go before Conan")
+                self.assertLess(conan_at, text.index("stress-ng"), f"{dockerfile} places stress-ng before Conan")
             if arch == "amd64":
                 self.assertLess(text.index("afl++"), conan_at)
                 tail = text[conan_at:]
@@ -57,6 +69,12 @@ class BuildEnvHashTest(unittest.TestCase):
             self.assertIn("file:test/functional/go.mod", labels)
             self.assertIn("file:test/functional/go.sum", labels)
             self.assertIn("spec:dependencies", labels)
+            if arch == "el9-amd64":
+                self.assertIn("file:conan/profiles/gcc-26-el9", labels)
+                self.assertNotIn("file:conan/profiles/gcc-26-el9-armv8", labels)
+            if arch == "el9-arm64":
+                self.assertIn("file:conan/profiles/gcc-26-el9-armv8", labels)
+                self.assertNotIn("file:conan/profiles/gcc-26-el9", labels)
 
     def test_go_sum_and_dockerfile_change_the_image_hash(self) -> None:
         module = load_hash()
