@@ -190,6 +190,55 @@ TEST_CASE("zero-length lines score zero and do not divide by avgdl", "[bm25]")
     CHECK(none.scores(cat).empty());
 }
 
+TEST_CASE("addLinePostings matches addLine bit-for-bit", "[bm25]")
+{
+    nesso::core::Bm25Index fromStrings = threeLineCorpus();
+
+    nesso::core::Bm25Index fromIds;
+    const std::uint32_t cat = fromIds.internTerm("cat");
+    const std::uint32_t elf = fromIds.internTerm("elf");
+    const std::uint32_t dog = fromIds.internTerm("dog");
+    const std::array<std::pair<std::uint32_t, std::uint32_t>, 2> line0{{{cat, 1}, {elf, 1}}};
+    const std::array<std::pair<std::uint32_t, std::uint32_t>, 1> line1{{{cat, 1}}};
+    const std::array<std::pair<std::uint32_t, std::uint32_t>, 1> line2{{{dog, 1}}};
+    fromIds.addLinePostings(line0, 2);
+    fromIds.addLinePostings(line1, 1);
+    fromIds.addLinePostings(line2, 1);
+
+    const std::array<std::string_view, 2> query{"elf", "cat"};
+    const std::vector<double> left = fromStrings.scores(query);
+    const std::vector<double> right = fromIds.scores(query);
+    REQUIRE(left.size() == right.size());
+    for (std::size_t line = 0; line < left.size(); ++line)
+    {
+        expectBits(right[line], std::bit_cast<std::uint64_t>(left[line]));
+    }
+}
+
+TEST_CASE("scoresFromPostings matches Bm25Index for a sorted dictionary", "[bm25]")
+{
+    // Dictionary ids follow unsigned-byte order: cat=0, dog=1, elf=2.
+    const std::array<std::string_view, 3> dictionary{"cat", "dog", "elf"};
+    const std::array<std::pair<std::uint32_t, std::uint32_t>, 2> row0{{{0, 1}, {2, 1}}};
+    const std::array<std::pair<std::uint32_t, std::uint32_t>, 1> row1{{{0, 1}}};
+    const std::array<std::pair<std::uint32_t, std::uint32_t>, 1> row2{{{1, 1}}};
+    const std::array<nesso::core::Bm25LinePostings, 3> lines{
+        nesso::core::Bm25LinePostings{.length = 2, .entries = row0},
+        nesso::core::Bm25LinePostings{.length = 1, .entries = row1},
+        nesso::core::Bm25LinePostings{.length = 1, .entries = row2},
+    };
+
+    const nesso::core::Bm25Index index = threeLineCorpus();
+    const std::array<std::string_view, 2> query{"elf", "cat"};
+    const std::vector<double> fromIndex = index.scores(query);
+    const std::vector<double> fromPostings = nesso::core::scoresFromPostings(dictionary, lines, query);
+    REQUIRE(fromIndex.size() == fromPostings.size());
+    for (std::size_t line = 0; line < fromIndex.size(); ++line)
+    {
+        expectBits(fromPostings[line], std::bit_cast<std::uint64_t>(fromIndex[line]));
+    }
+}
+
 TEST_CASE("tied BM25 scores stay on their line ordinals", "[bm25]")
 {
     // line 0: red blue   |D| = 2
