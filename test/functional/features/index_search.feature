@@ -10,10 +10,14 @@ Feature: index and search
     Then the exit code is 0
     And stderr contains "Indexed "
     And stderr contains "{dir}/corpus.nesso"
+    And stdout does not contain "the AMX guard is not in effect"
+    And stderr does not contain "the AMX guard is not in effect"
     When I run nesso with arguments search "database connection error" -i {dir}/corpus.nesso
     Then the exit code is 0
     And stdout contains "database connection refused"
     And stdout contains "line 1:"
+    And stdout does not contain "the AMX guard is not in effect"
+    And stderr does not contain "the AMX guard is not in effect"
 
   Scenario: search prefixes the source after several files were indexed
     Given a file "app.log" with:

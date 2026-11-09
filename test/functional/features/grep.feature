@@ -10,7 +10,9 @@ Feature: grep
     Then the exit code is 0
     And stdout contains "line 1:"
     And stdout contains "database connection refused"
+    And stdout does not contain "the AMX guard is not in effect"
     And stderr is empty
+    And stderr does not contain "the AMX guard is not in effect"
 
   Scenario: text output escapes terminal controls in grep and search
     Given a file "controls.log" with hex:
@@ -427,7 +429,9 @@ Feature: grep
     And stdout contains "\"kind\":\"line\""
     And every stdout line is a JSON match
     And running nesso again prints the same stdout
+    And stdout does not contain "the AMX guard is not in effect"
     And stderr is empty
+    And stderr does not contain "the AMX guard is not in effect"
 
   Scenario: json lines name each file
     Given a file "app.log" with:

@@ -2,11 +2,45 @@
 #include <embed/amx_guard.hpp>
 #include <embed/onnx_embedder.hpp>
 
+#include <array>
+#include <cstdio>
+#include <memory>
+#include <string>
+
 #if defined(__linux__) && defined(__x86_64__)
 #include <cerrno>
 #include <sys/syscall.h>
 #include <unistd.h>
 #endif
+
+namespace
+{
+
+struct CloseFile
+{
+    void operator()(std::FILE *file) const noexcept
+    {
+        if (file != nullptr)
+        {
+            static_cast<void>(std::fclose(file));
+        }
+    }
+};
+
+std::string captured(std::FILE *file)
+{
+    REQUIRE(std::fflush(file) == 0);
+    REQUIRE(std::fseek(file, 0, SEEK_SET) == 0);
+    std::string text;
+    std::array<char, 256> chunk{};
+    while (std::fgets(chunk.data(), static_cast<int>(chunk.size()), file) != nullptr)
+    {
+        text.append(chunk.data());
+    }
+    return text;
+}
+
+} // namespace
 
 TEST_CASE("the AMX guard refuses tile data for the rest of the process", "[amx-guard]")
 {
@@ -30,6 +64,22 @@ TEST_CASE("the AMX guard refuses tile data for the rest of the process", "[amx-g
     CHECK_FALSE(granted);
     CHECK(otherCallsPass);
 #endif
+}
+
+TEST_CASE("a guard that is in effect writes nothing", "[amx-guard]")
+{
+    const std::unique_ptr<std::FILE, CloseFile> file{std::tmpfile()};
+    REQUIRE(file != nullptr);
+    nesso::embed::reportAmxGuard(true, file.get());
+    CHECK(captured(file.get()).empty());
+}
+
+TEST_CASE("a guard that is not in effect names the int8 kernel", "[amx-guard]")
+{
+    const std::unique_ptr<std::FILE, CloseFile> file{std::tmpfile()};
+    REQUIRE(file != nullptr);
+    nesso::embed::reportAmxGuard(false, file.get());
+    CHECK(captured(file.get()) == "Warning: the AMX guard is not in effect; the int8 model may use the AMX kernel\n");
 }
 
 TEST_CASE("the embedder env leaves AMX tile data ungranted", "[amx-guard]")
