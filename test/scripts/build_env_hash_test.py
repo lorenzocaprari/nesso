@@ -10,7 +10,7 @@ ROOT = pathlib.Path(__file__).resolve().parents[2]
 
 
 def load_hash():
-    path = ROOT / "scripts" / "build-env-hash"
+    path = ROOT / "scripts" / "ci" / "build-env-hash"
     loader = importlib.machinery.SourceFileLoader("build_env_hash", str(path))
     spec = importlib.util.spec_from_loader(loader.name, loader)
     if spec is None:

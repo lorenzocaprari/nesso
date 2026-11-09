@@ -9,9 +9,9 @@
 # `ci runtime-scan-dockerfile` refuses a final stage it does not understand.
 set -euo pipefail
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 # shellcheck source=trivy
-source "${ROOT}/scripts/trivy"
+source "${ROOT}/packaging/scripts/trivy"
 
 usage() {
   echo "usage: scan-runtime-image --image IMAGE --sarif FILE --json FILE" >&2

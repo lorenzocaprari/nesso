@@ -91,11 +91,11 @@ func TestTrivySummaryRejectsBadInput(t *testing.T) {
 }
 
 func TestTrivyDistributionPins(t *testing.T) {
-	trivy, err := os.ReadFile(filepath.Join("..", "trivy"))
+	trivy, err := os.ReadFile(filepath.Join("..", "..", "packaging", "scripts", "trivy"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	scan, err := os.ReadFile(filepath.Join("..", "scan-runtime-image"))
+	scan, err := os.ReadFile(filepath.Join("..", "..", "packaging", "scripts", "scan-runtime-image"))
 	if err != nil {
 		t.Fatal(err)
 	}

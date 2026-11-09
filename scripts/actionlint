@@ -5,8 +5,8 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-# shellcheck source=download-pinned
-source "${ROOT}/scripts/download-pinned"
+# shellcheck source=ci/download-pinned
+source "${ROOT}/scripts/ci/download-pinned"
 
 version="1.7.12"
 case "$(uname -m)" in

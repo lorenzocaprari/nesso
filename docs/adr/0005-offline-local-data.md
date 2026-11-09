@@ -38,7 +38,7 @@ download is allowed if one is added later.
   and a line on stderr.
 * Bad, because no CI check enforced this when the record was written.
   [#136](https://github.com/lorenzocaprari/nesso/pull/136) (`705d574`)
-  later added `scripts/check-network-free` to `scripts/build-release-binary`,
+  later added `packaging/scripts/check-network-free` to `packaging/scripts/build-release-binary`,
   which fails the release build on a denied `NEEDED` library, an unallowed
   networking libc import, or a statically linked curl or OpenSSL symbol or
   version string.

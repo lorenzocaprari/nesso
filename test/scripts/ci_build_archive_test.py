@@ -9,7 +9,7 @@ import unittest
 
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
-ARCHIVE = ROOT / "scripts" / "ci-build-archive"
+ARCHIVE = ROOT / "scripts" / "ci" / "ci-build-archive"
 
 
 def write_file(path: pathlib.Path, data: bytes, mode: int) -> None:

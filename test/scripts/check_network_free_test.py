@@ -7,7 +7,7 @@ import unittest
 
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
-SCRIPT = ROOT / "scripts" / "check-network-free"
+SCRIPT = ROOT / "packaging" / "scripts" / "check-network-free"
 
 CLEAN_READELF = """\
 Dynamic section at offset 0x1234 contains 8 entries:

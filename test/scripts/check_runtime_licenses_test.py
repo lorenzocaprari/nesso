@@ -7,7 +7,7 @@ import unittest
 
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
-SCRIPT = ROOT / "scripts" / "check-runtime-licenses"
+SCRIPT = ROOT / "packaging" / "scripts" / "check-runtime-licenses"
 
 
 def run(nodes: dict) -> subprocess.CompletedProcess:

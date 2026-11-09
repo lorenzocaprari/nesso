@@ -9,7 +9,7 @@ import unittest
 
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
-PACKAGE = ROOT / "scripts" / "package-deb"
+PACKAGE = ROOT / "packaging" / "scripts" / "package-deb"
 
 
 def write_executable(path: pathlib.Path, text: str) -> None:

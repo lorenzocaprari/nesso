@@ -7,7 +7,7 @@ import unittest
 
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
-SCRIPT = ROOT / "scripts" / "check-no-runpath"
+SCRIPT = ROOT / "packaging" / "scripts" / "check-no-runpath"
 
 HEADER = """
 Dynamic section at offset 0x1234 contains 4 entries:

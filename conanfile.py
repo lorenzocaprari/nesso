@@ -66,7 +66,7 @@ class Nesso(ConanFile):
         # Every host dependency is static, so nesso needs no library search path.
         # Without this, CMakeDeps link directories become a build-tree RUNPATH that
         # the release binary keeps, with a trailing empty entry (the current
-        # directory). scripts/check-no-runpath enforces it on the release binary.
+        # directory). packaging/scripts/check-no-runpath enforces it on the release binary.
         tc.blocks["rpath"].skip_rpath = True
         tc.generate()
         deps = CMakeDeps(self)

@@ -3,7 +3,7 @@ name: Release
 # Each architecture is built on a native runner (ubuntu-24.04 for amd64,
 # ubuntu-24.04-arm for arm64) from that architecture's nesso-build-env image.
 # There is no QEMU. BuildKit attestations are off so the pushed arch image is
-# one platform manifest. scripts/publish-runtime-index merges those digests
+# one platform manifest. packaging/scripts/publish-runtime-index merges those digests
 # into one manifest list and tags it vX.Y.Z, X.Y.Z, and latest. The arch tags
 # vX.Y.Z-amd64 and vX.Y.Z-arm64 stay so each platform digest remains
 # addressable; they are not the tags users pull.
@@ -186,7 +186,7 @@ jobs:
           set -euo pipefail
           owner_lc="$(printf '%s' "${OWNER}" | tr '[:upper:]' '[:lower:]')"
           reg="${REGISTRY}/${owner_lc}/nesso-build-env"
-          deps_hash="$(./scripts/build-env-hash "${ARCH}")"
+          deps_hash="$(./scripts/ci/build-env-hash "${ARCH}")"
           suffix=""
           if [[ "${ARCH}" == "arm64" ]]; then
             suffix="-arm64"
@@ -259,9 +259,9 @@ jobs:
           path: |
             ${{ runner.temp }}/trivy-db
             ${{ runner.temp }}/nesso-cache/nesso/trivy
-          key: trivy-0.76.1-${{ runner.arch }}-${{ hashFiles('scripts/trivy') }}-${{ steps.trivy-day.outputs.day }}
+          key: trivy-0.76.1-${{ runner.arch }}-${{ hashFiles('packaging/scripts/trivy') }}-${{ steps.trivy-day.outputs.day }}
           restore-keys: |
-            trivy-0.76.1-${{ runner.arch }}-${{ hashFiles('scripts/trivy') }}-
+            trivy-0.76.1-${{ runner.arch }}-${{ hashFiles('packaging/scripts/trivy') }}-
           lookup-only: true
 
       - name: Scan runtime image
@@ -280,8 +280,8 @@ jobs:
             sudo apt-get update
             sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends golang-go
           fi
-          chmod +x scripts/scan-runtime-image scripts/trivy
-          ./scripts/scan-runtime-image \
+          chmod +x packaging/scripts/scan-runtime-image packaging/scripts/trivy
+          ./packaging/scripts/scan-runtime-image \
             --image "${RUNTIME_IMAGE}:${TAG}" \
             --sarif trivy.sarif \
             --json trivy.json
@@ -363,8 +363,8 @@ jobs:
             sudo apt-get update
             sudo apt-get install -y --no-install-recommends binutils
           fi
-          chmod +x scripts/package-deb
-          scripts/package-deb "${VER}" "./nesso-${ARCH}" ./models .
+          chmod +x packaging/scripts/package-deb
+          packaging/scripts/package-deb "${VER}" "./nesso-${ARCH}" ./models .
 
       - name: Smoke-test image and .deb
         env:
@@ -373,9 +373,9 @@ jobs:
           VER: ${{ steps.ver.outputs.ver }}
         run: |
           set -euo pipefail
-          chmod +x scripts/smoke-runtime-image scripts/smoke-deb
-          ./scripts/smoke-runtime-image "${RUNTIME_IMAGE}:${TAG}"
-          ./scripts/smoke-deb "./nesso_${VER}_${ARCH}.deb"
+          chmod +x packaging/scripts/smoke-runtime-image packaging/scripts/smoke-deb
+          ./packaging/scripts/smoke-runtime-image "${RUNTIME_IMAGE}:${TAG}"
+          ./packaging/scripts/smoke-deb "./nesso_${VER}_${ARCH}.deb"
 
       - name: Generate SPDX SBOM
         uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
@@ -580,8 +580,8 @@ jobs:
           fi
           owner_lc="$(printf '%s' "${OWNER}" | tr '[:upper:]' '[:lower:]')"
           image="${REGISTRY}/${owner_lc}/nesso"
-          chmod +x scripts/publish-runtime-index
-          log="$(scripts/publish-runtime-index "${image}" "v${amd64_ver}" "${amd64_ver}" "${amd64_digest}" "${arm64_digest}")"
+          chmod +x packaging/scripts/publish-runtime-index
+          log="$(packaging/scripts/publish-runtime-index "${image}" "v${amd64_ver}" "${amd64_ver}" "${amd64_digest}" "${arm64_digest}")"
           printf '%s\n' "${log}"
           index_digest="$(printf '%s\n' "${log}" | tail -n1)"
           if [[ ! "${index_digest}" =~ ^sha256:[0-9a-f]{64}$ ]]; then
