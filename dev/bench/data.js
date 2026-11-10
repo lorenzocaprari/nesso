@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794310329828,
+  "lastUpdate": 1794310725825,
   "repoUrl": "https://github.com/lorenzocaprari/nesso",
   "entries": {
     "nesso": [
@@ -4805,6 +4805,60 @@ window.BENCHMARK_DATA = {
           {
             "name": "grep-100000-rss",
             "value": 157298688,
+            "unit": "bytes"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "caprarilorenzo5@gmail.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "committer": {
+            "email": "85455384+lorenzocaprari@users.noreply.github.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "distinct": true,
+          "id": "5b2c13e78f71499323b815179be1b2c34f6849f2",
+          "message": "ci: add build-el9-amd64 lane\n\nBuild the release binary in nesso-build-env-el9 with NESSO_ABI_BASELINE\nso packaging/scripts/build-release-binary selects gcc-26-el9 and runs\nthe glibc 2.34 check.",
+          "timestamp": "2026-11-10T09:53:22+01:00",
+          "tree_id": "7390ad76c023e937410303a628021c25021cab5c",
+          "url": "https://github.com/lorenzocaprari/nesso/commit/5b2c13e78f71499323b815179be1b2c34f6849f2"
+        },
+        "date": 1794310725437,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "grep-1000-wall",
+            "value": 0.15,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-1000-rss",
+            "value": 119308288,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-10000-wall",
+            "value": 0.16,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-10000-rss",
+            "value": 119697408,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-100000-wall",
+            "value": 0.35,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-100000-rss",
+            "value": 157466624,
             "unit": "bytes"
           }
         ]
