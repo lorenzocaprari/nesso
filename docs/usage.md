@@ -57,6 +57,8 @@ On x86-64 Linux, nesso refuses Intel AMX tile data for this process before the f
 
 ## Files
 
+For a short sosreport or tarball triage path, see [Quick start](quick-start.md).
+
 - `.json` and `.jsonl` are JSON, matched without regard to case. Every other name is read as lines: no extension, `.log.N` rotations, `.LOG`, `.txt`, `syslog`. `-` reads stdin as lines, and those matches are prefixed with `-:`. Stdin is not decompressed.
 - A path may be a directory. nesso reads the regular files under it, recursively, and orders those files by unsigned byte order of the full path. The same paths produce the same chunks for any `--threads` value. Directory symlinks are not followed. A symlink passed as an argument is followed once, so a link to a directory is read and a link to a file is that file. File symlinks found while walking are kept; the link path is the source name and the bytes come from the target. Hidden files and directories are included. Fifos, sockets, and device nodes are skipped. A missing path, a dangling symlink, or a directory that cannot be listed fails the command. An unreadable file fails the command with the same open error as a file argument.
 - A file whose first 4 KiB contains a NUL byte is rejected as binary. For `.gz`, that probe is the first 4 KiB of the inflated bytes. Bytes that are not UTF-8 are still text: an invalid sequence counts as one code point and is not rejected.
