@@ -5,9 +5,12 @@ package steps
 
 import (
 	"bytes"
+	"encoding/base64"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -142,6 +145,112 @@ func (b *bindings) appendRepeatedLine(count int, character, name string) error {
 	_, err = file.WriteString(line)
 	return err
 }
+
+func archiveKind(name string) (string, error) {
+	lower := strings.ToLower(name)
+	switch {
+	case strings.HasSuffix(lower, ".tar.gz"), strings.HasSuffix(lower, ".tgz"):
+		return "tgz", nil
+	case strings.HasSuffix(lower, ".tar.xz"), strings.HasSuffix(lower, ".txz"):
+		return "txz", nil
+	case strings.HasSuffix(lower, ".tar"):
+		return "tar", nil
+	case strings.HasSuffix(lower, ".zip"):
+		return "zip", nil
+	default:
+		return "", fmt.Errorf("unsupported archive name %q", name)
+	}
+}
+
+func (b *bindings) writeArchive(name string, table *godog.Table) error {
+	if table == nil || len(table.Rows) == 0 {
+		return fmt.Errorf("archive %q needs at least one entry", name)
+	}
+	kind, err := archiveKind(name)
+	if err != nil {
+		return err
+	}
+	target, err := b.scenarioPath(name)
+	if err != nil {
+		return err
+	}
+	type entry struct {
+		Name string `json:"name"`
+		Data string `json:"data"`
+	}
+	payload := struct {
+		Dest    string  `json:"dest"`
+		Kind    string  `json:"kind"`
+		Entries []entry `json:"entries"`
+	}{Dest: target, Kind: kind}
+	for _, row := range table.Rows {
+		if len(row.Cells) != 2 {
+			return fmt.Errorf("archive row needs a path and a body")
+		}
+		body := strings.ReplaceAll(row.Cells[1].Value, `\0`, "\x00")
+		if !strings.Contains(body, "\x00") && !strings.HasSuffix(body, "\n") {
+			body += "\n"
+		}
+		payload.Entries = append(payload.Entries, entry{
+			Name: row.Cells[0].Value,
+			Data: base64.StdEncoding.EncodeToString([]byte(body)),
+		})
+	}
+	encoded, err := json.Marshal(payload)
+	if err != nil {
+		return err
+	}
+	cmd := exec.Command("python3", "-c", archiveWriter)
+	cmd.Stdin = bytes.NewReader(encoded)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("write archive %s: %w: %s", name, err, output)
+	}
+	return nil
+}
+
+const archiveWriter = `
+import base64, io, json, sys, tarfile, zipfile
+from pathlib import Path
+
+spec = json.load(sys.stdin)
+dest = Path(spec["dest"])
+kind = spec["kind"]
+
+def body(entry):
+    return base64.b64decode(entry["data"])
+
+def write_tar(mode):
+    with tarfile.open(dest, mode) as archive:
+        for entry in spec["entries"]:
+            data = body(entry)
+            info = tarfile.TarInfo(entry["name"])
+            info.size = len(data)
+            info.mtime = 0
+            info.mode = 0o644
+            info.uid = 0
+            info.gid = 0
+            info.uname = ""
+            info.gname = ""
+            archive.addfile(info, io.BytesIO(data))
+
+if kind == "zip":
+    with zipfile.ZipFile(dest, "w") as archive:
+        for entry in spec["entries"]:
+            data = body(entry)
+            info = zipfile.ZipInfo(filename=entry["name"], date_time=(1980, 1, 1, 0, 0, 0))
+            info.compress_type = zipfile.ZIP_DEFLATED
+            info.external_attr = 0o644 << 16
+            archive.writestr(info, data)
+elif kind == "tar":
+    write_tar("w")
+elif kind == "tgz":
+    write_tar("w:gz")
+elif kind == "txz":
+    write_tar("w:xz")
+else:
+    raise SystemExit("unknown archive kind " + kind)
+`
 
 func (b *bindings) writeHexFile(name string, content *godog.DocString) error {
 	target, err := b.scenarioPath(name)

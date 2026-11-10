@@ -12,6 +12,11 @@ TEST_CASE("layer errors map onto a cause", "[nesso][error]")
     REQUIRE(nesso::causeOf(nesso::parser::ParseError::UnsupportedFormat) == nesso::ErrorCause::UnsupportedFormat);
     REQUIRE(nesso::causeOf(nesso::parser::ParseError::BinaryFile) == nesso::ErrorCause::BinaryFile);
     REQUIRE(nesso::causeOf(nesso::parser::ParseError::CorruptGzip) == nesso::ErrorCause::CorruptGzip);
+    REQUIRE(nesso::causeOf(nesso::parser::ParseError::CorruptArchive) == nesso::ErrorCause::CorruptArchive);
+    REQUIRE(nesso::causeOf(nesso::parser::ParseError::ArchiveEntryLimit) == nesso::ErrorCause::ArchiveLimit);
+    REQUIRE(nesso::causeOf(nesso::parser::ParseError::ArchiveTotalLimit) == nesso::ErrorCause::ArchiveLimit);
+    REQUIRE(nesso::causeOf(nesso::parser::ParseError::ArchiveCountLimit) == nesso::ErrorCause::ArchiveLimit);
+    REQUIRE(nesso::causeOf(nesso::parser::ParseError::ArchiveRatioLimit) == nesso::ErrorCause::ArchiveLimit);
 
     REQUIRE(nesso::causeOf(nesso::embed::EmbedError::VocabLoadFailure) == nesso::ErrorCause::VocabLoad);
     REQUIRE(nesso::causeOf(nesso::embed::EmbedError::TokenizationFailure) == nesso::ErrorCause::Tokenization);
@@ -34,6 +39,8 @@ TEST_CASE("each cause has a readable phrase", "[nesso][error]")
     REQUIRE(nesso::describe(nesso::ErrorCause::UnsupportedFormat) == "unsupported format");
     REQUIRE(nesso::describe(nesso::ErrorCause::BinaryFile) == "the file is binary");
     REQUIRE(nesso::describe(nesso::ErrorCause::CorruptGzip) == "the gzip stream is truncated or corrupt");
+    REQUIRE(nesso::describe(nesso::ErrorCause::CorruptArchive) == "the archive is truncated or corrupt");
+    REQUIRE(nesso::describe(nesso::ErrorCause::ArchiveLimit) == "an archive limit was exceeded");
     REQUIRE(nesso::describe(nesso::ErrorCause::VocabLoad) == "could not load the vocabulary");
     REQUIRE(nesso::describe(nesso::ErrorCause::Tokenization) == "could not tokenize the text");
     REQUIRE(nesso::describe(nesso::ErrorCause::ModelLoad) == "could not load the model");
@@ -74,6 +81,13 @@ TEST_CASE("each failure kind names itself", "[nesso][error]")
     REQUIRE(
         text(nesso::ErrorKind::Parse, nesso::ErrorCause::CorruptGzip).find("the gzip stream is truncated or corrupt") !=
         std::string::npos);
+    nesso::Error limited{.kind = nesso::ErrorKind::Parse,
+                         .cause = nesso::ErrorCause::ArchiveLimit,
+                         .path = "bundle.tar.xz",
+                         .note = "the archive entry count exceeds 2",
+                         .staleSources = {},
+                         .corpusVersion = {}};
+    REQUIRE(nesso::message(limited).find("the archive entry count exceeds 2") != std::string::npos);
     REQUIRE(text(nesso::ErrorKind::Embed, nesso::ErrorCause::Inference).find("failed to embed the input") !=
             std::string::npos);
     REQUIRE(text(nesso::ErrorKind::QueryEmbed, nesso::ErrorCause::Tokenization).find("failed to embed the query") !=

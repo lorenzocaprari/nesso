@@ -4,6 +4,8 @@
 #ifndef NESSO_NESSO_HPP
 #define NESSO_NESSO_HPP
 
+#include <parser/archive_source.hpp>
+
 #include <cstddef>
 #include <cstdint>
 #include <expected>
@@ -40,6 +42,8 @@ enum class ErrorCause : uint8_t
     UnsupportedFormat,
     BinaryFile,
     CorruptGzip,
+    CorruptArchive,
+    ArchiveLimit,
     VocabLoad,
     Tokenization,
     ModelLoad,
@@ -90,6 +94,7 @@ struct Error
     size_t malformedLines = 0;
     size_t missingFieldLines = 0;
     size_t truncatedLines = 0;
+    size_t binaryEntries = 0;
     std::string jsonField = "message";
     std::string note;
     std::vector<StaleSource> staleSources;
@@ -117,6 +122,8 @@ struct GrepRequest
     SearchMode mode = SearchMode::Auto;
     /// One row per masked dedup key. `-k` then counts groups.
     bool group = false;
+    /// Caps for tar and zip bundles. Plain files ignore them.
+    nesso::parser::ArchiveLimits archiveLimits{};
 };
 
 struct IndexRequest
@@ -125,6 +132,8 @@ struct IndexRequest
     std::filesystem::path output;
     std::string jsonField = "message";
     bool progress = false;
+    /// Caps for tar and zip bundles. Plain files ignore them.
+    nesso::parser::ArchiveLimits archiveLimits{};
 };
 
 struct SearchRequest
@@ -160,6 +169,7 @@ struct TextResults
     size_t malformedLines = 0;
     size_t missingFieldLines = 0;
     size_t truncatedLines = 0;
+    size_t binaryEntries = 0;
     std::string jsonField = "message";
     bool multipleSources = false;
     std::vector<StaleSource> staleSources;
@@ -178,6 +188,7 @@ struct IndexSummary
     size_t malformedLines = 0;
     size_t missingFieldLines = 0;
     size_t truncatedLines = 0;
+    size_t binaryEntries = 0;
     std::string jsonField = "message";
 };
 

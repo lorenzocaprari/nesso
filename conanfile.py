@@ -25,6 +25,9 @@ class Nesso(ConanFile):
         # Direct, so gzip input links zlib and the license gate sees it as nesso's dependency.
         # The revision is the one already locked for onnxruntime's graph.
         self.requires("zlib/1.3.2")
+        # In-place tar and zip. xz_utils is pinned so liblzma is the locked 5.8.4, not the range.
+        self.requires("libarchive/3.8.7")
+        self.requires("xz_utils/5.8.4", override=True)
 
     def build_requirements(self):
         self.test_requires("catch2/3.14.0")
@@ -37,6 +40,29 @@ class Nesso(ConanFile):
         self.options["onnxruntime"].shared = False
         # The release binary's NEEDED list has no libz. Keep zlib in the binary.
         self.options["zlib"].shared = False
+        # libarchive and liblzma stay inside the binary. No libarchive.so or liblzma.so NEEDED entry.
+        # Compression other than zlib and lzma stays off. bzip2 is already in the graph and is not enabled.
+        self.options["libarchive"].shared = False
+        self.options["libarchive"].with_iconv = False
+        self.options["libarchive"].with_acl = False
+        self.options["libarchive"].with_xattr = False
+        self.options["libarchive"].with_zlib = True
+        self.options["libarchive"].with_bzip2 = False
+        self.options["libarchive"].with_libxml2 = False
+        self.options["libarchive"].with_expat = False
+        self.options["libarchive"].with_pcreposix = False
+        self.options["libarchive"].with_pcre2 = False
+        self.options["libarchive"].with_cng = False
+        self.options["libarchive"].with_nettle = False
+        self.options["libarchive"].with_openssl = False
+        self.options["libarchive"].with_libb2 = False
+        self.options["libarchive"].with_lz4 = False
+        self.options["libarchive"].with_lzo = False
+        self.options["libarchive"].with_lzma = True
+        self.options["libarchive"].with_zstd = False
+        self.options["libarchive"].with_mbedtls = False
+        self.options["xz_utils"].shared = False
+        self.options["xz_utils"].with_tools = False
 
     def generate(self):
         tc = CMakeToolchain(self)

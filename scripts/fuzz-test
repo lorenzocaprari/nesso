@@ -35,7 +35,7 @@ CMAKE_B="${OUT_DIR}/build/Release"
 TOOLCHAIN="${CMAKE_B}/generators/conan_toolchain.cmake"
 BIN_DIR="${CMAKE_B}/test/fuzz"
 
-TARGETS=(nesso_fuzz_parser nesso_fuzz_tokenizer)
+TARGETS=(nesso_fuzz_parser nesso_fuzz_tokenizer nesso_fuzz_archive_source)
 
 mkdir -p "${OUT_DIR}"
 
@@ -107,5 +107,6 @@ run_campaign() {
 
 run_campaign parser test/fuzz/seeds/parser
 run_campaign tokenizer test/fuzz/seeds/tokenizer
+run_campaign archive_source test/fuzz/seeds/archive
 
 echo "fuzz-test OK (0 crashes in ${MAX_TOTAL_TIME}s per target)"

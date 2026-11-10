@@ -158,6 +158,31 @@ class ThirdPartyNoticesTest(unittest.TestCase):
             self.assertEqual(linked.returncode, 0, linked.stderr)
             self.assertIn("- zlib 1.3.2 (Zlib)", (f.directory / "linked" / "THIRD_PARTY_NOTICES").read_text())
 
+    def test_libarchive_and_xz_utils_are_listed_when_linked(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            f = shipped_graph(pathlib.Path(temp))
+            libarchive = f.package("libarchive/3.8.7", archive=["0 T archive_read_open_filename"],
+                                   license="BSD-2-Clause")
+            xz = f.package(
+                "xz_utils/5.8.4",
+                archive=["0 T lzma_end"],
+                license=["Unlicense", "LGPL-2.1-or-later", "GPL-2.0-or-later", "GPL-3.0-or-later"],
+            )
+            f.edge("0", libarchive)
+            f.edge(libarchive, xz)
+            symbols = ["0 T OrtRun", "0 T inflate", "0 T archive_read_open_filename", "0 T lzma_end"]
+            linked = f.run("linked", binary_symbols=symbols)
+            self.assertEqual(linked.returncode, 0, linked.stderr)
+            notices = (f.directory / "linked" / "THIRD_PARTY_NOTICES").read_text()
+            self.assertIn("- libarchive 3.8.7 (BSD-2-Clause)", notices)
+            self.assertIn("- xz_utils 5.8.4 (GPL-2.0-or-later, GPL-3.0-or-later, LGPL-2.1-or-later, Unlicense)",
+                          notices)
+            self.assertIn("- zlib 1.3.2 (Zlib)", notices)
+
+            bare = f.run("bare", binary_symbols=["0 T OrtRun", "0 T inflate"])
+            self.assertEqual(bare.returncode, 1)
+            self.assertIn("libarchive/3.8.7 is a header requirement of shipped code but is not linked", bare.stderr)
+
     def test_weak_symbols_do_not_count_as_linked(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             f = shipped_graph(pathlib.Path(temp))

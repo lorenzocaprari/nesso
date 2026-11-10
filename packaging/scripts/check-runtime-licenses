@@ -17,6 +17,12 @@ zlib/1.3.2 is a direct nesso dependency for gzip input. Its Conan license is
 Zlib, which is permissive, so it has no allow-list entry. A copyleft license
 on that package still fails.
 
+xz_utils/5.8.4 is pinned for libarchive's lzma filter. The recipe license
+lists GPL and LGPL because those cover the tools, scripts, and build files.
+liblzma and tuklib are 0BSD per COPYING and the SPDX tags, and with_tools is
+off, so those GPL and LGPL files are not built. The allow-list names the
+direct dependents of that exact version.
+
 Exit 0 when the graph is clean, 1 when a license is rejected, 2 on usage
 or when the file is not a Conan graph.
 """
@@ -43,12 +49,19 @@ COPYLEFT_ID = re.compile(
 # upstream cmake/ tree, which includes adjust_global_compile_flags.cmake and
 # adds -DEIGEN_MPL2_ONLY unconditionally. Eigen 3.4.0's NonMPL2.h #errors if
 # a non-MPL2 header is included in that mode.
+# Each value is the set of direct dependents and the reason. A version bump of
+# the package or of a dependent drops the entry.
 ALLOW = {
     "eigen/3.4.0": (
-        "onnxruntime/1.18.1",
+        frozenset({"onnxruntime/1.18.1"}),
         "recipe lists LGPL for optional modules; onnxruntime 1.18.1 compiles with "
         "-DEIGEN_MPL2_ONLY (cmake/adjust_global_compile_flags.cmake), and Eigen's "
         "NonMPL2.h #errors on any LGPL header, so only MPL-2.0 code is compiled in",
+    ),
+    "xz_utils/5.8.4": (
+        frozenset({"libarchive/3.8.7"}),
+        "liblzma and tuklib are 0BSD per COPYING and SPDX tags, and GPL/LGPL only "
+        "covers tools, scripts and build files, which are not built",
     ),
 }
 
@@ -174,8 +187,20 @@ def allowed(nodes: dict, node_id: str, ref: str) -> bool:
     entry = ALLOW.get(ref)
     if entry is None:
         return False
-    consumer, _reason = entry
-    return direct_consumers(nodes, node_id) == {consumer}
+    consumers, _reason = entry
+    return direct_consumers(nodes, node_id) == set(consumers)
+
+
+def allow_detail(nodes: dict, node_id: str, ref: str) -> str:
+    entry = ALLOW.get(ref)
+    if entry is None:
+        return ""
+    expected, _reason = entry
+    seen = sorted(direct_consumers(nodes, node_id)) or ["none"]
+    if len(expected) == 1:
+        only = next(iter(expected))
+        return f" (allow-list consumer {only} is not the only direct dependent; saw {seen})"
+    return f" (allow-list consumers {sorted(expected)} are not the direct dependents; saw {seen})"
 
 
 def graph_nodes(payload: object) -> dict:
@@ -202,11 +227,7 @@ def violations(nodes: dict) -> list[str]:
         bad = [entry for entry in entries if not permissive_expression(entry)]
         if not bad or allowed(nodes, str(key), ref):
             continue
-        detail = ""
-        entry = ALLOW.get(ref)
-        if entry is not None:
-            consumers = sorted(direct_consumers(nodes, str(key))) or ["none"]
-            detail = f" (allow-list consumer {entry[0]} is not the only direct dependent; saw {consumers})"
+        detail = allow_detail(nodes, str(key), ref) if ref in ALLOW else ""
         errors.append(f"{ref}: copyleft license {bad} in the runtime graph{detail}")
     return errors
 
