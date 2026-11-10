@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794298823070,
+  "lastUpdate": 1794300044722,
   "repoUrl": "https://github.com/lorenzocaprari/nesso",
   "entries": {
     "nesso": [
@@ -4697,6 +4697,60 @@ window.BENCHMARK_DATA = {
           {
             "name": "grep-100000-rss",
             "value": 158781440,
+            "unit": "bytes"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "49699333+dependabot[bot]@users.noreply.github.com",
+            "name": "dependabot[bot]",
+            "username": "dependabot[bot]"
+          },
+          "committer": {
+            "email": "85455384+lorenzocaprari@users.noreply.github.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "distinct": true,
+          "id": "4288c40323fa6776e875396f06bf508b3f4ba3f2",
+          "message": "build(deps): bump the docker group across 1 directory with 2 updates\n\nBumps the docker group with 2 updates in the /.devcontainer directory: ubuntu and rockylinux.\n\n\nUpdates `ubuntu` from `f144425` to `6a06111`\n\nUpdates `rockylinux` from `d644d20` to `d7be1c0`\n\n---\nupdated-dependencies:\n- dependency-name: ubuntu\n  dependency-version: '26.04'\n  dependency-type: direct:production\n  dependency-group: docker\n- dependency-name: rockylinux\n  dependency-version: '9'\n  dependency-type: direct:production\n  update-type: version-update:semver-patch\n  dependency-group: docker\n...\n\nSigned-off-by: dependabot[bot] <support@github.com>",
+          "timestamp": "2026-11-10T09:16:17+01:00",
+          "tree_id": "bfc554e4cd3c28b73d387b7e170be96d2c3193cf",
+          "url": "https://github.com/lorenzocaprari/nesso/commit/4288c40323fa6776e875396f06bf508b3f4ba3f2"
+        },
+        "date": 1794300043910,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "grep-1000-wall",
+            "value": 0.17,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-1000-rss",
+            "value": 117878784,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-10000-wall",
+            "value": 0.19,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-10000-rss",
+            "value": 120094720,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-100000-wall",
+            "value": 0.42,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-100000-rss",
+            "value": 157421568,
             "unit": "bytes"
           }
         ]
