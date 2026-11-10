@@ -55,3 +55,10 @@ updates:
           - "*"
     cooldown:
       default-days: 7
+    # Conan 2.34 requires python-dateutil<3 on Python < 3.11 and does not
+    # import it on newer Pythons. 3.x and 4.x also depend on tzdata, which a
+    # hash-only bump does not pin, so pip --require-hashes fails the image build.
+    ignore:
+      - dependency-name: "python-dateutil"
+        update-types:
+          - "version-update:semver-major"
