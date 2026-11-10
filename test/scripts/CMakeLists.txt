@@ -60,6 +60,10 @@ if(NESSO_PYTHON_EXECUTABLE)
            COMMAND "${NESSO_PYTHON_EXECUTABLE}"
                    "${CMAKE_CURRENT_SOURCE_DIR}/demo_log_test.py")
   set_tests_properties(demo_log_test PROPERTIES LABELS unit)
+  add_test(NAME check_abi_baseline_test
+           COMMAND "${NESSO_PYTHON_EXECUTABLE}"
+                   "${CMAKE_CURRENT_SOURCE_DIR}/check_abi_baseline_test.py")
+  set_tests_properties(check_abi_baseline_test PROPERTIES LABELS unit)
 endif()
 
 find_program(NESSO_GO_EXECUTABLE go)

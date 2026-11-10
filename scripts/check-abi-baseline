@@ -1,0 +1,445 @@
+#!/usr/bin/env bash
+# Fail when a binary needs a newer glibc, libstdc++, or CXXABI than Rocky
+# Linux 9, or a symbol version the providing library does not define.
+#
+#   scripts/check-abi-baseline BINARY
+#
+# OBJDUMP overrides the objdump command. NESSO_LIB_RESOLVE overrides library
+# lookup: it is invoked as "NESSO_LIB_RESOLVE SONAME ARCH" and prints a path.
+# When it is unset, the dynamic loader and then ldconfig resolve the soname.
+# GNU objdump -p prints the PT_INTERP offset and size, not the path, so the
+# path is read from the file at that offset.
+set -euo pipefail
+
+export LC_ALL=C
+
+if [[ $# -ne 1 || -z "${1}" ]]; then
+  printf 'usage: check-abi-baseline BINARY\n' >&2
+  exit 2
+fi
+
+binary="$1"
+if [[ ! -f "${binary}" ]]; then
+  printf 'error: %s is not a file\n' "${binary}" >&2
+  exit 2
+fi
+
+OBJDUMP="${OBJDUMP:-objdump}"
+problems=0
+glibc_max=""
+glibcxx_max=""
+cxxabi_max=""
+tmp="$(mktemp -d)"
+trap 'rm -rf "${tmp}"' EXIT
+
+note() {
+  printf 'error: %s\n' "$1" >&2
+  problems=$((problems + 1))
+}
+
+run_objdump() {
+  local target="$1"
+  local err="${tmp}/objdump.err"
+  local out
+  if ! out="$("${OBJDUMP}" -p "${target}" 2>"${err}")"; then
+    printf 'error: %s -p %s failed\n' "${OBJDUMP}" "${target}" >&2
+    if [[ -s "${err}" ]]; then
+      cat "${err}" >&2
+    fi
+    exit 2
+  fi
+  printf '%s\n' "${out}"
+}
+
+arch_of() {
+  local line
+  while IFS= read -r line; do
+    case "${line}" in
+      *"file format elf64-x86-64"*)
+        printf '%s\n' x86_64
+        return 0
+        ;;
+      *"file format elf64-littleaarch64"* | *"file format elf64-aarch64"*)
+        printf '%s\n' aarch64
+        return 0
+        ;;
+    esac
+  done <<< "$1"
+  return 1
+}
+
+expected_interp() {
+  case "$1" in
+    x86_64) printf '%s\n' /lib64/ld-linux-x86-64.so.2 ;;
+    aarch64) printf '%s\n' /lib/ld-linux-aarch64.so.1 ;;
+    *) return 1 ;;
+  esac
+}
+
+needed_allowed() {
+  case "$1" in
+    libc.so.6 | libm.so.6 | libstdc++.so.6 | libgcc_s.so.1 | libgomp.so.1 | ld-linux-x86-64.so.2 | ld-linux-aarch64.so.1)
+      return 0
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+parse_needed() {
+  local line
+  while IFS= read -r line; do
+    if [[ "${line}" =~ ^[[:space:]]*NEEDED[[:space:]]+([^[:space:]]+)[[:space:]]*$ ]]; then
+      printf '%s\n' "${BASH_REMATCH[1]}"
+    fi
+  done <<< "$1"
+}
+
+parse_version_refs() {
+  local section=0
+  local soname=""
+  local line
+  while IFS= read -r line; do
+    if [[ "${line}" == "Version References:" ]]; then
+      section=1
+      soname=""
+      continue
+    fi
+    if [[ "${line}" == "Version definitions:" ]]; then
+      section=0
+      soname=""
+      continue
+    fi
+    if [[ "${section}" -eq 0 ]]; then
+      continue
+    fi
+    if [[ -n "${line}" && "${line}" != [[:space:]]* ]]; then
+      section=0
+      soname=""
+      continue
+    fi
+    if [[ "${line}" =~ ^[[:space:]]*required\ from[[:space:]]+([^:]+):[[:space:]]*$ ]]; then
+      soname="${BASH_REMATCH[1]}"
+      continue
+    fi
+    if [[ -n "${soname}" && "${line}" =~ ^[[:space:]]+0x[0-9a-fA-F]+[[:space:]]+0x[0-9a-fA-F]+[[:space:]]+[0-9]+[[:space:]]+([^[:space:]]+)[[:space:]]*$ ]]; then
+      printf '%s\t%s\n' "${soname}" "${BASH_REMATCH[1]}"
+    fi
+  done <<< "$1"
+}
+
+parse_version_defs() {
+  local section=0
+  local line
+  while IFS= read -r line; do
+    if [[ "${line}" == "Version definitions:" ]]; then
+      section=1
+      continue
+    fi
+    if [[ "${line}" == "Version References:" ]]; then
+      section=0
+      continue
+    fi
+    if [[ "${section}" -eq 0 ]]; then
+      continue
+    fi
+    if [[ "${line}" =~ ^[0-9]+[[:space:]]+0x[0-9a-fA-F]+[[:space:]]+0x[0-9a-fA-F]+[[:space:]]+([^[:space:]]+)[[:space:]]*$ ]]; then
+      printf '%s\n' "${BASH_REMATCH[1]}"
+      continue
+    fi
+    if [[ -n "${line}" && "${line}" != [[:space:]]* && "${line}" != $'\t'* ]]; then
+      section=0
+    fi
+  done <<< "$1"
+}
+
+ver_top() {
+  printf '%s\n%s\n' "$1" "$2" | sort -V | tail -n 1
+}
+
+version_family() {
+  case "$1" in
+    GLIBCXX_*) printf '%s\n' GLIBCXX ;;
+    GLIBC_*) printf '%s\n' GLIBC ;;
+    CXXABI_*) printf '%s\n' CXXABI ;;
+    *) return 1 ;;
+  esac
+}
+
+version_number() {
+  case "$1" in
+    GLIBCXX_*) printf '%s\n' "${1#GLIBCXX_}" ;;
+    GLIBC_*) printf '%s\n' "${1#GLIBC_}" ;;
+    CXXABI_*) printf '%s\n' "${1#CXXABI_}" ;;
+    *) return 1 ;;
+  esac
+}
+
+cap_for() {
+  case "$1" in
+    GLIBC) printf '%s\n' 2.34 ;;
+    GLIBCXX) printf '%s\n' 3.4.29 ;;
+    CXXABI) printf '%s\n' 1.3.13 ;;
+    *) return 1 ;;
+  esac
+}
+
+newer_than() {
+  local top
+  top="$(ver_top "$1" "$2")"
+  [[ "${top}" != "$2" ]]
+}
+
+bump_max() {
+  local family="$1"
+  local number="$2"
+  local current top
+  case "${family}" in
+    GLIBC) current="${glibc_max}" ;;
+    GLIBCXX) current="${glibcxx_max}" ;;
+    CXXABI) current="${cxxabi_max}" ;;
+    *) return 0 ;;
+  esac
+  if [[ -z "${current}" ]]; then
+    top="${number}"
+  else
+    top="$(ver_top "${current}" "${number}")"
+  fi
+  case "${family}" in
+    GLIBC) glibc_max="${top}" ;;
+    GLIBCXX) glibcxx_max="${top}" ;;
+    CXXABI) cxxabi_max="${top}" ;;
+  esac
+}
+
+read_interp_location() {
+  local pending=0
+  local off=""
+  local size=""
+  local line
+  while IFS= read -r line; do
+    if [[ "${line}" =~ ^[[:space:]]*INTERP[[:space:]]+off[[:space:]]+0x([0-9a-fA-F]+) ]]; then
+      off="${BASH_REMATCH[1]}"
+      size=""
+      pending=1
+      continue
+    fi
+    if [[ "${pending}" -eq 1 && "${line}" =~ filesz[[:space:]]+0x([0-9a-fA-F]+) ]]; then
+      size="${BASH_REMATCH[1]}"
+      pending=0
+    fi
+  done <<< "$1"
+  if [[ -z "${off}" || -z "${size}" ]]; then
+    return 1
+  fi
+  printf '%s %s\n' "${off}" "${size}"
+}
+
+read_interp_string() {
+  local file="$1"
+  local off size raw
+  off=$((16#$2))
+  size=$((16#$3))
+  if [[ "${size}" -le 0 || "${size}" -gt 4096 ]]; then
+    return 1
+  fi
+  if ! dd if="${file}" bs=1 skip="${off}" count="${size}" status=none of="${tmp}/interp.raw" 2>/dev/null; then
+    return 1
+  fi
+  # read -d '' stops at the first NUL. A short read still leaves raw empty.
+  raw=""
+  IFS= read -r -d '' raw <"${tmp}/interp.raw" || true
+  if [[ -z "${raw}" ]]; then
+    return 1
+  fi
+  printf '%s\n' "${raw}"
+}
+
+resolve_with_override() {
+  local path
+  if ! path="$("${NESSO_LIB_RESOLVE}" "$1" "$2")"; then
+    return 1
+  fi
+  path="${path%%$'\n'*}"
+  if [[ -z "${path}" || ! -f "${path}" ]]; then
+    return 1
+  fi
+  printf '%s\n' "${path}"
+}
+
+resolve_via_loader() {
+  local soname="$1"
+  local file="$2"
+  local arch="$3"
+  local loader=""
+  local trace
+  case "${arch}" in
+    x86_64) loader=/lib64/ld-linux-x86-64.so.2 ;;
+    aarch64) loader=/lib/ld-linux-aarch64.so.1 ;;
+    *) return 1 ;;
+  esac
+  if [[ ! -x "${loader}" ]]; then
+    return 1
+  fi
+  trace="$(LD_TRACE_LOADED_OBJECTS=1 "${loader}" "${file}" 2>/dev/null || true)"
+  awk -v soname="${soname}" '
+    BEGIN { status = 1 }
+    {
+      line = $0
+      sub(/^[[:space:]]+/, "", line)
+      arrow = index(line, " => ")
+      if (arrow == 0) next
+      name = substr(line, 1, arrow - 1)
+      rest = substr(line, arrow + 4)
+      sub(/[[:space:]].*$/, "", rest)
+      if (name == soname && rest != "") {
+        print rest
+        status = 0
+        exit
+      }
+    }
+    END { exit status }
+  ' <<< "${trace}"
+}
+
+resolve_via_ldconfig() {
+  local soname="$1"
+  local arch="$2"
+  local ldconfig="${NESSO_LDCONFIG:-ldconfig}"
+  local tag
+  case "${arch}" in
+    x86_64) tag="x86-64" ;;
+    aarch64) tag="aarch64" ;;
+    *) return 1 ;;
+  esac
+  if [[ ! -x "${ldconfig}" ]] && ! command -v "${ldconfig}" >/dev/null 2>&1; then
+    return 1
+  fi
+  "${ldconfig}" -p 2>/dev/null | awk -v soname="${soname}" -v tag="${tag}" '
+    BEGIN { status = 1 }
+    {
+      line = $0
+      arrow = index(line, " => ")
+      if (arrow == 0) next
+      left = substr(line, 1, arrow - 1)
+      path = substr(line, arrow + 4)
+      sub(/^[[:space:]]+/, "", left)
+      sub(/^[[:space:]]+/, "", path)
+      sub(/[[:space:]]+$/, "", path)
+      space = index(left, " ")
+      if (space == 0) next
+      name = substr(left, 1, space - 1)
+      qual = tolower(substr(left, space + 1))
+      if (name == soname && index(qual, tag) != 0 && path != "") {
+        print path
+        status = 0
+        exit
+      }
+    }
+    END { exit status }
+  '
+}
+
+resolve_library() {
+  local soname="$1"
+  local file="$2"
+  local arch="$3"
+  local path
+  if [[ -n "${NESSO_LIB_RESOLVE:-}" ]]; then
+    resolve_with_override "${soname}" "${arch}"
+    return
+  fi
+  if path="$(resolve_via_loader "${soname}" "${file}" "${arch}" 2>/dev/null)" && [[ -n "${path}" && -f "${path}" ]]; then
+    printf '%s\n' "${path}"
+    return 0
+  fi
+  if path="$(resolve_via_ldconfig "${soname}" "${arch}" 2>/dev/null)" && [[ -n "${path}" && -f "${path}" ]]; then
+    printf '%s\n' "${path}"
+    return 0
+  fi
+  return 1
+}
+
+library_defines() {
+  local soname="$1"
+  local ver="$2"
+  local file="$3"
+  local arch="$4"
+  local status_file="${tmp}/status/${soname}"
+  local defs_file="${tmp}/defs/${soname}"
+  local path
+  mkdir -p "${tmp}/status" "${tmp}/defs"
+  if [[ ! -f "${status_file}" ]]; then
+    if ! path="$(resolve_library "${soname}" "${file}" "${arch}")"; then
+      printf 'missing\n' >"${status_file}"
+    else
+      parse_version_defs "$(run_objdump "${path}")" >"${defs_file}"
+      printf 'ok\n' >"${status_file}"
+    fi
+  fi
+  if [[ "$(cat "${status_file}")" != "ok" ]]; then
+    if [[ ! -e "${tmp}/status/${soname}.reported" ]]; then
+      note "could not resolve ${soname}"
+      : >"${tmp}/status/${soname}.reported"
+    fi
+    return 1
+  fi
+  if ! grep -Fxq -- "${ver}" "${defs_file}"; then
+    note "${ver} is not defined by ${soname}"
+    return 1
+  fi
+  return 0
+}
+
+dump="$(run_objdump "${binary}")"
+if ! arch="$(arch_of "${dump}")"; then
+  printf 'error: objdump -p did not report an x86_64 or aarch64 ELF\n' >&2
+  exit 2
+fi
+want_interp="$(expected_interp "${arch}")"
+
+while IFS= read -r soname; do
+  [[ -z "${soname}" ]] && continue
+  if [[ -e "${tmp}/needed/${soname}" ]]; then
+    continue
+  fi
+  mkdir -p "${tmp}/needed"
+  : >"${tmp}/needed/${soname}"
+  if ! needed_allowed "${soname}"; then
+    note "NEEDED ${soname} is outside the baseline set"
+  fi
+done < <(parse_needed "${dump}" | sort -u)
+
+while IFS=$'\t' read -r soname ver; do
+  [[ -z "${soname}" || -z "${ver}" ]] && continue
+  family="$(version_family "${ver}" || true)"
+  if [[ -n "${family}" ]]; then
+    number="$(version_number "${ver}")"
+    cap="$(cap_for "${family}")"
+    if newer_than "${number}" "${cap}"; then
+      note "${ver} is newer than ${family}_${cap}"
+    fi
+    bump_max "${family}" "${number}"
+  fi
+  library_defines "${soname}" "${ver}" "${binary}" "${arch}" || true
+done < <(parse_version_refs "${dump}" | sort -u)
+
+if ! loc="$(read_interp_location "${dump}")"; then
+  note "PT_INTERP is missing"
+else
+  off="${loc%% *}"
+  size="${loc##* }"
+  if ! got="$(read_interp_string "${binary}" "${off}" "${size}")"; then
+    note "PT_INTERP is missing"
+  elif [[ "${got}" != "${want_interp}" ]]; then
+    note "PT_INTERP is ${got}, want ${want_interp}"
+  fi
+fi
+
+if [[ "${problems}" -ne 0 ]]; then
+  exit 1
+fi
+
+printf 'check-abi-baseline: GLIBC_%s GLIBCXX_%s CXXABI_%s\n' \
+  "${glibc_max:-none}" "${glibcxx_max:-none}" "${cxxabi_max:-none}"

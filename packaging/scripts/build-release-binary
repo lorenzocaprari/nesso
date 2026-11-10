@@ -5,8 +5,28 @@ set -euo pipefail
 
 # gcc-26 is -march=x86-64-v2. That flag is invalid on aarch64, and the arm64
 # build-env image only baked conan/profiles/gcc-26-armv8.
+# NESSO_ABI_BASELINE selects the EL9 toolset profile for that machine. The
+# machine still comes from the argument or uname -m; the distro does not.
 release_conan_profile() {
   local machine="${1:-$(uname -m)}"
+  if [[ -n "${NESSO_ABI_BASELINE:-}" ]]; then
+    local name root
+    case "${machine}" in
+      x86_64) name="gcc-26-el9" ;;
+      aarch64) name="gcc-26-el9-armv8" ;;
+      *)
+        echo "error: no release profile for machine ${machine}" >&2
+        return 1
+        ;;
+    esac
+    root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+    if [[ ! -f "${root}/conan/profiles/${name}" ]]; then
+      echo "error: NESSO_ABI_BASELINE is set but ./conan/profiles/${name} does not exist" >&2
+      return 1
+    fi
+    printf '%s\n' "./conan/profiles/${name}"
+    return 0
+  fi
   case "${machine}" in
     x86_64) printf '%s\n' "./conan/profiles/gcc-26" ;;
     aarch64) printf '%s\n' "./conan/profiles/gcc-26-armv8" ;;
@@ -134,4 +154,7 @@ rm -f "${TMPDIR}/nesso-strings.txt"
 python3 "${ROOT}/packaging/scripts/check-no-runpath" "${OUT_BIN}"
 # curl and OpenSSL stay in the Conan graph and out of the binary.
 python3 "${ROOT}/packaging/scripts/check-network-free" "${OUT_BIN}"
+if [[ -n "${NESSO_ABI_BASELINE:-}" ]]; then
+  "${ROOT}/scripts/check-abi-baseline" "${OUT_BIN}"
+fi
 echo "${OUT_BIN}"
