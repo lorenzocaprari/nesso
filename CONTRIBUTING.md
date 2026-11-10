@@ -33,7 +33,8 @@ Profiles in `conan/profiles/`:
 
 | Profile | Use |
 | --- | --- |
-| `gcc-26` | Release (`-O3`, `-march=x86-64-v2`, LTO) |
+| `gcc-26` | CI/package Release (`-O3`, `-march=x86-64-v2`, `-flto=auto`) |
+| `gcc-26-dev` | Local Release without LTO (`-O3`, `-march=x86-64-v2`, `link_jobs=1`) |
 | `gcc-26-debug` | Debug with ASan and UBSan (`-fno-sanitize-recover=all`) |
 | `gcc-26-fuzz` | AFL++ library harnesses |
 | `gcc-26-armv8` | arm64 Release (`-O3`, `-march=armv8-a`, LTO) |
@@ -42,21 +43,11 @@ Profiles in `conan/profiles/`:
 | `clang-26` | Clang 21 Release with libstdc++, no LTO (`-O3`, `-march=x86-64-v2`) |
 | `code-coverage` | Debug plus `--coverage` |
 
-`nesso_options` in `CMakeLists.txt` is the INTERFACE target every nesso target links. It requires C++26 with compiler extensions off and sets the warning flags. `-Werror` is off unless `NESSO_WERROR` is ON. Profiles do not set that. `conanfile.py` copies `user.nesso:werror` into the cache variable, and `conan -c user.nesso:werror=True` turns it on. `conan build` generates the toolchain again, so the flag has to be on that command too. Optimization, sanitizer, and LTO flags stay in `user.nesso:cxxflags` so they are not applied to dependency builds.
+`nesso_options` in `CMakeLists.txt` is the INTERFACE target every nesso target links. It requires C++26 with compiler extensions off and sets the warning flags. `-Werror` is off unless `NESSO_WERROR` is ON. Profiles do not set that. `conanfile.py` copies `user.nesso:werror` into the cache variable, and `conan -c user.nesso:werror=True` turns it on. `conan build` generates the toolchain again, so the flag has to be on that command too. Optimization, sanitizer, and LTO flags stay in `user.nesso:cxxflags` so they are not applied to dependency builds. `user.nesso:link_jobs` (or `NESSO_LINK_JOBS`) caps concurrent Ninja links when set; CI leaves it unset.
 
 `conanfile.py` uses Conan `cmake_layout` and `CMakeToolchain` and sets the generator to Ninja. `conan install` writes `CMakeUserPresets.json` at the repo root; that file includes `build/<Config>/generators/CMakePresets.json`. Both are generated and should stay uncommitted. `cmake --list-presets` prints the names (Conan uses `conan-<build type>` in lowercase, so `conan-debug` and `conan-release` for these two profiles). `cmake --preset` and `cmake --build --preset` drive those presets. CI and [docs/building.md](docs/building.md) call `conan build`, which configures and builds through the same toolchain.
 
-Debug:
-
-```bash
-conan install . -pr:h ./conan/profiles/gcc-26-debug -pr:b default \
-  --lockfile=conan.lock --build=missing
-conan build . -pr:h ./conan/profiles/gcc-26-debug -pr:b default \
-  --lockfile=conan.lock --build=missing
-ctest --test-dir build/Debug --output-on-failure
-```
-
-Release: the same commands with `gcc-26` and `build/Release`. The binary is `build/<Config>/src/nesso`. Fetch the MiniLM files once with `./scripts/fetch-model`.
+Local builds (Debug with a link-job cap, `gcc-26-dev` for Release without LTO, optional ship-faithful `gcc-26` + `NESSO_REPRODUCIBLE=1`) and the CI-matching `ctest -L unit|integration|functional` commands are in [docs/building.md](docs/building.md). `-o tests=False` on install and build skips the `test/` tree (binary only; default `tests=True`). The binary is `build/<Config>/src/nesso`. Fetch the MiniLM files once with `./scripts/fetch-model`.
 
 Inside the published build image, add `--no-remote` so Conan does not leave the baked cache.
 

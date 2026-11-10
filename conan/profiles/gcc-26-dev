@@ -1,0 +1,20 @@
+[settings]
+os=Linux
+arch=x86_64
+compiler=gcc
+compiler.version=15
+compiler.libcxx=libstdc++11
+compiler.cppstd=26
+build_type=Release
+
+[conf]
+# Local Release without LTO. Same -O3/-march as gcc-26, but no -flto so many
+# static ORT-linked test binaries finish on low-RAM hosts (e.g. ~20 GiB WSL).
+# CI and packaging keep gcc-26 (-flto=auto) and NESSO_REPRODUCIBLE (-flto=1).
+# link_jobs caps concurrent Ninja links; unset in CI profiles so wall time stays.
+# Not a build-env-hash input (local-only, like clang-26).
+user.nesso:cxxflags=["-O3", "-march=x86-64-v2", "-fvisibility=hidden", "-DNDEBUG"]
+user.nesso:cflags=["-O3", "-march=x86-64-v2", "-fvisibility=hidden", "-DNDEBUG"]
+user.nesso:sharedlinkflags=["-Wl,-O1", "-Wl,--as-needed"]
+user.nesso:exelinkflags=["-Wl,-O1", "-Wl,--as-needed"]
+user.nesso:link_jobs=1

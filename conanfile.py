@@ -11,8 +11,8 @@ class Nesso(ConanFile):
     package_type = "application"
 
     settings = "os", "compiler", "build_type", "arch"
-    options = {"bench": [True, False]}
-    default_options = {"bench": False}
+    options = {"bench": [True, False], "tests": [True, False]}
+    default_options = {"bench": False, "tests": True}
     exports_sources = "CMakeLists.txt", "src/*"
 
     def layout(self):
@@ -30,7 +30,8 @@ class Nesso(ConanFile):
         self.requires("xz_utils/5.8.4", override=True)
 
     def build_requirements(self):
-        self.test_requires("catch2/3.14.0")
+        if self.options.tests:
+            self.test_requires("catch2/3.14.0")
         if self.options.bench:
             self.test_requires("benchmark/1.9.1")
 
@@ -69,12 +70,21 @@ class Nesso(ConanFile):
         tc.generator = "Ninja"
         tc.cache_variables["CMAKE_EXPORT_COMPILE_COMMANDS"] = "ON"
         tc.cache_variables["NESSO_VERSION"] = str(self.version)
+        tc.cache_variables["NESSO_BUILD_TESTS"] = bool(self.options.tests)
         tc.cache_variables["NESSO_BUILD_BENCH"] = bool(self.options.bench)
         # Shipped profiles leave this unset. CI passes -c user.nesso:werror=True.
         # conan build runs generators again, so that -c has to be on the build too.
         tc.cache_variables["NESSO_WERROR"] = bool(
             self.conf.get("user.nesso:werror", default=False, check_type=bool)
         )
+        # Opt-in Ninja link pool. Profiles/CI leave this unset. conan build
+        # regenerates the toolchain, so -c user.nesso:link_jobs=N must be on
+        # install and build (same rule as user.nesso:werror).
+        link_jobs = self.conf.get("user.nesso:link_jobs", default=None)
+        if link_jobs is None:
+            link_jobs = os.environ.get("NESSO_LINK_JOBS")
+        if link_jobs is not None and str(link_jobs).strip() != "":
+            tc.cache_variables["NESSO_LINK_JOBS"] = str(link_jobs).strip()
         # Profile consumer flags (user.nesso:*) — not tools.build:*, so deps keep
         # stable package IDs and are not rebuilt with ASan/coverage/LTO.
         tc.extra_cxxflags = list(self.conf.get("user.nesso:cxxflags", check_type=list, default=[]))
