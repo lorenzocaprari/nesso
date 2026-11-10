@@ -322,6 +322,7 @@ func TestReleaseConanProfile(t *testing.T) {
 		{"aarch64", "./conan/profiles/gcc-26-armv8"},
 	} {
 		cmd := exec.Command("bash", "-c", `source "$1"; release_conan_profile "$2"`, "bash", script, tc.machine)
+		cmd.Env = envWithout("NESSO_ABI_BASELINE")
 		out, err := cmd.CombinedOutput()
 		if err != nil {
 			t.Fatalf("%s: %v\n%s", tc.machine, err, out)
@@ -334,6 +335,47 @@ func TestReleaseConanProfile(t *testing.T) {
 		}
 	}
 	cmd := exec.Command("bash", "-c", `source "$1"; release_conan_profile ppc64le`, "bash", script)
+	cmd.Env = envWithout("NESSO_ABI_BASELINE")
+	out, err := cmd.CombinedOutput()
+	if err == nil {
+		t.Fatalf("unknown machine exited 0: %s", out)
+	}
+	if !strings.Contains(string(out), "ppc64le") {
+		t.Fatalf("stderr: %s", out)
+	}
+}
+
+func TestReleaseConanProfileAbiBaseline(t *testing.T) {
+	script := filepath.Join(repoRoot(t), "packaging", "scripts", "build-release-binary")
+	for _, tc := range []struct {
+		machine string
+		profile string
+	}{
+		{"x86_64", "./conan/profiles/gcc-26-el9"},
+		{"aarch64", "./conan/profiles/gcc-26-el9-armv8"},
+	} {
+		cmd := exec.Command("bash", "-c", `source "$1"; release_conan_profile "$2"`, "bash", script, tc.machine)
+		cmd.Env = append(envWithout("NESSO_ABI_BASELINE"), "NESSO_ABI_BASELINE=1")
+		out, err := cmd.CombinedOutput()
+		profilePath := filepath.Join(repoRoot(t), tc.profile)
+		if _, statErr := os.Stat(profilePath); statErr != nil {
+			if err == nil {
+				t.Fatalf("%s: missing profile exited 0: %s", tc.machine, out)
+			}
+			if !strings.Contains(string(out), tc.profile) {
+				t.Fatalf("%s: %s", tc.machine, out)
+			}
+			continue
+		}
+		if err != nil {
+			t.Fatalf("%s: %v\n%s", tc.machine, err, out)
+		}
+		if strings.TrimSpace(string(out)) != tc.profile {
+			t.Fatalf("%s profile: %s", tc.machine, out)
+		}
+	}
+	cmd := exec.Command("bash", "-c", `source "$1"; release_conan_profile ppc64le`, "bash", script)
+	cmd.Env = append(envWithout("NESSO_ABI_BASELINE"), "NESSO_ABI_BASELINE=1")
 	out, err := cmd.CombinedOutput()
 	if err == nil {
 		t.Fatalf("unknown machine exited 0: %s", out)
