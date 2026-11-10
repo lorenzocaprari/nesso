@@ -52,6 +52,7 @@ func InitializeScenario(sc *godog.ScenarioContext) {
 	sc.Step(`^stdin is hex:$`, b.setStdinHex)
 	sc.Step(`^the environment variable "([^"]+)" is "([^"]*)"$`, b.setEnv)
 	sc.Step(`^stderr is a terminal$`, b.setTerminal)
+	sc.Step(`^stdout is redirected to "([^"]+)"$`, b.setStdoutPath)
 	sc.Step(`^an empty file "([^"]+)"$`, b.writeEmptyFile)
 	sc.Step(`^the file "([^"]+)" is removed$`, b.removeFile)
 	sc.Step(`^the file "([^"]+)" is touched$`, b.touchFile)

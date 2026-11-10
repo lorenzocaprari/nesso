@@ -60,6 +60,11 @@ func (b *bindings) setTerminal() error {
 	return nil
 }
 
+func (b *bindings) setStdoutPath(path string) error {
+	b.world.StdoutPath = path
+	return nil
+}
+
 func (b *bindings) setEnv(name, value string) error {
 	if b.world.Env == nil {
 		b.world.Env = map[string]string{}

@@ -1,16 +1,19 @@
 // Copyright (c) 2026 Lorenzo Caprari
 // SPDX-License-Identifier: Apache-2.0
 
+#include <check_stdout.hpp>
 #include <cli.hpp>
 #include <render_json.hpp>
 #include <render_text.hpp>
 
+#include <cstdio>
 #include <expected>
 #include <format>
 #include <iostream>
 #include <print>
 #include <string>
 #include <string_view>
+#include <system_error>
 #include <vector>
 
 namespace nesso::cli
@@ -190,7 +193,28 @@ static int render(const TextResults &results, bool json)
     {
         std::println(std::cerr, "Warning: no lexical match for the query; using hybrid");
     }
-    return json ? renderJson(results) : renderText(results);
+    bool writeThrew = false;
+    try
+    {
+        if (json)
+        {
+            renderJson(results);
+        }
+        else
+        {
+            renderText(results);
+        }
+    }
+    catch (const std::system_error &)
+    {
+        writeThrew = true;
+    }
+    if (writeThrew || stdoutWriteFailed(stdout))
+    {
+        std::println(std::cerr, "Error: failed to write results");
+        return 2;
+    }
+    return 0;
 }
 
 static int render(const IndexSummary &summary, const IndexRequest &request)
