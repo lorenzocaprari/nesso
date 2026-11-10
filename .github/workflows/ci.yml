@@ -2215,6 +2215,139 @@ jobs:
           avail_kb=$(df -Pk / | awk 'NR==2 {print $4}')
           echo "available_kib_after_build=${avail_kb}"
 
+  # Release binary on the Rocky Linux 9 image. prepare-image-el9-amd64
+  # publishes nesso-build-env-el9 and skips the rebuild when the deps tag
+  # already exists. NESSO_ABI_BASELINE makes packaging/scripts/build-release-binary
+  # select conan/profiles/gcc-26-el9 and run scripts/check-abi-baseline.
+  # There is no EL9 arm64 build lane.
+  build-el9-amd64:
+    needs: [prepare-image-el9-amd64, changes]
+    if: needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    permissions:
+      contents: read
+      packages: read
+      actions: write
+    env:
+      CCACHE_DIR: ${{ github.workspace }}/.ccache
+      CCACHE_BASEDIR: ${{ github.workspace }}
+      CCACHE_MAXSIZE: 150M
+      CCACHE_COMPRESS: "true"
+      CMAKE_C_COMPILER_LAUNCHER: ccache
+      CMAKE_CXX_COMPILER_LAUNCHER: ccache
+      NESSO_ABI_BASELINE: "1"
+    container:
+      image: ${{ needs.prepare-image-el9-amd64.outputs.image }} # zizmor: ignore[unpinned-images] deps-<hash> tag, not a digest
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Restore ccache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ github.workspace }}/.ccache
+          key: ccache-${{ runner.arch }}-el9-gcc-15-Release-${{ github.sha }}
+          restore-keys: |
+            ccache-${{ runner.arch }}-el9-gcc-15-Release-
+
+      - name: Zero ccache statistics
+        run: ccache --zero-stats
+
+      - name: Restore MiniLM models
+        id: models
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: models
+          key: minilm-${{ hashFiles('scripts/fetch-model') }}
+
+      - name: Fetch MiniLM models
+        if: steps.models.outputs.cache-hit != 'true'
+        run: ./scripts/fetch-model models
+
+      - name: Require the EL9 toolset
+        shell: bash
+        run: |
+          set -euo pipefail
+          uname -m | grep -qx x86_64
+          g++ -dumpversion | grep -qx 15
+          rpm -q --qf '%{VERSION}-%{RELEASE}\n' gcc-toolset-15-gcc | grep -qx '15.2.1-7.1.el9_8'
+
+      - name: Build the release binary
+        shell: bash
+        env:
+          NESSO_REQUIRE_MODEL: "1"
+        run: |
+          set -euo pipefail
+          # actions/checkout records safe.directory under a temporary HOME
+          # that later steps do not see. build-release-binary reads the
+          # commit timestamp with git log.
+          git config --global --add safe.directory "${GITHUB_WORKSPACE}"
+          git config --global --add safe.directory /__w/nesso/nesso
+          ./packaging/scripts/build-release-binary "${GITHUB_WORKSPACE}/out/nesso"
+          "${GITHUB_WORKSPACE}/out/nesso" -V
+
+      - name: Run unit tests
+        run: |
+          mkdir -p "${GITHUB_WORKSPACE}/build/junit"
+          # package_deb_test invokes dpkg-deb. The EL9 image does not ship it.
+          ctest --test-dir build/Release --output-on-failure -j "$(nproc)" -L unit \
+            -E '^package_deb_test$' \
+            --output-junit "${GITHUB_WORKSPACE}/build/junit/unit.xml"
+
+      - name: ccache statistics
+        if: always() && !cancelled()
+        shell: bash
+        run: |
+          set -euo pipefail
+          ccache --version
+          ccache -s | tee /tmp/ccache-stats.txt
+          ccache -sv
+          # Ubuntu's ccache prints "Cacheable calls". ccache 4.5 on EL9 prints
+          # "Hits: <hits> / <total>" and counts only calls it could cache.
+          if grep -q 'Cacheable calls:' /tmp/ccache-stats.txt; then
+            cacheable=$(awk '/^Cacheable calls:/ {print $3; found=1} END {if (!found) print 0}' /tmp/ccache-stats.txt)
+            uncacheable=$(awk '/^Uncacheable calls:/ {print $3; found=1} END {if (!found) print 0}' /tmp/ccache-stats.txt)
+          else
+            cacheable=$(awk '$1 == "Hits:" {print $4; found=1} END {if (!found) print 0}' /tmp/ccache-stats.txt)
+            uncacheable=$(awk '$1 == "Uncacheable:" {getline; if ($1 == "Calls:") print $2; found=1} END {if (!found) print 0}' /tmp/ccache-stats.txt)
+          fi
+          echo "ccache cacheable calls: ${cacheable}"
+          echo "ccache uncacheable calls: ${uncacheable}"
+          if [[ "${cacheable}" -eq 0 || "${uncacheable}" -gt 0 ]]; then
+            echo "error: ccache recorded ${cacheable} cacheable and ${uncacheable} uncacheable compilations" >&2
+            exit 1
+          fi
+          if [[ -n "${GITHUB_STEP_SUMMARY:-}" ]]; then
+            {
+              echo '### ccache'
+              echo '```'
+              cat /tmp/ccache-stats.txt
+              echo '```'
+            } >> "${GITHUB_STEP_SUMMARY}"
+          fi
+
+      - name: Save ccache
+        if: success() && github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ github.workspace }}/.ccache
+          key: ccache-${{ runner.arch }}-el9-gcc-15-Release-${{ github.sha }}
+
+      - name: Upload JUnit reports
+        if: always() && !cancelled()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: junit-build-el9-amd64
+          path: build/junit
+          if-no-files-found: warn
+          retention-days: 14
+
   # Single status check for a ruleset on main. The check run name is the job
   # name, CI gate. needs is every other job in this file. The lint step
   # ci-gate-needs fails when a job is missing from needs or from JOB_RESULTS,
@@ -2248,6 +2381,7 @@ jobs:
       - test-gcc-26-arm64
       - prepare-image-el9-amd64
       - prepare-image-el9-arm64
+      - build-el9-amd64
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -2293,4 +2427,5 @@ jobs:
             test-gcc-26-arm64=${{ needs.test-gcc-26-arm64.result }}
             prepare-image-el9-amd64=${{ needs.prepare-image-el9-amd64.result }}
             prepare-image-el9-arm64=${{ needs.prepare-image-el9-arm64.result }}
+            build-el9-amd64=${{ needs.build-el9-amd64.result }}
         run: go run -C scripts/ci . ci-gate
