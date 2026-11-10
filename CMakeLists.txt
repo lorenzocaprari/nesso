@@ -117,9 +117,30 @@ if("$ENV{NESSO_REPRODUCIBLE}" MATCHES "^(1|ON|on|TRUE|true)$")
   endif()
 endif()
 
+# Opt-in Ninja link pool. Unset (CI default) leaves link parallelism unlimited.
+# Local low-RAM builds set NESSO_LINK_JOBS via user.nesso:link_jobs or the env
+# (gcc-26-dev sets 1; Debug/ASan and ship-faithful LTO pass -c on
+# install/build).
+if(CMAKE_GENERATOR MATCHES "Ninja")
+  if(NOT DEFINED NESSO_LINK_JOBS OR NESSO_LINK_JOBS STREQUAL "")
+    set(NESSO_LINK_JOBS "$ENV{NESSO_LINK_JOBS}")
+  endif()
+  if(NESSO_LINK_JOBS MATCHES "^[1-9][0-9]*$")
+    set_property(GLOBAL PROPERTY JOB_POOLS "link_pool=${NESSO_LINK_JOBS}")
+    set(CMAKE_JOB_POOL_LINK link_pool)
+  endif()
+endif()
+
 enable_testing()
 add_subdirectory(src)
-add_subdirectory(test)
+# Default ON. conanfile options.tests=False skips
+# unit/integration/fuzz/functional and script ctests so a local binary-only
+# build does not link ~30 ORT-heavy tests.
+option(NESSO_BUILD_TESTS "Build unit, integration, fuzz, and functional tests"
+       ON)
+if(NESSO_BUILD_TESTS)
+  add_subdirectory(test)
+endif()
 option(NESSO_BUILD_BENCH "Build Google Benchmark microbenchmarks" OFF)
 if(NESSO_BUILD_BENCH)
   add_subdirectory(bench)
