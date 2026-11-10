@@ -46,6 +46,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `nesso grep` and `nesso search` exit 2 with `Error: failed to write results` when match output cannot be written to stdout (for example a full disk or `/dev/full`), instead of exiting 0 or reporting an unhandled exception.
 - `nesso grep` and `nesso index` skip empty or ASCII-whitespace-only text and JSONL lines and JSON string values, counting them as empty lines without trimming other text. Re-index existing corpora to remove previously indexed blank records.
 - `nesso grep` and `nesso search` escape terminal control characters in text output, so control sequences embedded in log lines are displayed instead of being interpreted by the terminal.
 - `nesso grep` and `nesso index` report input read failures instead of treating a failed read as empty or silently stopping.

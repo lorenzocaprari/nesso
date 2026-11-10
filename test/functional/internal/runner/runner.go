@@ -31,14 +31,27 @@ type Result struct {
 
 // Run executes binary with args in dir. A non-zero exit status is a Result, not
 // an error. Failing to start the process or exceeding Timeout is an error.
-func Run(binary string, args []string, dir string, stdin string, env map[string]string, terminal bool) (Result, error) {
+// When stdoutPath is non-empty, stdout is opened at that path instead of being
+// captured (Result.Stdout stays empty).
+func Run(binary string, args []string, dir string, stdin string, env map[string]string, terminal bool, stdoutPath string) (Result, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), Timeout)
 	defer cancel()
 
 	var stdout, stderr bytes.Buffer
 	cmd := exec.CommandContext(ctx, binary, args...)
 	cmd.Dir = dir
-	cmd.Stdout = &stdout
+	var stdoutFile *os.File
+	if stdoutPath != "" {
+		var openErr error
+		stdoutFile, openErr = os.OpenFile(stdoutPath, os.O_WRONLY, 0)
+		if openErr != nil {
+			return Result{}, fmt.Errorf("opening stdout path %s: %w", stdoutPath, openErr)
+		}
+		defer stdoutFile.Close()
+		cmd.Stdout = stdoutFile
+	} else {
+		cmd.Stdout = &stdout
+	}
 	var master, slave *os.File
 	if terminal {
 		var ptyErr error

@@ -263,3 +263,39 @@ Feature: command errors
     Then the exit code is 2
     And stdout is empty
     And stderr contains "--json"
+
+  Scenario: short text results fail when stdout is full
+    Given a file "app.log" with:
+      """
+      database connection refused
+      """
+    And stdout is redirected to "/dev/full"
+    When I run nesso with arguments grep "database connection error" {dir}/app.log
+    Then the exit code is 2
+    And stderr contains "Error: failed to write results"
+
+  Scenario: short json results fail when stdout is full
+    Given a file "app.log" with:
+      """
+      database connection refused
+      """
+    And stdout is redirected to "/dev/full"
+    When I run nesso with arguments grep "database connection error" --json {dir}/app.log
+    Then the exit code is 2
+    And stderr contains "Error: failed to write results"
+
+  Scenario: large text results fail when stdout is full
+    Given 5000 lines "database connection refused" in "app.log"
+    And stdout is redirected to "/dev/full"
+    When I run nesso with arguments grep "database connection error" -k 5000 {dir}/app.log
+    Then the exit code is 2
+    And stderr contains "Error: failed to write results"
+    And stderr does not contain "Unhandled Runtime Exception"
+
+  Scenario: large json results fail when stdout is full
+    Given 5000 lines "database connection refused" in "app.log"
+    And stdout is redirected to "/dev/full"
+    When I run nesso with arguments grep "database connection error" --json -k 5000 {dir}/app.log
+    Then the exit code is 2
+    And stderr contains "Error: failed to write results"
+    And stderr does not contain "Unhandled Runtime Exception"

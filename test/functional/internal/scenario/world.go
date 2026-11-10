@@ -13,6 +13,7 @@ type World struct {
 	Stdin       string
 	Env         map[string]string
 	Terminal    bool
+	StdoutPath  string
 	Ran         bool
 	CommandLine string
 	Result      runner.Result
