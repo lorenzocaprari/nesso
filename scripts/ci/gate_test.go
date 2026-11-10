@@ -86,6 +86,7 @@ func TestSkipClassification(t *testing.T) {
 				"prepare-image-amd64":     "success",
 				"prepare-image-el9-amd64": "success",
 				"prepare-image-el9-arm64": "skipped, docs-only pull request",
+				"build-el9-amd64":         "skipped, docs-only pull request",
 				"lint":                    "success",
 				"clang-tidy":              "skipped, docs-only pull request",
 				"test-gcc-26-amd64":       "skipped, docs-only pull request",
