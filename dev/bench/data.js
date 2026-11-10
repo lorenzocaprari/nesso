@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794263499856,
+  "lastUpdate": 1794295826839,
   "repoUrl": "https://github.com/lorenzocaprari/nesso",
   "entries": {
     "nesso": [
@@ -4535,6 +4535,60 @@ window.BENCHMARK_DATA = {
           {
             "name": "grep-100000-rss",
             "value": 159289344,
+            "unit": "bytes"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "caprarilorenzo5@gmail.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "committer": {
+            "email": "85455384+lorenzocaprari@users.noreply.github.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "distinct": true,
+          "id": "cbc765e9f1af17e28794c5296697b817d862a180",
+          "message": "ci: build EL9 build-env images\n\nPublish Rocky Linux 9 nesso-build-env-el9 images for amd64 and arm64.\nThe jobs join the CI gate and do not compile nesso.",
+          "timestamp": "2026-11-10T08:25:47+01:00",
+          "tree_id": "87b7ed384b27e195ceff1eed3ed68af49e332ad3",
+          "url": "https://github.com/lorenzocaprari/nesso/commit/cbc765e9f1af17e28794c5296697b817d862a180"
+        },
+        "date": 1794295826331,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "grep-1000-wall",
+            "value": 0.16,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-1000-rss",
+            "value": 118349824,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-10000-wall",
+            "value": 0.16,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-10000-rss",
+            "value": 119349248,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-100000-wall",
+            "value": 0.36,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-100000-rss",
+            "value": 158826496,
             "unit": "bytes"
           }
         ]
