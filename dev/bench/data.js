@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794310725825,
+  "lastUpdate": 1794317638335,
   "repoUrl": "https://github.com/lorenzocaprari/nesso",
   "entries": {
     "nesso": [
@@ -4859,6 +4859,60 @@ window.BENCHMARK_DATA = {
           {
             "name": "grep-100000-rss",
             "value": 157466624,
+            "unit": "bytes"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "caprarilorenzo5@gmail.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "committer": {
+            "email": "85455384+lorenzocaprari@users.noreply.github.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "distinct": true,
+          "id": "2d82884b2f6a519d3fa485fe4e65892a3e371a9d",
+          "message": "build: add low-RAM local Release profile and link job pool\n\ngcc-26-dev drops LTO for laptop/WSL builds, NESSO_LINK_JOBS caps parallel\nNinja links when set, and -o tests=False skips the test tree for binary-only\niteration without changing CI defaults.",
+          "timestamp": "2026-11-10T14:29:25+01:00",
+          "tree_id": "b5d7a6648a2e136866d85f29a2f8a2368094aeff",
+          "url": "https://github.com/lorenzocaprari/nesso/commit/2d82884b2f6a519d3fa485fe4e65892a3e371a9d"
+        },
+        "date": 1794317636993,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "grep-1000-wall",
+            "value": 1.23,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-1000-rss",
+            "value": 118505472,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-10000-wall",
+            "value": 1.23,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-10000-rss",
+            "value": 119283712,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-100000-wall",
+            "value": 1.48,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-100000-rss",
+            "value": 158113792,
             "unit": "bytes"
           }
         ]
