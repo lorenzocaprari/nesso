@@ -4,7 +4,7 @@
 # Build only on arm64 (ubuntu-24.04-arm). The host profile is
 # conan/profiles/gcc-26-el9-armv8.
 
-FROM rockylinux:9@sha256:370b6bd1851d5023c5c673535c85cdc5c1d8a59416ad83380a8db7ce3691bd45
+FROM rockylinux:9@sha256:d7be1c094cc5845ee815d4632fe377514ee6ebcf8efaed6892889657e5ddaaa6
 
 # CRB has ninja-build. The toolset NEVRA is pinned; other packages follow
 # the mirror the way the Ubuntu image follows apt. The base image ships

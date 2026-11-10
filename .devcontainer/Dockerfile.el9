@@ -4,7 +4,7 @@
 # Build on amd64. The host profile is conan/profiles/gcc-26-el9.
 # The arm64 image is Dockerfile.el9.arm64.
 
-FROM rockylinux:9@sha256:d644d203142cd5b54ad2a83a203e1dee68af2229f8fe32f52a30c6e1d3c3a9e0
+FROM rockylinux:9@sha256:d7be1c094cc5845ee815d4632fe377514ee6ebcf8efaed6892889657e5ddaaa6
 
 # CRB has ninja-build. The toolset NEVRA is pinned; other packages follow
 # the mirror the way the Ubuntu image follows apt. The base image ships
