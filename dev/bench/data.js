@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794325455184,
+  "lastUpdate": 1794329274485,
   "repoUrl": "https://github.com/lorenzocaprari/nesso",
   "entries": {
     "nesso": [
@@ -4967,6 +4967,60 @@ window.BENCHMARK_DATA = {
           {
             "name": "grep-100000-rss",
             "value": 157360128,
+            "unit": "bytes"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "caprarilorenzo5@gmail.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "committer": {
+            "email": "85455384+lorenzocaprari@users.noreply.github.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "distinct": true,
+          "id": "fc581f9aa87ed8188c9638e82f8a77760a00fb6e",
+          "message": "feat(parser): explain encrypted, oversized, and skipped bundle entries",
+          "timestamp": "2026-11-10T17:43:23+01:00",
+          "tree_id": "f4dbbb15454dc42c33178ca95adc277730e0c466",
+          "url": "https://github.com/lorenzocaprari/nesso/commit/fc581f9aa87ed8188c9638e82f8a77760a00fb6e"
+        },
+        "date": 1794329274067,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "grep-1000-wall",
+            "value": 0.12,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-1000-rss",
+            "value": 118140928,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-10000-wall",
+            "value": 0.13,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-10000-rss",
+            "value": 118124544,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-100000-wall",
+            "value": 0.3,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-100000-rss",
+            "value": 159358976,
             "unit": "bytes"
           }
         ]
