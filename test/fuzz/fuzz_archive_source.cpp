@@ -48,7 +48,7 @@ extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t *data, std::size_t size
                                                      });
         if (!read)
         {
-            sink += static_cast<std::size_t>(read.error());
+            sink += static_cast<std::size_t>(read.error().code);
         }
     }
 

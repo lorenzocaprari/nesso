@@ -13,6 +13,7 @@ TEST_CASE("layer errors map onto a cause", "[nesso][error]")
     REQUIRE(nesso::causeOf(nesso::parser::ParseError::BinaryFile) == nesso::ErrorCause::BinaryFile);
     REQUIRE(nesso::causeOf(nesso::parser::ParseError::CorruptGzip) == nesso::ErrorCause::CorruptGzip);
     REQUIRE(nesso::causeOf(nesso::parser::ParseError::CorruptArchive) == nesso::ErrorCause::CorruptArchive);
+    REQUIRE(nesso::causeOf(nesso::parser::ParseError::EncryptedArchive) == nesso::ErrorCause::EncryptedArchive);
     REQUIRE(nesso::causeOf(nesso::parser::ParseError::ArchiveEntryLimit) == nesso::ErrorCause::ArchiveLimit);
     REQUIRE(nesso::causeOf(nesso::parser::ParseError::ArchiveTotalLimit) == nesso::ErrorCause::ArchiveLimit);
     REQUIRE(nesso::causeOf(nesso::parser::ParseError::ArchiveCountLimit) == nesso::ErrorCause::ArchiveLimit);
@@ -40,6 +41,7 @@ TEST_CASE("each cause has a readable phrase", "[nesso][error]")
     REQUIRE(nesso::describe(nesso::ErrorCause::BinaryFile) == "the file is binary");
     REQUIRE(nesso::describe(nesso::ErrorCause::CorruptGzip) == "the gzip stream is truncated or corrupt");
     REQUIRE(nesso::describe(nesso::ErrorCause::CorruptArchive) == "the archive is truncated or corrupt");
+    REQUIRE(nesso::describe(nesso::ErrorCause::EncryptedArchive) == "the archive is encrypted; decrypt it first");
     REQUIRE(nesso::describe(nesso::ErrorCause::ArchiveLimit) == "an archive limit was exceeded");
     REQUIRE(nesso::describe(nesso::ErrorCause::VocabLoad) == "could not load the vocabulary");
     REQUIRE(nesso::describe(nesso::ErrorCause::Tokenization) == "could not tokenize the text");
@@ -69,6 +71,7 @@ TEST_CASE("each failure kind names itself", "[nesso][error]")
                                  .skippedLines = 0,
                                  .note = {},
                                  .staleSources = {},
+                                 .bundleSkips = {},
                                  .policyMismatch = false,
                                  .corpusVersion = {}};
         return nesso::message(error);
@@ -84,10 +87,24 @@ TEST_CASE("each failure kind names itself", "[nesso][error]")
     nesso::Error limited{.kind = nesso::ErrorKind::Parse,
                          .cause = nesso::ErrorCause::ArchiveLimit,
                          .path = "bundle.tar.xz",
-                         .note = "the archive entry count exceeds 2",
+                         .note = "the archive entry count exceeds 2; raise the limit with --archive-max-entries",
                          .staleSources = {},
+                         .bundleSkips = {},
+                         .policyMismatch = false,
                          .corpusVersion = {}};
     REQUIRE(nesso::message(limited).find("the archive entry count exceeds 2") != std::string::npos);
+    REQUIRE(nesso::message(limited).find("--archive-max-entries") != std::string::npos);
+    nesso::Error encrypted{.kind = nesso::ErrorKind::Parse,
+                           .cause = nesso::ErrorCause::EncryptedArchive,
+                           .path = "secret.zip",
+                           .note = "entry 'secret.log' is encrypted; decrypt it first",
+                           .staleSources = {},
+                           .bundleSkips = {},
+                           .policyMismatch = false,
+                           .corpusVersion = {}};
+    REQUIRE(nesso::message(encrypted).find("entry 'secret.log' is encrypted") != std::string::npos);
+    REQUIRE(nesso::formatBundleSkipSummary({.path = "mix.tar", .directories = 2, .binary = 1}) ==
+            "Skipped 3 entries in 'mix.tar' (2 directories and 1 binary file).");
     REQUIRE(text(nesso::ErrorKind::Embed, nesso::ErrorCause::Inference).find("failed to embed the input") !=
             std::string::npos);
     REQUIRE(text(nesso::ErrorKind::QueryEmbed, nesso::ErrorCause::Tokenization).find("failed to embed the query") !=
@@ -119,6 +136,7 @@ TEST_CASE("a zero-chunk index names the path and what to check", "[nesso][error]
                                  .skippedLines = 0,
                                  .note = "check the input path or --json-field",
                                  .staleSources = {},
+                                 .bundleSkips = {},
                                  .policyMismatch = false,
                                  .corpusVersion = {}};
         return nesso::message(error);

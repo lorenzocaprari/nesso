@@ -168,12 +168,23 @@ func archiveKind(name string) (string, error) {
 }
 
 func (b *bindings) writeArchive(name string, table *godog.Table) error {
+	return b.writeArchiveSpec(name, table, false)
+}
+
+func (b *bindings) writeEncryptedArchive(name string, table *godog.Table) error {
+	return b.writeArchiveSpec(name, table, true)
+}
+
+func (b *bindings) writeArchiveSpec(name string, table *godog.Table, encrypted bool) error {
 	if table == nil || len(table.Rows) == 0 {
 		return fmt.Errorf("archive %q needs at least one entry", name)
 	}
 	kind, err := archiveKind(name)
 	if err != nil {
 		return err
+	}
+	if encrypted && kind != "zip" {
+		return fmt.Errorf("encrypted archive fixtures are zip-only")
 	}
 	target, err := b.scenarioPath(name)
 	if err != nil {
@@ -184,10 +195,11 @@ func (b *bindings) writeArchive(name string, table *godog.Table) error {
 		Data string `json:"data"`
 	}
 	payload := struct {
-		Dest    string  `json:"dest"`
-		Kind    string  `json:"kind"`
-		Entries []entry `json:"entries"`
-	}{Dest: target, Kind: kind}
+		Dest      string  `json:"dest"`
+		Kind      string  `json:"kind"`
+		Encrypted bool    `json:"encrypted"`
+		Entries   []entry `json:"entries"`
+	}{Dest: target, Kind: kind, Encrypted: encrypted}
 	for _, row := range table.Rows {
 		if len(row.Cells) != 2 {
 			return fmt.Errorf("archive row needs a path and a body")
@@ -215,12 +227,13 @@ func (b *bindings) writeArchive(name string, table *godog.Table) error {
 }
 
 const archiveWriter = `
-import base64, io, json, sys, tarfile, zipfile
+import base64, io, json, struct, sys, tarfile, zipfile
 from pathlib import Path
 
 spec = json.load(sys.stdin)
 dest = Path(spec["dest"])
 kind = spec["kind"]
+encrypted = bool(spec.get("encrypted"))
 
 def body(entry):
     return base64.b64decode(entry["data"])
@@ -239,7 +252,31 @@ def write_tar(mode):
             info.gname = ""
             archive.addfile(info, io.BytesIO(data))
 
-if kind == "zip":
+def write_encrypted_zip():
+    # Minimal stored zip with general-purpose bit 0 set. No crypto library.
+    chunks = []
+    offsets = []
+    for entry in spec["entries"]:
+        data = body(entry)
+        name = entry["name"].encode()
+        offsets.append(sum(len(chunk) for chunk in chunks))
+        local = struct.pack("<IHHHHHIIIHH", 0x04034B50, 20, 0x0001, 0, 0, 0, 0, len(data), len(data), len(name), 0)
+        chunks.append(local + name + data)
+    central = []
+    for index, entry in enumerate(spec["entries"]):
+        data = body(entry)
+        name = entry["name"].encode()
+        central.append(struct.pack("<IHHHHHHIIIHHHHHII", 0x02014B50, 20, 20, 0x0001, 0, 0, 0, 0,
+                                   len(data), len(data), len(name), 0, 0, 0, 0, 0, offsets[index]) + name)
+    central_bytes = b"".join(central)
+    local_bytes = b"".join(chunks)
+    end = struct.pack("<IHHHHIIH", 0x06054B50, 0, 0, len(spec["entries"]), len(spec["entries"]),
+                      len(central_bytes), len(local_bytes), 0)
+    dest.write_bytes(local_bytes + central_bytes + end)
+
+if kind == "zip" and encrypted:
+    write_encrypted_zip()
+elif kind == "zip":
     with zipfile.ZipFile(dest, "w") as archive:
         for entry in spec["entries"]:
             data = body(entry)

@@ -43,6 +43,7 @@ enum class ErrorCause : uint8_t
     BinaryFile,
     CorruptGzip,
     CorruptArchive,
+    EncryptedArchive,
     ArchiveLimit,
     VocabLoad,
     Tokenization,
@@ -79,6 +80,25 @@ struct StaleSource
     bool unreadable = false;
 };
 
+/// Per-bundle archive members skipped without ranking (directories, links, binary).
+struct BundleSkipSummary
+{
+    std::string path;
+    size_t directories = 0;
+    size_t symlinks = 0;
+    size_t hardlinks = 0;
+    size_t other = 0;
+    size_t binary = 0;
+};
+
+[[nodiscard]] inline size_t bundleSkipTotal(const BundleSkipSummary &summary)
+{
+    return summary.directories + summary.symlinks + summary.hardlinks + summary.other + summary.binary;
+}
+
+/// One stderr line for a bundle skip summary. Empty when `bundleSkipTotal(summary)` is 0.
+[[nodiscard]] std::string formatBundleSkipSummary(const BundleSkipSummary &summary);
+
 /// Failure of a Nesso operation.
 ///
 /// `cause` names the layer failure. `path`, the skip counters, and `truncatedLines` are set when the failure concerns
@@ -98,6 +118,7 @@ struct Error
     std::string jsonField = "message";
     std::string note;
     std::vector<StaleSource> staleSources;
+    std::vector<BundleSkipSummary> bundleSkips;
     bool policyMismatch = false;
     std::optional<std::uint32_t> corpusVersion;
 };
@@ -173,6 +194,7 @@ struct TextResults
     std::string jsonField = "message";
     bool multipleSources = false;
     std::vector<StaleSource> staleSources;
+    std::vector<BundleSkipSummary> bundleSkips;
     bool policyMismatch = false;
     /// When true, CLI prints the lexical→hybrid fallback warning.
     bool lexicalFallback = false;
@@ -190,6 +212,7 @@ struct IndexSummary
     size_t truncatedLines = 0;
     size_t binaryEntries = 0;
     std::string jsonField = "message";
+    std::vector<BundleSkipSummary> bundleSkips;
 };
 
 struct Config

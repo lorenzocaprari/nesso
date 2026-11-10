@@ -9,9 +9,11 @@
 
 #include <algorithm>
 #include <array>
+#include <cstddef>
 #include <cstdint>
 #include <fstream>
 #include <memory>
+#include <span>
 #include <string>
 #include <utility>
 
@@ -32,6 +34,114 @@ struct ArchiveFree
 };
 
 } // namespace
+
+static constexpr std::string_view PGP_ARMOR_HEADER = "-----BEGIN PGP MESSAGE-----";
+
+static ArchiveFailure failure(ArchiveError code, std::string entry = {})
+{
+    return ArchiveFailure{.code = code, .entry = std::move(entry)};
+}
+
+static bool fileLooksLikeOpenPgp(const std::filesystem::path &path)
+{
+    std::ifstream input(path, std::ios::binary);
+    if (!input)
+    {
+        return false;
+    }
+    std::array<char, 64> buffer{};
+    input.read(buffer.data(), static_cast<std::streamsize>(buffer.size()));
+    const auto counted = static_cast<std::size_t>(input.gcount());
+    if (counted == 0)
+    {
+        return false;
+    }
+    return looksLikeOpenPgp(std::as_bytes(std::span(buffer).first(counted)));
+}
+
+static ArchiveFailure afterReadFailure(ArchiveError code, const std::filesystem::path &path)
+{
+    if ((code == ArchiveError::Corrupt || code == ArchiveError::OpenFailure) && fileLooksLikeOpenPgp(path))
+    {
+        return failure(ArchiveError::Encrypted);
+    }
+    return failure(code);
+}
+
+static ArchiveFailure afterOpenFailure(const std::filesystem::path &path)
+{
+    const std::ifstream probe(path, std::ios::binary);
+    if (!probe)
+    {
+        return failure(ArchiveError::OpenFailure);
+    }
+    if (fileLooksLikeOpenPgp(path))
+    {
+        return failure(ArchiveError::Encrypted);
+    }
+    return failure(ArchiveError::Corrupt);
+}
+
+static void countSkippedEntry(archive_entry *entry, ArchiveSkipStats *skips)
+{
+    if (skips == nullptr)
+    {
+        return;
+    }
+    if (archive_entry_symlink(entry) != nullptr)
+    {
+        ++skips->symlinks;
+        return;
+    }
+    if (archive_entry_hardlink(entry) != nullptr)
+    {
+        ++skips->hardlinks;
+        return;
+    }
+    if (archive_entry_filetype(entry) == AE_IFDIR)
+    {
+        ++skips->directories;
+        return;
+    }
+    ++skips->other;
+}
+
+bool looksLikeOpenPgp(std::span<const std::byte> bytes)
+{
+    if (bytes.size() >= PGP_ARMOR_HEADER.size())
+    {
+        bool armor = true;
+        for (std::size_t index = 0; index < PGP_ARMOR_HEADER.size(); ++index)
+        {
+            if (static_cast<char>(bytes[index]) != PGP_ARMOR_HEADER[index])
+            {
+                armor = false;
+                break;
+            }
+        }
+        if (armor)
+        {
+            return true;
+        }
+    }
+    if (bytes.empty())
+    {
+        return false;
+    }
+    const auto first = static_cast<unsigned>(bytes[0]);
+    // New format: 11TTTTTT. Old format: 10TTTTLL (tag is four bits, so 18 is new-format only).
+    if ((first & 0xC0U) == 0xC0U)
+    {
+        const unsigned tag = first & 0x3FU;
+        return tag == 1U || tag == 3U || tag == 18U;
+    }
+    if ((first & 0xC0U) == 0x80U)
+    {
+        const unsigned tag = (first >> 2U) & 0x0FU;
+        return tag == 1U || tag == 3U;
+    }
+    return false;
+}
 
 static std::string lowerExtension(const std::filesystem::path &path)
 {
@@ -160,15 +270,15 @@ bool isArchivePath(const std::filesystem::path &path)
     return false;
 }
 
-std::expected<void, ArchiveError>
+std::expected<void, ArchiveFailure>
 readArchive(const std::filesystem::path &path, const ArchiveLimits &limits,
-            const std::function<void(std::string_view name, std::string_view bytes)> &consume)
+            const std::function<void(std::string_view name, std::string_view bytes)> &consume, ArchiveSkipStats *skips)
 {
     std::error_code error;
     const auto compressedSize = std::filesystem::file_size(path, error);
     if (error)
     {
-        return std::unexpected(ArchiveError::OpenFailure);
+        return std::unexpected(failure(ArchiveError::OpenFailure));
     }
     if (compressedSize == 0)
     {
@@ -180,7 +290,7 @@ readArchive(const std::filesystem::path &path, const ArchiveLimits &limits,
     const std::unique_ptr<archive, ArchiveFree> reader{archive_read_new()};
     if (!reader)
     {
-        return std::unexpected(ArchiveError::Corrupt);
+        return std::unexpected(afterReadFailure(ArchiveError::Corrupt, path));
     }
     archive *handle = reader.get();
     archive_read_support_filter_none(handle);
@@ -191,12 +301,7 @@ readArchive(const std::filesystem::path &path, const ArchiveLimits &limits,
     archive_read_support_format_empty(handle);
     if (archive_read_open_filename(handle, path.c_str(), 10240) != ARCHIVE_OK)
     {
-        const std::ifstream probe(path, std::ios::binary);
-        if (!probe)
-        {
-            return std::unexpected(ArchiveError::OpenFailure);
-        }
-        return std::unexpected(ArchiveError::Corrupt);
+        return std::unexpected(afterOpenFailure(path));
     }
 
     std::uint64_t accepted = 0;
@@ -216,7 +321,7 @@ readArchive(const std::filesystem::path &path, const ArchiveLimits &limits,
         }
         if ((status != ARCHIVE_OK && status != ARCHIVE_WARN) || entry == nullptr)
         {
-            return std::unexpected(ArchiveError::Corrupt);
+            return std::unexpected(afterReadFailure(ArchiveError::Corrupt, path));
         }
 
         const auto type = archive_entry_filetype(entry);
@@ -225,17 +330,23 @@ readArchive(const std::filesystem::path &path, const ArchiveLimits &limits,
         const std::string name = regular ? memberName(archive_entry_pathname(entry)) : std::string{};
         if (!regular || name.empty())
         {
+            countSkippedEntry(entry, skips);
             if (!skipMember(handle))
             {
-                return std::unexpected(ArchiveError::Corrupt);
+                return std::unexpected(afterReadFailure(ArchiveError::Corrupt, path));
             }
             continue;
+        }
+
+        if (archive_entry_is_encrypted(entry) != 0)
+        {
+            return std::unexpected(failure(ArchiveError::Encrypted, name));
         }
 
         ++entries;
         if (entries > limits.maxEntries)
         {
-            return std::unexpected(ArchiveError::TooManyEntries);
+            return std::unexpected(failure(ArchiveError::TooManyEntries));
         }
 
         std::uint64_t declared = 0;
@@ -250,7 +361,13 @@ readArchive(const std::filesystem::path &path, const ArchiveLimits &limits,
         const auto readError = readMember(handle, payload, declared, limits, accepted, compressed);
         if (!readError)
         {
-            return std::unexpected(readError.error());
+            // When the format knows entries are encrypted, a data read failure is encryption,
+            // not a generic corrupt archive (avoids dumping libarchive's crypto message).
+            if (readError.error() == ArchiveError::Corrupt && archive_read_has_encrypted_entries(handle) > 0)
+            {
+                return std::unexpected(failure(ArchiveError::Encrypted, name));
+            }
+            return std::unexpected(afterReadFailure(readError.error(), path));
         }
 
         if (isGzipPath(name))
@@ -258,22 +375,23 @@ readArchive(const std::filesystem::path &path, const ArchiveLimits &limits,
             auto inflated = readGzipBytes(payload);
             if (!inflated)
             {
-                return std::unexpected(inflated.error() == GzipError::OpenFailure ? ArchiveError::OpenFailure
-                                                                                  : ArchiveError::CorruptGzip);
+                const ArchiveError code =
+                    inflated.error() == GzipError::OpenFailure ? ArchiveError::OpenFailure : ArchiveError::CorruptGzip;
+                return std::unexpected(afterReadFailure(code, path));
             }
             payload = std::move(*inflated);
             if (payload.size() > limits.maxEntryBytes)
             {
-                return std::unexpected(ArchiveError::EntryTooLarge);
+                return std::unexpected(failure(ArchiveError::EntryTooLarge));
             }
         }
         if (!fits(accepted, payload.size(), limits.maxTotalBytes))
         {
-            return std::unexpected(ArchiveError::TotalTooLarge);
+            return std::unexpected(failure(ArchiveError::TotalTooLarge));
         }
         if (exceedsRatio(accepted + payload.size(), compressed, limits.maxRatio))
         {
-            return std::unexpected(ArchiveError::RatioExceeded);
+            return std::unexpected(failure(ArchiveError::RatioExceeded));
         }
         accepted += payload.size();
         consume(name, payload);
