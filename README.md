@@ -23,6 +23,8 @@ Semantic log search. grep for meaning: find the log lines you're looking for eve
 
 Semantic grep for logs, fully offline, no server, no cloud, no API keys, [Apache-2.0](LICENSE).
 
+Support engineers: [triage a sosreport or tarball](docs/quick-start.md).
+
 ## Demo
 
 ![nesso grep for "the disk is full" matching lines that say "No space left on device"](docs/assets/demo.gif)
