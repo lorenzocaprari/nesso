@@ -141,6 +141,33 @@ class CheckRuntimeLicensesTest(unittest.TestCase):
         self.assertIn("eigen/3.4.0", bumped_consumer.stderr)
         self.assertIn("saw ['onnxruntime/1.19.0']", bumped_consumer.stderr)
 
+    def test_xz_utils_allow_list_is_the_pinned_library_only(self) -> None:
+        # The version override is not a direct edge. libarchive is the only direct dependent.
+        nodes = {
+            "0": host("nesso/0.2.1", "Apache-2.0", {
+                "1": {"ref": "libarchive/3.8.7", "direct": True},
+                "2": {"ref": "xz_utils/5.8.4", "direct": False},
+            }),
+            "1": host("libarchive/3.8.7", "BSD-2-Clause", {
+                "2": {"ref": "xz_utils/5.8.4", "direct": True},
+            }),
+            "2": host("xz_utils/5.8.4", ["Unlicense", "LGPL-2.1-or-later", "GPL-2.0-or-later", "GPL-3.0-or-later"]),
+        }
+        passed = run(nodes)
+        self.assertEqual(passed.returncode, 0, passed.stderr)
+
+        nodes["1"]["dependencies"].pop("2")
+        nodes["0"]["dependencies"]["2"] = {"ref": "xz_utils/5.8.4", "direct": True}
+        only_root = run(nodes)
+        self.assertEqual(only_root.returncode, 1)
+        self.assertIn("xz_utils/5.8.4", only_root.stderr)
+        self.assertIn("libarchive/3.8.7 is not the only direct dependent", only_root.stderr)
+
+        bumped = json.loads(json.dumps(nodes))
+        bumped["2"]["ref"] = "xz_utils/5.8.5#rev"
+        bumped["2"]["license"] = ["GPL-3.0-or-later"]
+        self.assertIn("xz_utils/5.8.5", run(bumped).stderr)
+
     def test_wrong_eigen_version_fails(self) -> None:
         result = run(eigen_graph(eigen_ref="eigen/3.4.1"))
         self.assertEqual(result.returncode, 1)

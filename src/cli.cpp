@@ -48,6 +48,7 @@ struct LineReport
     size_t malformedLines = 0;
     size_t missingFieldLines = 0;
     size_t truncatedLines = 0;
+    size_t binaryEntries = 0;
     std::string_view jsonField = "message";
 };
 
@@ -66,6 +67,10 @@ static void renderLineCounts(const LineReport &lines)
     {
         const std::string_view noun = lines.missingFieldLines == 1 ? "line missing" : "lines missing";
         parts.push_back(std::format("{} {} the \"{}\" field", lines.missingFieldLines, noun, lines.jsonField));
+    }
+    if (lines.binaryEntries > 0)
+    {
+        parts.push_back(countPhrase(lines.binaryEntries, "binary file", "binary files"));
     }
     if (!parts.empty())
     {
@@ -108,6 +113,7 @@ static LineReport lineReport(const TextResults &results)
             .malformedLines = results.malformedLines,
             .missingFieldLines = results.missingFieldLines,
             .truncatedLines = results.truncatedLines,
+            .binaryEntries = results.binaryEntries,
             .jsonField = results.jsonField};
 }
 
@@ -117,6 +123,7 @@ static LineReport lineReport(const IndexSummary &summary)
             .malformedLines = summary.malformedLines,
             .missingFieldLines = summary.missingFieldLines,
             .truncatedLines = summary.truncatedLines,
+            .binaryEntries = summary.binaryEntries,
             .jsonField = summary.jsonField};
 }
 
@@ -126,6 +133,7 @@ static LineReport lineReport(const Error &error)
             .malformedLines = error.malformedLines,
             .missingFieldLines = error.missingFieldLines,
             .truncatedLines = error.truncatedLines,
+            .binaryEntries = error.binaryEntries,
             .jsonField = error.jsonField};
 }
 
@@ -134,7 +142,9 @@ static int renderText(const TextResults &results)
     for (const TextMatch &match : results.matches)
     {
         const char *place = match.arrayElement ? "element" : "line";
-        const bool prefixed = results.multipleSources || match.source == "-";
+        // Archive labels are `bundle:entry`. A single member still prints that label.
+        const bool prefixed =
+            results.multipleSources || match.source == "-" || match.source.find(':') != std::string::npos;
         if (!results.grouped)
         {
             if (prefixed)

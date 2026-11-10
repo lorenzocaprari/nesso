@@ -9,7 +9,12 @@ add_subdirectory(parser)
 add_library(nesso_lib nesso.cpp model_paths.cpp trace.cpp render_json.cpp
                       render_text.cpp)
 set_target_properties(nesso_lib PROPERTIES OUTPUT_NAME nesso)
-target_include_directories(nesso_lib PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
+# nesso.hpp includes parser/archive_source.hpp. The parser include directory has
+# to be public so the executable and the tests that include nesso.hpp can see
+# it.
+target_include_directories(
+  nesso_lib PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}"
+                   "${CMAKE_CURRENT_SOURCE_DIR}/parser/include")
 target_link_libraries(
   nesso_lib PRIVATE nesso_options nesso_core nesso_embed nesso_parser
                     nlohmann_json::nlohmann_json)

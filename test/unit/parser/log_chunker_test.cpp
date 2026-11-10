@@ -83,6 +83,8 @@ TEST_CASE("ParsedChunk preserves positional aggregate initialization", "[Chunker
     CHECK(chunk.arrayElement);
     CHECK_FALSE(chunk.skipped);
     CHECK(chunk.byteLength == 0);
+    CHECK(chunk.source.empty());
+    CHECK_FALSE(chunk.entryStart);
 }
 
 TEST_CASE("Chunker parses .log files line-by-line", "[Chunker][parser][Unit]")

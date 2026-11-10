@@ -3,10 +3,14 @@
 
 #include <parser/gzip_reader.hpp>
 
+#include <algorithm>
 #include <array>
+#include <cstdint>
+#include <cstring>
 #include <fstream>
 #include <memory>
 #include <string>
+#include <string_view>
 
 // next_in is const, so the compressed buffer does not need a const cast.
 #define ZLIB_CONST
@@ -39,14 +43,16 @@ bool isGzipPath(const std::filesystem::path &path)
     return extension == ".gz";
 }
 
-std::expected<std::string, GzipError> readGzip(const std::filesystem::path &path)
+enum class PullStatus : std::uint8_t
 {
-    std::ifstream input(path, std::ios::binary);
-    if (!input)
-    {
-        return std::unexpected(GzipError::OpenFailure);
-    }
+    Bytes,
+    End,
+    Error
+};
 
+// `pull` fills `dest` with the next compressed bytes. `End` is a clean EOF. `Error` is a read failure.
+template <typename Pull> static std::expected<std::string, GzipError> inflateGzip(Pull pull)
+{
     z_stream stream{};
     // 16 selects the gzip wrapper. inflate stops at each member; the reset below continues so
     // concatenated members are one byte stream.
@@ -76,14 +82,13 @@ std::expected<std::string, GzipError> readGzip(const std::filesystem::path &path
                 }
                 return std::unexpected(GzipError::Corrupt);
             }
-            // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-            input.read(reinterpret_cast<char *>(compressed.data()), static_cast<std::streamsize>(compressed.size()));
-            if (input.bad())
+            unsigned int count = 0;
+            const PullStatus pulled = pull(compressed.data(), static_cast<unsigned int>(compressed.size()), count);
+            if (pulled == PullStatus::Error)
             {
                 return std::unexpected(GzipError::OpenFailure);
             }
-            const std::streamsize count = input.gcount();
-            if (count <= 0)
+            if (pulled == PullStatus::End || count == 0)
             {
                 if (finishedMember)
                 {
@@ -91,12 +96,12 @@ std::expected<std::string, GzipError> readGzip(const std::filesystem::path &path
                 }
                 return std::unexpected(GzipError::Corrupt);
             }
-            if (static_cast<std::size_t>(count) < compressed.size())
+            if (count < compressed.size())
             {
                 inputEnded = true;
             }
             stream.next_in = compressed.data();
-            stream.avail_in = static_cast<unsigned int>(count);
+            stream.avail_in = count;
         }
 
         stream.next_out = plain.data();
@@ -130,6 +135,53 @@ std::expected<std::string, GzipError> readGzip(const std::filesystem::path &path
         }
         return std::unexpected(GzipError::Corrupt);
     }
+}
+
+std::expected<std::string, GzipError> readGzip(const std::filesystem::path &path)
+{
+    std::ifstream input(path, std::ios::binary);
+    if (!input)
+    {
+        return std::unexpected(GzipError::OpenFailure);
+    }
+    return inflateGzip(
+        [&input](unsigned char *dest, unsigned int capacity, unsigned int &count)
+        {
+            // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+            input.read(reinterpret_cast<char *>(dest), static_cast<std::streamsize>(capacity));
+            if (input.bad())
+            {
+                return PullStatus::Error;
+            }
+            const std::streamsize got = input.gcount();
+            if (got <= 0)
+            {
+                count = 0;
+                return PullStatus::End;
+            }
+            count = static_cast<unsigned int>(got);
+            return PullStatus::Bytes;
+        });
+}
+
+std::expected<std::string, GzipError> readGzipBytes(std::string_view bytes)
+{
+    std::size_t offset = 0;
+    return inflateGzip(
+        [&bytes, &offset](unsigned char *dest, unsigned int capacity, unsigned int &count)
+        {
+            if (offset >= bytes.size())
+            {
+                count = 0;
+                return PullStatus::End;
+            }
+            const std::size_t room = bytes.size() - offset;
+            const std::size_t take = std::min(room, static_cast<std::size_t>(capacity));
+            std::memcpy(dest, bytes.data() + offset, take);
+            offset += take;
+            count = static_cast<unsigned int>(take);
+            return PullStatus::Bytes;
+        });
 }
 
 } // namespace nesso::parser

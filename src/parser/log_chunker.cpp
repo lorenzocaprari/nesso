@@ -1,6 +1,7 @@
 // Copyright (c) 2026 Lorenzo Caprari
 // SPDX-License-Identifier: Apache-2.0
 
+#include <parser/archive_source.hpp>
 #include <parser/gzip_reader.hpp>
 #include <parser/log_chunker.hpp>
 
@@ -11,6 +12,7 @@
 #include <iostream>
 #include <limits>
 #include <nlohmann/json.hpp>
+#include <optional>
 #include <sstream>
 #include <utility>
 
@@ -211,13 +213,17 @@ static std::expected<void, ParseError> readLogStream(std::istream &input, size_t
                                 .lineNumber = lineNumber,
                                 .byteOffset = byteOffset,
                                 .skipped = true,
-                                .byteLength = fileBytes});
+                                .byteLength = fileBytes,
+                                .source = {}});
         }
         else
         {
             limitValue(line, maxLineLength, stats);
-            consume(
-                ParsedChunk{.text = line, .lineNumber = lineNumber, .byteOffset = byteOffset, .byteLength = fileBytes});
+            consume(ParsedChunk{.text = line,
+                                .lineNumber = lineNumber,
+                                .byteOffset = byteOffset,
+                                .byteLength = fileBytes,
+                                .source = {}});
         }
         advanceOffset(byteOffset, fileBytes, !input.eof());
     }
@@ -247,7 +253,8 @@ static std::expected<void, ParseError> readJsonStream(std::istream &input, bool 
                                 .byteOffset = byteOffset,
                                 .arrayElement = arrayElement,
                                 .skipped = true,
-                                .byteLength = byteLength});
+                                .byteLength = byteLength,
+                                .source = {}});
         };
         if (!document.contains(field) || !document.at(field).is_string())
         {
@@ -265,7 +272,8 @@ static std::expected<void, ParseError> readJsonStream(std::istream &input, bool 
                             .lineNumber = sourceLine,
                             .byteOffset = byteOffset,
                             .arrayElement = arrayElement,
-                            .byteLength = byteLength});
+                            .byteLength = byteLength,
+                            .source = {}});
     };
 
     if (jsonLines)
@@ -283,7 +291,8 @@ static std::expected<void, ParseError> readJsonStream(std::istream &input, bool 
                                     .lineNumber = lineNumber,
                                     .byteOffset = byteOffset,
                                     .skipped = true,
-                                    .byteLength = fileBytes});
+                                    .byteLength = fileBytes,
+                                    .source = {}});
             }
             else
             {
@@ -300,7 +309,8 @@ static std::expected<void, ParseError> readJsonStream(std::istream &input, bool 
                                         .lineNumber = lineNumber,
                                         .byteOffset = byteOffset,
                                         .skipped = true,
-                                        .byteLength = fileBytes});
+                                        .byteLength = fileBytes,
+                                        .source = {}});
                     parsed = false;
                 }
                 if (parsed)
@@ -333,7 +343,7 @@ static std::expected<void, ParseError> readJsonStream(std::istream &input, bool 
             return std::unexpected(ParseError::FileOpenFailure);
         }
         countSkip(stats, SkipReason::Malformed);
-        consume(ParsedChunk{.text = {}, .lineNumber = 1, .skipped = true});
+        consume(ParsedChunk{.text = {}, .lineNumber = 1, .skipped = true, .source = {}});
         return {};
     }
     if (document.is_array())
@@ -358,6 +368,28 @@ static ParseError gzipParseError(GzipError error)
         return ParseError::FileOpenFailure;
     case GzipError::Corrupt:
         return ParseError::CorruptGzip;
+    }
+    std::unreachable();
+}
+
+static ParseError archiveParseError(ArchiveError error)
+{
+    switch (error)
+    {
+    case ArchiveError::OpenFailure:
+        return ParseError::FileOpenFailure;
+    case ArchiveError::Corrupt:
+        return ParseError::CorruptArchive;
+    case ArchiveError::CorruptGzip:
+        return ParseError::CorruptGzip;
+    case ArchiveError::EntryTooLarge:
+        return ParseError::ArchiveEntryLimit;
+    case ArchiveError::TotalTooLarge:
+        return ParseError::ArchiveTotalLimit;
+    case ArchiveError::TooManyEntries:
+        return ParseError::ArchiveCountLimit;
+    case ArchiveError::RatioExceeded:
+        return ParseError::ArchiveRatioLimit;
     }
     std::unreachable();
 }
@@ -484,22 +516,73 @@ static std::expected<std::string, ParseError> readOpenedRecord(std::istream &inp
 
 std::expected<void, ParseError> Chunker::forEach(const std::filesystem::path &path, size_t maxLineLength,
                                                  ParseStats *stats, std::string_view jsonField,
-                                                 const std::function<void(ParsedChunk)> &consume)
+                                                 const std::function<void(ParsedChunk)> &consume,
+                                                 const ArchiveLimits &limits)
 {
-    return forEachRecord(path, maxLineLength, stats, jsonField,
-                         [&consume](ParsedChunk chunk)
-                         {
-                             if (!chunk.skipped)
-                             {
-                                 consume(std::move(chunk));
-                             }
-                         });
+    return forEachRecord(
+        path, maxLineLength, stats, jsonField,
+        [&consume](ParsedChunk chunk)
+        {
+            if (!chunk.skipped)
+            {
+                consume(std::move(chunk));
+            }
+        },
+        limits);
 }
 
 std::expected<void, ParseError> Chunker::forEachRecord(const std::filesystem::path &path, size_t maxLineLength,
                                                        ParseStats *stats, std::string_view jsonField,
-                                                       const std::function<void(ParsedChunk)> &consume)
+                                                       const std::function<void(ParsedChunk)> &consume,
+                                                       const ArchiveLimits &limits)
 {
+    if (isArchivePath(path))
+    {
+        std::optional<ParseError> failed;
+        const auto read = readArchive(path, limits,
+                                      [&](std::string_view name, std::string_view bytes)
+                                      {
+                                          if (failed)
+                                          {
+                                              return;
+                                          }
+                                          const std::size_t probe = std::min(bytes.size(), BINARY_PROBE_BYTES);
+                                          if (containsNul(bytes.substr(0, probe)))
+                                          {
+                                              if (stats != nullptr)
+                                              {
+                                                  ++stats->binaryEntries;
+                                              }
+                                              return;
+                                          }
+                                          const std::string label = path.string() + ":" + std::string{name};
+                                          bool first = true;
+                                          std::istringstream input{std::string{bytes}};
+                                          const auto streamed = dispatchStream(
+                                              input, formatExtension(std::filesystem::path{std::string{name}}),
+                                              maxLineLength, stats, jsonField,
+                                              [&](ParsedChunk chunk)
+                                              {
+                                                  chunk.source = label;
+                                                  chunk.entryStart = first;
+                                                  first = false;
+                                                  consume(std::move(chunk));
+                                              });
+                                          if (!streamed)
+                                          {
+                                              failed = streamed.error();
+                                          }
+                                      });
+        if (!read)
+        {
+            return std::unexpected(archiveParseError(read.error()));
+        }
+        if (failed)
+        {
+            return std::unexpected(*failed);
+        }
+        return {};
+    }
     if (path == "-")
     {
         auto bytes = readStdinChecked();
@@ -537,7 +620,7 @@ std::expected<std::string, ParseError> Chunker::readRecord(const std::filesystem
                                                            uint64_t byteLength, uint64_t lineNumber, bool arrayElement,
                                                            std::string_view jsonField, size_t maxLineLength)
 {
-    if (path == "-")
+    if (path == "-" || isArchivePath(path))
     {
         return std::unexpected(ParseError::UnsupportedFormat);
     }
@@ -564,11 +647,13 @@ std::expected<std::string, ParseError> Chunker::readRecord(const std::filesystem
 // cppcheck-suppress unusedFunction
 std::expected<std::vector<ParsedChunk>, ParseError> Chunker::fromFile(const std::filesystem::path &path,
                                                                       size_t maxLineLength, ParseStats *stats,
-                                                                      std::string_view jsonField)
+                                                                      std::string_view jsonField,
+                                                                      const ArchiveLimits &limits)
 {
     std::vector<ParsedChunk> chunks;
-    const auto streamed = forEach(path, maxLineLength, stats, jsonField,
-                                  [&chunks](ParsedChunk chunk) { chunks.push_back(std::move(chunk)); });
+    const auto streamed = forEach(
+        path, maxLineLength, stats, jsonField, [&chunks](ParsedChunk chunk) { chunks.push_back(std::move(chunk)); },
+        limits);
     if (!streamed)
     {
         return std::unexpected(streamed.error());

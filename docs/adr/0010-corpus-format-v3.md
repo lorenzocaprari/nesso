@@ -60,6 +60,10 @@ Chosen option: "v3 with distinct vectors, per-line references, and a policy bloc
 * Bad, because a changed source shows the stored distinct text for masked lines and loses context lines.
 * Bad, because stdin and archive input store every line's text, so their corpora grow with the input.
 
+## Amendment 2026-11-10
+
+A source that is an archive member cannot be re-read by byte offset. `index` stores each of that member's lines, as it does for stdin. The stored source string may be `archive:entry`, with `archive` the path that was indexed and `entry` the member name. The corpus version stays 3.
+
 ### Confirmation
 
 `scripts/check-determinism` compares v3 corpus bytes and rankings across fresh processes under load. The int8 run with `NESSO_THREADS=$(nproc)` must match the default run, and that comparison must be a blocking check. Unit tests round-trip every section, reject v2, truncated, and misaligned files, and read context from stored texts. BDD covers the v2 error, the model mismatch, and the policy warning.

@@ -6,6 +6,7 @@
 #include <core/lexical_terms.hpp>
 #include <core/sha256.hpp>
 
+#include <parser/archive_source.hpp>
 #include <parser/gzip_reader.hpp>
 #include <platform/file.hpp>
 
@@ -560,9 +561,15 @@ std::expected<SourceInfo, EngineError> sourceInfoFor(const std::filesystem::path
         return std::unexpected(EngineError::FileOpenFailure);
     }
     source.modifiedTime = std::chrono::duration_cast<std::chrono::nanoseconds>(modified.time_since_epoch()).count();
+    if (nesso::parser::isArchivePath(path))
+    {
+        // The bundle is one file for the staleness check. Each member is its own stored source.
+        source.tracked = true;
+        return source;
+    }
     if (nesso::parser::isGzipPath(path))
     {
-        // A gzip member is not a file-offset range. Store each line, as stdin and other archives do.
+        // A gzip member is not a file-offset range. Store each line, as stdin and archive members do.
         source.storedOnly = true;
         return source;
     }

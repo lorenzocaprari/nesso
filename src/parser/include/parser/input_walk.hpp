@@ -21,7 +21,8 @@ struct InputWalkError
 /// Files `grep` and `index` parse for `inputs`, in argument order.
 /// `-` stays in place. A directory is replaced by the regular files under it, sorted by unsigned
 /// byte order of each path. Directory symlinks are not entered. A file symlink is kept and later
-/// read through the link. Anything else fails.
+/// read through the link. Archive files stay as one path; members are read from that file.
+/// Anything else fails.
 [[nodiscard]] std::expected<std::vector<std::filesystem::path>, InputWalkError>
 expandInputs(std::span<const std::filesystem::path> inputs);
 

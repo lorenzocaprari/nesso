@@ -8,6 +8,7 @@
 #include <expected>
 #include <filesystem>
 #include <string>
+#include <string_view>
 
 namespace nesso::parser
 {
@@ -24,6 +25,10 @@ enum class GzipError : uint8_t
 /// Inflate one gzip file, including concatenated members, into a single byte string.
 /// `OpenFailure` is a path that cannot be read. `Corrupt` is a stream that is not a complete gzip member.
 [[nodiscard]] std::expected<std::string, GzipError> readGzip(const std::filesystem::path &path);
+
+/// Inflate gzip bytes already in memory, including concatenated members.
+/// `Corrupt` is a stream that is not a complete gzip member.
+[[nodiscard]] std::expected<std::string, GzipError> readGzipBytes(std::string_view bytes);
 
 } // namespace nesso::parser
 

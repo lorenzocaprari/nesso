@@ -19,6 +19,7 @@
 #include <embed/batch_plan.hpp>
 #include <embed/embedder.hpp>
 #include <embed/onnx_embedder.hpp>
+#include <parser/archive_source.hpp>
 #include <parser/input_walk.hpp>
 #include <parser/log_chunker.hpp>
 
@@ -90,6 +91,13 @@ ErrorCause causeOf(nesso::parser::ParseError error)
         return ErrorCause::BinaryFile;
     case nesso::parser::ParseError::CorruptGzip:
         return ErrorCause::CorruptGzip;
+    case nesso::parser::ParseError::CorruptArchive:
+        return ErrorCause::CorruptArchive;
+    case nesso::parser::ParseError::ArchiveEntryLimit:
+    case nesso::parser::ParseError::ArchiveTotalLimit:
+    case nesso::parser::ParseError::ArchiveCountLimit:
+    case nesso::parser::ParseError::ArchiveRatioLimit:
+        return ErrorCause::ArchiveLimit;
     }
     std::unreachable();
 }
@@ -144,6 +152,10 @@ std::string_view describe(ErrorCause cause)
         return "the file is binary";
     case ErrorCause::CorruptGzip:
         return "the gzip stream is truncated or corrupt";
+    case ErrorCause::CorruptArchive:
+        return "the archive is truncated or corrupt";
+    case ErrorCause::ArchiveLimit:
+        return "an archive limit was exceeded";
     case ErrorCause::VocabLoad:
         return "could not load the vocabulary";
     case ErrorCause::Tokenization:
@@ -199,6 +211,10 @@ std::string message(const Error &error)
         return text;
     }
     case ErrorKind::Parse:
+        if (!error.note.empty())
+        {
+            return std::format("Error: failed to parse '{}': {}", path, error.note);
+        }
         return std::format("Error: failed to parse '{}': {}", path, reason);
     case ErrorKind::Embed:
         return std::format("Error: failed to embed the input: {}", reason);
@@ -268,8 +284,11 @@ struct LineCounts
     size_t malformedLines = 0;
     size_t missingFieldLines = 0;
     size_t truncated = 0;
+    size_t binaryEntries = 0;
     std::string jsonField = "message";
 };
+
+static bool noKeptLines(const LineCounts &counts) { return counts.skipped == 0 && counts.binaryEntries == 0; }
 
 static LineCounts lineCounts(const nesso::parser::ParseStats &stats, std::string jsonField)
 {
@@ -278,6 +297,7 @@ static LineCounts lineCounts(const nesso::parser::ParseStats &stats, std::string
             .malformedLines = stats.malformedLines,
             .missingFieldLines = stats.missingFieldLines,
             .truncated = stats.truncatedLines,
+            .binaryEntries = stats.binaryEntries,
             .jsonField = std::move(jsonField)};
 }
 
@@ -343,11 +363,42 @@ static Error makeError(ErrorKind kind, ErrorCause cause, std::filesystem::path p
                  .malformedLines = counts.malformedLines,
                  .missingFieldLines = counts.missingFieldLines,
                  .truncatedLines = counts.truncated,
+                 .binaryEntries = counts.binaryEntries,
                  .jsonField = std::move(counts.jsonField),
                  .note = {},
                  .staleSources = {},
                  .policyMismatch = false,
                  .corpusVersion = {}};
+}
+
+static std::string archiveLimitNote(nesso::parser::ParseError code, const nesso::parser::ArchiveLimits &limits)
+{
+    switch (code)
+    {
+    case nesso::parser::ParseError::ArchiveEntryLimit:
+        return std::format("an archive entry is larger than {} bytes", limits.maxEntryBytes);
+    case nesso::parser::ParseError::ArchiveTotalLimit:
+        return std::format("the archive expands past {} uncompressed bytes", limits.maxTotalBytes);
+    case nesso::parser::ParseError::ArchiveCountLimit:
+        return std::format("the archive entry count exceeds {}", limits.maxEntries);
+    case nesso::parser::ParseError::ArchiveRatioLimit:
+        return std::format("the archive compression ratio exceeds {}", limits.maxRatio);
+    case nesso::parser::ParseError::FileOpenFailure:
+    case nesso::parser::ParseError::UnsupportedFormat:
+    case nesso::parser::ParseError::BinaryFile:
+    case nesso::parser::ParseError::CorruptGzip:
+    case nesso::parser::ParseError::CorruptArchive:
+        return {};
+    }
+    std::unreachable();
+}
+
+static Error parseFailure(nesso::parser::ParseError code, std::filesystem::path path, const LineCounts &counts,
+                          const nesso::parser::ArchiveLimits &limits)
+{
+    Error error = makeError(ErrorKind::Parse, causeOf(code), std::move(path), counts);
+    error.note = archiveLimitNote(code, limits);
+    return error;
 }
 
 static std::string modelLoadNote(const std::vector<std::filesystem::path> &tried)
@@ -388,7 +439,7 @@ static bool sameSource(const nesso::core::SourceInfo &left, const nesso::core::S
 }
 
 static std::expected<Scan, Error> scanFiles(std::span<const std::filesystem::path> files, std::string_view jsonField,
-                                            bool forIndex = false)
+                                            const nesso::parser::ArchiveLimits &limits, bool forIndex = false)
 {
     const ScopedStage stage{"parse"};
     nesso::parser::ParseStats stats{};
@@ -422,12 +473,12 @@ static std::expected<Scan, Error> scanFiles(std::span<const std::filesystem::pat
                 scan.stdinChunks.push_back(std::move(chunk));
             };
             const auto streamed =
-                forIndex ? nesso::parser::Chunker::forEachRecord(path, MAX_LINE_LENGTH, &stats, jsonField, keep)
-                         : nesso::parser::Chunker::forEach(path, MAX_LINE_LENGTH, &stats, jsonField, keep);
+                forIndex ? nesso::parser::Chunker::forEachRecord(path, MAX_LINE_LENGTH, &stats, jsonField, keep, limits)
+                         : nesso::parser::Chunker::forEach(path, MAX_LINE_LENGTH, &stats, jsonField, keep, limits);
             if (!streamed)
             {
-                return std::unexpected(makeError(ErrorKind::Parse, causeOf(streamed.error()), path,
-                                                 lineCounts(stats, std::string{jsonField})));
+                return std::unexpected(
+                    parseFailure(streamed.error(), path, lineCounts(stats, std::string{jsonField}), limits));
             }
             if (forIndex)
             {
@@ -441,12 +492,12 @@ static std::expected<Scan, Error> scanFiles(std::span<const std::filesystem::pat
             continue;
         }
 
-        const auto streamed = nesso::parser::Chunker::forEach(path, MAX_LINE_LENGTH, &stats, jsonField,
-                                                              [&scan](nesso::parser::ParsedChunk) { ++scan.chunks; });
+        const auto streamed = nesso::parser::Chunker::forEach(
+            path, MAX_LINE_LENGTH, &stats, jsonField, [&scan](nesso::parser::ParsedChunk) { ++scan.chunks; }, limits);
         if (!streamed)
         {
-            return std::unexpected(makeError(ErrorKind::Parse, causeOf(streamed.error()), path,
-                                             lineCounts(stats, std::string{jsonField})));
+            return std::unexpected(
+                parseFailure(streamed.error(), path, lineCounts(stats, std::string{jsonField}), limits));
         }
     }
     scan.counts = lineCounts(stats, std::string{jsonField});
@@ -455,9 +506,9 @@ static std::expected<Scan, Error> scanFiles(std::span<const std::filesystem::pat
 
 // Files are parsed again so embeddings stay batched. Stdin is replayed from the count pass.
 template <typename Consume>
-static std::expected<void, nesso::parser::ParseError> visitChunks(const std::filesystem::path &path, Scan &scan,
-                                                                  bool &stdinUsed, std::string_view jsonField,
-                                                                  const Consume &consume)
+static std::expected<void, nesso::parser::ParseError>
+visitChunks(const std::filesystem::path &path, Scan &scan, bool &stdinUsed, std::string_view jsonField,
+            const nesso::parser::ArchiveLimits &limits, const Consume &consume)
 {
     if (path == "-")
     {
@@ -471,14 +522,14 @@ static std::expected<void, nesso::parser::ParseError> visitChunks(const std::fil
         }
         return {};
     }
-    return nesso::parser::Chunker::forEach(path, MAX_LINE_LENGTH, nullptr, jsonField, consume);
+    return nesso::parser::Chunker::forEach(path, MAX_LINE_LENGTH, nullptr, jsonField, consume, limits);
 }
 
 // Like visitChunks, but also yields skipped records so v3 line ordinals stay complete.
 template <typename Consume>
-static std::expected<void, nesso::parser::ParseError> visitRecords(const std::filesystem::path &path, Scan &scan,
-                                                                   bool &stdinUsed, std::string_view jsonField,
-                                                                   const Consume &consume)
+static std::expected<void, nesso::parser::ParseError>
+visitRecords(const std::filesystem::path &path, Scan &scan, bool &stdinUsed, std::string_view jsonField,
+             const nesso::parser::ArchiveLimits &limits, const Consume &consume)
 {
     if (path == "-")
     {
@@ -492,7 +543,7 @@ static std::expected<void, nesso::parser::ParseError> visitRecords(const std::fi
         }
         return {};
     }
-    return nesso::parser::Chunker::forEachRecord(path, MAX_LINE_LENGTH, nullptr, jsonField, consume);
+    return nesso::parser::Chunker::forEachRecord(path, MAX_LINE_LENGTH, nullptr, jsonField, consume, limits);
 }
 
 template <typename E> static std::unexpected<Error> textFailure(ErrorKind kind, E cause, const LineCounts &counts)
@@ -503,7 +554,7 @@ template <typename E> static std::unexpected<Error> textFailure(ErrorKind kind, 
 // `note` selects the index wording in `message`. `EmptyInput` stays exit 1.
 static std::unexpected<Error> nothingToIndex(const IndexRequest &request, const Scan &scanned)
 {
-    const ErrorCause cause = scanned.counts.skipped == 0 ? ErrorCause::EmptyFile : ErrorCause::NothingIndexable;
+    const ErrorCause cause = noKeptLines(scanned.counts) ? ErrorCause::EmptyFile : ErrorCause::NothingIndexable;
     const std::filesystem::path path = request.files.size() == 1 ? request.files.front() : std::filesystem::path{};
     Error error = makeError(ErrorKind::EmptyInput, cause, path, scanned.counts);
     error.note = "check the input path or --json-field";
@@ -834,14 +885,14 @@ std::expected<TextResults, Error> Nesso::grep(const GrepRequest &input) const
         return std::unexpected(model.error());
     }
 
-    auto scanned = scanFiles(request.files, request.jsonField);
+    auto scanned = scanFiles(request.files, request.jsonField, request.archiveLimits);
     if (!scanned)
     {
         return std::unexpected(scanned.error());
     }
     if (scanned->chunks == 0)
     {
-        const ErrorCause cause = scanned->counts.skipped == 0 ? ErrorCause::EmptyFile : ErrorCause::NothingIndexable;
+        const ErrorCause cause = noKeptLines(scanned->counts) ? ErrorCause::EmptyFile : ErrorCause::NothingIndexable;
         const std::filesystem::path path = request.files.size() == 1 ? request.files.front() : std::filesystem::path{};
         return std::unexpected(makeError(ErrorKind::EmptyInput, cause, path, scanned->counts));
     }
@@ -978,56 +1029,69 @@ std::expected<TextResults, Error> Nesso::grep(const GrepRequest &input) const
         bool stdinUsed = false;
         for (const std::filesystem::path &path : request.files)
         {
-            sources.push_back(path.string());
-            const auto sourceId = static_cast<std::uint32_t>(sources.size() - 1);
-            const std::string &source = sources.back();
-            const auto streamed = visitChunks(path, *scanned, stdinUsed, request.jsonField,
-                                              [&](nesso::parser::ParsedChunk chunk)
-                                              {
-                                                  if (failed)
-                                                  {
-                                                      return;
-                                                  }
-                                                  if (firstSource.empty())
-                                                  {
-                                                      firstSource = source;
-                                                  }
-                                                  else if (source != firstSource)
-                                                  {
-                                                      severalSources = true;
-                                                  }
-                                                  const std::uint32_t id = distinct.add(chunk.text);
-                                                  ++linesSeen;
-                                                  const Waiting item{.ordinal = ordinal,
-                                                                     .distinctId = id,
-                                                                     .source = sourceId,
-                                                                     .line = chunk.lineNumber,
-                                                                     .arrayElement = chunk.arrayElement,
-                                                                     .text = std::move(chunk.text)};
-                                                  if (needLexical)
-                                                  {
-                                                      allLines.push_back(item);
-                                                  }
-                                                  if (id < scores.size())
-                                                  {
-                                                      consider(item);
-                                                  }
-                                                  else
-                                                  {
-                                                      waiting.push_back(item);
-                                                  }
-                                                  ++ordinal;
-                                                  if (distinct.pending().size() == batch)
-                                                  {
-                                                      if (const auto flushed = flush(); !flushed)
-                                                      {
-                                                          failed = flushed.error();
-                                                      }
-                                                  }
-                                              });
+            const bool archive = nesso::parser::isArchivePath(path);
+            std::uint32_t sourceId = 0;
+            std::string source;
+            if (!archive)
+            {
+                sources.push_back(path.string());
+                sourceId = static_cast<std::uint32_t>(sources.size() - 1);
+                source = sources.back();
+            }
+            const auto streamed =
+                visitChunks(path, *scanned, stdinUsed, request.jsonField, request.archiveLimits,
+                            [&](nesso::parser::ParsedChunk chunk)
+                            {
+                                if (failed)
+                                {
+                                    return;
+                                }
+                                if (archive && (source.empty() || chunk.entryStart || chunk.source != source))
+                                {
+                                    sources.push_back(chunk.source);
+                                    sourceId = static_cast<std::uint32_t>(sources.size() - 1);
+                                    source = sources.back();
+                                }
+                                if (firstSource.empty())
+                                {
+                                    firstSource = source;
+                                }
+                                else if (source != firstSource)
+                                {
+                                    severalSources = true;
+                                }
+                                const std::uint32_t id = distinct.add(chunk.text);
+                                ++linesSeen;
+                                const Waiting item{.ordinal = ordinal,
+                                                   .distinctId = id,
+                                                   .source = sourceId,
+                                                   .line = chunk.lineNumber,
+                                                   .arrayElement = chunk.arrayElement,
+                                                   .text = std::move(chunk.text)};
+                                if (needLexical)
+                                {
+                                    allLines.push_back(item);
+                                }
+                                if (id < scores.size())
+                                {
+                                    consider(item);
+                                }
+                                else
+                                {
+                                    waiting.push_back(item);
+                                }
+                                ++ordinal;
+                                if (distinct.pending().size() == batch)
+                                {
+                                    if (const auto flushed = flush(); !flushed)
+                                    {
+                                        failed = flushed.error();
+                                    }
+                                }
+                            });
             if (!streamed)
             {
-                return std::unexpected(makeError(ErrorKind::Parse, causeOf(streamed.error()), path, counts));
+                return std::unexpected(parseFailure(streamed.error(), path, counts, request.archiveLimits));
             }
             if (failed)
             {
@@ -1047,6 +1111,7 @@ std::expected<TextResults, Error> Nesso::grep(const GrepRequest &input) const
                         .malformedLines = counts.malformedLines,
                         .missingFieldLines = counts.missingFieldLines,
                         .truncatedLines = counts.truncated,
+                        .binaryEntries = counts.binaryEntries,
                         .jsonField = counts.jsonField,
                         .multipleSources = severalSources,
                         .staleSources = {},
@@ -1288,7 +1353,7 @@ std::expected<IndexSummary, Error> Nesso::index(const IndexRequest &input) const
         return std::unexpected(model.error());
     }
 
-    auto scanned = scanFiles(request.files, request.jsonField, true);
+    auto scanned = scanFiles(request.files, request.jsonField, request.archiveLimits, true);
     if (!scanned)
     {
         return std::unexpected(scanned.error());
@@ -1365,19 +1430,43 @@ std::expected<IndexSummary, Error> Nesso::index(const IndexRequest &input) const
                     return std::unexpected(makeError(ErrorKind::Parse, ErrorCause::SourceChanged, path, counts));
                 }
             }
-            const auto sourceId = writer->addSource(source);
-            if (!sourceId)
+            const bool archive = nesso::parser::isArchivePath(path);
+            std::uint32_t activeSource = 0;
+            bool storeLines = source.storedOnly;
+            if (!archive)
             {
-                return std::unexpected(
-                    makeError(ErrorKind::CorpusWrite, causeOf(sourceId.error()), request.output, counts));
+                const auto sourceId = writer->addSource(source);
+                if (!sourceId)
+                {
+                    return std::unexpected(
+                        makeError(ErrorKind::CorpusWrite, causeOf(sourceId.error()), request.output, counts));
+                }
+                activeSource = *sourceId;
             }
             const auto streamed = visitRecords(
-                path, *scanned, stdinUsed, request.jsonField,
+                path, *scanned, stdinUsed, request.jsonField, request.archiveLimits,
                 [&](nesso::parser::ParsedChunk chunk)
                 {
                     if (failed)
                     {
                         return;
+                    }
+                    if (archive && chunk.entryStart)
+                    {
+                        nesso::core::SourceInfo entry{.path = chunk.source,
+                                                      .size = 0,
+                                                      .modifiedTime = 0,
+                                                      .tracked = false,
+                                                      .jsonField = std::string{request.jsonField},
+                                                      .storedOnly = true};
+                        const auto added = writer->addSource(std::move(entry));
+                        if (!added)
+                        {
+                            failed = makeError(ErrorKind::CorpusWrite, causeOf(added.error()), request.output, counts);
+                            return;
+                        }
+                        activeSource = *added;
+                        storeLines = true;
                     }
                     std::uint32_t id = nesso::core::NO_DISTINCT;
                     if (!chunk.skipped)
@@ -1400,10 +1489,10 @@ std::expected<IndexSummary, Error> Nesso::index(const IndexRequest &input) const
                     nesso::core::CorpusLine line{.lineNumber = chunk.lineNumber,
                                                  .byteOffset = chunk.byteOffset,
                                                  .byteLength = chunk.byteLength,
-                                                 .sourceIndex = *sourceId,
+                                                 .sourceIndex = activeSource,
                                                  .distinctId = id,
                                                  .arrayElement = chunk.arrayElement};
-                    if (source.storedOnly)
+                    if (storeLines)
                     {
                         line.storedText = chunk.text;
                     }
@@ -1424,7 +1513,7 @@ std::expected<IndexSummary, Error> Nesso::index(const IndexRequest &input) const
                 });
             if (!streamed)
             {
-                return std::unexpected(makeError(ErrorKind::Parse, causeOf(streamed.error()), path, counts));
+                return std::unexpected(parseFailure(streamed.error(), path, counts, request.archiveLimits));
             }
             if (failed)
             {
@@ -1461,6 +1550,7 @@ std::expected<IndexSummary, Error> Nesso::index(const IndexRequest &input) const
                         .malformedLines = counts.malformedLines,
                         .missingFieldLines = counts.missingFieldLines,
                         .truncatedLines = counts.truncated,
+                        .binaryEntries = counts.binaryEntries,
                         .jsonField = counts.jsonField};
 }
 

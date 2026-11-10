@@ -3,11 +3,14 @@
 
 #include <cli_parser.hpp>
 
+#include <parser/archive_source.hpp>
+
 #include <embed/onnx_embedder.hpp>
 
 #include <CLI/CLI.hpp>
 
 #include <charconv>
+#include <cstdint>
 #include <cstdlib>
 #include <iostream>
 #include <string>
@@ -58,7 +61,45 @@ static CLI::Validator positiveCount()
 static constexpr const char *MODEL_DIR_HELP = "Directory containing model.onnx and vocab.txt. "
                                               "Default: NESSO_MODEL_DIR, ./models, XDG data, /usr/share/nesso";
 
-static constexpr const char *TEXT_FILES_HELP = "Text files or directories to read. - reads stdin as lines";
+static constexpr const char *TEXT_FILES_HELP = "Text files, directories, or tar/zip bundles. - reads stdin as lines";
+
+static CLI::Validator positiveUint64()
+{
+    return CLI::Validator{[](std::string &value)
+                          {
+                              if (value.empty() || value.find_first_not_of("0123456789") != std::string::npos ||
+                                  value.find_first_not_of('0') == std::string::npos)
+                              {
+                                  return std::string{"must be a positive integer"};
+                              }
+                              std::uint64_t parsed = 0;
+                              const char *const first = value.data();
+                              const char *const last = first + value.size();
+                              const std::from_chars_result result = std::from_chars(first, last, parsed);
+                              if (result.ec != std::errc{} || result.ptr != last)
+                              {
+                                  return std::string{"must be a positive integer"};
+                              }
+                              return std::string{};
+                          },
+                          "POSITIVE", "positive integer"};
+}
+
+static void addArchiveLimits(CLI::App *command, nesso::parser::ArchiveLimits &limits)
+{
+    command->add_option("--archive-max-entry-bytes", limits.maxEntryBytes, "Maximum bytes of one archive entry")
+        ->default_val(limits.maxEntryBytes)
+        ->check(positiveUint64());
+    command->add_option("--archive-max-bytes", limits.maxTotalBytes, "Maximum uncompressed bytes from one archive")
+        ->default_val(limits.maxTotalBytes)
+        ->check(positiveUint64());
+    command->add_option("--archive-max-entries", limits.maxEntries, "Maximum regular-file entries in one archive")
+        ->default_val(limits.maxEntries)
+        ->check(positiveUint64());
+    command->add_option("--archive-max-ratio", limits.maxRatio, "Maximum uncompressed-to-archive size ratio")
+        ->default_val(limits.maxRatio)
+        ->check(positiveUint64());
+}
 
 static constexpr const char *THREADS_HELP = "CPU budget N. The full rules are in docs/usage.md.";
 
@@ -85,6 +126,8 @@ struct TextOptions
     bool group = false;
     size_t threads = 0;
     std::string mode = "auto";
+    nesso::parser::ArchiveLimits grepArchiveLimits{};
+    nesso::parser::ArchiveLimits indexArchiveLimits{};
 };
 
 static SearchMode parseSearchMode(std::string_view mode)
@@ -191,6 +234,7 @@ std::expected<ParsedCommand, int> parseCommandLine(int argc, char **argv)
         ->check(CLI::IsMember({"auto", "hybrid", "dense", "lexical"}));
     const auto *grepThreads = grepCmd->add_option("--threads", text.threads, THREADS_HELP)->check(positiveCount());
     const auto *grepModelDir = grepCmd->add_option("--model-dir", text.modelDir, MODEL_DIR_HELP);
+    addArchiveLimits(grepCmd, text.grepArchiveLimits);
 
     auto *indexCmd = app.add_subcommand("index", "Embed text into a corpus file. See docs/usage.md.");
     indexCmd->add_option("-o,--output", text.output, "Corpus file to write")->required();
@@ -199,6 +243,7 @@ std::expected<ParsedCommand, int> parseCommandLine(int argc, char **argv)
     indexCmd->add_flag("--quiet", text.quiet, "Suppress interactive progress output");
     const auto *indexThreads = indexCmd->add_option("--threads", text.threads, THREADS_HELP)->check(positiveCount());
     const auto *indexModelDir = indexCmd->add_option("--model-dir", text.modelDir, MODEL_DIR_HELP);
+    addArchiveLimits(indexCmd, text.indexArchiveLimits);
 
     auto *searchCmd = app.add_subcommand("search", "Semantic search of a corpus file. Prints matches only.");
     searchCmd->add_option("query", text.query, "Natural-language query")->required();
@@ -259,7 +304,8 @@ std::expected<ParsedCommand, int> parseCommandLine(int argc, char **argv)
                                                     .progress = !text.quiet,
                                                     .json = text.json,
                                                     .mode = parseSearchMode(text.mode),
-                                                    .group = text.group}};
+                                                    .group = text.group,
+                                                    .archiveLimits = text.grepArchiveLimits}};
     }
     if (indexCmd->parsed())
     {
@@ -267,7 +313,8 @@ std::expected<ParsedCommand, int> parseCommandLine(int argc, char **argv)
                              .request = IndexRequest{.files = toPaths(text.files),
                                                      .output = text.output,
                                                      .jsonField = text.jsonField,
-                                                     .progress = !text.quiet}};
+                                                     .progress = !text.quiet,
+                                                     .archiveLimits = text.indexArchiveLimits}};
     }
     return ParsedCommand{.config = configFrom(*modelDirOpt, text, threads),
                          .request = SearchRequest{.query = text.query,

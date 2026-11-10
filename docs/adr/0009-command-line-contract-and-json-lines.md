@@ -51,6 +51,10 @@ For `grep`, `index`, and `search`, stdout carries match lines only. Skip and tru
 * Bad, because the JSON `score` has more digits than `{:.4f}`. ADR 0003 still requires the same binary to repeat its stdout.
 * Bad, because `--help` and `docs/usage.md` say 4096 characters, and `limitValue` in `src/parser/log_chunker.cpp` resizes at 4096 bytes, which can split a UTF-8 sequence. Changing that cut changes the embedded bytes.
 
+## Amendment 2026-11-10
+
+`source` may be `archive:entry`. `archive` is the path given to `grep` or `index`. `entry` is the member name as stored, with `\` written as `/` and a leading `./` removed. An absolute member, or a member whose name contains `..`, is still only that label. Text output uses the existing `source:line N:` form, including when the bundle has one member. A corrupt or unreadable archive, a gzip member that is not a complete gzip stream, and an archive that exceeds an entry, total, count, or compression-ratio limit exit 2. The limit message names the number. An archive with nothing to rank exits 1. `--archive-max-entry-bytes`, `--archive-max-bytes`, `--archive-max-entries`, and `--archive-max-ratio` change those caps. Their defaults are not part of the stable contract.
+
 ### Confirmation
 
 `test/functional/features/` checks help, version, exit 0/1/2, the match line, stdin, and a JSON array element. It has no `--json` scenario. The zero-chunk `index` scenario expects exit 1. It does not cover implicit stdin, a positional corpus, `--color`, or a default `-o`.
