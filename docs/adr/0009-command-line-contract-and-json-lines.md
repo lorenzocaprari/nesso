@@ -55,6 +55,10 @@ For `grep`, `index`, and `search`, stdout carries match lines only. Skip and tru
 
 `source` may be `archive:entry`. `archive` is the path given to `grep` or `index`. `entry` is the member name as stored, with `\` written as `/` and a leading `./` removed. An absolute member, or a member whose name contains `..`, is still only that label. Text output uses the existing `source:line N:` form, including when the bundle has one member. A corrupt or unreadable archive, a gzip member that is not a complete gzip stream, and an archive that exceeds an entry, total, count, or compression-ratio limit exit 2. The limit message names the number. An archive with nothing to rank exits 1. `--archive-max-entry-bytes`, `--archive-max-bytes`, `--archive-max-entries`, and `--archive-max-ratio` change those caps. Their defaults are not part of the stable contract.
 
+## Amendment 2026-11-10 (bundle entry errors)
+
+An encrypted zip entry exits 2. The parse note names the bundle path and the entry and says to decrypt it first. A whole-file OpenPGP payload (armored message or binary PKESK/SKESK/SEIPD), recognized only after archive open or read fails, exits 2 with a decrypt hint; the note names the bundle only. Other open or read failures keep `the archive is truncated or corrupt`. Limit notes name the number and the override flag (`--archive-max-entry-bytes`, `--archive-max-bytes`, `--archive-max-entries`, `--archive-max-ratio`). Directories, symlinks, hard links, other non-regular members, and binary members are skipped; stderr gets one summary line per bundle. Stdout and `--json` stay the match contract. Stderr wording remains not stable.
+
 ### Confirmation
 
 `test/functional/features/` checks help, version, exit 0/1/2, the match line, stdin, and a JSON array element. It has no `--json` scenario. The zero-chunk `index` scenario expects exit 1. It does not cover implicit stdin, a positional corpus, `--color`, or a default `-o`.

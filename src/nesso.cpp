@@ -93,6 +93,8 @@ ErrorCause causeOf(nesso::parser::ParseError error)
         return ErrorCause::CorruptGzip;
     case nesso::parser::ParseError::CorruptArchive:
         return ErrorCause::CorruptArchive;
+    case nesso::parser::ParseError::EncryptedArchive:
+        return ErrorCause::EncryptedArchive;
     case nesso::parser::ParseError::ArchiveEntryLimit:
     case nesso::parser::ParseError::ArchiveTotalLimit:
     case nesso::parser::ParseError::ArchiveCountLimit:
@@ -154,6 +156,8 @@ std::string_view describe(ErrorCause cause)
         return "the gzip stream is truncated or corrupt";
     case ErrorCause::CorruptArchive:
         return "the archive is truncated or corrupt";
+    case ErrorCause::EncryptedArchive:
+        return "the archive is encrypted; decrypt it first";
     case ErrorCause::ArchiveLimit:
         return "an archive limit was exceeded";
     case ErrorCause::VocabLoad:
@@ -301,6 +305,64 @@ static LineCounts lineCounts(const nesso::parser::ParseStats &stats, std::string
             .jsonField = std::move(jsonField)};
 }
 
+static std::string countPhrase(size_t count, std::string_view singular, std::string_view plural)
+{
+    return std::format("{} {}", count, count == 1 ? singular : plural);
+}
+
+static std::string joinAnd(const std::vector<std::string> &parts)
+{
+    if (parts.size() == 1)
+    {
+        return parts.front();
+    }
+    if (parts.size() == 2)
+    {
+        return parts[0] + " and " + parts[1];
+    }
+    std::string text = parts[0];
+    for (size_t index = 1; index + 1 < parts.size(); ++index)
+    {
+        text += ", ";
+        text += parts[index];
+    }
+    text += ", and ";
+    text += parts.back();
+    return text;
+}
+
+std::string formatBundleSkipSummary(const BundleSkipSummary &summary)
+{
+    const size_t total = bundleSkipTotal(summary);
+    if (total == 0)
+    {
+        return {};
+    }
+    std::vector<std::string> parts;
+    if (summary.directories > 0)
+    {
+        parts.push_back(countPhrase(summary.directories, "directory", "directories"));
+    }
+    if (summary.symlinks > 0)
+    {
+        parts.push_back(countPhrase(summary.symlinks, "symlink", "symlinks"));
+    }
+    if (summary.hardlinks > 0)
+    {
+        parts.push_back(countPhrase(summary.hardlinks, "hard link", "hard links"));
+    }
+    if (summary.other > 0)
+    {
+        parts.push_back(countPhrase(summary.other, "non-regular entry", "non-regular entries"));
+    }
+    if (summary.binary > 0)
+    {
+        parts.push_back(countPhrase(summary.binary, "binary file", "binary files"));
+    }
+    return std::format("Skipped {} in '{}' ({}).", countPhrase(total, "entry", "entries"), summary.path,
+                       joinAnd(parts));
+}
+
 static void addSourceWarning(std::vector<StaleSource> &warnings, StaleSource warning)
 {
     const auto existing =
@@ -353,7 +415,8 @@ static std::vector<StaleSource> staleSources(std::span<const nesso::core::Source
     return stale;
 }
 
-static Error makeError(ErrorKind kind, ErrorCause cause, std::filesystem::path path, LineCounts counts)
+static Error makeError(ErrorKind kind, ErrorCause cause, std::filesystem::path path, LineCounts counts,
+                       std::vector<BundleSkipSummary> bundleSkips = {})
 {
     return Error{.kind = kind,
                  .cause = cause,
@@ -367,6 +430,7 @@ static Error makeError(ErrorKind kind, ErrorCause cause, std::filesystem::path p
                  .jsonField = std::move(counts.jsonField),
                  .note = {},
                  .staleSources = {},
+                 .bundleSkips = std::move(bundleSkips),
                  .policyMismatch = false,
                  .corpusVersion = {}};
 }
@@ -376,28 +440,50 @@ static std::string archiveLimitNote(nesso::parser::ParseError code, const nesso:
     switch (code)
     {
     case nesso::parser::ParseError::ArchiveEntryLimit:
-        return std::format("an archive entry is larger than {} bytes", limits.maxEntryBytes);
+        return std::format("an archive entry is larger than {} bytes; raise the limit with --archive-max-entry-bytes",
+                           limits.maxEntryBytes);
     case nesso::parser::ParseError::ArchiveTotalLimit:
-        return std::format("the archive expands past {} uncompressed bytes", limits.maxTotalBytes);
+        return std::format("the archive expands past {} uncompressed bytes; raise the limit with --archive-max-bytes",
+                           limits.maxTotalBytes);
     case nesso::parser::ParseError::ArchiveCountLimit:
-        return std::format("the archive entry count exceeds {}", limits.maxEntries);
+        return std::format("the archive entry count exceeds {}; raise the limit with --archive-max-entries",
+                           limits.maxEntries);
     case nesso::parser::ParseError::ArchiveRatioLimit:
-        return std::format("the archive compression ratio exceeds {}", limits.maxRatio);
+        return std::format("the archive compression ratio exceeds {}; raise the limit with --archive-max-ratio",
+                           limits.maxRatio);
     case nesso::parser::ParseError::FileOpenFailure:
     case nesso::parser::ParseError::UnsupportedFormat:
     case nesso::parser::ParseError::BinaryFile:
     case nesso::parser::ParseError::CorruptGzip:
     case nesso::parser::ParseError::CorruptArchive:
+    case nesso::parser::ParseError::EncryptedArchive:
         return {};
     }
     std::unreachable();
 }
 
-static Error parseFailure(nesso::parser::ParseError code, std::filesystem::path path, const LineCounts &counts,
-                          const nesso::parser::ArchiveLimits &limits)
+static std::string encryptedArchiveNote(std::string_view entry)
 {
-    Error error = makeError(ErrorKind::Parse, causeOf(code), std::move(path), counts);
-    error.note = archiveLimitNote(code, limits);
+    if (entry.empty())
+    {
+        return "the archive is an encrypted OpenPGP file; decrypt it first (for example with gpg --decrypt)";
+    }
+    return std::format("entry '{}' is encrypted; decrypt it first", entry);
+}
+
+static Error parseFailure(nesso::parser::ParseError code, std::filesystem::path path, const LineCounts &counts,
+                          const nesso::parser::ArchiveLimits &limits, std::string_view encryptedEntry = {},
+                          std::vector<BundleSkipSummary> bundleSkips = {})
+{
+    Error error = makeError(ErrorKind::Parse, causeOf(code), std::move(path), counts, std::move(bundleSkips));
+    if (code == nesso::parser::ParseError::EncryptedArchive)
+    {
+        error.note = encryptedArchiveNote(encryptedEntry);
+    }
+    else
+    {
+        error.note = archiveLimitNote(code, limits);
+    }
     return error;
 }
 
@@ -431,7 +517,27 @@ struct Scan
     // Stdin cannot be rewound. The count pass keeps it for the embedding pass.
     std::vector<nesso::parser::ParsedChunk> stdinChunks;
     std::vector<nesso::core::SourceInfo> sources;
+    std::vector<BundleSkipSummary> bundleSkips;
 };
+
+static void recordBundleSkips(Scan &scan, const std::filesystem::path &path, const nesso::parser::ParseStats &before,
+                              const nesso::parser::ParseStats &after)
+{
+    if (!nesso::parser::isArchivePath(path))
+    {
+        return;
+    }
+    BundleSkipSummary summary{.path = path.string(),
+                              .directories = after.archiveDirectories - before.archiveDirectories,
+                              .symlinks = after.archiveSymlinks - before.archiveSymlinks,
+                              .hardlinks = after.archiveHardlinks - before.archiveHardlinks,
+                              .other = after.archiveOtherSkipped - before.archiveOtherSkipped,
+                              .binary = after.binaryEntries - before.binaryEntries};
+    if (bundleSkipTotal(summary) > 0)
+    {
+        scan.bundleSkips.push_back(std::move(summary));
+    }
+}
 
 static bool sameSource(const nesso::core::SourceInfo &left, const nesso::core::SourceInfo &right)
 {
@@ -477,8 +583,8 @@ static std::expected<Scan, Error> scanFiles(std::span<const std::filesystem::pat
                          : nesso::parser::Chunker::forEach(path, MAX_LINE_LENGTH, &stats, jsonField, keep, limits);
             if (!streamed)
             {
-                return std::unexpected(
-                    parseFailure(streamed.error(), path, lineCounts(stats, std::string{jsonField}), limits));
+                return std::unexpected(parseFailure(streamed.error(), path, lineCounts(stats, std::string{jsonField}),
+                                                    limits, stats.encryptedEntry, scan.bundleSkips));
             }
             if (forIndex)
             {
@@ -486,19 +592,22 @@ static std::expected<Scan, Error> scanFiles(std::span<const std::filesystem::pat
                 if (!after || !sameSource(scan.sources.back(), *after))
                 {
                     return std::unexpected(makeError(ErrorKind::Parse, ErrorCause::SourceChanged, path,
-                                                     lineCounts(stats, std::string{jsonField})));
+                                                     lineCounts(stats, std::string{jsonField}), scan.bundleSkips));
                 }
             }
             continue;
         }
 
+        const nesso::parser::ParseStats before = stats;
         const auto streamed = nesso::parser::Chunker::forEach(
             path, MAX_LINE_LENGTH, &stats, jsonField, [&scan](nesso::parser::ParsedChunk) { ++scan.chunks; }, limits);
         if (!streamed)
         {
-            return std::unexpected(
-                parseFailure(streamed.error(), path, lineCounts(stats, std::string{jsonField}), limits));
+            recordBundleSkips(scan, path, before, stats);
+            return std::unexpected(parseFailure(streamed.error(), path, lineCounts(stats, std::string{jsonField}),
+                                                limits, stats.encryptedEntry, scan.bundleSkips));
         }
+        recordBundleSkips(scan, path, before, stats);
     }
     scan.counts = lineCounts(stats, std::string{jsonField});
     return scan;
@@ -556,7 +665,7 @@ static std::unexpected<Error> nothingToIndex(const IndexRequest &request, const 
 {
     const ErrorCause cause = noKeptLines(scanned.counts) ? ErrorCause::EmptyFile : ErrorCause::NothingIndexable;
     const std::filesystem::path path = request.files.size() == 1 ? request.files.front() : std::filesystem::path{};
-    Error error = makeError(ErrorKind::EmptyInput, cause, path, scanned.counts);
+    Error error = makeError(ErrorKind::EmptyInput, cause, path, scanned.counts, scanned.bundleSkips);
     error.note = "check the input path or --json-field";
     return std::unexpected(std::move(error));
 }
@@ -698,6 +807,7 @@ std::expected<const nesso::embed::Embedder *, Error> Nesso::embedder() const
                         .path = modelDir,
                         .note = {},
                         .staleSources = {},
+                        .bundleSkips = {},
                         .policyMismatch = false,
                         .corpusVersion = {}};
             error.note = modelLoadNote(tried);
@@ -894,7 +1004,7 @@ std::expected<TextResults, Error> Nesso::grep(const GrepRequest &input) const
     {
         const ErrorCause cause = noKeptLines(scanned->counts) ? ErrorCause::EmptyFile : ErrorCause::NothingIndexable;
         const std::filesystem::path path = request.files.size() == 1 ? request.files.front() : std::filesystem::path{};
-        return std::unexpected(makeError(ErrorKind::EmptyInput, cause, path, scanned->counts));
+        return std::unexpected(makeError(ErrorKind::EmptyInput, cause, path, scanned->counts, scanned->bundleSkips));
     }
 
     const auto queryEmbedding = [&request, &model]
@@ -1111,10 +1221,13 @@ std::expected<TextResults, Error> Nesso::grep(const GrepRequest &input) const
                         .malformedLines = counts.malformedLines,
                         .missingFieldLines = counts.missingFieldLines,
                         .truncatedLines = counts.truncated,
-                        .binaryEntries = counts.binaryEntries,
+                        .binaryEntries = 0,
                         .jsonField = counts.jsonField,
                         .multipleSources = severalSources,
                         .staleSources = {},
+                        .bundleSkips = scanned->bundleSkips,
+                        .policyMismatch = false,
+                        .lexicalFallback = false,
                         .grouped = request.group};
 
     if (!needLexical)
@@ -1550,8 +1663,9 @@ std::expected<IndexSummary, Error> Nesso::index(const IndexRequest &input) const
                         .malformedLines = counts.malformedLines,
                         .missingFieldLines = counts.missingFieldLines,
                         .truncatedLines = counts.truncated,
-                        .binaryEntries = counts.binaryEntries,
-                        .jsonField = counts.jsonField};
+                        .binaryEntries = 0,
+                        .jsonField = counts.jsonField,
+                        .bundleSkips = scanned->bundleSkips};
 }
 
 // 0 is the embedder default: usable physical cores. An explicit budget is that

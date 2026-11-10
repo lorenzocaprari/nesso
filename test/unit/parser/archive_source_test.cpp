@@ -10,8 +10,12 @@
 #include <archive.h>
 #include <archive_entry.h>
 
+#include <array>
+#include <cstddef>
+#include <cstdint>
 #include <filesystem>
 #include <fstream>
+#include <span>
 #include <string>
 #include <string_view>
 #include <unistd.h>
@@ -165,7 +169,85 @@ std::string unhex(std::string_view hex)
 const std::string_view GZIP_DATABASE =
     "1f8b0800f722f26a02ff4b492c494c4a2c4e5548cecfcb4b4d2ec9cccf53284a4d2b2d4e4de10200e756bf4f1c000000";
 
+void writeEncryptedZip(const std::filesystem::path &dest, std::string_view name, std::string_view payload)
+{
+    // Minimal stored zip with general-purpose bit 0 (encrypted). Payload is not decrypted.
+    const auto nameBytes = static_cast<std::uint16_t>(name.size());
+    const auto size = static_cast<std::uint32_t>(payload.size());
+    std::string bytes;
+    const auto append32 = [&bytes](std::uint32_t value)
+    {
+        bytes.push_back(static_cast<char>(value & 0xffU));
+        bytes.push_back(static_cast<char>((value >> 8) & 0xffU));
+        bytes.push_back(static_cast<char>((value >> 16) & 0xffU));
+        bytes.push_back(static_cast<char>((value >> 24) & 0xffU));
+    };
+    const auto append16 = [&bytes](std::uint16_t value)
+    {
+        bytes.push_back(static_cast<char>(value & 0xffU));
+        bytes.push_back(static_cast<char>((value >> 8) & 0xffU));
+    };
+    append32(0x04034b50U);
+    append16(20);
+    append16(0x0001);
+    append16(0);
+    append16(0);
+    append16(0);
+    append32(0);
+    append32(size);
+    append32(size);
+    append16(nameBytes);
+    append16(0);
+    bytes.append(name);
+    bytes.append(payload);
+    const auto localSize = static_cast<std::uint32_t>(bytes.size());
+    append32(0x02014b50U);
+    append16(20);
+    append16(20);
+    append16(0x0001);
+    append16(0);
+    append16(0);
+    append16(0);
+    append32(0);
+    append32(size);
+    append32(size);
+    append16(nameBytes);
+    append16(0);
+    append16(0);
+    append16(0);
+    append16(0);
+    append32(0);
+    append32(0);
+    bytes.append(name);
+    const auto centralSize = static_cast<std::uint32_t>(bytes.size()) - localSize;
+    append32(0x06054b50U);
+    append16(0);
+    append16(0);
+    append16(1);
+    append16(1);
+    append32(centralSize);
+    append32(localSize);
+    append16(0);
+    std::ofstream output(dest, std::ios::binary);
+    output.write(bytes.data(), static_cast<std::streamsize>(bytes.size()));
+}
+
 } // namespace
+
+TEST_CASE("looksLikeOpenPgp recognizes armor and packet tags", "[parser][archive][openpgp]")
+{
+    const auto asBytes = [](std::string_view text)
+    { return std::span<const std::byte>{reinterpret_cast<const std::byte *>(text.data()), text.size()}; };
+    CHECK(nesso::parser::looksLikeOpenPgp(asBytes("-----BEGIN PGP MESSAGE-----\n")));
+    CHECK(nesso::parser::looksLikeOpenPgp(asBytes(std::string{static_cast<char>(0x84)}))); // old PKESK
+    CHECK(nesso::parser::looksLikeOpenPgp(asBytes(std::string{static_cast<char>(0x8C)}))); // old SKESK
+    CHECK(nesso::parser::looksLikeOpenPgp(asBytes(std::string{static_cast<char>(0xC1)}))); // new PKESK
+    CHECK(nesso::parser::looksLikeOpenPgp(asBytes(std::string{static_cast<char>(0xC3)}))); // new SKESK
+    CHECK(nesso::parser::looksLikeOpenPgp(asBytes(std::string{static_cast<char>(0xD2)}))); // new SEIPD
+    CHECK_FALSE(nesso::parser::looksLikeOpenPgp(asBytes("this is not a tar")));
+    CHECK_FALSE(nesso::parser::looksLikeOpenPgp(asBytes(std::string{static_cast<char>(0xFD)}))); // xz magic-ish
+    CHECK_FALSE(nesso::parser::looksLikeOpenPgp({}));
+}
 
 TEST_CASE("archive paths are recognized without regard to case", "[parser][archive]")
 {
@@ -256,19 +338,19 @@ TEST_CASE("archive limits name the cap they hit", "[parser][archive]")
     entryLimit.maxEntryBytes = 10;
     const auto tooBig = nesso::parser::readArchive(path, entryLimit, [](std::string_view, std::string_view) {});
     REQUIRE_FALSE(tooBig);
-    CHECK(tooBig.error() == nesso::parser::ArchiveError::EntryTooLarge);
+    CHECK(tooBig.error().code == nesso::parser::ArchiveError::EntryTooLarge);
 
     nesso::parser::ArchiveLimits totalLimit;
     totalLimit.maxTotalBytes = 40;
     const auto tooMuch = nesso::parser::readArchive(path, totalLimit, [](std::string_view, std::string_view) {});
     REQUIRE_FALSE(tooMuch);
-    CHECK(tooMuch.error() == nesso::parser::ArchiveError::TotalTooLarge);
+    CHECK(tooMuch.error().code == nesso::parser::ArchiveError::TotalTooLarge);
 
     nesso::parser::ArchiveLimits countLimit;
     countLimit.maxEntries = 2;
     const auto tooMany = nesso::parser::readArchive(path, countLimit, [](std::string_view, std::string_view) {});
     REQUIRE_FALSE(tooMany);
-    CHECK(tooMany.error() == nesso::parser::ArchiveError::TooManyEntries);
+    CHECK(tooMany.error().code == nesso::parser::ArchiveError::TooManyEntries);
 
     const auto bomb = dir.path() / "bomb.tar.xz";
     writeBundle(bomb, "tar", "xz", {{.name = "pad.log", .bytes = std::string(20000, 'A')}});
@@ -276,7 +358,7 @@ TEST_CASE("archive limits name the cap they hit", "[parser][archive]")
     ratioLimit.maxRatio = 2;
     const auto tooDense = nesso::parser::readArchive(bomb, ratioLimit, [](std::string_view, std::string_view) {});
     REQUIRE_FALSE(tooDense);
-    CHECK(tooDense.error() == nesso::parser::ArchiveError::RatioExceeded);
+    CHECK(tooDense.error().code == nesso::parser::ArchiveError::RatioExceeded);
 
     nesso::parser::ParseStats stats;
     const auto parsed = nesso::parser::Chunker::fromFile(path, 4096, &stats, "message", countLimit);
@@ -294,7 +376,7 @@ TEST_CASE("a corrupt archive is rejected and an empty one has no members", "[par
     }
     const auto corrupt = nesso::parser::readArchive(bad, {}, [](std::string_view, std::string_view) {});
     REQUIRE_FALSE(corrupt);
-    CHECK(corrupt.error() == nesso::parser::ArchiveError::Corrupt);
+    CHECK(corrupt.error().code == nesso::parser::ArchiveError::Corrupt);
     const auto chunks = nesso::parser::Chunker::fromFile(bad);
     REQUIRE_FALSE(chunks);
     CHECK(chunks.error() == nesso::parser::ParseError::CorruptArchive);
@@ -302,7 +384,7 @@ TEST_CASE("a corrupt archive is rejected and an empty one has no members", "[par
     const auto missing =
         nesso::parser::readArchive(dir.path() / "missing.tar", {}, [](std::string_view, std::string_view) {});
     REQUIRE_FALSE(missing);
-    CHECK(missing.error() == nesso::parser::ArchiveError::OpenFailure);
+    CHECK(missing.error().code == nesso::parser::ArchiveError::OpenFailure);
 
     const auto empty = dir.path() / "empty.zip";
     {
@@ -357,4 +439,79 @@ TEST_CASE("Chunker labels archive lines and skips binary members", "[parser][arc
     const auto rejected = nesso::parser::Chunker::fromFile(brokenGz);
     REQUIRE_FALSE(rejected);
     CHECK(rejected.error() == nesso::parser::ParseError::CorruptGzip);
+}
+
+TEST_CASE("encrypted zip entries and OpenPGP files are named", "[parser][archive]")
+{
+    const TempDir dir{"nesso-archive-encrypted"};
+    const auto zip = dir.path() / "secret.zip";
+    writeEncryptedZip(zip, "secret.log", "database connection refused\n");
+    const auto encrypted = nesso::parser::readArchive(zip, {}, [](std::string_view, std::string_view) {});
+    REQUIRE_FALSE(encrypted);
+    CHECK(encrypted.error().code == nesso::parser::ArchiveError::Encrypted);
+    CHECK(encrypted.error().entry == "secret.log");
+    nesso::parser::ParseStats stats;
+    const auto parsed = nesso::parser::Chunker::fromFile(zip, 4096, &stats);
+    REQUIRE_FALSE(parsed);
+    CHECK(parsed.error() == nesso::parser::ParseError::EncryptedArchive);
+    CHECK(stats.encryptedEntry == "secret.log");
+
+    const auto armored = dir.path() / "sosreport-host.tar.xz";
+    {
+        std::ofstream output(armored, std::ios::binary);
+        output << "-----BEGIN PGP MESSAGE-----\n\n";
+    }
+    const auto openPgp = nesso::parser::readArchive(armored, {}, [](std::string_view, std::string_view) {});
+    REQUIRE_FALSE(openPgp);
+    CHECK(openPgp.error().code == nesso::parser::ArchiveError::Encrypted);
+    CHECK(openPgp.error().entry.empty());
+
+    const auto skesk = dir.path() / "bundle.tar";
+    {
+        std::ofstream output(skesk, std::ios::binary);
+        output.put(static_cast<char>(0x8C));
+        output.put(static_cast<char>(0x01));
+        output.put(static_cast<char>(0x00));
+    }
+    const auto binaryPgp = nesso::parser::readArchive(skesk, {}, [](std::string_view, std::string_view) {});
+    REQUIRE_FALSE(binaryPgp);
+    CHECK(binaryPgp.error().code == nesso::parser::ArchiveError::Encrypted);
+
+    const auto truncated = dir.path() / "cut.tar.xz";
+    writeBundle(dir.path() / "full.tar.xz", "tar", "xz", {{.name = "a.log", .bytes = "database connection refused\n"}});
+    {
+        std::ifstream input(dir.path() / "full.tar.xz", std::ios::binary);
+        std::string bytes((std::istreambuf_iterator<char>(input)), std::istreambuf_iterator<char>());
+        REQUIRE(bytes.size() > 16);
+        bytes.resize(bytes.size() / 2);
+        std::ofstream output(truncated, std::ios::binary);
+        output.write(bytes.data(), static_cast<std::streamsize>(bytes.size()));
+    }
+    const auto corrupt = nesso::parser::readArchive(truncated, {}, [](std::string_view, std::string_view) {});
+    REQUIRE_FALSE(corrupt);
+    CHECK(corrupt.error().code == nesso::parser::ArchiveError::Corrupt);
+}
+
+TEST_CASE("archive skips count directories links and binary members", "[parser][archive]")
+{
+    const TempDir dir{"nesso-archive-skips"};
+    const auto path = dir.path() / "mix.tar";
+    writeBundle(path, "tar", "none",
+                {{.name = "nested", .bytes = {}, .type = AE_IFDIR},
+                 {.name = "var/log/link", .bytes = {}, .type = AE_IFLNK, .link = "syslog"},
+                 {.name = "var/log/syslog", .bytes = "database connection refused\n"},
+                 {.name = "lib/mod.bin", .bytes = std::string("bin\0ary", 7)}});
+    nesso::parser::ArchiveSkipStats skips;
+    const auto read = nesso::parser::readArchive(path, {}, [](std::string_view, std::string_view) {}, &skips);
+    REQUIRE(read);
+    CHECK(skips.directories == 1);
+    CHECK(skips.symlinks == 1);
+    CHECK(skips.hardlinks == 0);
+    nesso::parser::ParseStats stats;
+    const auto chunks = nesso::parser::Chunker::fromFile(path, 4096, &stats);
+    REQUIRE(chunks);
+    REQUIRE(chunks->size() == 1);
+    CHECK(stats.binaryEntries == 1);
+    CHECK(stats.archiveDirectories == 1);
+    CHECK(stats.archiveSymlinks == 1);
 }

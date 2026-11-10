@@ -8,6 +8,8 @@
 #include <expected>
 #include <filesystem>
 #include <functional>
+#include <span>
+#include <string>
 #include <string_view>
 
 namespace nesso::parser
@@ -36,8 +38,29 @@ enum class ArchiveError : std::uint8_t
     EntryTooLarge,
     TotalTooLarge,
     TooManyEntries,
-    RatioExceeded
+    RatioExceeded,
+    Encrypted
 };
+
+/// Failure from `readArchive`. `entry` is set for an encrypted zip member; empty for whole-file OpenPGP.
+struct ArchiveFailure
+{
+    ArchiveError code = ArchiveError::Corrupt;
+    // NOLINTNEXTLINE(readability-redundant-member-init)
+    std::string entry{};
+};
+
+/// Counts of members skipped without reading as text (directories, links, other non-regular).
+struct ArchiveSkipStats
+{
+    size_t directories = 0;
+    size_t symlinks = 0;
+    size_t hardlinks = 0;
+    size_t other = 0;
+};
+
+/// True when `bytes` are an armored PGP message or the first packet is PKESK, SKESK, or SEIPD.
+[[nodiscard]] bool looksLikeOpenPgp(std::span<const std::byte> bytes);
 
 /// True for `.tar`, `.tgz`, `.tar.gz`, `.tar.xz`, and `.zip`, compared without regard to case.
 [[nodiscard]] bool isArchivePath(const std::filesystem::path &path);
@@ -46,10 +69,13 @@ enum class ArchiveError : std::uint8_t
 /// Members are visited in archive order. That order is fixed by the file bytes, so it does not
 /// depend on thread count. Nothing is written to disk: member names are labels only, including
 /// absolute paths and names that contain `..`. A `.gz` member is inflated in memory before the
-/// callback. Directories, symlinks, and hard links are skipped.
-[[nodiscard]] std::expected<void, ArchiveError>
+/// callback. Directories, symlinks, and hard links are skipped. When `skips` is set, those skips
+/// are counted. An encrypted zip member or a whole-file OpenPGP payload (checked only after open
+/// or read fails) returns `ArchiveError::Encrypted`.
+[[nodiscard]] std::expected<void, ArchiveFailure>
 readArchive(const std::filesystem::path &path, const ArchiveLimits &limits,
-            const std::function<void(std::string_view name, std::string_view bytes)> &consume);
+            const std::function<void(std::string_view name, std::string_view bytes)> &consume,
+            ArchiveSkipStats *skips = nullptr);
 
 } // namespace nesso::parser
 

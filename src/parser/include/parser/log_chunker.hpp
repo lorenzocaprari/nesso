@@ -24,6 +24,7 @@ enum class ParseError : uint8_t
     BinaryFile,
     CorruptGzip,
     CorruptArchive,
+    EncryptedArchive,
     ArchiveEntryLimit,
     ArchiveTotalLimit,
     ArchiveCountLimit,
@@ -52,6 +53,8 @@ struct ParsedChunk
 /// Counts for one parse. `skippedLines` is the sum of the reason counters. `emptyLines` includes ASCII-whitespace-only
 /// lines and JSON string values. `truncatedLines` were kept after cutting the value to the maximum length.
 /// `binaryEntries` counts archive members whose first 4 KiB contain a NUL byte. Those members are not lines.
+/// Archive directory/symlink/hardlink/other skips are counted when reading a bundle. `encryptedEntry` is set when
+/// the failure is an encrypted zip member.
 struct ParseStats
 {
     size_t skippedLines = 0;
@@ -60,6 +63,12 @@ struct ParseStats
     size_t missingFieldLines = 0;
     size_t truncatedLines = 0;
     size_t binaryEntries = 0;
+    size_t archiveDirectories = 0;
+    size_t archiveSymlinks = 0;
+    size_t archiveHardlinks = 0;
+    size_t archiveOtherSkipped = 0;
+    // NOLINTNEXTLINE(readability-redundant-member-init)
+    std::string encryptedEntry{};
 };
 
 class Chunker

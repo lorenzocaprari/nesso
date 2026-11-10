@@ -79,8 +79,75 @@ Feature: tar and zip bundles
     Then the exit code is 0
     And stdout contains "database connection refused"
     And stdout contains "mix.tar:var/log/syslog"
-    And stderr contains "Skipped 1 binary file."
+    And stderr contains "Skipped 1 entry"
+    And stderr contains "mix.tar"
+    And stderr contains "1 binary file"
     And stdout does not contain "hello"
+    When I run nesso with arguments grep "database connection error" {dir}/mix.tar --json
+    Then the exit code is 0
+    And stdout contains "database connection refused"
+    And stderr contains "Skipped 1 entry"
+    And stderr contains "1 binary file"
+
+  Scenario: skipped bundle entries are summarized on stderr
+    Given an archive "skippy.tar" containing:
+      | var/log/syslog | database connection refused |
+      | lib/mod.bin | hello\0world |
+    When I run nesso with arguments grep "database connection error" {dir}/skippy.tar
+    Then the exit code is 0
+    And stdout contains "database connection refused"
+    And stdout contains "skippy.tar:var/log/syslog"
+    And stderr contains "Skipped 1 entry"
+    And stderr contains "skippy.tar"
+    And stderr contains "1 binary file"
+    And running nesso again prints the same stdout
+
+  Scenario: an encrypted zip entry exits 2 with a decrypt hint
+    Given an encrypted archive "secret.zip" containing:
+      | secret.log | database connection refused |
+    When I run nesso with arguments grep "database connection error" {dir}/secret.zip
+    Then the exit code is 2
+    And stdout is empty
+    And stderr contains "Error: failed to parse"
+    And stderr contains "secret.zip"
+    And stderr contains "entry 'secret.log' is encrypted; decrypt it first"
+    And stderr does not contain "archive_read"
+
+  Scenario: an armored OpenPGP file exits 2 with a decrypt hint
+    Given a file "sosreport-host.tar.xz" with:
+      """
+      -----BEGIN PGP MESSAGE-----
+
+      """
+    When I run nesso with arguments grep "database connection error" {dir}/sosreport-host.tar.xz
+    Then the exit code is 2
+    And stdout is empty
+    And stderr contains "Error: failed to parse"
+    And stderr contains "sosreport-host.tar.xz"
+    And stderr contains "the archive is an encrypted OpenPGP file; decrypt it first"
+    And stderr contains "gpg --decrypt"
+
+  Scenario: a binary SKESK-headed file exits 2 as OpenPGP
+    Given a file "bundle.tar" with hex:
+      """
+      8c0100
+      """
+    When I run nesso with arguments grep "database connection error" {dir}/bundle.tar
+    Then the exit code is 2
+    And stderr contains "the archive is an encrypted OpenPGP file; decrypt it first"
+    And stderr does not contain "truncated or corrupt"
+
+  Scenario: a truncated tar.xz stays corrupt
+    Given an archive "full.tar.xz" containing:
+      | a.log | database connection refused |
+    Given a file "cut.tar.xz" with hex:
+      """
+      fd377a585a0000
+      """
+    When I run nesso with arguments grep "database connection error" {dir}/cut.tar.xz
+    Then the exit code is 2
+    And stderr contains "the archive is truncated or corrupt"
+    And stderr does not contain "encrypted"
 
   Scenario: a corrupt archive exits 2
     Given a file "bad.tar" with hex:
@@ -106,21 +173,25 @@ Feature: tar and zip bundles
     Then the exit code is 1
     And stderr contains "no indexable lines"
 
-  Scenario: archive limits name the cap
+  Scenario: archive limits name the cap and the override flag
     Given an archive "wide.tar" containing:
       | a.log | database connection refused |
       | b.log | authentication failure |
     When I run nesso with arguments grep --archive-max-entries 1 "database" {dir}/wide.tar
     Then the exit code is 2
     And stderr contains "the archive entry count exceeds 1"
+    And stderr contains "--archive-max-entries"
     When I run nesso with arguments grep --archive-max-entry-bytes 8 "database" {dir}/wide.tar
     Then the exit code is 2
     And stderr contains "an archive entry is larger than 8 bytes"
+    And stderr contains "--archive-max-entry-bytes"
     When I run nesso with arguments grep --archive-max-bytes 8 "database" {dir}/wide.tar
     Then the exit code is 2
     And stderr contains "the archive expands past 8 uncompressed bytes"
+    And stderr contains "--archive-max-bytes"
     Given an archive "dense.tar.xz" containing:
       | pad.log | AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA |
     When I run nesso with arguments grep --archive-max-ratio 1 "database" {dir}/dense.tar.xz
     Then the exit code is 2
     And stderr contains "the archive compression ratio exceeds 1"
+    And stderr contains "--archive-max-ratio"

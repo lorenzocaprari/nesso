@@ -61,6 +61,7 @@ func InitializeScenario(sc *godog.ScenarioContext) {
 	sc.Step(`^(\d+) lines "(.*)" in "([^"]+)"$`, b.appendNumberedLines)
 	sc.Step(`^a file "([^"]+)" with hex:$`, b.writeHexFile)
 	sc.Step(`^an archive "([^"]+)" containing:$`, b.writeArchive)
+	sc.Step(`^an encrypted archive "([^"]+)" containing:$`, b.writeEncryptedArchive)
 	sc.Step(`^I run nesso with arguments (.+)$`, b.runNesso)
 	sc.Step(`^I run nesso without arguments$`, func() error { return b.runNesso("") })
 	sc.Step(`^running nesso again prints the same stdout$`, b.runAgainSameStdout)
