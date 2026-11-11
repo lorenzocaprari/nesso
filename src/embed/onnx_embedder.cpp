@@ -297,7 +297,7 @@ OnnxEmbedder::SessionImpl::infer(Ort::Session &session, std::span<const Tokenize
         const auto &output = outputs.front();
         const auto *hiddenStates = output.GetTensorData<float>();
         const auto outputShape = output.GetTensorTypeAndShapeInfo().GetShape();
-        if (outputShape.size() != 3 || std::cmp_not_equal(outputShape[2], MINILM_EMBEDDING_DIMENSIONS))
+        if (!matchesMiniLmHiddenStatesShape(outputShape, batchSize, paddedLength))
         {
             return std::unexpected(EmbedError::InferenceFailure);
         }

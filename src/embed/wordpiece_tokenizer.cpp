@@ -7,6 +7,7 @@
 #include <array>
 #include <cstdint>
 #include <fstream>
+#include <optional>
 #include <span>
 
 namespace nesso::embed
@@ -456,6 +457,10 @@ std::expected<WordPieceTokenizer, EmbedError> WordPieceTokenizer::fromVocabFile(
     int64_t nextId = 0;
     while (std::getline(input, token))
     {
+        if (!token.empty() && token.back() == '\r')
+        {
+            token.pop_back();
+        }
         vocab.emplace(token, nextId++);
     }
 
@@ -464,16 +469,24 @@ std::expected<WordPieceTokenizer, EmbedError> WordPieceTokenizer::fromVocabFile(
         return std::unexpected(EmbedError::VocabLoadFailure);
     }
 
-    const auto lookup = [&vocab](const std::string &symbol) -> int64_t
+    const auto lookup = [&vocab](const std::string &symbol) -> std::optional<int64_t>
     {
         const auto it = vocab.find(symbol);
-        return it == vocab.end() ? 0 : it->second;
+        if (it == vocab.end())
+        {
+            return std::nullopt;
+        }
+        return it->second;
     };
 
-    const int64_t clsId = lookup(CLS_TOKEN);
-    const int64_t sepId = lookup(SEP_TOKEN);
-    const int64_t unkId = lookup(unkTokenSymbol());
-    return WordPieceTokenizer(std::move(vocab), clsId, sepId, unkId, maxSequenceLength);
+    const auto clsId = lookup(CLS_TOKEN);
+    const auto sepId = lookup(SEP_TOKEN);
+    const auto unkId = lookup(unkTokenSymbol());
+    if (!clsId || !sepId || !unkId)
+    {
+        return std::unexpected(EmbedError::VocabLoadFailure);
+    }
+    return WordPieceTokenizer(std::move(vocab), *clsId, *sepId, *unkId, maxSequenceLength);
 }
 
 std::vector<std::string> WordPieceTokenizer::wordPieceTokenize(std::string_view token) const
