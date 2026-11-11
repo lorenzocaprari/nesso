@@ -7,6 +7,13 @@ target_compile_options(batch_plan_test PRIVATE -fno-profile-arcs
                                                -fno-test-coverage)
 add_test(NAME batch_plan_test COMMAND batch_plan_test)
 
+add_executable(hidden_states_shape_test hidden_states_shape_test.cpp)
+target_link_libraries(hidden_states_shape_test
+                      PRIVATE nesso_options nesso_embed Catch2::Catch2WithMain)
+target_compile_options(hidden_states_shape_test PRIVATE -fno-profile-arcs
+                                                        -fno-test-coverage)
+add_test(NAME hidden_states_shape_test COMMAND hidden_states_shape_test)
+
 add_executable(onnx_embedder_test onnx_embedder_test.cpp)
 target_link_libraries(onnx_embedder_test PRIVATE nesso_options nesso_embed
                                                  Catch2::Catch2WithMain)
@@ -39,5 +46,11 @@ target_link_libraries(inference_wave_test PRIVATE nesso_options nesso_embed
                                                   Catch2::Catch2WithMain)
 add_test(NAME inference_wave_test COMMAND inference_wave_test)
 set_tests_properties(
-  batch_plan_test onnx_embedder_test session_pool_test session_policy_test
-  amx_guard_test inference_wave_test PROPERTIES LABELS unit)
+  batch_plan_test
+  hidden_states_shape_test
+  onnx_embedder_test
+  session_pool_test
+  session_policy_test
+  amx_guard_test
+  inference_wave_test
+  PROPERTIES LABELS unit)

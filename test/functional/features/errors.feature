@@ -75,6 +75,29 @@ Feature: command errors
     Then the exit code is 2
     And stderr contains "failed to load the embedder"
 
+  Scenario: a vocabulary without UNK is rejected
+    Given a file "app.log" with:
+      """
+      database connection refused
+      """
+    And a directory "badvocab"
+    And a file "badvocab/vocab.txt" with:
+      """
+      [PAD]
+      [CLS]
+      [SEP]
+      hello
+      """
+    And a file "badvocab/model.onnx" with:
+      """
+      not-a-real-onnx-model
+      """
+    When I run nesso with arguments grep "database connection error" {dir}/app.log --model-dir {dir}/badvocab
+    Then the exit code is 2
+    And stderr contains "failed to load the embedder"
+    And stderr contains "could not load the vocabulary"
+    And stderr contains "scripts/fetch-model"
+
   Scenario: a binary file is rejected
     Given a file "blob.log" with hex:
       """

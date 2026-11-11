@@ -1,11 +1,50 @@
 #include <catch2/catch_all.hpp>
+#include <embed/embed_types.hpp>
 #include <embed/wordpiece_tokenizer.hpp>
 
 #include <filesystem>
+#include <fstream>
+#include <string>
+#include <string_view>
+#include <unistd.h>
 
 #ifndef NESSO_TEST_FIXTURES
 #error "NESSO_TEST_FIXTURES must be defined"
 #endif
+
+namespace
+{
+
+class TempDir
+{
+  public:
+    explicit TempDir(const std::string &name)
+        : path_(std::filesystem::temp_directory_path() / (name + "_" + std::to_string(getpid())))
+    {
+        std::filesystem::remove_all(path_);
+        std::filesystem::create_directories(path_);
+    }
+
+    ~TempDir() { std::filesystem::remove_all(path_); }
+
+    TempDir(const TempDir &) = delete;
+    TempDir &operator=(const TempDir &) = delete;
+
+    [[nodiscard]] const std::filesystem::path &path() const { return path_; }
+
+  private:
+    std::filesystem::path path_;
+};
+
+void writeBytes(const std::filesystem::path &path, std::string_view bytes)
+{
+    std::ofstream output(path, std::ios::binary);
+    REQUIRE(output);
+    output.write(bytes.data(), static_cast<std::streamsize>(bytes.size()));
+    REQUIRE(output);
+}
+
+} // namespace
 
 TEST_CASE("WordPieceTokenizer encodes known strings", "[WordPieceTokenizer][embed][Unit]")
 {
@@ -52,7 +91,7 @@ TEST_CASE("WordPieceTokenizer splits subwords and replaces an unknown word", "[W
 
     const auto unknown = tokenizer->encode("hellozzz");
     REQUIRE(unknown.has_value());
-    REQUIRE(unknown->inputIds == std::vector<int64_t>{2, 0, 3});
+    REQUIRE(unknown->inputIds == std::vector<int64_t>{2, 8, 3});
 
     const auto dropped = tokenizer->encode("\xFF");
     REQUIRE(dropped.has_value());
@@ -74,6 +113,49 @@ TEST_CASE("WordPieceTokenizer decomposes a four-part character", "[WordPieceToke
     REQUIRE(encoded.has_value());
     REQUIRE(encoded->inputIds.front() == 2);
     REQUIRE(encoded->inputIds.back() == 3);
+}
+
+TEST_CASE("WordPieceTokenizer rejects a vocabulary without each special token", "[WordPieceTokenizer][embed][Unit]")
+{
+    const TempDir directory("nesso-vocab-specials");
+    const auto writeVocab = [&](std::string_view name, std::string_view body)
+    {
+        const auto path = directory.path() / std::string(name);
+        writeBytes(path, body);
+        return path;
+    };
+
+    const auto missingCls =
+        nesso::embed::WordPieceTokenizer::fromVocabFile(writeVocab("no-cls.txt", "[SEP]\n[UNK]\nhello\n"));
+    REQUIRE_FALSE(missingCls.has_value());
+    REQUIRE(missingCls.error() == nesso::embed::EmbedError::VocabLoadFailure);
+
+    const auto missingSep =
+        nesso::embed::WordPieceTokenizer::fromVocabFile(writeVocab("no-sep.txt", "[CLS]\n[UNK]\nhello\n"));
+    REQUIRE_FALSE(missingSep.has_value());
+    REQUIRE(missingSep.error() == nesso::embed::EmbedError::VocabLoadFailure);
+
+    const auto missingUnk =
+        nesso::embed::WordPieceTokenizer::fromVocabFile(writeVocab("no-unk.txt", "[CLS]\n[SEP]\nhello\n"));
+    REQUIRE_FALSE(missingUnk.has_value());
+    REQUIRE(missingUnk.error() == nesso::embed::EmbedError::VocabLoadFailure);
+
+    const auto empty = nesso::embed::WordPieceTokenizer::fromVocabFile(writeVocab("empty.txt", ""));
+    REQUIRE_FALSE(empty.has_value());
+    REQUIRE(empty.error() == nesso::embed::EmbedError::VocabLoadFailure);
+}
+
+TEST_CASE("WordPieceTokenizer loads a CRLF vocabulary", "[WordPieceTokenizer][embed][Unit]")
+{
+    const TempDir directory("nesso-vocab-crlf");
+    const auto path = directory.path() / "vocab.txt";
+    writeBytes(path, "[PAD]\r\n[unused0]\r\n[CLS]\r\n[SEP]\r\nhello\r\nworld\r\n##ing\r\ntesting\r\n[UNK]\r\n");
+
+    const auto tokenizer = nesso::embed::WordPieceTokenizer::fromVocabFile(path, 16);
+    REQUIRE(tokenizer.has_value());
+    const auto encoded = tokenizer->encode("hello world");
+    REQUIRE(encoded.has_value());
+    REQUIRE(encoded->inputIds == std::vector<int64_t>{2, 4, 5, 3});
 }
 
 TEST_CASE("WordPieceTokenizer matches BERT uncased token ids", "[WordPieceTokenizer][embed][Unit]")

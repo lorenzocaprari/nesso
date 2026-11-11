@@ -91,18 +91,18 @@ TEST_CASE("WordPieceTokenizer rejects a bad vocab and splits punctuation", "[emb
     REQUIRE(empty.error() == nesso::embed::EmbedError::VocabLoadFailure);
 
     const auto vocabPath = directory / "vocab.txt";
-    writeBytes(vocabPath, "[PAD]\n[unused0]\n[CLS]\n[SEP]\nhello\nworld\n##ing\ntesting\n");
+    writeBytes(vocabPath, "[PAD]\n[unused0]\n[CLS]\n[SEP]\nhello\nworld\n##ing\ntesting\n[UNK]\n");
 
     const auto tokenizer = nesso::embed::WordPieceTokenizer::fromVocabFile(vocabPath, 16);
     REQUIRE(tokenizer.has_value());
 
     const auto punctuated = tokenizer->encode("hello, world");
     REQUIRE(punctuated.has_value());
-    REQUIRE(punctuated->inputIds == std::vector<int64_t>{2, 4, 0, 5, 3});
+    REQUIRE(punctuated->inputIds == std::vector<int64_t>{2, 4, 8, 5, 3});
 
     const auto unknown = tokenizer->encode("zzz");
     REQUIRE(unknown.has_value());
-    REQUIRE(unknown->inputIds == std::vector<int64_t>{2, 0, 3});
+    REQUIRE(unknown->inputIds == std::vector<int64_t>{2, 8, 3});
 
     const auto shortTokenizer = nesso::embed::WordPieceTokenizer::fromVocabFile(vocabPath, 2);
     REQUIRE(shortTokenizer.has_value());
