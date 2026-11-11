@@ -4,10 +4,12 @@
 #include <array>
 #include <bit>
 #include <catch2/catch_all.hpp>
+#include <cmath>
 #include <core/core_types.hpp>
 #include <core/distance.hpp>
 #include <core/top_k.hpp>
 #include <cstdint>
+#include <limits>
 #include <mutex>
 #include <span>
 #include <utility>
@@ -122,7 +124,7 @@ std::vector<Hit> oracleTop(std::span<const float> query, std::span<const float> 
         hits.push_back(Hit{.index = static_cast<uint64_t>(row), .score = *score});
     }
     const auto better = [](const Hit &left, const Hit &right)
-    { return left.score != right.score ? left.score > right.score : left.index < right.index; };
+    { return rankBefore(left.score, left.index, right.score, right.index); };
     detail::selectTopKInPlace(hits, k, better);
     return hits;
 }
@@ -292,7 +294,7 @@ TEST_CASE("rankTop keeps skipped rows out and matches a full sort", "[topK][core
         expected.push_back(Hit{.index = static_cast<uint64_t>(index), .score = scores[index]});
     }
     const auto better = [](const Hit &left, const Hit &right)
-    { return left.score != right.score ? left.score > right.score : left.index < right.index; };
+    { return rankBefore(left.score, left.index, right.score, right.index); };
 
     for (const size_t threads : {size_t{1}, size_t{2}, size_t{3}, size_t{4}, size_t{7}})
     {
@@ -320,4 +322,188 @@ TEST_CASE("selectTopKInPlace clears on empty or zero k", "[topK][core][Unit]")
     std::vector<Hit> empty;
     detail::selectTopKInPlace(empty, 1, byScore);
     REQUIRE(empty.empty());
+}
+
+TEST_CASE("rankBefore is a strict weak ordering including NaN and signed zero", "[topK][core][Unit]")
+{
+    const float nan = std::numeric_limits<float>::quiet_NaN();
+    const float posInf = std::numeric_limits<float>::infinity();
+    const float negInf = -std::numeric_limits<float>::infinity();
+    const std::array<Hit, 12> values{{
+        {.index = 0, .score = 2.0F},
+        {.index = 1, .score = 2.0F},
+        {.index = 0, .score = 1.0F},
+        {.index = 2, .score = 0.0F},
+        {.index = 3, .score = -0.0F},
+        {.index = 4, .score = -1.0F},
+        {.index = 5, .score = posInf},
+        {.index = 6, .score = negInf},
+        {.index = 7, .score = nan},
+        {.index = 8, .score = nan},
+        {.index = 1, .score = -0.0F},
+        {.index = 0, .score = 0.0F},
+    }};
+
+    const auto before = [](const Hit &left, const Hit &right)
+    { return rankBefore(left.score, left.index, right.score, right.index); };
+
+    for (const Hit &value : values)
+    {
+        REQUIRE_FALSE(before(value, value));
+    }
+
+    for (const Hit &a : values)
+    {
+        for (const Hit &b : values)
+        {
+            const bool ab = before(a, b);
+            const bool ba = before(b, a);
+            REQUIRE_FALSE((ab && ba));
+            if (ab)
+            {
+                for (const Hit &c : values)
+                {
+                    if (before(b, c))
+                    {
+                        REQUIRE(before(a, c));
+                    }
+                }
+            }
+            if (!ab && !ba)
+            {
+                for (const Hit &c : values)
+                {
+                    const bool ac = before(a, c);
+                    const bool ca = before(c, a);
+                    const bool bc = before(b, c);
+                    const bool cb = before(c, b);
+                    if (!ac && !ca)
+                    {
+                        REQUIRE_FALSE((bc || cb));
+                        REQUIRE_FALSE(before(a, b));
+                        REQUIRE_FALSE(before(b, a));
+                    }
+                    if (ac)
+                    {
+                        REQUIRE(bc);
+                    }
+                    if (ca)
+                    {
+                        REQUIRE(cb);
+                    }
+                }
+            }
+        }
+    }
+}
+
+TEST_CASE("rankBefore orders signed zeros by index", "[topK][core][Unit]")
+{
+    REQUIRE(rankBefore(-0.0F, 1, 0.0F, 2));
+    REQUIRE_FALSE(rankBefore(0.0F, 2, -0.0F, 1));
+    REQUIRE(rankBefore(0.0F, 0, -0.0F, 1));
+    REQUIRE_FALSE(rankBefore(-0.0F, 1, 0.0F, 0));
+}
+
+TEST_CASE("selectTopKInPlace places NaN scores last", "[topK][core][Unit]")
+{
+    const float nan = std::numeric_limits<float>::quiet_NaN();
+    const auto better = [](const Hit &left, const Hit &right)
+    { return rankBefore(left.score, left.index, right.score, right.index); };
+
+    std::vector<Hit> mixed{{.index = 0, .score = nan},
+                           {.index = 1, .score = 1.0F},
+                           {.index = 2, .score = nan},
+                           {.index = 3, .score = 3.0F},
+                           {.index = 4, .score = 2.0F}};
+    std::vector<Hit> finiteOnly{{.index = 1, .score = 1.0F}, {.index = 3, .score = 3.0F}, {.index = 4, .score = 2.0F}};
+
+    detail::selectTopKInPlace(finiteOnly, 3, better);
+    detail::selectTopKInPlace(mixed, 5, better);
+
+    REQUIRE(mixed.size() == 5);
+    requireSameHits(std::vector<Hit>(mixed.begin(), mixed.begin() + 3), finiteOnly);
+    REQUIRE(std::isnan(mixed[3].score));
+    REQUIRE(std::isnan(mixed[4].score));
+    REQUIRE(mixed[3].index == 0);
+    REQUIRE(mixed[4].index == 2);
+}
+
+TEST_CASE("rankTop with NaN scores matches single and multi-thread results", "[topK][core][Unit]")
+{
+    const float nan = std::numeric_limits<float>::quiet_NaN();
+    const size_t count = PARALLEL_MIN_ROWS + 3;
+    std::vector<float> scores(count);
+    for (size_t index = 0; index < count; ++index)
+    {
+        // Sparse finite scores so a modest k still pulls NaNs into the result.
+        scores[index] = index % 100U == 0U ? static_cast<float>(index % 11U) : nan;
+    }
+    RankContext context{.scores = &scores};
+    const auto keepAll = [](void *, size_t) { return true; };
+    constexpr size_t k = 20;
+
+    std::vector<Hit> finiteOnly;
+    for (size_t index = 0; index < count; ++index)
+    {
+        if (!std::isnan(scores[index]))
+        {
+            finiteOnly.push_back(Hit{.index = static_cast<uint64_t>(index), .score = scores[index]});
+        }
+    }
+    const auto better = [](const Hit &left, const Hit &right)
+    { return rankBefore(left.score, left.index, right.score, right.index); };
+    detail::selectTopKInPlace(finiteOnly, k, better);
+
+    const auto single = rankTop(count, k, 1, contextScore, keepAll, &context);
+    const auto multi = rankTop(count, k, 4, contextScore, keepAll, &context);
+    requireSameHits(single, multi);
+    REQUIRE(single.size() == k);
+    REQUIRE(finiteOnly.size() < k);
+    requireSameHits(std::vector<Hit>(single.begin(), single.begin() + static_cast<std::ptrdiff_t>(finiteOnly.size())),
+                    finiteOnly);
+    for (size_t index = finiteOnly.size(); index < single.size(); ++index)
+    {
+        REQUIRE(std::isnan(single[index].score));
+    }
+}
+
+TEST_CASE("topK with NaN rows places them last and matches across threads", "[topK][core][Unit]")
+{
+    const float nan = std::numeric_limits<float>::quiet_NaN();
+    constexpr size_t dims = 1;
+    const size_t rows = PARALLEL_MIN_ROWS + 5;
+    std::vector<float> matrix(rows);
+    for (size_t row = 0; row < rows; ++row)
+    {
+        matrix[row] = row % 100U == 0U ? static_cast<float>((row % 7U) + 1U) : nan;
+    }
+    const std::array<float, 1> query{1.0F};
+    constexpr size_t k = 20;
+
+    const auto single = topK(query, matrix, dims, k, 1);
+    const auto multi = topK(query, matrix, dims, k, 4);
+    REQUIRE(single.has_value());
+    REQUIRE(multi.has_value());
+    requireSameHits(*single, *multi);
+    REQUIRE(single->size() == k);
+
+    std::vector<Hit> finiteOnly;
+    for (size_t row = 0; row < rows; ++row)
+    {
+        if (!std::isnan(matrix[row]))
+        {
+            finiteOnly.push_back(Hit{.index = static_cast<uint64_t>(row), .score = matrix[row]});
+        }
+    }
+    const auto better = [](const Hit &left, const Hit &right)
+    { return rankBefore(left.score, left.index, right.score, right.index); };
+    detail::selectTopKInPlace(finiteOnly, k, better);
+    REQUIRE(finiteOnly.size() < k);
+    requireSameHits(std::vector<Hit>(single->begin(), single->begin() + static_cast<std::ptrdiff_t>(finiteOnly.size())),
+                    finiteOnly);
+    for (size_t index = finiteOnly.size(); index < single->size(); ++index)
+    {
+        REQUIRE(std::isnan((*single)[index].score));
+    }
 }

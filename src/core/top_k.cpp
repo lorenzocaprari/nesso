@@ -26,7 +26,7 @@ struct HitOrder
 {
     bool operator()(const Hit &left, const Hit &right) const
     {
-        return left.score != right.score ? left.score > right.score : left.index < right.index;
+        return rankBefore(left.score, left.index, right.score, right.index);
     }
 };
 

@@ -7,7 +7,9 @@
 #include <core/core_types.hpp>
 
 #include <algorithm>
+#include <cmath>
 #include <cstddef>
+#include <cstdint>
 #include <expected>
 #include <span>
 #include <vector>
@@ -20,6 +22,24 @@ struct Hit
     uint64_t index = 0;
     float score = 0.0F;
 };
+
+/// Strict weak order for ranking: higher score first, ties by lower index.
+/// Non-NaN scores rank before NaN; two NaNs break by index. ±0.0 compare equal.
+[[nodiscard]] inline bool rankBefore(float leftScore, uint64_t leftIndex, float rightScore,
+                                     uint64_t rightIndex) noexcept
+{
+    const bool leftNan = std::isnan(leftScore);
+    const bool rightNan = std::isnan(rightScore);
+    if (leftNan != rightNan)
+    {
+        return !leftNan;
+    }
+    if (leftNan)
+    {
+        return leftIndex < rightIndex;
+    }
+    return leftScore != rightScore ? leftScore > rightScore : leftIndex < rightIndex;
+}
 
 /// Row count below which a scan stays on the calling thread.
 inline constexpr size_t PARALLEL_MIN_ROWS = 1024;
