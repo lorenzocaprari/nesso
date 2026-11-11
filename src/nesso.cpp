@@ -965,7 +965,7 @@ static std::vector<double> bm25ScoresFromCorpus(const nesso::core::MappedCorpus 
 
 static bool betterHit(float leftScore, uint64_t leftIndex, float rightScore, uint64_t rightIndex) noexcept
 {
-    return leftScore != rightScore ? leftScore > rightScore : leftIndex < rightIndex;
+    return nesso::core::rankBefore(leftScore, leftIndex, rightScore, rightIndex);
 }
 
 static std::expected<std::vector<std::filesystem::path>, Error>
@@ -1025,7 +1025,7 @@ std::expected<TextResults, Error> Nesso::grep(const GrepRequest &input) const
         TextMatch match;
     };
     const auto better = [](const Candidate &left, const Candidate &right)
-    { return left.score != right.score ? left.score > right.score : left.index < right.index; };
+    { return nesso::core::rankBefore(left.score, left.index, right.score, right.index); };
 
     const nesso::core::QueryTokens queryTokens = nesso::core::tokenizeQuery(request.query);
     EffectiveMode effective = resolveEffectiveMode(request.mode, nesso::core::classifyQuery(request.query));

@@ -48,6 +48,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Ranking comparators treat NaN scores as last (non-NaN before NaN, then higher score, ties by lower index), so `partial_sort` and heap merges keep a strict weak order. Finite orderings, including ±0.0 ties, stay byte-identical. `nesso search` still refuses non-finite dense scores as invalid input.
 - A `--model-dir` vocabulary without `[CLS]`, `[SEP]`, or `[UNK]`, or with CRLF-only special-token lines, fails embedder load as a vocabulary error (exit 2). A model whose last-hidden output is not `[batch, sequence, 384]` fails as an inference error (exit 2). Exit codes and message text stay the same.
 - `nesso grep` and `nesso search` exit 2 with `Error: failed to write results` when match output cannot be written to stdout (for example a full disk or `/dev/full`), instead of exiting 0 or reporting an unhandled exception.
 - `nesso grep` and `nesso index` skip empty or ASCII-whitespace-only text and JSONL lines and JSON string values, counting them as empty lines without trimming other text. Re-index existing corpora to remove previously indexed blank records.
