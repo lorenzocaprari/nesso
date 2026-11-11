@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794387818890,
+  "lastUpdate": 1794411805542,
   "repoUrl": "https://github.com/lorenzocaprari/nesso",
   "entries": {
     "nesso": [
@@ -5129,6 +5129,60 @@ window.BENCHMARK_DATA = {
           {
             "name": "grep-100000-rss",
             "value": 159731712,
+            "unit": "bytes"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "49699333+dependabot[bot]@users.noreply.github.com",
+            "name": "dependabot[bot]",
+            "username": "dependabot[bot]"
+          },
+          "committer": {
+            "email": "85455384+lorenzocaprari@users.noreply.github.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "distinct": true,
+          "id": "0e4008983f00731492c4dee437e8ba65aff989f5",
+          "message": "build(deps): bump the pip group across 1 directory with 4 updates\n\nBumps the pip group with 4 updates in the /.devcontainer directory: [filelock](https://github.com/tox-dev/filelock), [platformdirs](https://github.com/tox-dev/platformdirs), [python-discovery](https://github.com/tox-dev/python-discovery) and [virtualenv](https://github.com/pypa/virtualenv).\n\n\nUpdates `filelock` from 4.2.7 to 4.2.8\n- [Release notes](https://github.com/tox-dev/filelock/releases)\n- [Changelog](https://github.com/tox-dev/filelock/blob/main/docs/changelog.rst)\n- [Commits](https://github.com/tox-dev/filelock/compare/4.2.7...4.2.8)\n\nUpdates `platformdirs` from 4.14.3 to 4.14.4\n- [Release notes](https://github.com/tox-dev/platformdirs/releases)\n- [Changelog](https://github.com/tox-dev/platformdirs/blob/main/docs/changelog.rst)\n- [Commits](https://github.com/tox-dev/platformdirs/compare/4.14.3...4.14.4)\n\nUpdates `python-discovery` from 1.9.2 to 1.9.4\n- [Release notes](https://github.com/tox-dev/python-discovery/releases)\n- [Changelog](https://github.com/tox-dev/python-discovery/blob/main/docs/changelog.rst)\n- [Commits](https://github.com/tox-dev/python-discovery/compare/1.9.2...1.9.4)\n\nUpdates `virtualenv` from 21.15.2 to 21.15.5\n- [Release notes](https://github.com/pypa/virtualenv/releases)\n- [Changelog](https://github.com/pypa/virtualenv/blob/main/docs/changelog.rst)\n- [Commits](https://github.com/pypa/virtualenv/compare/21.15.2...21.15.5)\n\n---\nupdated-dependencies:\n- dependency-name: filelock\n  dependency-version: 4.2.8\n  dependency-type: direct:production\n  update-type: version-update:semver-patch\n  dependency-group: pip\n- dependency-name: platformdirs\n  dependency-version: 4.14.4\n  dependency-type: direct:production\n  update-type: version-update:semver-patch\n  dependency-group: pip\n- dependency-name: python-discovery\n  dependency-version: 1.9.4\n  dependency-type: direct:production\n  update-type: version-update:semver-patch\n  dependency-group: pip\n- dependency-name: virtualenv\n  dependency-version: 21.15.5\n  dependency-type: direct:production\n  update-type: version-update:semver-patch\n  dependency-group: pip\n...\n\nSigned-off-by: dependabot[bot] <support@github.com>",
+          "timestamp": "2026-11-11T16:38:35+01:00",
+          "tree_id": "b2d0ffed5ab13f9710398ee9f2e053a052a81089",
+          "url": "https://github.com/lorenzocaprari/nesso/commit/0e4008983f00731492c4dee437e8ba65aff989f5"
+        },
+        "date": 1794411805102,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "grep-1000-wall",
+            "value": 0.16,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-1000-rss",
+            "value": 117391360,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-10000-wall",
+            "value": 0.18,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-10000-rss",
+            "value": 118198272,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-100000-wall",
+            "value": 0.39,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-100000-rss",
+            "value": 159883264,
             "unit": "bytes"
           }
         ]
