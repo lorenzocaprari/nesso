@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794338330230,
+  "lastUpdate": 1794387818890,
   "repoUrl": "https://github.com/lorenzocaprari/nesso",
   "entries": {
     "nesso": [
@@ -5075,6 +5075,60 @@ window.BENCHMARK_DATA = {
           {
             "name": "grep-100000-rss",
             "value": 159408128,
+            "unit": "bytes"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "49699333+dependabot[bot]@users.noreply.github.com",
+            "name": "dependabot[bot]",
+            "username": "dependabot[bot]"
+          },
+          "committer": {
+            "email": "85455384+lorenzocaprari@users.noreply.github.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "distinct": true,
+          "id": "874fdb23cd0ee7ae77578337caffd0500f3dc8be",
+          "message": "build(deps): bump the github-actions group with 4 updates\n\nBumps the github-actions group with 4 updates: [github/codeql-action/init](https://github.com/github/codeql-action), [github/codeql-action/analyze](https://github.com/github/codeql-action), [github/codeql-action/upload-sarif](https://github.com/github/codeql-action) and [sigstore/cosign-installer](https://github.com/sigstore/cosign-installer).\n\n\nUpdates `github/codeql-action/init` from 4.39.2 to 4.39.3\n- [Release notes](https://github.com/github/codeql-action/releases)\n- [Changelog](https://github.com/github/codeql-action/blob/main/CHANGELOG.md)\n- [Commits](https://github.com/github/codeql-action/compare/1fc58d04a4d4374f921bdac573c3811c240f9c26...33d7b85da1a04171e211befe2c739303b9a4c066)\n\nUpdates `github/codeql-action/analyze` from 4.39.2 to 4.39.3\n- [Release notes](https://github.com/github/codeql-action/releases)\n- [Changelog](https://github.com/github/codeql-action/blob/main/CHANGELOG.md)\n- [Commits](https://github.com/github/codeql-action/compare/1fc58d04a4d4374f921bdac573c3811c240f9c26...33d7b85da1a04171e211befe2c739303b9a4c066)\n\nUpdates `github/codeql-action/upload-sarif` from 4.39.2 to 4.39.3\n- [Release notes](https://github.com/github/codeql-action/releases)\n- [Changelog](https://github.com/github/codeql-action/blob/main/CHANGELOG.md)\n- [Commits](https://github.com/github/codeql-action/compare/1fc58d04a4d4374f921bdac573c3811c240f9c26...33d7b85da1a04171e211befe2c739303b9a4c066)\n\nUpdates `sigstore/cosign-installer` from 4.1.2 to 4.1.3\n- [Release notes](https://github.com/sigstore/cosign-installer/releases)\n- [Commits](https://github.com/sigstore/cosign-installer/compare/6f9f17788090df1f26f669e9d70d6ae9567deba6...756fe2d284c7292c4e9b62c8a28f1e5629c59532)\n\n---\nupdated-dependencies:\n- dependency-name: github/codeql-action/init\n  dependency-version: 4.39.3\n  dependency-type: direct:production\n  update-type: version-update:semver-patch\n  dependency-group: github-actions\n- dependency-name: github/codeql-action/analyze\n  dependency-version: 4.39.3\n  dependency-type: direct:production\n  update-type: version-update:semver-patch\n  dependency-group: github-actions\n- dependency-name: github/codeql-action/upload-sarif\n  dependency-version: 4.39.3\n  dependency-type: direct:production\n  update-type: version-update:semver-patch\n  dependency-group: github-actions\n- dependency-name: sigstore/cosign-installer\n  dependency-version: 4.1.3\n  dependency-type: direct:production\n  update-type: version-update:semver-patch\n  dependency-group: github-actions\n...\n\nSigned-off-by: dependabot[bot] <support@github.com>",
+          "timestamp": "2026-11-11T09:59:20+01:00",
+          "tree_id": "68d75616159f6f11aa818650523ff6f429d223b2",
+          "url": "https://github.com/lorenzocaprari/nesso/commit/874fdb23cd0ee7ae77578337caffd0500f3dc8be"
+        },
+        "date": 1794387818527,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "grep-1000-wall",
+            "value": 0.17,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-1000-rss",
+            "value": 119205888,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-10000-wall",
+            "value": 0.19,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-10000-rss",
+            "value": 118251520,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-100000-wall",
+            "value": 0.42,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-100000-rss",
+            "value": 159731712,
             "unit": "bytes"
           }
         ]
