@@ -557,6 +557,38 @@ static bool sameSource(const nesso::core::SourceInfo &left, const nesso::core::S
     return left.tracked == right.tracked && left.size == right.size && left.modifiedTime == right.modifiedTime;
 }
 
+static std::expected<void, Error> scanStdin(Scan &scan, nesso::parser::ParseStats &stats, std::string_view jsonField,
+                                            const nesso::parser::ArchiveLimits &limits, bool forIndex)
+{
+    const std::filesystem::path path{"-"};
+    const auto keep = [&scan](nesso::parser::ParsedChunk chunk)
+    {
+        if (!chunk.skipped)
+        {
+            ++scan.chunks;
+        }
+        scan.stdinChunks.push_back(std::move(chunk));
+    };
+    const auto streamed =
+        forIndex ? nesso::parser::Chunker::forEachRecord(path, MAX_LINE_LENGTH, &stats, jsonField, keep, limits)
+                 : nesso::parser::Chunker::forEach(path, MAX_LINE_LENGTH, &stats, jsonField, keep, limits);
+    if (!streamed)
+    {
+        return std::unexpected(parseFailure(streamed.error(), path, lineCounts(stats, std::string{jsonField}), limits,
+                                            stats.encryptedEntry, scan.bundleSkips));
+    }
+    if (forIndex)
+    {
+        const auto after = nesso::core::sourceInfoFor(path, jsonField);
+        if (!after || !sameSource(scan.sources.back(), *after))
+        {
+            return std::unexpected(makeError(ErrorKind::Parse, ErrorCause::SourceChanged, path,
+                                             lineCounts(stats, std::string{jsonField}), scan.bundleSkips));
+        }
+    }
+    return {};
+}
+
 static std::expected<Scan, Error> scanFiles(std::span<const std::filesystem::path> files, std::string_view jsonField,
                                             const nesso::parser::ArchiveLimits &limits, bool forIndex = false)
 {
@@ -583,30 +615,9 @@ static std::expected<Scan, Error> scanFiles(std::span<const std::filesystem::pat
                 continue;
             }
             capturedStdin = true;
-            const auto keep = [&scan](nesso::parser::ParsedChunk chunk)
+            if (const auto scanned = scanStdin(scan, stats, jsonField, limits, forIndex); !scanned)
             {
-                if (!chunk.skipped)
-                {
-                    ++scan.chunks;
-                }
-                scan.stdinChunks.push_back(std::move(chunk));
-            };
-            const auto streamed =
-                forIndex ? nesso::parser::Chunker::forEachRecord(path, MAX_LINE_LENGTH, &stats, jsonField, keep, limits)
-                         : nesso::parser::Chunker::forEach(path, MAX_LINE_LENGTH, &stats, jsonField, keep, limits);
-            if (!streamed)
-            {
-                return std::unexpected(parseFailure(streamed.error(), path, lineCounts(stats, std::string{jsonField}),
-                                                    limits, stats.encryptedEntry, scan.bundleSkips));
-            }
-            if (forIndex)
-            {
-                const auto after = nesso::core::sourceInfoFor(path, jsonField);
-                if (!after || !sameSource(scan.sources.back(), *after))
-                {
-                    return std::unexpected(makeError(ErrorKind::Parse, ErrorCause::SourceChanged, path,
-                                                     lineCounts(stats, std::string{jsonField}), scan.bundleSkips));
-                }
+                return std::unexpected(scanned.error());
             }
             continue;
         }
