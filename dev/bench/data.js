@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794518627123,
+  "lastUpdate": 1794519763613,
   "repoUrl": "https://github.com/lorenzocaprari/nesso",
   "entries": {
     "nesso": [
@@ -5399,6 +5399,60 @@ window.BENCHMARK_DATA = {
           {
             "name": "grep-100000-rss",
             "value": 146509824,
+            "unit": "bytes"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "caprarilorenzo5@gmail.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "committer": {
+            "email": "85455384+lorenzocaprari@users.noreply.github.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "distinct": true,
+          "id": "2619b00a85b70798a46baf8d62507bc93a6e2103",
+          "message": "ci: quiet coverage job warnings\n\nCapture only src/ and test/ so libstdc++ and Conan headers are not merged, and list lcov ignore categories twice so lcov 2.x drops those warnings. Drop the coverage job's extra conan profile detect, and install gnupg when gpg-agent is missing.",
+          "timestamp": "2026-11-12T22:38:27+01:00",
+          "tree_id": "c5b80d55f8f4a5e82145d1f3670b8c1a8b37111f",
+          "url": "https://github.com/lorenzocaprari/nesso/commit/2619b00a85b70798a46baf8d62507bc93a6e2103"
+        },
+        "date": 1794519762640,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "grep-1000-wall",
+            "value": 1.15,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-1000-rss",
+            "value": 117547008,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-10000-wall",
+            "value": 1.15,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-10000-rss",
+            "value": 117772288,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-100000-wall",
+            "value": 1.37,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-100000-rss",
+            "value": 144932864,
             "unit": "bytes"
           }
         ]
