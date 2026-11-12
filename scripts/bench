@@ -5,10 +5,14 @@ Without --dataset, time grep on fixed-seed synthetic logs. --dataset hdfs
 indexes the Loghub HDFS sample and writes bench/results/<sha>.hdfs.json.
 --dataset logdir generates a synthetic log directory, times a cold index and
 the first search, and writes bench/results/<sha>.logdir.json. nesso index
-reads regular files, so logdir passes each file on its own.
+reads regular files, so logdir passes each file on its own. --dataset ttfa
+(or --ttfa) generates a mixed bundle directory, indexes that directory as one
+path, times the first search, and writes bench/results/<sha>.ttfa.json.
 """
 
 import argparse
+import gzip
+import io
 import json
 import os
 import random
@@ -16,6 +20,7 @@ import re
 import signal
 import subprocess
 import sys
+import tarfile
 import tempfile
 import time
 from pathlib import Path
@@ -24,6 +29,7 @@ ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_SIZES = (1000, 10_000, 100_000)
 HDFS_DEFAULT_LINES = 100_000
 LOGDIR_DEFAULT_LINES = 256
+TTFA_DEFAULT_LINES = 256
 LOGDIR_QUERY = "disk write failed"
 LOGDIR_NOISE_DIVISOR = 5
 QUERY = "database connection refused"
@@ -82,6 +88,18 @@ NOISE_FILES = (
     ("etc/profile.d/app.sh", "PATH=/usr/bin"),
 )
 SEED = 0x4E455353
+# path, kind, weight, sink: plain file, standalone .gz, or member of TTFA_TAR_PATH
+TTFA_STREAMS = (
+    ("var/log/messages", "messages", 24, "plain"),
+    ("var/log/messages.1", "messages", 10, "plain"),
+    ("var/log/messages.2", "messages", 6, "plain"),
+    ("var/log/app/service.jsonl", "jsonl", 14, "plain"),
+    ("sos_commands/logs/journalctl_--no-pager", "journal", 18, "plain"),
+    ("var/log/messages.gz", "messages", 12, "gz"),
+    ("var/log/secure", "secure", 8, "tar"),
+    ("var/log/kern.log", "kern", 8, "tar"),
+)
+TTFA_TAR_PATH = "var/log/bundle.tar.gz"
 TEMPLATES = (
     "database connection refused",
     "database connection refused to primary",
@@ -751,12 +769,144 @@ def generate_logdir(root: Path, *, lines: int | None = None, mib: float | None =
     }
 
 
-def execute_timed(argv: list[str], timeout: float | None, time_path: Path) -> dict:
+def gzip_bytes(data: bytes) -> bytes:
+    buffer = io.BytesIO()
+    with gzip.GzipFile(filename="", mode="wb", fileobj=buffer, mtime=0) as handle:
+        handle.write(data)
+    return buffer.getvalue()
+
+
+def tar_gz_bytes(members: list[tuple[str, bytes]]) -> bytes:
+    tar_buffer = io.BytesIO()
+    with tarfile.open(fileobj=tar_buffer, mode="w") as archive:
+        for name, data in members:
+            info = tarfile.TarInfo(name)
+            info.size = len(data)
+            info.mtime = 0
+            info.mode = 0o644
+            info.uid = 0
+            info.gid = 0
+            info.uname = ""
+            info.gname = ""
+            archive.addfile(info, io.BytesIO(data))
+    return gzip_bytes(tar_buffer.getvalue())
+
+
+def ttfa_records(line_count: int, seed: int) -> list[tuple[str, str, str]]:
+    if line_count <= 0:
+        raise SystemExit("error: --lines must be a positive integer")
+    if line_count < len(TTFA_STREAMS):
+        raise SystemExit(f"error: --lines must be at least {len(TTFA_STREAMS)} to fill the ttfa bundle")
+    counts = distribute_counts(line_count, [stream[2] for stream in TTFA_STREAMS])
+    rng = random.Random(seed)
+    records: list[tuple[str, str, str]] = []
+    for stream, count in zip(TTFA_STREAMS, counts, strict=True):
+        path, kind, _weight, sink = stream
+        for ordinal in range(count):
+            records.append((path, sink, render_log_line(kind, ordinal, rng)))
+    return records
+
+
+def ttfa_payloads(line_count: int, seed: int) -> dict[str, bytes]:
+    grouped: dict[tuple[str, str], list[str]] = {}
+    order: list[tuple[str, str]] = []
+    for path, sink, line in ttfa_records(line_count, seed):
+        key = (path, sink)
+        if key not in grouped:
+            order.append(key)
+            grouped[key] = []
+        grouped[key].append(line)
+    files: dict[str, bytes] = {}
+    tar_members: list[tuple[str, bytes]] = []
+    for path, sink in order:
+        text = "".join(f"{line}\n" for line in grouped[(path, sink)])
+        data = text.encode("utf-8")
+        if sink == "plain":
+            files[path] = data
+        elif sink == "gz":
+            files[path] = gzip_bytes(data)
+        elif sink == "tar":
+            tar_members.append((path, data))
+        else:
+            raise SystemExit(f"error: unknown ttfa sink {sink}")
+    if not tar_members:
+        raise SystemExit("error: ttfa bundle is missing tar members")
+    files[TTFA_TAR_PATH] = tar_gz_bytes(tar_members)
+    return files
+
+
+def ttfa_input_bytes(line_count: int, seed: int) -> int:
+    return sum(len(data) for data in ttfa_payloads(line_count, seed).values())
+
+
+def lines_for_ttfa_mib(mib: float, seed: int) -> int:
+    if mib <= 0:
+        raise SystemExit("error: --mib must be positive")
+    size_bytes = round(mib * 1024 * 1024)
+    if size_bytes < 1:
+        raise SystemExit("error: --mib must be positive")
+    minimum = len(TTFA_STREAMS)
+    minimum_bytes = ttfa_input_bytes(minimum, seed)
+    if minimum_bytes > size_bytes:
+        raise SystemExit(f"error: --mib is below the ttfa bundle minimum of {minimum_bytes} bytes")
+    if minimum_bytes == size_bytes:
+        return minimum
+    low = minimum
+    high = minimum
+    while ttfa_input_bytes(high, seed) < size_bytes:
+        high *= 2
+    while low + 1 < high:
+        mid = (low + high) // 2
+        if ttfa_input_bytes(mid, seed) >= size_bytes:
+            high = mid
+        else:
+            low = mid
+    return high
+
+
+def generate_ttfa(root: Path, *, lines: int | None = None, mib: float | None = None, seed: int = SEED) -> dict:
+    if lines is not None and mib is not None:
+        raise SystemExit("error: pass only one of --lines and --mib")
+    if mib is not None:
+        line_count = lines_for_ttfa_mib(mib, seed)
+    else:
+        line_count = TTFA_DEFAULT_LINES if lines is None else lines
+    payloads = ttfa_payloads(line_count, seed)
+    root.mkdir(parents=True, exist_ok=True)
+    written: list[Path] = []
+    total_bytes = 0
+    for relative in sorted(payloads):
+        path = root.joinpath(*relative.split("/"))
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(payloads[relative])
+        total_bytes += path.stat().st_size
+        written.append(path)
+    encoded = sum(len(data) for data in payloads.values())
+    if total_bytes != encoded:
+        raise SystemExit("error: ttfa bundle byte count changed while writing")
+    return {
+        "lines": line_count,
+        "filesRead": len(written),
+        "inputBytes": total_bytes,
+        "root": root,
+        "files": written,
+    }
+
+
+def execute_timed(
+    argv: list[str],
+    timeout: float | None,
+    time_path: Path,
+    env: dict[str, str] | None = None,
+) -> dict:
     command = with_address_limit([gnu_time_binary(), "-f", "%e %M", "-o", str(time_path), *argv])
     started = time.perf_counter()
+    merged = os.environ.copy()
+    if env:
+        merged.update(env)
     process = subprocess.Popen(
         command,
-        env=os.environ.copy(),
+        env=merged,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         start_new_session=True,
@@ -963,26 +1113,155 @@ def run_logdir(args: argparse.Namespace) -> None:
         raise SystemExit(1)
 
 
+def ttfa_payload(*, sha: str, binary: Path, cpu: str, nproc: int, threads: str | None, case: dict) -> dict:
+    return {
+        "sha": sha,
+        "binary": str(binary),
+        "dataset": "ttfa",
+        "query": LOGDIR_QUERY,
+        "seed": SEED,
+        "cpuModel": cpu,
+        "nproc": nproc,
+        "threads": threads,
+        "cases": [case],
+    }
+
+
+def run_ttfa(args: argparse.Namespace) -> None:
+    if args.sizes is not None:
+        raise SystemExit("error: --sizes applies to the synthetic grep benchmark")
+    if args.sample is not None:
+        raise SystemExit("error: --sample applies to --dataset hdfs")
+    if args.lines is not None and args.mib is not None:
+        raise SystemExit("error: pass only one of --lines and --mib")
+    binary = resolve_binary(args.binary)
+    if not binary.is_file():
+        raise SystemExit(f"error: binary not found: {binary}")
+    model_dir = resolve_model_dir(args.model_dir)
+    if not (model_dir / "model.onnx").is_file() or not (model_dir / "vocab.txt").is_file():
+        raise SystemExit(f"error: {model_dir} must contain model.onnx and vocab.txt")
+    time_bin = gnu_time_binary()
+    if not Path(time_bin).is_file():
+        raise SystemExit(f"error: {time_bin} is required")
+    with tempfile.TemporaryDirectory(prefix="nesso-bench-ttfa-") as tmp:
+        directory = Path(tmp)
+        root = directory / "bundle"
+        if args.mib is not None:
+            stats = generate_ttfa(root, mib=args.mib)
+        else:
+            stats = generate_ttfa(root, lines=args.lines)
+        corpus = directory / "corpus.nesso"
+        print(
+            f"bench: ttfa index+search {stats['lines']} lines {stats['filesRead']} files",
+            flush=True,
+        )
+        index_cache = directory / "cache-index"
+        index_cache.mkdir()
+        index_result = execute_timed(
+            [
+                str(binary),
+                "index",
+                "-o",
+                str(corpus),
+                str(root),
+                "--model-dir",
+                str(model_dir),
+                "--quiet",
+            ],
+            args.timeout,
+            directory / "index-time.txt",
+            env={"XDG_CACHE_HOME": str(index_cache)},
+        )
+        error = command_error(index_result, corpus=corpus)
+        if error is None:
+            found = INDEXED_CHUNKS.findall(index_result["stderr"])
+            if found and int(found[-1]) != stats["lines"]:
+                error = "indexed chunk count mismatch"
+        search_result = None
+        if error is None:
+            search_cache = directory / "cache-search"
+            search_cache.mkdir()
+            search_result = execute_timed(
+                [
+                    str(binary),
+                    "search",
+                    LOGDIR_QUERY,
+                    "-i",
+                    str(corpus),
+                    "--model-dir",
+                    str(model_dir),
+                    "-k",
+                    "5",
+                ],
+                args.timeout,
+                directory / "search-time.txt",
+                env={"XDG_CACHE_HOME": str(search_cache)},
+            )
+            error = command_error(search_result, need_stdout=True)
+        corpus_bytes = corpus.stat().st_size if corpus.is_file() else None
+        case = logdir_case(
+            lines=stats["lines"],
+            files_read=stats["filesRead"],
+            input_bytes=stats["inputBytes"],
+            index_result=index_result,
+            search_result=search_result,
+            corpus_bytes=corpus_bytes,
+            error=error,
+        )
+    status = "ok" if case["ok"] else case.get("error", "failed")
+    print(
+        f"bench: {case['lines']} lines {case['filesRead']} files {status} "
+        f"wall={case['wallSeconds']}s index={case['indexWallSeconds']}s "
+        f"search={case['searchWallSeconds']}s peak={case['peakRssBytes']} "
+        f"corpusBytes={case['corpusBytes']} inputBytes={case['inputBytes']} "
+        f"ratio={case['corpusToInputRatio']}",
+        flush=True,
+    )
+    cpu = cpu_model()
+    count = logical_cpus()
+    threads = threads_setting()
+    shown_threads = threads if threads is not None else "unset"
+    print(f"bench: cpu={cpu} nproc={count} NESSO_THREADS={shown_threads}", flush=True)
+    payload = ttfa_payload(sha=git_sha(), binary=binary, cpu=cpu, nproc=count, threads=threads, case=case)
+    output = args.output or (ROOT / "bench" / "results" / f"{payload['sha']}.ttfa.json")
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+    print(f"bench: wrote {output}")
+    if not case.get("ok"):
+        raise SystemExit(1)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--binary", help="Path to the nesso executable")
     parser.add_argument("--model-dir", help="Directory with model.onnx and vocab.txt")
     parser.add_argument(
         "--dataset",
-        choices=("hdfs", "logdir"),
-        help="hdfs indexes the Loghub sample. logdir indexes a generated log directory and runs one search",
+        choices=("hdfs", "logdir", "ttfa"),
+        help=(
+            "hdfs indexes the Loghub sample. logdir indexes a generated log directory "
+            "and runs one search. ttfa indexes a generated bundle directory and runs one search"
+        ),
+    )
+    parser.add_argument(
+        "--ttfa",
+        action="store_true",
+        help="Same as --dataset ttfa",
     )
     parser.add_argument(
         "--lines",
         type=int,
         default=None,
-        help="Line count for --dataset hdfs (repeat the sample) or --dataset logdir (generate the tree)",
+        help=(
+            "Line count for --dataset hdfs (repeat the sample), --dataset logdir "
+            "(generate the tree), or --dataset ttfa / --ttfa (generate the bundle)"
+        ),
     )
     parser.add_argument(
         "--mib",
         type=float,
         default=None,
-        help="Build the log directory until the indexed files reach this many MiB",
+        help="Build the logdir or ttfa tree until the on-disk files reach this many MiB",
     )
     parser.add_argument("--sample", type=Path, help="HDFS sample to repeat (default: scripts/fetch-loghub)")
     parser.add_argument(
@@ -993,20 +1272,27 @@ def main() -> None:
     parser.add_argument("--output", type=Path, help="Result JSON path (default: bench/results/<sha>.json)")
     parser.add_argument("--timeout", type=float, help="Per-size timeout in seconds")
     args = parser.parse_args()
+    if args.ttfa:
+        if args.dataset is not None:
+            raise SystemExit("error: pass only one of --ttfa and --dataset")
+        args.dataset = "ttfa"
     if args.dataset == "hdfs":
         if args.mib is not None:
-            raise SystemExit("error: --mib applies to --dataset logdir")
+            raise SystemExit("error: --mib applies to --dataset logdir or --dataset ttfa")
         run_hdfs(args)
         return
     if args.dataset == "logdir":
         run_logdir(args)
         return
+    if args.dataset == "ttfa":
+        run_ttfa(args)
+        return
     if args.mib is not None:
-        raise SystemExit("error: --mib applies to --dataset logdir")
+        raise SystemExit("error: --mib applies to --dataset logdir or --dataset ttfa")
     if args.sample is not None:
         raise SystemExit("error: --sample applies to --dataset hdfs")
     if args.lines is not None:
-        raise SystemExit("error: --lines applies to --dataset hdfs or --dataset logdir")
+        raise SystemExit("error: --lines applies to --dataset hdfs, --dataset logdir, or --dataset ttfa")
 
     binary = resolve_binary(args.binary)
     if not binary.is_file():
