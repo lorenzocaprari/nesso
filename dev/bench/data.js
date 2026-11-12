@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794411805542,
+  "lastUpdate": 1794442402833,
   "repoUrl": "https://github.com/lorenzocaprari/nesso",
   "entries": {
     "nesso": [
@@ -5183,6 +5183,60 @@ window.BENCHMARK_DATA = {
           {
             "name": "grep-100000-rss",
             "value": 159883264,
+            "unit": "bytes"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "caprarilorenzo5@gmail.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "committer": {
+            "email": "85455384+lorenzocaprari@users.noreply.github.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "distinct": true,
+          "id": "d9ac68c470fb76f1fc98df97f826acdf2a1f76f2",
+          "message": "fix(core): order NaN scores last and refuse non-finite vectors",
+          "timestamp": "2026-11-12T01:08:22+01:00",
+          "tree_id": "3bcb1dd3bfa1a87d0c2204df9073ac29bb52049f",
+          "url": "https://github.com/lorenzocaprari/nesso/commit/d9ac68c470fb76f1fc98df97f826acdf2a1f76f2"
+        },
+        "date": 1794442401787,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "grep-1000-wall",
+            "value": 1.24,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-1000-rss",
+            "value": 119128064,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-10000-wall",
+            "value": 1.22,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-10000-rss",
+            "value": 118972416,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-100000-wall",
+            "value": 1.49,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-100000-rss",
+            "value": 157229056,
             "unit": "bytes"
           }
         ]
