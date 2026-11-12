@@ -2088,18 +2088,93 @@ static std::vector<RankedLine> rankHybridLines(const nesso::core::MappedCorpus &
     return ranked;
 }
 
+struct LexicalCandidate
+{
+    uint64_t ordinal = 0;
+    float score = 0.0F;
+    bool substring = false;
+    std::string text;
+};
+
+static bool lexicalCandidateBefore(const LexicalCandidate &left, const LexicalCandidate &right)
+{
+    if (left.substring != right.substring)
+    {
+        return left.substring && !right.substring;
+    }
+    return betterHit(left.score, left.ordinal, right.score, right.ordinal);
+}
+
+static void rematerializeLexicalSubstrings(const nesso::core::MappedCorpus &corpus, std::string_view needle,
+                                           std::vector<LexicalCandidate> &hits)
+{
+    for (LexicalCandidate &hit : hits)
+    {
+        const nesso::core::CorpusLine &line = corpus.lines()[static_cast<std::size_t>(hit.ordinal)];
+        std::string own;
+        if (line.storedText)
+        {
+            own = std::string{*line.storedText};
+        }
+        else
+        {
+            const nesso::core::SourceInfo &source = corpus.sources()[line.sourceIndex];
+            auto reread =
+                nesso::parser::Chunker::readRecord(source.path, line.byteOffset, line.byteLength, line.lineNumber,
+                                                   line.arrayElement, source.jsonField, MAX_LINE_LENGTH);
+            if (reread)
+            {
+                own = std::move(*reread);
+            }
+            else
+            {
+                own = std::string{corpus.texts()[line.distinctId]};
+            }
+        }
+        hit.substring = !needle.empty() && own.find(needle) != std::string::npos;
+    }
+    std::ranges::sort(hits, lexicalCandidateBefore);
+}
+
+static std::vector<LexicalCandidate> collapseLexicalGroups(const nesso::core::MappedCorpus &corpus,
+                                                           const std::vector<LexicalCandidate> &hits)
+{
+    const std::size_t distinct = corpus.texts().size();
+    std::vector<uint64_t> first(distinct, std::numeric_limits<uint64_t>::max());
+    for (std::size_t ordinal = 0; ordinal < corpus.lines().size(); ++ordinal)
+    {
+        const nesso::core::CorpusLine &line = corpus.lines()[ordinal];
+        if (line.distinctId == nesso::core::NO_DISTINCT ||
+            first[line.distinctId] != std::numeric_limits<uint64_t>::max())
+        {
+            continue;
+        }
+        first[line.distinctId] = ordinal;
+    }
+    std::vector<char> taken(distinct, 0);
+    std::vector<LexicalCandidate> groups;
+    groups.reserve(hits.size());
+    for (const LexicalCandidate &hit : hits)
+    {
+        const auto id = corpus.lines()[static_cast<std::size_t>(hit.ordinal)].distinctId;
+        if (taken[id] != 0)
+        {
+            continue;
+        }
+        taken[id] = 1;
+        LexicalCandidate row = hit;
+        row.ordinal = first[id];
+        groups.push_back(std::move(row));
+    }
+    std::ranges::sort(groups, lexicalCandidateBefore);
+    return groups;
+}
+
 static std::vector<RankedLine> rankLexicalLines(const nesso::core::MappedCorpus &corpus,
                                                 const std::vector<double> &bm25Scores, std::string_view needle,
                                                 size_t topK, bool group)
 {
-    struct Candidate
-    {
-        uint64_t ordinal = 0;
-        float score = 0.0F;
-        bool substring = false;
-        std::string text;
-    };
-    std::vector<Candidate> hits;
+    std::vector<LexicalCandidate> hits;
     for (size_t ordinal = 0; ordinal < corpus.lines().size(); ++ordinal)
     {
         const nesso::core::CorpusLine &line = corpus.lines()[ordinal];
@@ -2113,88 +2188,11 @@ static std::vector<RankedLine> rankLexicalLines(const nesso::core::MappedCorpus 
                         .substring = !needle.empty() && text.find(needle) != std::string_view::npos,
                         .text = std::string{text}});
     }
-    std::ranges::sort(hits,
-                      [](const Candidate &left, const Candidate &right)
-                      {
-                          if (left.substring != right.substring)
-                          {
-                              return left.substring && !right.substring;
-                          }
-                          return betterHit(left.score, left.ordinal, right.score, right.ordinal);
-                      });
+    std::ranges::sort(hits, lexicalCandidateBefore);
     if (group)
     {
-        for (Candidate &hit : hits)
-        {
-            const nesso::core::CorpusLine &line = corpus.lines()[static_cast<std::size_t>(hit.ordinal)];
-            std::string own;
-            if (line.storedText)
-            {
-                own = std::string{*line.storedText};
-            }
-            else
-            {
-                const nesso::core::SourceInfo &source = corpus.sources()[line.sourceIndex];
-                auto reread =
-                    nesso::parser::Chunker::readRecord(source.path, line.byteOffset, line.byteLength, line.lineNumber,
-                                                       line.arrayElement, source.jsonField, MAX_LINE_LENGTH);
-                if (reread)
-                {
-                    own = std::move(*reread);
-                }
-                else
-                {
-                    own = std::string{corpus.texts()[line.distinctId]};
-                }
-            }
-            hit.substring = !needle.empty() && own.find(needle) != std::string::npos;
-        }
-        std::ranges::sort(hits,
-                          [](const Candidate &left, const Candidate &right)
-                          {
-                              if (left.substring != right.substring)
-                              {
-                                  return left.substring && !right.substring;
-                              }
-                              return betterHit(left.score, left.ordinal, right.score, right.ordinal);
-                          });
-        const std::size_t distinct = corpus.texts().size();
-        std::vector<uint64_t> first(distinct, std::numeric_limits<uint64_t>::max());
-        for (std::size_t ordinal = 0; ordinal < corpus.lines().size(); ++ordinal)
-        {
-            const nesso::core::CorpusLine &line = corpus.lines()[ordinal];
-            if (line.distinctId == nesso::core::NO_DISTINCT ||
-                first[line.distinctId] != std::numeric_limits<uint64_t>::max())
-            {
-                continue;
-            }
-            first[line.distinctId] = ordinal;
-        }
-        std::vector<char> taken(distinct, 0);
-        std::vector<Candidate> groups;
-        groups.reserve(hits.size());
-        for (const Candidate &hit : hits)
-        {
-            const auto id = corpus.lines()[static_cast<std::size_t>(hit.ordinal)].distinctId;
-            if (taken[id] != 0)
-            {
-                continue;
-            }
-            taken[id] = 1;
-            Candidate row = hit;
-            row.ordinal = first[id];
-            groups.push_back(std::move(row));
-        }
-        std::ranges::sort(groups,
-                          [](const Candidate &left, const Candidate &right)
-                          {
-                              if (left.substring != right.substring)
-                              {
-                                  return left.substring && !right.substring;
-                              }
-                              return betterHit(left.score, left.ordinal, right.score, right.ordinal);
-                          });
-        hits = std::move(groups);
+        rematerializeLexicalSubstrings(corpus, needle, hits);
+        hits = collapseLexicalGroups(corpus, hits);
     }
     if (hits.size() > topK)
     {
@@ -2202,7 +2200,7 @@ static std::vector<RankedLine> rankLexicalLines(const nesso::core::MappedCorpus 
     }
     std::vector<RankedLine> ranked;
     ranked.reserve(hits.size());
-    for (const Candidate &hit : hits)
+    for (const LexicalCandidate &hit : hits)
     {
         ranked.push_back(
             {.ordinal = hit.ordinal, .score = hit.score, .lexical = hit.score, .hasDense = false, .hasLexical = true});
