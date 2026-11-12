@@ -910,9 +910,6 @@ jobs:
         if: steps.models.outputs.cache-hit != 'true'
         run: ./scripts/fetch-model models
 
-      - name: Create Conan Default Profile
-        run: conan profile detect --force
-
       - name: Run Coverage Script
         env:
           NESSO_REQUIRE_MODEL: "1"
@@ -922,8 +919,9 @@ jobs:
           chmod +x scripts/code-coverage
           ./scripts/code-coverage conan/profiles/code-coverage
 
-      # The Codecov CLI checks its download with gpg. software-properties-common
-      # pulls gnupg into the image; install it only when that binary is absent.
+      # The Codecov CLI checks its download with gpg, which needs gpg-agent.
+      # software-properties-common does not pull gnupg. The image can have gpg
+      # without gpg-agent. Install gnupg when either binary is absent.
       # Pull requests and pushes to main only, after the floor script has written
       # the cleaned trace. Same-repo runs authenticate with OIDC. The action
       # itself skips OIDC on a fork and uploads tokenless (public repos accept
@@ -937,7 +935,7 @@ jobs:
       - name: Ensure gpg for Codecov
         if: success() && (github.event_name == 'pull_request' || github.event_name == 'push')
         run: |
-          if ! command -v gpg >/dev/null 2>&1; then
+          if ! command -v gpg >/dev/null 2>&1 || ! command -v gpg-agent >/dev/null 2>&1; then
             apt-get update -qq
             apt-get install -y --no-install-recommends gnupg
           fi
