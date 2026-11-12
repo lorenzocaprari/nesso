@@ -198,6 +198,54 @@ std::string_view describe(ErrorCause cause)
     std::unreachable();
 }
 
+static std::optional<std::string> messageLexicalSpecial(const Error &error)
+{
+    if (error.cause == ErrorCause::NoLexicalPostings)
+    {
+        return "Error: corpus has no lexical postings; re-run `nesso index`";
+    }
+    if (error.cause == ErrorCause::LexicalTermsMismatch)
+    {
+        return std::format("Error: corpus lexical terms are version {}, this build uses version {}; "
+                           "re-run `nesso index`",
+                           error.note.empty() ? "?" : error.note, nesso::core::LEXICAL_TERMS_VERSION);
+    }
+    return std::nullopt;
+}
+
+static std::string messageCorpusRead(const Error &error, std::string_view reason, const std::string &path)
+{
+    if (const auto special = messageLexicalSpecial(error))
+    {
+        return *special;
+    }
+    if (error.cause == ErrorCause::UnsupportedCorpusVersion && error.corpusVersion)
+    {
+        return std::format("Error: failed to read the corpus '{}': corpus format v{} is not supported; "
+                           "re-run nesso index",
+                           path, *error.corpusVersion);
+    }
+    return std::format("Error: failed to read the corpus '{}': {}", path, reason);
+}
+
+static std::string messageEmptyInput(const Error &error, std::string_view reason, const std::string &path)
+{
+    if (!error.note.empty())
+    {
+        const std::string where = path.empty() ? std::string{} : std::format(" in '{}'", path);
+        if (error.cause == ErrorCause::EmptyFile)
+        {
+            return std::format("no indexable lines{}: {}; {}", where, reason, error.note);
+        }
+        return std::format("no indexable lines{}; {}", where, error.note);
+    }
+    if (path.empty())
+    {
+        return std::format("nothing to search: {}", reason);
+    }
+    return std::format("nothing to search in '{}': {}", path, reason);
+}
+
 std::string message(const Error &error)
 {
     const std::string_view reason = describe(error.cause);
@@ -227,54 +275,19 @@ std::string message(const Error &error)
     case ErrorKind::IndexBuild:
         return std::format("Error: failed to build the index: {}", reason);
     case ErrorKind::Search:
-        if (error.cause == ErrorCause::NoLexicalPostings)
+        if (const auto special = messageLexicalSpecial(error))
         {
-            return "Error: corpus has no lexical postings; re-run `nesso index`";
-        }
-        if (error.cause == ErrorCause::LexicalTermsMismatch)
-        {
-            return std::format("Error: corpus lexical terms are version {}, this build uses version {}; "
-                               "re-run `nesso index`",
-                               error.note.empty() ? "?" : error.note, nesso::core::LEXICAL_TERMS_VERSION);
+            return *special;
         }
         return std::format("Error: failed to search: {}", reason);
     case ErrorKind::CorpusRead:
-        if (error.cause == ErrorCause::NoLexicalPostings)
-        {
-            return "Error: corpus has no lexical postings; re-run `nesso index`";
-        }
-        if (error.cause == ErrorCause::LexicalTermsMismatch)
-        {
-            return std::format("Error: corpus lexical terms are version {}, this build uses version {}; "
-                               "re-run `nesso index`",
-                               error.note.empty() ? "?" : error.note, nesso::core::LEXICAL_TERMS_VERSION);
-        }
-        if (error.cause == ErrorCause::UnsupportedCorpusVersion && error.corpusVersion)
-        {
-            return std::format("Error: failed to read the corpus '{}': corpus format v{} is not supported; "
-                               "re-run nesso index",
-                               path, *error.corpusVersion);
-        }
-        return std::format("Error: failed to read the corpus '{}': {}", path, reason);
+        return messageCorpusRead(error, reason, path);
     case ErrorKind::CorpusWrite:
         return std::format("Error: failed to write the corpus '{}': {}", path, reason);
     case ErrorKind::CorpusLoad:
         return std::format("Error: failed to load the corpus: {}", reason);
     case ErrorKind::EmptyInput:
-        if (!error.note.empty())
-        {
-            const std::string where = path.empty() ? std::string{} : std::format(" in '{}'", path);
-            if (error.cause == ErrorCause::EmptyFile)
-            {
-                return std::format("no indexable lines{}: {}; {}", where, reason, error.note);
-            }
-            return std::format("no indexable lines{}; {}", where, error.note);
-        }
-        if (path.empty())
-        {
-            return std::format("nothing to search: {}", reason);
-        }
-        return std::format("nothing to search in '{}': {}", path, reason);
+        return messageEmptyInput(error, reason, path);
     case ErrorKind::NoMatches:
         return {};
     }
