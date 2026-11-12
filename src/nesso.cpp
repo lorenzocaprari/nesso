@@ -979,6 +979,422 @@ expandRequestFiles(std::span<const std::filesystem::path> files)
     return std::move(*expanded);
 }
 
+struct GrepWaiting
+{
+    uint64_t ordinal = 0;
+    std::uint32_t distinctId = 0;
+    std::uint32_t source = 0;
+    uint64_t line = 0;
+    bool arrayElement = false;
+    std::string text;
+};
+
+struct GrepCandidate
+{
+    uint64_t index = 0;
+    float score = 0.0F;
+    std::uint32_t distinctId = 0;
+    TextMatch match;
+};
+
+struct GrepHit
+{
+    uint64_t ordinal = 0;
+    float score = 0.0F;
+    float dense = 0.0F;
+    float lexical = 0.0F;
+    bool hasDense = false;
+    bool hasLexical = false;
+    bool substring = false;
+    std::uint32_t distinctId = 0;
+    std::uint32_t source = 0;
+    uint64_t line = 0;
+    bool arrayElement = false;
+    std::string text;
+};
+
+struct GrepSourceCursor
+{
+    bool archive = false;
+    std::uint32_t sourceId = 0;
+    std::string source;
+};
+
+struct GrepEmbedState
+{
+    const GrepRequest *request = nullptr;
+    Scan *scanned = nullptr;
+    const std::vector<float> *queryEmbedding = nullptr;
+    const nesso::embed::Embedder *model = nullptr;
+    bool needLexical = false;
+    nesso::core::DistinctIndex distinct;
+    std::vector<float> scores;
+    std::vector<GrepWaiting> waiting;
+    std::vector<GrepWaiting> allLines;
+    std::vector<char> groupSeen;
+    std::vector<std::string> sources;
+    std::vector<GrepCandidate> best;
+    ProgressReporter *progress = nullptr;
+    size_t linesSeen = 0;
+    size_t linesReported = 0;
+    uint64_t ordinal = 0;
+    bool severalSources = false;
+    std::string firstSource;
+    size_t batch = 0;
+};
+
+struct GrepBm25
+{
+    std::vector<double> scores;
+    EffectiveMode effective = EffectiveMode::Dense;
+    bool lexicalFallback = false;
+};
+
+static bool betterGrepCandidate(const GrepCandidate &left, const GrepCandidate &right)
+{
+    return nesso::core::rankBefore(left.score, left.index, right.score, right.index);
+}
+
+static bool lexicalHitBefore(const GrepHit &left, const GrepHit &right)
+{
+    if (left.substring != right.substring)
+    {
+        return left.substring && !right.substring;
+    }
+    return betterHit(left.score, left.ordinal, right.score, right.ordinal);
+}
+
+static bool scoreHitBefore(const GrepHit &left, const GrepHit &right)
+{
+    return betterHit(left.score, left.ordinal, right.score, right.ordinal);
+}
+
+static void considerDenseGrep(GrepEmbedState &state, const GrepWaiting &item)
+{
+    if (state.needLexical)
+    {
+        return;
+    }
+    if (state.request->group)
+    {
+        if (state.groupSeen.size() <= item.distinctId)
+        {
+            state.groupSeen.resize(static_cast<std::size_t>(item.distinctId) + 1);
+        }
+        if (state.groupSeen[item.distinctId] != 0)
+        {
+            return;
+        }
+        state.groupSeen[item.distinctId] = 1;
+    }
+    TextMatch match{.source = state.sources[item.source],
+                    .line = item.line,
+                    .score = state.scores[item.distinctId],
+                    .text = item.text,
+                    .arrayElement = item.arrayElement,
+                    .occurrences = 1,
+                    .mode = "dense",
+                    .dense = std::nullopt,
+                    .lexical = std::nullopt};
+    state.best.push_back(GrepCandidate{
+        .index = item.ordinal, .score = match.score, .distinctId = item.distinctId, .match = std::move(match)});
+    if (state.best.size() > state.request->topK)
+    {
+        std::partial_sort(state.best.begin(), state.best.begin() + static_cast<std::ptrdiff_t>(state.request->topK),
+                          state.best.end(), betterGrepCandidate);
+        state.best.resize(state.request->topK);
+    }
+}
+
+static std::expected<void, Error> flushGrepEmbeddings(GrepEmbedState &state)
+{
+    const size_t linesInFlush = state.linesSeen - state.linesReported;
+    const LineCounts &counts = state.scanned->counts;
+    if (state.distinct.pending().empty())
+    {
+        state.linesReported = state.linesSeen;
+        state.progress->update(state.linesReported, state.scanned->chunks);
+        return {};
+    }
+    const auto embeddings = embedDistinct(state.distinct.pending(), *state.model, *state.progress, state.linesReported,
+                                          linesInFlush, state.scanned->chunks, counts);
+    if (!embeddings)
+    {
+        return std::unexpected(embeddings.error());
+    }
+    for (const std::vector<float> &embedding : *embeddings)
+    {
+        const auto score = nesso::core::math::DistanceMetrics::dotProduct<float>(*state.queryEmbedding, embedding);
+        if (!score)
+        {
+            return textFailure(ErrorKind::Search, score.error(), counts);
+        }
+        state.scores.push_back(*score);
+    }
+    state.distinct.clearPending();
+    state.linesReported = state.linesSeen;
+    for (const GrepWaiting &item : state.waiting)
+    {
+        considerDenseGrep(state, item);
+    }
+    state.waiting.clear();
+    return {};
+}
+
+static std::optional<Error> ingestGrepChunk(GrepEmbedState &state, GrepSourceCursor &cursor,
+                                            nesso::parser::ParsedChunk chunk)
+{
+    if (cursor.archive && (cursor.source.empty() || chunk.entryStart || chunk.source != cursor.source))
+    {
+        state.sources.push_back(chunk.source);
+        cursor.sourceId = static_cast<std::uint32_t>(state.sources.size() - 1);
+        cursor.source = state.sources.back();
+    }
+    if (state.firstSource.empty())
+    {
+        state.firstSource = cursor.source;
+    }
+    else if (cursor.source != state.firstSource)
+    {
+        state.severalSources = true;
+    }
+    const std::uint32_t id = state.distinct.add(chunk.text);
+    ++state.linesSeen;
+    const GrepWaiting item{.ordinal = state.ordinal,
+                           .distinctId = id,
+                           .source = cursor.sourceId,
+                           .line = chunk.lineNumber,
+                           .arrayElement = chunk.arrayElement,
+                           .text = std::move(chunk.text)};
+    if (state.needLexical)
+    {
+        state.allLines.push_back(item);
+    }
+    if (id < state.scores.size())
+    {
+        considerDenseGrep(state, item);
+    }
+    else
+    {
+        state.waiting.push_back(item);
+    }
+    ++state.ordinal;
+    if (state.distinct.pending().size() == state.batch)
+    {
+        if (const auto flushed = flushGrepEmbeddings(state); !flushed)
+        {
+            return flushed.error();
+        }
+    }
+    return std::nullopt;
+}
+
+static std::expected<void, Error> embedGrepFiles(GrepEmbedState &state)
+{
+    const ScopedStage stage{"embed"};
+    bool stdinUsed = false;
+    for (const std::filesystem::path &path : state.request->files)
+    {
+        GrepSourceCursor cursor{.archive = nesso::parser::isArchivePath(path), .sourceId = 0, .source = {}};
+        if (!cursor.archive)
+        {
+            state.sources.push_back(path.string());
+            cursor.sourceId = static_cast<std::uint32_t>(state.sources.size() - 1);
+            cursor.source = state.sources.back();
+        }
+        std::optional<Error> failed;
+        const auto streamed =
+            visitChunks(path, *state.scanned, stdinUsed, state.request->jsonField, state.request->archiveLimits,
+                        [&](nesso::parser::ParsedChunk chunk)
+                        {
+                            if (failed)
+                            {
+                                return;
+                            }
+                            if (std::optional<Error> error = ingestGrepChunk(state, cursor, std::move(chunk)))
+                            {
+                                failed = std::move(error);
+                            }
+                        });
+        if (!streamed)
+        {
+            return std::unexpected(
+                parseFailure(streamed.error(), path, state.scanned->counts, state.request->archiveLimits));
+        }
+        if (failed)
+        {
+            return std::unexpected(*failed);
+        }
+    }
+    if (const auto flushed = flushGrepEmbeddings(state); !flushed)
+    {
+        return std::unexpected(flushed.error());
+    }
+    return {};
+}
+
+static TextResults denseGrepResults(GrepEmbedState &state, TextResults results)
+{
+    std::ranges::sort(state.best, betterGrepCandidate);
+    results.matches.reserve(state.best.size());
+    for (GrepCandidate &candidate : state.best)
+    {
+        candidate.match.occurrences = state.distinct.occurrences(candidate.distinctId);
+        candidate.match.mode = "dense";
+        candidate.match.dense = candidate.score;
+        results.matches.push_back(std::move(candidate.match));
+    }
+    return results;
+}
+
+static GrepBm25 buildGrepBm25Scores(const std::vector<GrepWaiting> &allLines,
+                                    const nesso::core::QueryTokens &queryTokens, EffectiveMode effective)
+{
+    nesso::core::Bm25Index bm25;
+    for (const GrepWaiting &item : allLines)
+    {
+        const std::vector<std::string> terms = nesso::core::lexicalTerms(item.text);
+        std::unordered_map<std::uint32_t, std::uint32_t> termCounts;
+        termCounts.reserve(terms.size());
+        for (const std::string &term : terms)
+        {
+            ++termCounts[bm25.internTerm(term)];
+        }
+        std::vector<std::pair<std::uint32_t, std::uint32_t>> entries;
+        entries.reserve(termCounts.size());
+        for (const auto &[termId, frequency] : termCounts)
+        {
+            entries.emplace_back(termId, frequency);
+        }
+        bm25.addLinePostings(entries, static_cast<std::uint32_t>(terms.size()));
+    }
+    const std::vector<std::string> queryTerms = nesso::core::lexicalTerms(queryTokens.stripped);
+    std::vector<double> bm25Scores = bm25.scores(queryTermViews(queryTerms));
+
+    bool lexicalFallback = false;
+    if (effective == EffectiveMode::Lexical)
+    {
+        const bool anyHit = std::ranges::any_of(bm25Scores, [](double score) { return score > 0.0; });
+        if (!anyHit)
+        {
+            effective = EffectiveMode::Hybrid;
+            lexicalFallback = true;
+        }
+    }
+    return GrepBm25{.scores = std::move(bm25Scores), .effective = effective, .lexicalFallback = lexicalFallback};
+}
+
+static std::vector<GrepHit> lexicalGrepHits(const std::vector<GrepWaiting> &allLines,
+                                            const std::vector<double> &bm25Scores,
+                                            const nesso::core::QueryTokens &queryTokens)
+{
+    std::vector<GrepHit> hits;
+    hits.reserve(allLines.size());
+    for (size_t index = 0; index < allLines.size(); ++index)
+    {
+        if (!(bm25Scores[index] > 0.0))
+        {
+            continue;
+        }
+        const GrepWaiting &item = allLines[index];
+        hits.push_back(
+            {.ordinal = item.ordinal,
+             .score = static_cast<float>(bm25Scores[index]),
+             .lexical = static_cast<float>(bm25Scores[index]),
+             .hasLexical = true,
+             .substring = !queryTokens.stripped.empty() && item.text.find(queryTokens.stripped) != std::string::npos,
+             .distinctId = item.distinctId,
+             .source = item.source,
+             .line = item.line,
+             .arrayElement = item.arrayElement,
+             .text = item.text});
+    }
+    std::ranges::sort(hits, lexicalHitBefore);
+    return hits;
+}
+
+static std::vector<GrepHit> hybridGrepHits(const std::vector<GrepWaiting> &allLines, const std::vector<float> &scores,
+                                           const std::vector<double> &bm25Scores)
+{
+    std::vector<double> denseValues;
+    std::vector<double> lexicalValues;
+    denseValues.reserve(allLines.size());
+    lexicalValues.reserve(allLines.size());
+    for (size_t index = 0; index < allLines.size(); ++index)
+    {
+        denseValues.push_back(static_cast<double>(scores[allLines[index].distinctId]));
+        lexicalValues.push_back(bm25Scores[index]);
+    }
+    const std::vector<float> fused = nesso::core::fuseHybridScores(denseValues, lexicalValues);
+    std::vector<GrepHit> hits;
+    hits.reserve(allLines.size());
+    for (size_t index = 0; index < allLines.size(); ++index)
+    {
+        const GrepWaiting &item = allLines[index];
+        hits.push_back({.ordinal = item.ordinal,
+                        .score = fused[index],
+                        .dense = scores[item.distinctId],
+                        .lexical = static_cast<float>(bm25Scores[index]),
+                        .hasDense = true,
+                        .hasLexical = true,
+                        .distinctId = item.distinctId,
+                        .source = item.source,
+                        .line = item.line,
+                        .arrayElement = item.arrayElement,
+                        .text = item.text});
+    }
+    std::ranges::sort(hits, scoreHitBefore);
+    return hits;
+}
+
+static std::vector<GrepHit> groupGrepHits(const std::vector<GrepHit> &hits, const std::vector<GrepWaiting> &allLines,
+                                          const std::vector<float> &scores, EffectiveMode effective, size_t topK)
+{
+    std::vector<char> originSeen(scores.size(), 0);
+    std::vector<GrepWaiting> origin(scores.size());
+    for (const GrepWaiting &item : allLines)
+    {
+        if (originSeen[item.distinctId] != 0)
+        {
+            continue;
+        }
+        originSeen[item.distinctId] = 1;
+        origin[item.distinctId] = item;
+    }
+    std::vector<char> taken(scores.size(), 0);
+    std::vector<GrepHit> groups;
+    groups.reserve(hits.size());
+    for (const GrepHit &hit : hits)
+    {
+        if (taken[hit.distinctId] != 0)
+        {
+            continue;
+        }
+        taken[hit.distinctId] = 1;
+        GrepHit row = hit;
+        const GrepWaiting &first = origin[hit.distinctId];
+        row.ordinal = first.ordinal;
+        row.source = first.source;
+        row.line = first.line;
+        row.arrayElement = first.arrayElement;
+        row.text = first.text;
+        groups.push_back(std::move(row));
+    }
+    if (effective == EffectiveMode::Lexical)
+    {
+        std::ranges::sort(groups, lexicalHitBefore);
+    }
+    else
+    {
+        std::ranges::sort(groups, scoreHitBefore);
+    }
+    if (groups.size() > topK)
+    {
+        groups.resize(topK);
+    }
+    return groups;
+}
+
 std::expected<TextResults, Error> Nesso::grep(const GrepRequest &input) const
 {
     const TraceSession session;
@@ -1017,415 +1433,74 @@ std::expected<TextResults, Error> Nesso::grep(const GrepRequest &input) const
         return textFailure(ErrorKind::QueryEmbed, queryEmbedding.error(), scanned->counts);
     }
 
-    struct Candidate
-    {
-        uint64_t index = 0;
-        float score = 0.0F;
-        std::uint32_t distinctId = 0;
-        TextMatch match;
-    };
-    const auto better = [](const Candidate &left, const Candidate &right)
-    { return nesso::core::rankBefore(left.score, left.index, right.score, right.index); };
-
     const nesso::core::QueryTokens queryTokens = nesso::core::tokenizeQuery(request.query);
-    EffectiveMode effective = resolveEffectiveMode(request.mode, nesso::core::classifyQuery(request.query));
+    const EffectiveMode effective = resolveEffectiveMode(request.mode, nesso::core::classifyQuery(request.query));
     const bool needLexical = effective != EffectiveMode::Dense;
-
-    std::vector<Candidate> best;
-    nesso::core::DistinctIndex distinct;
-    distinct.reserve(scanned->chunks);
-    std::vector<float> scores;
-    struct Waiting
-    {
-        uint64_t ordinal = 0;
-        std::uint32_t distinctId = 0;
-        std::uint32_t source = 0;
-        uint64_t line = 0;
-        bool arrayElement = false;
-        std::string text;
-    };
-    std::vector<Waiting> waiting;
-    std::vector<Waiting> allLines;
+    ProgressReporter progress(request.progress);
+    GrepEmbedState state;
+    state.request = &request;
+    state.scanned = &*scanned;
+    state.queryEmbedding = &*queryEmbedding;
+    state.model = *model;
+    state.needLexical = needLexical;
+    state.progress = &progress;
+    state.batch = streamBatch();
+    state.distinct.reserve(scanned->chunks);
+    state.sources.reserve(request.files.size());
     if (needLexical)
     {
-        allLines.reserve(scanned->chunks);
+        state.allLines.reserve(scanned->chunks);
     }
-    std::vector<char> groupSeen;
-    std::vector<std::string> sources;
-    sources.reserve(request.files.size());
-    const size_t batch = streamBatch();
-    ProgressReporter progress(request.progress);
-    size_t linesSeen = 0;
-    size_t linesReported = 0;
-    uint64_t ordinal = 0;
-    bool severalSources = false;
-    std::string firstSource;
-    const LineCounts &counts = scanned->counts;
-
-    const auto consider = [&](const Waiting &item)
+    if (const auto embedded = embedGrepFiles(state); !embedded)
     {
-        if (needLexical)
-        {
-            return;
-        }
-        if (request.group)
-        {
-            if (groupSeen.size() <= item.distinctId)
-            {
-                groupSeen.resize(static_cast<std::size_t>(item.distinctId) + 1);
-            }
-            if (groupSeen[item.distinctId] != 0)
-            {
-                return;
-            }
-            groupSeen[item.distinctId] = 1;
-        }
-        TextMatch match{.source = sources[item.source],
-                        .line = item.line,
-                        .score = scores[item.distinctId],
-                        .text = item.text,
-                        .arrayElement = item.arrayElement,
-                        .occurrences = 1,
-                        .mode = "dense",
-                        .dense = std::nullopt,
-                        .lexical = std::nullopt};
-        best.push_back(Candidate{
-            .index = item.ordinal, .score = match.score, .distinctId = item.distinctId, .match = std::move(match)});
-        if (best.size() > request.topK)
-        {
-            std::partial_sort(best.begin(), best.begin() + static_cast<std::ptrdiff_t>(request.topK), best.end(),
-                              better);
-            best.resize(request.topK);
-        }
-    };
-
-    const auto flush = [&]() -> std::expected<void, Error>
-    {
-        const size_t linesInFlush = linesSeen - linesReported;
-        if (distinct.pending().empty())
-        {
-            linesReported = linesSeen;
-            progress.update(linesReported, scanned->chunks);
-            return {};
-        }
-        const auto embeddings =
-            embedDistinct(distinct.pending(), **model, progress, linesReported, linesInFlush, scanned->chunks, counts);
-        if (!embeddings)
-        {
-            return std::unexpected(embeddings.error());
-        }
-        for (const std::vector<float> &embedding : *embeddings)
-        {
-            const auto score = nesso::core::math::DistanceMetrics::dotProduct<float>(*queryEmbedding, embedding);
-            if (!score)
-            {
-                return textFailure(ErrorKind::Search, score.error(), counts);
-            }
-            scores.push_back(*score);
-        }
-        distinct.clearPending();
-        linesReported = linesSeen;
-        for (const Waiting &item : waiting)
-        {
-            consider(item);
-        }
-        waiting.clear();
-        return {};
-    };
-
-    {
-        const ScopedStage stage{"embed"};
-        std::optional<Error> failed;
-        bool stdinUsed = false;
-        for (const std::filesystem::path &path : request.files)
-        {
-            const bool archive = nesso::parser::isArchivePath(path);
-            std::uint32_t sourceId = 0;
-            std::string source;
-            if (!archive)
-            {
-                sources.push_back(path.string());
-                sourceId = static_cast<std::uint32_t>(sources.size() - 1);
-                source = sources.back();
-            }
-            const auto streamed =
-                visitChunks(path, *scanned, stdinUsed, request.jsonField, request.archiveLimits,
-                            [&](nesso::parser::ParsedChunk chunk)
-                            {
-                                if (failed)
-                                {
-                                    return;
-                                }
-                                if (archive && (source.empty() || chunk.entryStart || chunk.source != source))
-                                {
-                                    sources.push_back(chunk.source);
-                                    sourceId = static_cast<std::uint32_t>(sources.size() - 1);
-                                    source = sources.back();
-                                }
-                                if (firstSource.empty())
-                                {
-                                    firstSource = source;
-                                }
-                                else if (source != firstSource)
-                                {
-                                    severalSources = true;
-                                }
-                                const std::uint32_t id = distinct.add(chunk.text);
-                                ++linesSeen;
-                                const Waiting item{.ordinal = ordinal,
-                                                   .distinctId = id,
-                                                   .source = sourceId,
-                                                   .line = chunk.lineNumber,
-                                                   .arrayElement = chunk.arrayElement,
-                                                   .text = std::move(chunk.text)};
-                                if (needLexical)
-                                {
-                                    allLines.push_back(item);
-                                }
-                                if (id < scores.size())
-                                {
-                                    consider(item);
-                                }
-                                else
-                                {
-                                    waiting.push_back(item);
-                                }
-                                ++ordinal;
-                                if (distinct.pending().size() == batch)
-                                {
-                                    if (const auto flushed = flush(); !flushed)
-                                    {
-                                        failed = flushed.error();
-                                    }
-                                }
-                            });
-            if (!streamed)
-            {
-                return std::unexpected(parseFailure(streamed.error(), path, counts, request.archiveLimits));
-            }
-            if (failed)
-            {
-                return std::unexpected(*failed);
-            }
-        }
-        if (const auto flushed = flush(); !flushed)
-        {
-            return std::unexpected(flushed.error());
-        }
+        return std::unexpected(embedded.error());
     }
     progress.finish();
 
     TextResults results{.matches = {},
-                        .skippedLines = counts.skipped,
-                        .emptyLines = counts.emptyLines,
-                        .malformedLines = counts.malformedLines,
-                        .missingFieldLines = counts.missingFieldLines,
-                        .truncatedLines = counts.truncated,
+                        .skippedLines = state.scanned->counts.skipped,
+                        .emptyLines = state.scanned->counts.emptyLines,
+                        .malformedLines = state.scanned->counts.malformedLines,
+                        .missingFieldLines = state.scanned->counts.missingFieldLines,
+                        .truncatedLines = state.scanned->counts.truncated,
                         .binaryEntries = 0,
-                        .jsonField = counts.jsonField,
-                        .multipleSources = severalSources,
+                        .jsonField = state.scanned->counts.jsonField,
+                        .multipleSources = state.severalSources,
                         .staleSources = {},
-                        .bundleSkips = scanned->bundleSkips,
+                        .bundleSkips = state.scanned->bundleSkips,
                         .policyMismatch = false,
                         .lexicalFallback = false,
                         .grouped = request.group};
 
     if (!needLexical)
     {
-        std::ranges::sort(best, better);
-        results.matches.reserve(best.size());
-        for (Candidate &candidate : best)
-        {
-            candidate.match.occurrences = distinct.occurrences(candidate.distinctId);
-            candidate.match.mode = "dense";
-            candidate.match.dense = candidate.score;
-            results.matches.push_back(std::move(candidate.match));
-        }
-        return results;
+        return denseGrepResults(state, std::move(results));
     }
 
-    nesso::core::Bm25Index bm25;
-    for (const Waiting &item : allLines)
-    {
-        const std::vector<std::string> terms = nesso::core::lexicalTerms(item.text);
-        std::unordered_map<std::uint32_t, std::uint32_t> termCounts;
-        termCounts.reserve(terms.size());
-        for (const std::string &term : terms)
-        {
-            ++termCounts[bm25.internTerm(term)];
-        }
-        std::vector<std::pair<std::uint32_t, std::uint32_t>> entries;
-        entries.reserve(termCounts.size());
-        for (const auto &[termId, frequency] : termCounts)
-        {
-            entries.emplace_back(termId, frequency);
-        }
-        bm25.addLinePostings(entries, static_cast<std::uint32_t>(terms.size()));
-    }
-    const std::vector<std::string> queryTerms = nesso::core::lexicalTerms(queryTokens.stripped);
-    const std::vector<double> bm25Scores = bm25.scores(queryTermViews(queryTerms));
-
-    bool lexicalFallback = false;
-    if (effective == EffectiveMode::Lexical)
-    {
-        const bool anyHit = std::ranges::any_of(bm25Scores, [](double score) { return score > 0.0; });
-        if (!anyHit)
-        {
-            effective = EffectiveMode::Hybrid;
-            lexicalFallback = true;
-        }
-    }
-
-    struct GrepHit
-    {
-        uint64_t ordinal = 0;
-        float score = 0.0F;
-        float dense = 0.0F;
-        float lexical = 0.0F;
-        bool hasDense = false;
-        bool hasLexical = false;
-        bool substring = false;
-        std::uint32_t distinctId = 0;
-        std::uint32_t source = 0;
-        uint64_t line = 0;
-        bool arrayElement = false;
-        std::string text;
-    };
-    std::vector<GrepHit> hits;
-    hits.reserve(allLines.size());
-
-    if (effective == EffectiveMode::Lexical)
-    {
-        for (size_t index = 0; index < allLines.size(); ++index)
-        {
-            if (!(bm25Scores[index] > 0.0))
-            {
-                continue;
-            }
-            const Waiting &item = allLines[index];
-            hits.push_back({.ordinal = item.ordinal,
-                            .score = static_cast<float>(bm25Scores[index]),
-                            .lexical = static_cast<float>(bm25Scores[index]),
-                            .hasLexical = true,
-                            .substring = !queryTokens.stripped.empty() &&
-                                         item.text.find(queryTokens.stripped) != std::string::npos,
-                            .distinctId = item.distinctId,
-                            .source = item.source,
-                            .line = item.line,
-                            .arrayElement = item.arrayElement,
-                            .text = item.text});
-        }
-        std::ranges::sort(hits,
-                          [](const GrepHit &left, const GrepHit &right)
-                          {
-                              if (left.substring != right.substring)
-                              {
-                                  return left.substring && !right.substring;
-                              }
-                              return betterHit(left.score, left.ordinal, right.score, right.ordinal);
-                          });
-    }
-    else
-    {
-        std::vector<double> denseValues;
-        std::vector<double> lexicalValues;
-        denseValues.reserve(allLines.size());
-        lexicalValues.reserve(allLines.size());
-        for (size_t index = 0; index < allLines.size(); ++index)
-        {
-            denseValues.push_back(static_cast<double>(scores[allLines[index].distinctId]));
-            lexicalValues.push_back(bm25Scores[index]);
-        }
-        const std::vector<float> fused = nesso::core::fuseHybridScores(denseValues, lexicalValues);
-        for (size_t index = 0; index < allLines.size(); ++index)
-        {
-            const Waiting &item = allLines[index];
-            hits.push_back({.ordinal = item.ordinal,
-                            .score = fused[index],
-                            .dense = scores[item.distinctId],
-                            .lexical = static_cast<float>(bm25Scores[index]),
-                            .hasDense = true,
-                            .hasLexical = true,
-                            .distinctId = item.distinctId,
-                            .source = item.source,
-                            .line = item.line,
-                            .arrayElement = item.arrayElement,
-                            .text = item.text});
-        }
-        std::ranges::sort(hits, [](const GrepHit &left, const GrepHit &right)
-                          { return betterHit(left.score, left.ordinal, right.score, right.ordinal); });
-    }
+    const GrepBm25 lexical = buildGrepBm25Scores(state.allLines, queryTokens, effective);
+    std::vector<GrepHit> hits = lexical.effective == EffectiveMode::Lexical
+                                    ? lexicalGrepHits(state.allLines, lexical.scores, queryTokens)
+                                    : hybridGrepHits(state.allLines, state.scores, lexical.scores);
     if (request.group)
     {
-        std::vector<char> originSeen(scores.size(), 0);
-        std::vector<Waiting> origin(scores.size());
-        for (const Waiting &item : allLines)
-        {
-            if (originSeen[item.distinctId] != 0)
-            {
-                continue;
-            }
-            originSeen[item.distinctId] = 1;
-            origin[item.distinctId] = item;
-        }
-        std::vector<char> taken(scores.size(), 0);
-        std::vector<GrepHit> groups;
-        groups.reserve(hits.size());
-        for (const GrepHit &hit : hits)
-        {
-            if (taken[hit.distinctId] != 0)
-            {
-                continue;
-            }
-            taken[hit.distinctId] = 1;
-            GrepHit row = hit;
-            const Waiting &first = origin[hit.distinctId];
-            row.ordinal = first.ordinal;
-            row.source = first.source;
-            row.line = first.line;
-            row.arrayElement = first.arrayElement;
-            row.text = first.text;
-            groups.push_back(std::move(row));
-        }
-        if (effective == EffectiveMode::Lexical)
-        {
-            std::ranges::sort(groups,
-                              [](const GrepHit &left, const GrepHit &right)
-                              {
-                                  if (left.substring != right.substring)
-                                  {
-                                      return left.substring && !right.substring;
-                                  }
-                                  return betterHit(left.score, left.ordinal, right.score, right.ordinal);
-                              });
-        }
-        else
-        {
-            std::ranges::sort(groups, [](const GrepHit &left, const GrepHit &right)
-                              { return betterHit(left.score, left.ordinal, right.score, right.ordinal); });
-        }
-        if (groups.size() > request.topK)
-        {
-            groups.resize(request.topK);
-        }
-        hits = std::move(groups);
+        hits = groupGrepHits(hits, state.allLines, state.scores, lexical.effective, request.topK);
     }
     else if (hits.size() > request.topK)
     {
         hits.resize(request.topK);
     }
 
-    results.lexicalFallback = lexicalFallback;
+    results.lexicalFallback = lexical.lexicalFallback;
     results.matches.reserve(hits.size());
-    const std::string modeLabel{effectiveModeName(effective)};
+    const std::string modeLabel{effectiveModeName(lexical.effective)};
     for (const GrepHit &hit : hits)
     {
-        TextMatch match{.source = sources[hit.source],
+        TextMatch match{.source = state.sources[hit.source],
                         .line = hit.line,
                         .score = hit.score,
                         .text = hit.text,
                         .arrayElement = hit.arrayElement,
-                        .occurrences = distinct.occurrences(hit.distinctId),
+                        .occurrences = state.distinct.occurrences(hit.distinctId),
                         .mode = modeLabel,
                         .dense = std::nullopt,
                         .lexical = std::nullopt};
