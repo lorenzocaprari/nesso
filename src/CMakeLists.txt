@@ -6,8 +6,18 @@ add_subdirectory(core)
 add_subdirectory(embed)
 add_subdirectory(parser)
 
-add_library(nesso_lib nesso.cpp model_paths.cpp trace.cpp render_json.cpp
-                      render_text.cpp)
+add_library(
+  nesso_lib
+  nesso.cpp
+  nesso_errors.cpp
+  nesso_scan.cpp
+  nesso_grep.cpp
+  nesso_index.cpp
+  nesso_search.cpp
+  model_paths.cpp
+  trace.cpp
+  render_json.cpp
+  render_text.cpp)
 set_target_properties(nesso_lib PROPERTIES OUTPUT_NAME nesso)
 # nesso.hpp includes parser/archive_source.hpp. The parser include directory has
 # to be public so the executable and the tests that include nesso.hpp can see
