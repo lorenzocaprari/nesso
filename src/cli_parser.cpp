@@ -7,6 +7,8 @@
 
 #include <embed/onnx_embedder.hpp>
 
+#include <thread_count.hpp>
+
 #include <CLI/CLI.hpp>
 
 #include <charconv>
@@ -101,7 +103,35 @@ static void addArchiveLimits(CLI::App *command, nesso::parser::ArchiveLimits &li
         ->check(positiveUint64());
 }
 
-static constexpr const char *THREADS_HELP = "CPU budget N. The full rules are in docs/usage.md.";
+static constexpr const char *THREADS_HELP = "CPU budget N from 1 to 1024. Default and layout rules: docs/usage.md.";
+
+static CLI::Validator threadCount()
+{
+    return CLI::Validator{[](std::string &value)
+                          {
+                              const auto parsed = ThreadCount::parse(value);
+                              if (!parsed)
+                              {
+                                  if (parsed.error() == ThreadCountError::OutOfRange)
+                                  {
+                                      return std::string{"must be an integer from 1 to 1024"};
+                                  }
+                                  return std::string{"must be a positive integer"};
+                              }
+                              return std::string{};
+                          },
+                          "THREADS", "integer from 1 to 1024"};
+}
+
+static void printThreadsEnvironmentError(ThreadCountError error)
+{
+    if (error == ThreadCountError::OutOfRange)
+    {
+        std::cerr << "NESSO_THREADS must be an integer from 1 to 1024\n";
+        return;
+    }
+    std::cerr << "NESSO_THREADS must be a positive integer\n";
+}
 
 static constexpr const char *HELP_FOOTER = "Examples:\n"
                                            "  nesso grep \"database connection error\" app.log\n"
@@ -163,7 +193,7 @@ static Config configFrom(const CLI::Option &modelDirOpt, const TextOptions &text
     return config;
 }
 
-static std::expected<size_t, int> threadsFromEnvironment()
+static std::expected<size_t, ThreadCountError> threadsFromEnvironment()
 {
     // getenv is not thread-safe. The CLI reads the environment once on the main thread.
     // NOLINTNEXTLINE(concurrency-mt-unsafe)
@@ -172,20 +202,12 @@ static std::expected<size_t, int> threadsFromEnvironment()
     {
         return 0;
     }
-    const std::string text{value};
-    if (text.find_first_not_of("0123456789") != std::string::npos || text.find_first_not_of('0') == std::string::npos)
+    const auto parsed = ThreadCount::parse(value);
+    if (!parsed)
     {
-        return std::unexpected(2);
+        return std::unexpected(parsed.error());
     }
-    size_t parsed = 0;
-    const char *const first = text.data();
-    const char *const last = first + text.size();
-    const std::from_chars_result result = std::from_chars(first, last, parsed);
-    if (result.ec != std::errc{} || result.ptr != last)
-    {
-        return std::unexpected(2);
-    }
-    return parsed;
+    return parsed->get();
 }
 
 std::expected<ParsedCommand, int> parseCommandLine(int argc, char **argv)
@@ -206,7 +228,13 @@ std::expected<ParsedCommand, int> parseCommandLine(int argc, char **argv)
     app.set_version_flag("-V,--version",
                          [verbose]()
                          {
-                             const size_t threads = threadsFromEnvironment().value_or(0);
+                             const auto fromEnv = threadsFromEnvironment();
+                             if (!fromEnv)
+                             {
+                                 printThreadsEnvironmentError(fromEnv.error());
+                                 throw CLI::RuntimeError(2);
+                             }
+                             const size_t threads = *fromEnv;
                              std::string version{NESSO_VERSION};
                              if (verbose)
                              {
@@ -232,7 +260,7 @@ std::expected<ParsedCommand, int> parseCommandLine(int argc, char **argv)
     grepCmd->add_option("--mode", text.mode, "Ranking mode: auto, hybrid, dense, or lexical")
         ->default_val("auto")
         ->check(CLI::IsMember({"auto", "hybrid", "dense", "lexical"}));
-    const auto *grepThreads = grepCmd->add_option("--threads", text.threads, THREADS_HELP)->check(positiveCount());
+    const auto *grepThreads = grepCmd->add_option("--threads", text.threads, THREADS_HELP)->check(threadCount());
     const auto *grepModelDir = grepCmd->add_option("--model-dir", text.modelDir, MODEL_DIR_HELP);
     addArchiveLimits(grepCmd, text.grepArchiveLimits);
 
@@ -241,7 +269,7 @@ std::expected<ParsedCommand, int> parseCommandLine(int argc, char **argv)
     indexCmd->add_option("files", text.files, TEXT_FILES_HELP)->required()->expected(1, -1)->check(inputFile());
     indexCmd->add_option("--json-field", text.jsonField, "JSON object field to read")->default_val("message");
     indexCmd->add_flag("--quiet", text.quiet, "Suppress interactive progress output");
-    const auto *indexThreads = indexCmd->add_option("--threads", text.threads, THREADS_HELP)->check(positiveCount());
+    const auto *indexThreads = indexCmd->add_option("--threads", text.threads, THREADS_HELP)->check(threadCount());
     const auto *indexModelDir = indexCmd->add_option("--model-dir", text.modelDir, MODEL_DIR_HELP);
     addArchiveLimits(indexCmd, text.indexArchiveLimits);
 
@@ -256,7 +284,7 @@ std::expected<ParsedCommand, int> parseCommandLine(int argc, char **argv)
     searchCmd->add_option("--mode", text.mode, "Ranking mode: auto, hybrid, dense, or lexical")
         ->default_val("auto")
         ->check(CLI::IsMember({"auto", "hybrid", "dense", "lexical"}));
-    const auto *searchThreads = searchCmd->add_option("--threads", text.threads, THREADS_HELP)->check(positiveCount());
+    const auto *searchThreads = searchCmd->add_option("--threads", text.threads, THREADS_HELP)->check(threadCount());
     const auto *searchModelDir = searchCmd->add_option("--model-dir", text.modelDir, MODEL_DIR_HELP);
 
     try
@@ -288,8 +316,8 @@ std::expected<ParsedCommand, int> parseCommandLine(int argc, char **argv)
         const auto fromEnv = threadsFromEnvironment();
         if (!fromEnv)
         {
-            std::cerr << "NESSO_THREADS must be a positive integer\n";
-            return std::unexpected(fromEnv.error());
+            printThreadsEnvironmentError(fromEnv.error());
+            return std::unexpected(2);
         }
         threads = *fromEnv;
     }

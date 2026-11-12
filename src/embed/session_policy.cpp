@@ -3,6 +3,8 @@
 
 #include <embed/session_policy.hpp>
 
+#include <platform/narrow_cast.hpp>
+
 #include <algorithm>
 #include <format>
 #include <fstream>
@@ -372,7 +374,7 @@ SessionPolicy sessionPolicy(bool quantized, size_t requestedThreads, const Machi
         const size_t intra = std::max(picked, static_cast<size_t>(intraOpThreadFloor()));
         return SessionPolicy{.quantized = false,
                              .sessions = 1,
-                             .intraOpThreads = static_cast<int>(intra),
+                             .intraOpThreads = nesso::platform::narrowCast<int>(intra),
                              .memoryCap = 0,
                              .shrinkArena = true};
     }
@@ -413,7 +415,7 @@ SessionPolicy sessionPolicy(bool quantized, size_t requestedThreads, const Machi
     }
     return SessionPolicy{.quantized = true,
                          .sessions = sessions,
-                         .intraOpThreads = static_cast<int>(intra),
+                         .intraOpThreads = nesso::platform::narrowCast<int>(intra),
                          .memoryCap = memoryCap,
                          .shrinkArena = shrink};
 }

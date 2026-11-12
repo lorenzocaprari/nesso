@@ -274,6 +274,14 @@ TEST_CASE("fp32 keeps one session at the logical thread count", "[session-policy
     CHECK(oneThread.intraOpThreads == nesso::embed::intraOpThreadFloor());
 }
 
+TEST_CASE("fp32 budget 1024 does not wrap intra-op threads", "[session-policy]")
+{
+    const MachineResources machine{.physicalCores = 4, .logicalThreads = 8, .memoryLimitBytes = 1 * GIB};
+    const SessionPolicy policy = nesso::embed::sessionPolicy(false, 1024, machine);
+    CHECK(policy.sessions == 1);
+    CHECK(policy.intraOpThreads == 1024);
+}
+
 TEST_CASE("the policy text shows the session counts and the memory cap", "[session-policy]")
 {
     const MachineResources capped{.physicalCores = 8, .logicalThreads = 16, .memoryLimitBytes = 4 * INT8_SESSION_BYTES};
