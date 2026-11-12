@@ -69,6 +69,11 @@ target_link_libraries(
   scan_threads_test PRIVATE nesso_options nesso_lib nesso_embed nesso_core
                             Catch2::Catch2WithMain)
 
+add_executable(thread_count_test thread_count_test.cpp)
+add_test(NAME thread_count_test COMMAND thread_count_test)
+target_link_libraries(thread_count_test PRIVATE nesso_options nesso_lib
+                                                Catch2::Catch2WithMain)
+
 set_tests_properties(
   model_paths_test
   nesso_facade_test
@@ -80,4 +85,5 @@ set_tests_properties(
   render_text_test
   check_stdout_test
   scan_threads_test
+  thread_count_test
   PROPERTIES LABELS unit)

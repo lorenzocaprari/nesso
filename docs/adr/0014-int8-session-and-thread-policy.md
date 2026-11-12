@@ -29,7 +29,9 @@ Chosen option: "x86 `N <= 4` keeps `main`; x86 `N >= 5` uses
 10000 lines and on the 100000-line index.
 
 `N` is the usable physical core count, or `--threads` / `NESSO_THREADS`.
-On x86, `N <= 4` is `I = 1` and `S = N`, and the arena is not shrunk. On
+An explicit `--threads` or `NESSO_THREADS` value must be in 1..1024 and is
+rejected at parse with exit 2; the layout rules below are unchanged. On
+x86, `N <= 4` is `I = 1` and `S = N`, and the arena is not shrunk. On
 x86, `N >= 5` is `I = min(4, N/2)` (integer division) and
 `S = max(1, N/I)`, and the arena is shrunk after each run. The memory cap
 still limits the default `S`. `N=8` is 2 sessions of 4 intra-op threads

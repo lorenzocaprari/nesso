@@ -48,6 +48,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `--threads` and `NESSO_THREADS` reject an explicit budget outside 1..1024 at parse with exit 2 (`must be an integer from 1 to 1024`, or `NESSO_THREADS must be an integer from 1 to 1024`). Omit the option and leave the variable unset for the default (usable physical cores, still reduced by the int8 session memory cap). A huge value used to wrap when cast to ONNX intra-op threads and could ask for tens of thousands of int8 sessions. Valid budgets stay byte-identical.
 - Ranking comparators treat NaN scores as last (non-NaN before NaN, then higher score, ties by lower index), so `partial_sort` and heap merges keep a strict weak order. Finite orderings, including ±0.0 ties, stay byte-identical. `nesso search` still refuses non-finite dense scores as invalid input.
 - A `--model-dir` vocabulary without `[CLS]`, `[SEP]`, or `[UNK]`, or with CRLF-only special-token lines, fails embedder load as a vocabulary error (exit 2). A model whose last-hidden output is not `[batch, sequence, 384]` fails as an inference error (exit 2). Exit codes and message text stay the same.
 - `nesso grep` and `nesso search` exit 2 with `Error: failed to write results` when match output cannot be written to stdout (for example a full disk or `/dev/full`), instead of exiting 0 or reporting an unhandled exception.

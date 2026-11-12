@@ -22,17 +22,20 @@ Feature: command errors
     And stdout does not contain "(default: message)"
     And stdout contains "[message]"
     And the "--threads" help is at most 2 lines
+    And stdout contains "1 to 1024"
     When I run nesso with arguments index --help
     Then the exit code is 0
     And stdout contains "--quiet"
     And stdout does not contain "(default: message)"
     And stdout contains "[message]"
     And the "--threads" help is at most 2 lines
+    And stdout contains "1 to 1024"
     When I run nesso with arguments search --help
     Then the exit code is 0
     And stdout does not contain "(default: 5)"
     And stdout contains "[5]"
     And the "--threads" help is at most 2 lines
+    And stdout contains "1 to 1024"
 
   Scenario: an unknown flag is rejected
     Given a file "app.log" with:
@@ -188,6 +191,56 @@ Feature: command errors
     When I run nesso with arguments grep "database connection error" {dir}/app.log
     Then the exit code is 2
     And stderr contains "NESSO_THREADS must be a positive integer"
+
+  Scenario: --threads above 1024 is a usage error
+    Given a file "app.log" with:
+      """
+      database connection refused
+      """
+    When I run nesso with arguments grep "database connection error" --threads 1025 {dir}/app.log
+    Then the exit code is 2
+    And stderr contains "must be an integer from 1 to 1024"
+    When I run nesso with arguments index --threads 1025 -o {dir}/corpus.nesso {dir}/app.log
+    Then the exit code is 2
+    And stderr contains "must be an integer from 1 to 1024"
+    When I run nesso with arguments search "database connection error" --threads 1025 -i {dir}/app.log
+    Then the exit code is 2
+    And stderr contains "must be an integer from 1 to 1024"
+
+  Scenario: NESSO_THREADS above 1024 is a usage error
+    Given a file "app.log" with:
+      """
+      database connection refused
+      """
+    And the environment variable "NESSO_THREADS" is "1025"
+    When I run nesso with arguments grep "database connection error" {dir}/app.log
+    Then the exit code is 2
+    And stderr contains "NESSO_THREADS must be an integer from 1 to 1024"
+    When I run nesso with arguments index -o {dir}/corpus.nesso {dir}/app.log
+    Then the exit code is 2
+    And stderr contains "NESSO_THREADS must be an integer from 1 to 1024"
+    When I run nesso with arguments search "database connection error" -i {dir}/app.log
+    Then the exit code is 2
+    And stderr contains "NESSO_THREADS must be an integer from 1 to 1024"
+
+  Scenario: NESSO_THREADS 1024 is accepted on version verbose
+    Given the environment variable "NESSO_THREADS" is "1024"
+    When I run nesso with arguments --version --verbose
+    Then the exit code is 0
+    And stdout contains "int8:"
+    And stdout contains "fp32:"
+
+  Scenario: NESSO_THREADS above 1024 fails on version verbose
+    Given the environment variable "NESSO_THREADS" is "1025"
+    When I run nesso with arguments --version --verbose
+    Then the exit code is 2
+    And stderr contains "NESSO_THREADS must be an integer from 1 to 1024"
+
+  Scenario: --threads 1024 is accepted at parse
+    When I run nesso with arguments grep "database connection error" --threads 1024 {dir}/missing.log
+    Then the exit code is 2
+    And stderr contains "file does not exist"
+    And stderr does not contain "must be an integer from 1 to 1024"
 
   Scenario: a zero result limit is a failure
     Given a file "app.log" with:
