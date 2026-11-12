@@ -2208,18 +2208,17 @@ static std::vector<RankedLine> rankLexicalLines(const nesso::core::MappedCorpus 
     return ranked;
 }
 
-std::expected<TextResults, Error> Nesso::search(const SearchRequest &request) const
+static std::expected<nesso::core::MappedCorpus, Error> mapSearchCorpus(const std::filesystem::path &path)
 {
-    const TraceSession session;
     std::uint32_t version = 0;
-    const auto corpus = [&request, &version]
+    auto corpus = [&path, &version]
     {
         const ScopedStage stage{"corpus-read"};
-        return nesso::core::mapCorpusFile(request.index, &version);
+        return nesso::core::mapCorpusFile(path, &version);
     }();
     if (!corpus)
     {
-        Error error = makeError(ErrorKind::CorpusRead, causeOf(corpus.error()), request.index, {});
+        Error error = makeError(ErrorKind::CorpusRead, causeOf(corpus.error()), path, {});
         if (corpus.error() == nesso::core::EngineError::UnsupportedVersion)
         {
             error.corpusVersion = version;
@@ -2228,7 +2227,141 @@ std::expected<TextResults, Error> Nesso::search(const SearchRequest &request) co
     }
     if (corpus->texts().empty())
     {
-        return std::unexpected(makeError(ErrorKind::EmptyInput, ErrorCause::EmptyCorpus, request.index, {}));
+        return std::unexpected(makeError(ErrorKind::EmptyInput, ErrorCause::EmptyCorpus, path, {}));
+    }
+    return std::move(*corpus);
+}
+
+static std::expected<void, Error> refuseModelMismatch(const nesso::core::CorpusPolicy &stored,
+                                                      const nesso::core::CorpusPolicy &current,
+                                                      const std::filesystem::path &path)
+{
+    constexpr std::array<std::string_view, 5> identityKeys{"model.id", "model.sha256", "vocab.sha256",
+                                                           "model.quantization", "dimensions"};
+    for (const std::string_view key : identityKeys)
+    {
+        if (stored.find(key)->second != current.find(key)->second)
+        {
+            return std::unexpected(makeError(ErrorKind::CorpusRead, ErrorCause::ModelMismatch, path, {}));
+        }
+    }
+    return {};
+}
+
+struct SearchLineMeta
+{
+    std::vector<std::uint32_t> occurrences;
+    bool multipleSources = false;
+};
+
+static SearchLineMeta tallySearchLineMeta(const nesso::core::MappedCorpus &corpus)
+{
+    SearchLineMeta meta{.occurrences = std::vector<std::uint32_t>(corpus.texts().size(), 0)};
+    std::optional<std::string_view> firstSource;
+    for (size_t ordinal = 0; ordinal < corpus.lines().size(); ++ordinal)
+    {
+        const nesso::core::CorpusLine &line = corpus.lines()[ordinal];
+        if (line.distinctId == nesso::core::NO_DISTINCT)
+        {
+            continue;
+        }
+        ++meta.occurrences[line.distinctId];
+        const std::string &source = corpus.sources()[line.sourceIndex].path;
+        if (!firstSource)
+        {
+            firstSource = source;
+        }
+        else if (*firstSource != source)
+        {
+            meta.multipleSources = true;
+        }
+    }
+    return meta;
+}
+
+static TextResults materializeSearchMatches(const nesso::core::MappedCorpus &corpus,
+                                            const std::vector<RankedLine> &ranked,
+                                            const std::vector<std::uint32_t> &occurrences, bool multipleSources,
+                                            bool policyMismatch, bool lexicalFallback, bool group,
+                                            std::string_view modeLabel, std::vector<StaleSource> sourceWarnings)
+{
+    const auto sourceIsStale = [&](const std::string &path)
+    {
+        return std::ranges::any_of(sourceWarnings,
+                                   [&path](const StaleSource &warning) { return warning.path == path; });
+    };
+
+    TextResults results{};
+    results.grouped = group;
+    results.multipleSources = multipleSources;
+    results.policyMismatch = policyMismatch;
+    results.lexicalFallback = lexicalFallback;
+    results.matches.reserve(ranked.size());
+    for (const RankedLine &hit : ranked)
+    {
+        const nesso::core::CorpusLine &line = corpus.lines()[static_cast<size_t>(hit.ordinal)];
+        const nesso::core::SourceInfo &source = corpus.sources()[line.sourceIndex];
+        std::string text{line.storedText.value_or(corpus.texts()[line.distinctId])};
+        if (!line.storedText && !sourceIsStale(source.path))
+        {
+            auto reread =
+                nesso::parser::Chunker::readRecord(source.path, line.byteOffset, line.byteLength, line.lineNumber,
+                                                   line.arrayElement, source.jsonField, MAX_LINE_LENGTH);
+            if (!reread)
+            {
+                addSourceWarning(sourceWarnings, {.path = source.path, .unreadable = true});
+            }
+            else
+            {
+                const auto after = nesso::core::sourceInfoFor(source.path, source.jsonField);
+                if (!after || !sameSource(source, *after))
+                {
+                    addSourceWarning(sourceWarnings, {.path = source.path, .missing = !after});
+                }
+                else
+                {
+                    text = std::move(*reread);
+                }
+            }
+        }
+        TextMatch match{.source = source.path,
+                        .line = line.lineNumber,
+                        .score = hit.score,
+                        .text = std::move(text),
+                        .arrayElement = line.arrayElement,
+                        .occurrences = occurrences[line.distinctId],
+                        .mode = std::string{modeLabel},
+                        .dense = std::nullopt,
+                        .lexical = std::nullopt};
+        if (hit.hasDense)
+        {
+            match.dense = hit.dense;
+        }
+        if (hit.hasLexical)
+        {
+            match.lexical = hit.lexical;
+        }
+        results.matches.push_back(std::move(match));
+    }
+    for (size_t index = 0; index < ranked.size(); ++index)
+    {
+        const nesso::core::CorpusLine &line = corpus.lines()[static_cast<size_t>(ranked[index].ordinal)];
+        if (!line.storedText && sourceIsStale(corpus.sources()[line.sourceIndex].path))
+        {
+            results.matches[index].text = corpus.texts()[line.distinctId];
+        }
+    }
+    results.staleSources = std::move(sourceWarnings);
+    return results;
+}
+
+std::expected<TextResults, Error> Nesso::search(const SearchRequest &request) const
+{
+    const TraceSession session;
+    auto corpus = mapSearchCorpus(request.index);
+    if (!corpus)
+    {
+        return std::unexpected(std::move(corpus.error()));
     }
 
     const auto model = embedder();
@@ -2241,19 +2374,14 @@ std::expected<TextResults, Error> Nesso::search(const SearchRequest &request) co
     {
         return std::unexpected(current.error());
     }
-    const auto &stored = corpus->policy();
-    constexpr std::array<std::string_view, 5> identityKeys{"model.id", "model.sha256", "vocab.sha256",
-                                                           "model.quantization", "dimensions"};
-    for (const std::string_view key : identityKeys)
+    if (const auto identity = refuseModelMismatch(corpus->policy(), *current, request.index); !identity)
     {
-        if (stored.find(key)->second != current->find(key)->second)
-        {
-            return std::unexpected(makeError(ErrorKind::CorpusRead, ErrorCause::ModelMismatch, request.index, {}));
-        }
+        return std::unexpected(identity.error());
     }
     constexpr std::array<std::string_view, 5> policyKeys{"batch", "truncate", "dedup", "mask", "tokens.max"};
-    const bool policyMismatch = std::ranges::any_of(policyKeys, [&](std::string_view key)
-                                                    { return stored.find(key)->second != current->find(key)->second; });
+    const bool policyMismatch =
+        std::ranges::any_of(policyKeys, [&](std::string_view key)
+                            { return corpus->policy().find(key)->second != current->find(key)->second; });
     auto sourceWarnings = staleSources(corpus->sources());
     const auto fail = [&](ErrorKind kind, ErrorCause cause)
     {
@@ -2261,11 +2389,6 @@ std::expected<TextResults, Error> Nesso::search(const SearchRequest &request) co
         error.policyMismatch = policyMismatch;
         error.staleSources = sourceWarnings;
         return std::unexpected(std::move(error));
-    };
-    const auto sourceIsStale = [&](const std::string &path)
-    {
-        return std::ranges::any_of(sourceWarnings,
-                                   [&path](const StaleSource &warning) { return warning.path == path; });
     };
 
     if (const auto lexicalReady =
@@ -2310,27 +2433,7 @@ std::expected<TextResults, Error> Nesso::search(const SearchRequest &request) co
         return fail(ErrorKind::Search, ErrorCause::InvalidInput);
     }
 
-    std::vector<std::uint32_t> occurrences(corpus->texts().size(), 0);
-    std::optional<std::string_view> firstSource;
-    bool multipleSources = false;
-    for (size_t ordinal = 0; ordinal < corpus->lines().size(); ++ordinal)
-    {
-        const nesso::core::CorpusLine &line = corpus->lines()[ordinal];
-        if (line.distinctId == nesso::core::NO_DISTINCT)
-        {
-            continue;
-        }
-        ++occurrences[line.distinctId];
-        const std::string &source = corpus->sources()[line.sourceIndex].path;
-        if (!firstSource)
-        {
-            firstSource = source;
-        }
-        else if (*firstSource != source)
-        {
-            multipleSources = true;
-        }
-    }
+    const SearchLineMeta lineMeta = tallySearchLineMeta(*corpus);
 
     std::vector<double> bm25Scores;
     if (effective != EffectiveMode::Dense)
@@ -2367,69 +2470,9 @@ std::expected<TextResults, Error> Nesso::search(const SearchRequest &request) co
         return fail(ErrorKind::NoMatches, ErrorCause::None);
     }
 
-    TextResults results{};
-    results.grouped = request.group;
-    results.multipleSources = multipleSources;
-    results.policyMismatch = policyMismatch;
-    results.lexicalFallback = lexicalFallback;
-    results.matches.reserve(ranked.size());
-    const std::string modeLabel{effectiveModeName(effective)};
-    for (const RankedLine &hit : ranked)
-    {
-        const nesso::core::CorpusLine &line = corpus->lines()[static_cast<size_t>(hit.ordinal)];
-        const nesso::core::SourceInfo &source = corpus->sources()[line.sourceIndex];
-        std::string text{line.storedText.value_or(corpus->texts()[line.distinctId])};
-        if (!line.storedText && !sourceIsStale(source.path))
-        {
-            auto reread =
-                nesso::parser::Chunker::readRecord(source.path, line.byteOffset, line.byteLength, line.lineNumber,
-                                                   line.arrayElement, source.jsonField, MAX_LINE_LENGTH);
-            if (!reread)
-            {
-                addSourceWarning(sourceWarnings, {.path = source.path, .unreadable = true});
-            }
-            else
-            {
-                const auto after = nesso::core::sourceInfoFor(source.path, source.jsonField);
-                if (!after || !sameSource(source, *after))
-                {
-                    addSourceWarning(sourceWarnings, {.path = source.path, .missing = !after});
-                }
-                else
-                {
-                    text = std::move(*reread);
-                }
-            }
-        }
-        TextMatch match{.source = source.path,
-                        .line = line.lineNumber,
-                        .score = hit.score,
-                        .text = std::move(text),
-                        .arrayElement = line.arrayElement,
-                        .occurrences = occurrences[line.distinctId],
-                        .mode = modeLabel,
-                        .dense = std::nullopt,
-                        .lexical = std::nullopt};
-        if (hit.hasDense)
-        {
-            match.dense = hit.dense;
-        }
-        if (hit.hasLexical)
-        {
-            match.lexical = hit.lexical;
-        }
-        results.matches.push_back(std::move(match));
-    }
-    for (size_t index = 0; index < ranked.size(); ++index)
-    {
-        const nesso::core::CorpusLine &line = corpus->lines()[static_cast<size_t>(ranked[index].ordinal)];
-        if (!line.storedText && sourceIsStale(corpus->sources()[line.sourceIndex].path))
-        {
-            results.matches[index].text = corpus->texts()[line.distinctId];
-        }
-    }
-    results.staleSources = std::move(sourceWarnings);
-    return results;
+    return materializeSearchMatches(*corpus, ranked, lineMeta.occurrences, lineMeta.multipleSources, policyMismatch,
+                                    lexicalFallback, request.group, effectiveModeName(effective),
+                                    std::move(sourceWarnings));
 }
 
 } // namespace nesso
