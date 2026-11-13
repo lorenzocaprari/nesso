@@ -792,8 +792,8 @@ TEST_CASE("v3 addLines rejects term and order errors before writing", "[corpus][
     }
     SECTION("line order")
     {
-        const std::array<CorpusLine, 2> lines{
-            line, CorpusLine{.lineNumber = 1, .distinctId = 0, .storedText = "alpha"}};
+        const std::array<CorpusLine, 2> lines{line,
+                                              CorpusLine{.lineNumber = 1, .distinctId = 0, .storedText = "alpha"}};
         const std::array<std::vector<std::string>, 2> terms{alpha, alpha};
         const auto rejected = writer->addLines(lines, terms);
         REQUIRE_FALSE(rejected);

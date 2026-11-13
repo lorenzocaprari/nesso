@@ -921,8 +921,8 @@ std::expected<std::uint32_t, EngineError> CorpusWriter::addDistinct(std::string_
 }
 
 static bool addLineRejected(const CorpusLine &line, std::span<const SourceInfo> sources,
-                           std::span<const std::uint32_t> uses, std::span<const std::string> terms,
-                           std::uint32_t lastSource, std::uint64_t lastLine, bool hasLastLine)
+                            std::span<const std::uint32_t> uses, std::span<const std::string> terms,
+                            std::uint32_t lastSource, std::uint64_t lastLine, bool hasLastLine)
 {
     if (line.sourceIndex >= sources.size() || line.lineNumber == 0 ||
         (line.distinctId != NO_DISTINCT && line.distinctId >= uses.size()) ||
@@ -945,12 +945,10 @@ static bool addLineRejected(const CorpusLine &line, std::span<const SourceInfo> 
            (source.tracked && !rangeInside(line.byteOffset, line.byteLength, source.size));
 }
 
-static std::expected<void, EngineError> validateAddLines(std::span<const SourceInfo> sources,
-                                                         std::span<const std::uint32_t> uses,
-                                                         std::span<const CorpusLine> lines,
-                                                         std::span<const std::vector<std::string>> lineTerms,
-                                                         std::uint32_t &lastSource, std::uint64_t &lastLine,
-                                                         bool &hasLastLine)
+static std::expected<void, EngineError>
+validateAddLines(std::span<const SourceInfo> sources, std::span<const std::uint32_t> uses,
+                 std::span<const CorpusLine> lines, std::span<const std::vector<std::string>> lineTerms,
+                 std::uint32_t &lastSource, std::uint64_t &lastLine, bool &hasLastLine)
 {
     for (std::size_t index = 0; index < lines.size(); ++index)
     {
@@ -1019,8 +1017,8 @@ std::expected<void, EngineError> CorpusWriter::addLines(std::span<const CorpusLi
     auto lastSource = impl_->lastSource;
     auto lastLine = impl_->lastLine;
     bool hasLastLine = impl_->hasLastLine;
-    if (const auto valid = validateAddLines(impl_->sources, impl_->uses, lines, lineTerms, lastSource, lastLine,
-                                            hasLastLine);
+    if (const auto valid =
+            validateAddLines(impl_->sources, impl_->uses, lines, lineTerms, lastSource, lastLine, hasLastLine);
         !valid)
     {
         return std::unexpected(valid.error());
@@ -1090,8 +1088,8 @@ static std::expected<std::vector<std::vector<std::string>>, EngineError> readSpi
 
 static CorpusOffsets corpusLayoutOffsets(std::span<const SourceInfo> sources, std::uint64_t lineCount,
                                          std::uint64_t distinctCount, std::uint64_t textBytes,
-                                         std::uint64_t storedBytes, std::uint32_t dimensions,
-                                         std::uint64_t policyBytes, std::uint64_t lexicalBytes)
+                                         std::uint64_t storedBytes, std::uint32_t dimensions, std::uint64_t policyBytes,
+                                         std::uint64_t lexicalBytes)
 {
     CorpusOffsets offsets;
     offsets.sourceOffset = alignUp(HEADER_BYTES + policyBytes, 8);
@@ -1629,11 +1627,12 @@ static std::expected<void, EngineError> loadMappedLines(std::span<const std::byt
     return {};
 }
 
-static std::expected<void, EngineError>
-attachLexicalSection(std::span<const std::byte> bytes, const Layout &layout, bool hasLexical,
-                     const CorpusPolicy &policy, std::vector<std::string> &ownedTerms,
-                     std::vector<std::string_view> &dictionary, std::vector<LexicalLinePostings> &postings,
-                     std::string &termsVersion, LexicalStatus &status)
+static std::expected<void, EngineError> attachLexicalSection(std::span<const std::byte> bytes, const Layout &layout,
+                                                             bool hasLexical, const CorpusPolicy &policy,
+                                                             std::vector<std::string> &ownedTerms,
+                                                             std::vector<std::string_view> &dictionary,
+                                                             std::vector<LexicalLinePostings> &postings,
+                                                             std::string &termsVersion, LexicalStatus &status)
 {
     if (hasLexical)
     {
