@@ -275,3 +275,21 @@ TEST_CASE("an empty gzip file has no chunks", "[parser][gzip]")
     REQUIRE(chunks);
     CHECK(chunks->empty());
 }
+
+TEST_CASE("Chunker maps missing gzip to FileOpenFailure", "[parser][gzip]")
+{
+    const TempDir dir{"nesso-gzip-missing-chunker"};
+    const auto missing = dir.path() / "missing.gz";
+    const auto fromFile = nesso::parser::Chunker::fromFile(missing);
+    REQUIRE_FALSE(fromFile);
+    CHECK(fromFile.error() == nesso::parser::ParseError::FileOpenFailure);
+
+    const auto walked = nesso::parser::Chunker::forEachRecord(
+        missing, 4096, nullptr, "message", [](nesso::parser::ParsedChunk) {});
+    REQUIRE_FALSE(walked);
+    CHECK(walked.error() == nesso::parser::ParseError::FileOpenFailure);
+
+    const auto record = nesso::parser::Chunker::readRecord(missing, 0, 1, 1, false, "message", 4096);
+    REQUIRE_FALSE(record);
+    CHECK(record.error() == nesso::parser::ParseError::FileOpenFailure);
+}

@@ -515,3 +515,96 @@ TEST_CASE("archive skips count directories links and binary members", "[parser][
     CHECK(stats.archiveDirectories == 1);
     CHECK(stats.archiveSymlinks == 1);
 }
+
+TEST_CASE("archive hardlinks increment skip stats", "[parser][archive]")
+{
+    const TempDir dir{"nesso-archive-hardlink"};
+    const auto path = dir.path() / "links.tar";
+    writeBundle(path, "tar", "none",
+                {{.name = "var/log/syslog", .bytes = "database connection refused\n"},
+                 {.name = "var/log/messages", .bytes = {}, .type = AE_IFREG, .link = "var/log/syslog"}});
+    nesso::parser::ArchiveSkipStats skips;
+    const auto members = [&]()
+    {
+        std::vector<std::pair<std::string, std::string>> out;
+        const auto read = nesso::parser::readArchive(
+            path, {}, [&out](std::string_view name, std::string_view bytes) { out.emplace_back(name, bytes); }, &skips);
+        REQUIRE(read);
+        return out;
+    }();
+    REQUIRE(members.size() == 1);
+    CHECK(members[0].first == "var/log/syslog");
+    CHECK(skips.hardlinks == 1);
+    CHECK(skips.directories == 0);
+    CHECK(skips.symlinks == 0);
+}
+
+TEST_CASE("nested gzip exceeding maxEntryBytes after inflate", "[parser][archive]")
+{
+    const TempDir dir{"nesso-archive-nested-gzip-limit"};
+    const auto path = dir.path() / "nested.tar";
+    const std::string gzipLog = unhex(GZIP_DATABASE);
+    writeBundle(path, "tar", "none", {{.name = "var/log/messages.gz", .bytes = gzipLog}});
+
+    nesso::parser::ArchiveLimits entryLimit;
+    entryLimit.maxEntryBytes = 10;
+    const auto tooBig = nesso::parser::readArchive(path, entryLimit, [](std::string_view, std::string_view) {});
+    REQUIRE_FALSE(tooBig);
+    CHECK(tooBig.error().code == nesso::parser::ArchiveError::EntryTooLarge);
+
+    nesso::parser::ArchiveLimits totalLimit;
+    totalLimit.maxTotalBytes = 10;
+    const auto tooMuch = nesso::parser::readArchive(path, totalLimit, [](std::string_view, std::string_view) {});
+    REQUIRE_FALSE(tooMuch);
+    CHECK(tooMuch.error().code == nesso::parser::ArchiveError::TotalTooLarge);
+}
+
+TEST_CASE("Chunker maps archive entry total and ratio limits", "[parser][archive]")
+{
+    const TempDir dir{"nesso-archive-chunker-limits"};
+    const auto path = dir.path() / "bundle.tar";
+    writeBundle(path, "tar", "none",
+                {{.name = "a.log", .bytes = std::string(30, 'a')},
+                 {.name = "b.log", .bytes = std::string(30, 'b')},
+                 {.name = "c.log", .bytes = std::string(30, 'c')}});
+
+    nesso::parser::ArchiveLimits entryLimit;
+    entryLimit.maxEntryBytes = 10;
+    const auto entry = nesso::parser::Chunker::fromFile(path, 4096, nullptr, "message", entryLimit);
+    REQUIRE_FALSE(entry);
+    CHECK(entry.error() == nesso::parser::ParseError::ArchiveEntryLimit);
+
+    nesso::parser::ArchiveLimits totalLimit;
+    totalLimit.maxTotalBytes = 40;
+    const auto total = nesso::parser::Chunker::fromFile(path, 4096, nullptr, "message", totalLimit);
+    REQUIRE_FALSE(total);
+    CHECK(total.error() == nesso::parser::ParseError::ArchiveTotalLimit);
+
+    const auto bomb = dir.path() / "bomb.tar.xz";
+    writeBundle(bomb, "tar", "xz", {{.name = "pad.log", .bytes = std::string(20000, 'A')}});
+    nesso::parser::ArchiveLimits ratioLimit;
+    ratioLimit.maxRatio = 2;
+    const auto ratio = nesso::parser::Chunker::fromFile(bomb, 4096, nullptr, "message", ratioLimit);
+    REQUIRE_FALSE(ratio);
+    CHECK(ratio.error() == nesso::parser::ParseError::ArchiveRatioLimit);
+}
+
+TEST_CASE("Chunker marks entryStart on a skipped first archive record", "[parser][archive]")
+{
+    const TempDir dir{"nesso-archive-entry-start-skip"};
+    const auto path = dir.path() / "blank-first.tar";
+    writeBundle(path, "tar", "none", {{.name = "app.log", .bytes = "\nkept\n"}});
+
+    std::vector<nesso::parser::ParsedChunk> records;
+    const auto walked = nesso::parser::Chunker::forEachRecord(
+        path, 4096, nullptr, "message",
+        [&records](nesso::parser::ParsedChunk chunk) { records.push_back(std::move(chunk)); });
+    REQUIRE(walked);
+    REQUIRE(records.size() == 2);
+    CHECK(records[0].skipped);
+    CHECK(records[0].entryStart);
+    CHECK(records[0].text.empty());
+    CHECK_FALSE(records[1].skipped);
+    CHECK_FALSE(records[1].entryStart);
+    CHECK(records[1].text == "kept");
+}

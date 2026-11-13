@@ -827,3 +827,49 @@ TEST_CASE("Chunker preserves kept records with a zero code-point limit", "[Chunk
     REQUIRE(chunks->front().text.empty());
     REQUIRE(stats.truncatedLines == 1);
 }
+
+TEST_CASE("Chunker skips a JSON document that is not an object or array", "[Chunker][parser][Unit]")
+{
+    const auto directory =
+        std::filesystem::temp_directory_path() / ("nesso-chunker-json-scalar-" + std::to_string(getpid()));
+    std::filesystem::remove_all(directory);
+    std::filesystem::create_directories(directory);
+
+    for (const char *body : {"null", "42"})
+    {
+        const auto path = directory / (std::string(body) + ".json");
+        writeBytes(path, body);
+        nesso::parser::ParseStats stats{};
+        const auto chunks = nesso::parser::Chunker::fromFile(path, 4096, &stats);
+        REQUIRE(chunks);
+        CHECK(chunks->empty());
+        CHECK(stats.skippedLines == 1);
+        CHECK(stats.missingFieldLines == 1);
+    }
+
+    std::filesystem::remove_all(directory);
+}
+
+TEST_CASE("Chunker skips non-object JSON array elements", "[Chunker][parser][Unit]")
+{
+    const auto path = std::filesystem::temp_directory_path() /
+                      ("nesso-chunker-json-array-mixed-" + std::to_string(getpid()) + ".json");
+    writeBytes(path, "[1,{\"message\":\"ok\"}]");
+    nesso::parser::ParseStats stats{};
+    std::vector<nesso::parser::ParsedChunk> records;
+    const auto walked = nesso::parser::Chunker::forEachRecord(
+        path, 4096, &stats, "message",
+        [&records](nesso::parser::ParsedChunk chunk) { records.push_back(std::move(chunk)); });
+    std::filesystem::remove(path);
+    REQUIRE(walked);
+    REQUIRE(records.size() == 2);
+    CHECK(records[0].skipped);
+    CHECK(records[0].arrayElement);
+    CHECK(records[0].lineNumber == 1);
+    CHECK_FALSE(records[1].skipped);
+    CHECK(records[1].arrayElement);
+    CHECK(records[1].lineNumber == 2);
+    CHECK(records[1].text == "ok");
+    CHECK(stats.skippedLines == 1);
+    CHECK(stats.missingFieldLines == 1);
+}
