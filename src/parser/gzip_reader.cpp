@@ -30,6 +30,95 @@ constexpr std::size_t CHUNK_BYTES = static_cast<std::size_t>(16) * 1024;
 
 } // namespace
 
+enum class PullStatus : std::uint8_t
+{
+    Bytes,
+    End,
+    Error
+};
+
+static std::expected<void, GzipError> initGzipInflate(z_stream &stream)
+{
+    // 16 selects the gzip wrapper. inflate stops at each member; the reset below continues so
+    // concatenated members are one byte stream.
+    if (inflateInit2(&stream, 16 + MAX_WBITS) != Z_OK)
+    {
+        return std::unexpected(GzipError::Corrupt);
+    }
+    return {};
+}
+
+template <typename Pull>
+static std::expected<bool, GzipError> refillCompressedInput(Pull &pull, z_stream &stream,
+                                                            std::array<unsigned char, CHUNK_BYTES> &compressed,
+                                                            bool &inputEnded, bool finishedMember)
+{
+    if (inputEnded)
+    {
+        if (finishedMember)
+        {
+            return true;
+        }
+        return std::unexpected(GzipError::Corrupt);
+    }
+    unsigned int count = 0;
+    const PullStatus pulled = pull(compressed.data(), static_cast<unsigned int>(compressed.size()), count);
+    if (pulled == PullStatus::Error)
+    {
+        return std::unexpected(GzipError::OpenFailure);
+    }
+    if (pulled == PullStatus::End || count == 0)
+    {
+        if (finishedMember)
+        {
+            return true;
+        }
+        return std::unexpected(GzipError::Corrupt);
+    }
+    if (count < compressed.size())
+    {
+        inputEnded = true;
+    }
+    stream.next_in = compressed.data();
+    stream.avail_in = count;
+    return false;
+}
+
+static void appendInflateOutput(std::string &output, const std::array<unsigned char, CHUNK_BYTES> &plain,
+                                std::size_t produced)
+{
+    if (produced == 0)
+    {
+        return;
+    }
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+    output.append(reinterpret_cast<const char *>(plain.data()), produced);
+}
+
+static std::expected<void, GzipError> handleInflateStatus(z_stream &stream, int status, std::size_t produced,
+                                                          unsigned int availableBefore, bool &finishedMember)
+{
+    if (status == Z_STREAM_END)
+    {
+        finishedMember = true;
+        if (inflateReset(&stream) != Z_OK)
+        {
+            return std::unexpected(GzipError::Corrupt);
+        }
+        return {};
+    }
+    if (status == Z_OK || status == Z_BUF_ERROR)
+    {
+        if (produced == 0 && stream.avail_in == availableBefore)
+        {
+            return std::unexpected(GzipError::Corrupt);
+        }
+        finishedMember = false;
+        return {};
+    }
+    return std::unexpected(GzipError::Corrupt);
+}
+
 bool isGzipPath(const std::filesystem::path &path)
 {
     std::string extension = path.extension().string();
@@ -43,22 +132,13 @@ bool isGzipPath(const std::filesystem::path &path)
     return extension == ".gz";
 }
 
-enum class PullStatus : std::uint8_t
-{
-    Bytes,
-    End,
-    Error
-};
-
 // `pull` fills `dest` with the next compressed bytes. `End` is a clean EOF. `Error` is a read failure.
 template <typename Pull> static std::expected<std::string, GzipError> inflateGzip(Pull pull)
 {
     z_stream stream{};
-    // 16 selects the gzip wrapper. inflate stops at each member; the reset below continues so
-    // concatenated members are one byte stream.
-    if (inflateInit2(&stream, 16 + MAX_WBITS) != Z_OK)
+    if (const auto init = initGzipInflate(stream); !init)
     {
-        return std::unexpected(GzipError::Corrupt);
+        return std::unexpected(init.error());
     }
     // The deleter is the only use: inflateEnd must run on every return.
     // cppcheck-suppress unusedVariable
@@ -74,34 +154,15 @@ template <typename Pull> static std::expected<std::string, GzipError> inflateGzi
     {
         if (stream.avail_in == 0)
         {
-            if (inputEnded)
+            const auto refill = refillCompressedInput(pull, stream, compressed, inputEnded, finishedMember);
+            if (!refill)
             {
-                if (finishedMember)
-                {
-                    return output;
-                }
-                return std::unexpected(GzipError::Corrupt);
+                return std::unexpected(refill.error());
             }
-            unsigned int count = 0;
-            const PullStatus pulled = pull(compressed.data(), static_cast<unsigned int>(compressed.size()), count);
-            if (pulled == PullStatus::Error)
+            if (*refill)
             {
-                return std::unexpected(GzipError::OpenFailure);
+                return output;
             }
-            if (pulled == PullStatus::End || count == 0)
-            {
-                if (finishedMember)
-                {
-                    return output;
-                }
-                return std::unexpected(GzipError::Corrupt);
-            }
-            if (count < compressed.size())
-            {
-                inputEnded = true;
-            }
-            stream.next_in = compressed.data();
-            stream.avail_in = count;
         }
 
         stream.next_out = plain.data();
@@ -109,31 +170,13 @@ template <typename Pull> static std::expected<std::string, GzipError> inflateGzi
         const unsigned int availableBefore = stream.avail_in;
         const int status = inflate(&stream, Z_NO_FLUSH);
         const std::size_t produced = plain.size() - static_cast<std::size_t>(stream.avail_out);
-        if (produced != 0)
-        {
-            // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-            output.append(reinterpret_cast<const char *>(plain.data()), produced);
-        }
+        appendInflateOutput(output, plain, produced);
 
-        if (status == Z_STREAM_END)
+        if (const auto handled = handleInflateStatus(stream, status, produced, availableBefore, finishedMember);
+            !handled)
         {
-            finishedMember = true;
-            if (inflateReset(&stream) != Z_OK)
-            {
-                return std::unexpected(GzipError::Corrupt);
-            }
-            continue;
+            return std::unexpected(handled.error());
         }
-        if (status == Z_OK || status == Z_BUF_ERROR)
-        {
-            if (produced == 0 && stream.avail_in == availableBefore)
-            {
-                return std::unexpected(GzipError::Corrupt);
-            }
-            finishedMember = false;
-            continue;
-        }
-        return std::unexpected(GzipError::Corrupt);
     }
 }
 
