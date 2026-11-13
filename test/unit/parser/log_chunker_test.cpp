@@ -653,17 +653,32 @@ TEST_CASE("Chunker re-reads long records without splitting code points", "[Chunk
     REQUIRE(chunks);
     REQUIRE(chunks->size() == 1);
     const auto &chunk = chunks->front();
-    const auto truncated = nesso::parser::Chunker::readRecord(path, chunk.byteOffset, chunk.byteLength,
-                                                              chunk.lineNumber, false, "message", 2);
+    const auto truncated = nesso::parser::Chunker::readRecord(path,
+                                                              {.text = {},
+                                                               .lineNumber = chunk.lineNumber,
+                                                               .byteOffset = chunk.byteOffset,
+                                                               .arrayElement = false,
+                                                               .byteLength = chunk.byteLength},
+                                                              "message", 2);
     REQUIRE(truncated);
     REQUIRE(*truncated == chunk.text);
     REQUIRE(*truncated == "\xC3\xA9\xE2\x82\xAC");
-    const auto complete = nesso::parser::Chunker::readRecord(path, chunk.byteOffset, chunk.byteLength, chunk.lineNumber,
-                                                             false, "message", std::numeric_limits<size_t>::max());
+    const auto complete = nesso::parser::Chunker::readRecord(path,
+                                                             {.text = {},
+                                                              .lineNumber = chunk.lineNumber,
+                                                              .byteOffset = chunk.byteOffset,
+                                                              .arrayElement = false,
+                                                              .byteLength = chunk.byteLength},
+                                                             "message", std::numeric_limits<size_t>::max());
     REQUIRE(complete);
     REQUIRE(*complete == line);
-    const auto outOfRange =
-        nesso::parser::Chunker::readRecord(path, std::numeric_limits<uint64_t>::max(), 1, 1, false, "message", 4096);
+    const auto outOfRange = nesso::parser::Chunker::readRecord(path,
+                                                               {.text = {},
+                                                                .lineNumber = 1,
+                                                                .byteOffset = std::numeric_limits<uint64_t>::max(),
+                                                                .arrayElement = false,
+                                                                .byteLength = 1},
+                                                               "message", 4096);
     REQUIRE_FALSE(outOfRange);
     REQUIRE(outOfRange.error() == nesso::parser::ParseError::FileOpenFailure);
     std::filesystem::remove(path);
@@ -674,20 +689,26 @@ TEST_CASE("Chunker rejects invalid JSON source ranges", "[Chunker][parser][Unit]
     const auto path =
         std::filesystem::temp_directory_path() / ("nesso-invalid-json-range-" + std::to_string(getpid()) + ".json");
     writeBytes(path, "[{\"message\":\"first\"}]");
-    const auto first = nesso::parser::Chunker::readRecord(path, 0, 0, 1, true, "message", 4096);
+    const auto first = nesso::parser::Chunker::readRecord(
+        path, {.text = {}, .lineNumber = 1, .byteOffset = 0, .arrayElement = true, .byteLength = 0}, "message", 4096);
     REQUIRE(first);
     REQUIRE(*first == "first");
-    const auto offset = nesso::parser::Chunker::readRecord(path, 1, 0, 1, true, "message", 4096);
+    const auto offset = nesso::parser::Chunker::readRecord(
+        path, {.text = {}, .lineNumber = 1, .byteOffset = 1, .arrayElement = true, .byteLength = 0}, "message", 4096);
     REQUIRE_FALSE(offset);
     REQUIRE(offset.error() == nesso::parser::ParseError::UnsupportedFormat);
-    const auto length = nesso::parser::Chunker::readRecord(path, 0, 1, 1, true, "message", 4096);
+    const auto length = nesso::parser::Chunker::readRecord(
+        path, {.text = {}, .lineNumber = 1, .byteOffset = 0, .arrayElement = true, .byteLength = 1}, "message", 4096);
     REQUIRE_FALSE(length);
     REQUIRE(length.error() == nesso::parser::ParseError::UnsupportedFormat);
-    REQUIRE_FALSE(nesso::parser::Chunker::readRecord(path, 0, 0, 0, true, "message", 4096));
+    REQUIRE_FALSE(nesso::parser::Chunker::readRecord(
+        path, {.text = {}, .lineNumber = 0, .byteOffset = 0, .arrayElement = true, .byteLength = 0}, "message", 4096));
     writeBytes(path, "{\"message\":\"object\"}");
-    REQUIRE_FALSE(nesso::parser::Chunker::readRecord(path, 0, 1, 1, false, "message", 4096));
+    REQUIRE_FALSE(nesso::parser::Chunker::readRecord(
+        path, {.text = {}, .lineNumber = 1, .byteOffset = 0, .arrayElement = false, .byteLength = 1}, "message", 4096));
     writeBytes(path, "{\"message\":42}");
-    const auto nonString = nesso::parser::Chunker::readRecord(path, 0, 0, 1, false, "message", 4096);
+    const auto nonString = nesso::parser::Chunker::readRecord(
+        path, {.text = {}, .lineNumber = 1, .byteOffset = 0, .arrayElement = false, .byteLength = 0}, "message", 4096);
     REQUIRE_FALSE(nonString);
     REQUIRE(nonString.error() == nesso::parser::ParseError::UnsupportedFormat);
     std::filesystem::remove(path);
@@ -696,7 +717,9 @@ TEST_CASE("Chunker rejects invalid JSON source ranges", "[Chunker][parser][Unit]
         std::filesystem::temp_directory_path() / ("nesso-invalid-json-line-" + std::to_string(getpid()) + ".jsonl");
     constexpr std::string_view line = "{\"message\":42}";
     writeBytes(jsonl, line);
-    const auto nonStringLine = nesso::parser::Chunker::readRecord(jsonl, 0, line.size(), 1, false, "message", 4096);
+    const auto nonStringLine = nesso::parser::Chunker::readRecord(
+        jsonl, {.text = {}, .lineNumber = 1, .byteOffset = 0, .arrayElement = false, .byteLength = line.size()},
+        "message", 4096);
     REQUIRE_FALSE(nonStringLine);
     REQUIRE(nonStringLine.error() == nesso::parser::ParseError::UnsupportedFormat);
     std::filesystem::remove(jsonl);
@@ -707,7 +730,9 @@ TEST_CASE("Chunker reports unreadable JSON source records", "[Chunker][parser][U
     const auto directory =
         std::filesystem::temp_directory_path() / ("nesso-unreadable-json-" + std::to_string(getpid()) + ".json");
     REQUIRE(std::filesystem::create_directory(directory));
-    const auto record = nesso::parser::Chunker::readRecord(directory, 0, 0, 1, false, "message", 4096);
+    const auto record = nesso::parser::Chunker::readRecord(
+        directory, {.text = {}, .lineNumber = 1, .byteOffset = 0, .arrayElement = false, .byteLength = 0}, "message",
+        4096);
     std::filesystem::remove(directory);
     REQUIRE_FALSE(record);
     REQUIRE(record.error() == nesso::parser::ParseError::FileOpenFailure);
@@ -715,7 +740,8 @@ TEST_CASE("Chunker reports unreadable JSON source records", "[Chunker][parser][U
 
 TEST_CASE("Chunker does not re-read stdin records as files", "[Chunker][parser][Unit]")
 {
-    const auto record = nesso::parser::Chunker::readRecord("-", 0, 4, 1, false, "message", 4096);
+    const auto record = nesso::parser::Chunker::readRecord(
+        "-", {.text = {}, .lineNumber = 1, .byteOffset = 0, .arrayElement = false, .byteLength = 4}, "message", 4096);
     REQUIRE_FALSE(record);
     CHECK(record.error() == nesso::parser::ParseError::UnsupportedFormat);
 }
@@ -735,7 +761,9 @@ TEST_CASE("Chunker reports non-rewindable file input", "[Chunker][parser][Unit]"
 
     REQUIRE(pipe(descriptors) == 0);
     const auto source = std::filesystem::path("/proc/self/fd") / std::to_string(descriptors[0]);
-    const auto record = nesso::parser::Chunker::readRecord(source, 0, 1, 1, false, "message", 4096);
+    const auto record = nesso::parser::Chunker::readRecord(
+        source, {.text = {}, .lineNumber = 1, .byteOffset = 0, .arrayElement = false, .byteLength = 1}, "message",
+        4096);
     REQUIRE(close(descriptors[0]) == 0);
     REQUIRE(close(descriptors[1]) == 0);
     REQUIRE_FALSE(record);
