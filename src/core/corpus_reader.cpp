@@ -171,20 +171,30 @@ static std::expected<void, EngineError> validateCorpusLayout(const Layout &layou
     return {};
 }
 
+struct SourceRecordFields
+{
+    std::uint64_t pathAt = 0;
+    std::uint32_t pathLength = 0;
+    std::uint32_t flags = 0;
+    std::uint64_t size = 0;
+    std::uint64_t modified = 0;
+    std::uint64_t fieldAt = 0;
+    std::uint32_t fieldLength = 0;
+};
+
 static bool sourceRecordRejected(std::span<const std::byte> bytes, std::uint64_t record, std::uint64_t sourceCursor,
-                                 std::uint64_t lineLimit, std::uint64_t &pathAt, std::uint32_t &pathLength,
-                                 std::uint32_t &flags, std::uint64_t &size, std::uint64_t &modified,
-                                 std::uint64_t &fieldAt, std::uint32_t &fieldLength)
+                                 std::uint64_t lineLimit, SourceRecordFields &fields)
 {
     std::uint32_t reserved = 0;
-    return !readU64(bytes, record, pathAt) || !readU32(bytes, record + 8, pathLength) ||
-           !readU32(bytes, record + 12, flags) || !readU64(bytes, record + 16, size) ||
-           !readU64(bytes, record + 24, modified) || !readU64(bytes, record + 32, fieldAt) ||
-           !readU32(bytes, record + 40, fieldLength) || !readU32(bytes, record + 44, reserved) || pathLength == 0 ||
-           pathLength > MAX_TEXT_BYTES || fieldLength > MAX_TEXT_BYTES ||
-           (flags & ~(SOURCE_TRACKED | SOURCE_STORED_ONLY)) != 0 || reserved != 0 || pathAt != sourceCursor ||
-           !rangeInside(pathAt, pathLength, lineLimit) || fieldAt != pathAt + pathLength ||
-           !rangeInside(fieldAt, fieldLength, lineLimit);
+    return !readU64(bytes, record, fields.pathAt) || !readU32(bytes, record + 8, fields.pathLength) ||
+           !readU32(bytes, record + 12, fields.flags) || !readU64(bytes, record + 16, fields.size) ||
+           !readU64(bytes, record + 24, fields.modified) || !readU64(bytes, record + 32, fields.fieldAt) ||
+           !readU32(bytes, record + 40, fields.fieldLength) || !readU32(bytes, record + 44, reserved) ||
+           fields.pathLength == 0 || fields.pathLength > MAX_TEXT_BYTES || fields.fieldLength > MAX_TEXT_BYTES ||
+           (fields.flags & ~(SOURCE_TRACKED | SOURCE_STORED_ONLY)) != 0 || reserved != 0 ||
+           fields.pathAt != sourceCursor || !rangeInside(fields.pathAt, fields.pathLength, lineLimit) ||
+           fields.fieldAt != fields.pathAt + fields.pathLength ||
+           !rangeInside(fields.fieldAt, fields.fieldLength, lineLimit);
 }
 
 static std::expected<void, EngineError> loadMappedSources(std::span<const std::byte> bytes, const Layout &layout,
@@ -195,30 +205,23 @@ static std::expected<void, EngineError> loadMappedSources(std::span<const std::b
     for (std::uint64_t index = 0; index < layout.sourceCount; ++index)
     {
         const std::uint64_t record = layout.sourceOffset + (index * SOURCE_RECORD_BYTES);
-        std::uint64_t pathOffset = 0;
-        std::uint32_t pathLength = 0;
-        std::uint32_t flags = 0;
-        std::uint64_t size = 0;
-        std::uint64_t modified = 0;
-        std::uint64_t fieldOffset = 0;
-        std::uint32_t fieldLength = 0;
-        if (sourceRecordRejected(bytes, record, sourceCursor, layout.lineOffset, pathOffset, pathLength, flags, size,
-                                 modified, fieldOffset, fieldLength))
+        SourceRecordFields fields;
+        if (sourceRecordRejected(bytes, record, sourceCursor, layout.lineOffset, fields))
         {
             return std::unexpected(EngineError::CorruptDatabase);
         }
-        SourceInfo source{.path = std::string{viewBytes(bytes, pathOffset, pathLength)},
-                          .size = size,
-                          .modifiedTime = std::bit_cast<std::int64_t>(modified),
-                          .tracked = (flags & SOURCE_TRACKED) != 0,
-                          .jsonField = std::string{viewBytes(bytes, fieldOffset, fieldLength)},
-                          .storedOnly = (flags & SOURCE_STORED_ONLY) != 0};
+        SourceInfo source{.path = std::string{viewBytes(bytes, fields.pathAt, fields.pathLength)},
+                          .size = fields.size,
+                          .modifiedTime = std::bit_cast<std::int64_t>(fields.modified),
+                          .tracked = (fields.flags & SOURCE_TRACKED) != 0,
+                          .jsonField = std::string{viewBytes(bytes, fields.fieldAt, fields.fieldLength)},
+                          .storedOnly = (fields.flags & SOURCE_STORED_ONLY) != 0};
         if (source.path.find('\0') != std::string::npos || source.jsonField.find('\0') != std::string::npos)
         {
             return std::unexpected(EngineError::CorruptDatabase);
         }
         sources.push_back(std::move(source));
-        sourceCursor = fieldOffset + fieldLength;
+        sourceCursor = fields.fieldAt + fields.fieldLength;
     }
     if (sourceCursor != layout.lineOffset)
     {
@@ -260,36 +263,48 @@ static std::expected<void, EngineError> loadMappedDistinctTexts(std::span<const 
     return {};
 }
 
+struct LineRecordExtras
+{
+    std::uint64_t textOffset = 0;
+    std::uint32_t textLength = 0;
+    std::uint32_t flags = 0;
+};
+
 static bool lineRecordRejected(std::span<const std::byte> bytes, std::uint64_t record, std::uint64_t sourceCount,
-                               std::uint64_t distinctCount, CorpusLine &line, std::uint64_t &textOffset,
-                               std::uint32_t &textLength, std::uint32_t &flags)
+                               std::uint64_t distinctCount, CorpusLine &line, LineRecordExtras &extras)
 {
     std::uint64_t reserved = 0;
     return !readU64(bytes, record, line.lineNumber) || !readU64(bytes, record + 8, line.byteOffset) ||
            !readU64(bytes, record + 16, line.byteLength) || !readU32(bytes, record + 24, line.sourceIndex) ||
-           !readU32(bytes, record + 28, line.distinctId) || !readU64(bytes, record + 32, textOffset) ||
-           !readU32(bytes, record + 40, textLength) || !readU32(bytes, record + 44, flags) ||
+           !readU32(bytes, record + 28, line.distinctId) || !readU64(bytes, record + 32, extras.textOffset) ||
+           !readU32(bytes, record + 40, extras.textLength) || !readU32(bytes, record + 44, extras.flags) ||
            !readU64(bytes, record + 48, reserved) || line.lineNumber == 0 || line.sourceIndex >= sourceCount ||
-           (flags & ~(LINE_ARRAY_ELEMENT | LINE_STORED_TEXT | LINE_SKIPPED)) != 0 || reserved != 0 ||
-           ((flags & LINE_SKIPPED) != 0) != (line.distinctId == NO_DISTINCT) ||
-           (line.distinctId != NO_DISTINCT && line.distinctId >= distinctCount) || textLength > MAX_TEXT_BYTES;
+           (extras.flags & ~(LINE_ARRAY_ELEMENT | LINE_STORED_TEXT | LINE_SKIPPED)) != 0 || reserved != 0 ||
+           ((extras.flags & LINE_SKIPPED) != 0) != (line.distinctId == NO_DISTINCT) ||
+           (line.distinctId != NO_DISTINCT && line.distinctId >= distinctCount) || extras.textLength > MAX_TEXT_BYTES;
 }
 
-static std::expected<void, EngineError> takeStoredLineText(CorpusLine &line, std::span<const std::byte> bytes,
-                                                           std::uint32_t flags, std::uint64_t textOffset,
-                                                           std::uint32_t textLength, std::uint64_t storedLimit,
-                                                           std::uint64_t &storedCursor)
+struct StoredTextSpan
 {
-    if ((flags & LINE_STORED_TEXT) != 0)
+    std::uint32_t flags = 0;
+    std::uint64_t textOffset = 0;
+    std::uint32_t textLength = 0;
+    std::uint64_t storedLimit = 0;
+};
+
+static std::expected<void, EngineError> takeStoredLineText(CorpusLine &line, std::span<const std::byte> bytes,
+                                                           const StoredTextSpan &span, std::uint64_t &storedCursor)
+{
+    if ((span.flags & LINE_STORED_TEXT) != 0)
     {
-        if (textOffset != storedCursor || !rangeInside(textOffset, textLength, storedLimit))
+        if (span.textOffset != storedCursor || !rangeInside(span.textOffset, span.textLength, span.storedLimit))
         {
             return std::unexpected(EngineError::CorruptDatabase);
         }
-        line.storedText = viewBytes(bytes, textOffset, textLength);
-        storedCursor += textLength;
+        line.storedText = viewBytes(bytes, span.textOffset, span.textLength);
+        storedCursor += span.textLength;
     }
-    else if (textOffset != 0 || textLength != 0)
+    else if (span.textOffset != 0 || span.textLength != 0)
     {
         return std::unexpected(EngineError::CorruptDatabase);
     }
@@ -307,11 +322,8 @@ static std::expected<void, EngineError> loadMappedLines(std::span<const std::byt
     {
         const std::uint64_t record = layout.lineOffset + (index * LINE_RECORD_BYTES);
         CorpusLine line;
-        std::uint64_t textOffset = 0;
-        std::uint32_t textLength = 0;
-        std::uint32_t flags = 0;
-        if (lineRecordRejected(bytes, record, sources.size(), layout.distinctCount, line, textOffset, textLength,
-                               flags))
+        LineRecordExtras extras;
+        if (lineRecordRejected(bytes, record, sources.size(), layout.distinctCount, line, extras))
         {
             return std::unexpected(EngineError::CorruptDatabase);
         }
@@ -326,14 +338,15 @@ static std::expected<void, EngineError> loadMappedLines(std::span<const std::byt
         }
         const SourceInfo &source = sources[line.sourceIndex];
         if ((source.tracked && !rangeInside(line.byteOffset, line.byteLength, source.size)) ||
-            (source.storedOnly && (flags & LINE_STORED_TEXT) == 0))
+            (source.storedOnly && (extras.flags & LINE_STORED_TEXT) == 0))
         {
             return std::unexpected(EngineError::CorruptDatabase);
         }
-        const std::uint64_t storedLimit = hasLexical ? layout.lexicalOffset : layout.matrixOffset;
-        if (const auto stored =
-                takeStoredLineText(line, bytes, flags, textOffset, textLength, storedLimit, storedCursor);
-            !stored)
+        const StoredTextSpan span{.flags = extras.flags,
+                                  .textOffset = extras.textOffset,
+                                  .textLength = extras.textLength,
+                                  .storedLimit = hasLexical ? layout.lexicalOffset : layout.matrixOffset};
+        if (const auto stored = takeStoredLineText(line, bytes, span, storedCursor); !stored)
         {
             return std::unexpected(stored.error());
         }
@@ -341,7 +354,7 @@ static std::expected<void, EngineError> loadMappedLines(std::span<const std::byt
         {
             used[line.distinctId] = true;
         }
-        line.arrayElement = (flags & LINE_ARRAY_ELEMENT) != 0;
+        line.arrayElement = (extras.flags & LINE_ARRAY_ELEMENT) != 0;
         lines.push_back(line);
     }
     if (std::ranges::any_of(used, [](bool value) { return !value; }) ||
@@ -352,18 +365,25 @@ static std::expected<void, EngineError> loadMappedLines(std::span<const std::byt
     return {};
 }
 
+struct LexicalAttachTargets
+{
+    std::vector<std::string> &ownedTerms;
+    std::vector<std::string_view> &dictionary;
+    std::vector<LexicalLinePostings> &postings;
+    std::string &termsVersion;
+    LexicalStatus &status;
+};
+
 static std::expected<void, EngineError> attachLexicalSection(std::span<const std::byte> bytes, const Layout &layout,
                                                              bool hasLexical, const CorpusPolicy &policy,
-                                                             std::vector<std::string> &ownedTerms,
-                                                             std::vector<std::string_view> &dictionary,
-                                                             std::vector<LexicalLinePostings> &postings,
-                                                             std::string &termsVersion, LexicalStatus &status)
+                                                             LexicalAttachTargets &targets)
 {
     if (hasLexical)
     {
-        if (const auto decoded = decodeLexicalSection(bytes.subspan(static_cast<std::size_t>(layout.lexicalOffset),
-                                                                    static_cast<std::size_t>(layout.lexicalBytes)),
-                                                      layout.lineCount, ownedTerms, dictionary, postings);
+        if (const auto decoded =
+                decodeLexicalSection(bytes.subspan(static_cast<std::size_t>(layout.lexicalOffset),
+                                                   static_cast<std::size_t>(layout.lexicalBytes)),
+                                     layout.lineCount, targets.ownedTerms, targets.dictionary, targets.postings);
             !decoded)
         {
             return std::unexpected(decoded.error());
@@ -371,9 +391,9 @@ static std::expected<void, EngineError> attachLexicalSection(std::span<const std
     }
     if (policy.contains("lexical.terms"))
     {
-        termsVersion = policy.at("lexical.terms");
+        targets.termsVersion = policy.at("lexical.terms");
     }
-    status = lexicalStatusOf(hasLexical, policy);
+    targets.status = lexicalStatusOf(hasLexical, policy);
     return {};
 }
 
@@ -426,10 +446,12 @@ std::expected<MappedCorpus, EngineError> mapCorpusFile(const std::filesystem::pa
     {
         return std::unexpected(lines.error());
     }
-    if (const auto lexical = attachLexicalSection(bytes, *layout, hasLexical, impl->policy, impl->lexicalTermStorage,
-                                                  impl->lexicalDictionary, impl->lexicalPostings,
-                                                  impl->corpusLexicalTermsVersion, impl->lexicalStatus);
-        !lexical)
+    LexicalAttachTargets lexicalTargets{.ownedTerms = impl->lexicalTermStorage,
+                                        .dictionary = impl->lexicalDictionary,
+                                        .postings = impl->lexicalPostings,
+                                        .termsVersion = impl->corpusLexicalTermsVersion,
+                                        .status = impl->lexicalStatus};
+    if (const auto lexical = attachLexicalSection(bytes, *layout, hasLexical, impl->policy, lexicalTargets); !lexical)
     {
         return std::unexpected(lexical.error());
     }

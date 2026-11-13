@@ -85,34 +85,37 @@ static bool readU64At(std::span<const std::byte> bytes, std::uint64_t &cursor, s
     cursor += sizeof(value);
     return true;
 }
-std::vector<std::byte> encodeLexicalSection(std::span<const std::vector<std::string>> lineTerms)
+static std::vector<std::string> buildLexicalDictionary(std::span<const std::vector<std::string>> lineTerms)
 {
     std::vector<std::string> dictionary;
+    std::unordered_set<std::string> seen;
+    for (const std::vector<std::string> &terms : lineTerms)
     {
-        std::unordered_set<std::string> seen;
-        for (const std::vector<std::string> &terms : lineTerms)
+        for (const std::string &term : terms)
         {
-            for (const std::string &term : terms)
+            if (seen.insert(term).second)
             {
-                if (seen.insert(term).second)
-                {
-                    dictionary.push_back(term);
-                }
+                dictionary.push_back(term);
             }
         }
     }
     std::ranges::sort(dictionary, termByteLess);
+    return dictionary;
+}
+
+static std::unordered_map<std::string, std::uint32_t> lexicalTermIds(std::span<const std::string> dictionary)
+{
     std::unordered_map<std::string, std::uint32_t> ids;
     ids.reserve(dictionary.size());
     for (std::uint32_t index = 0; index < dictionary.size(); ++index)
     {
         ids.emplace(dictionary[index], index);
     }
+    return ids;
+}
 
-    std::vector<std::byte> out;
-    out.reserve(16 + (dictionary.size() * 8));
-    appendU64(out, dictionary.size());
-    appendU64(out, lineTerms.size());
+static void appendLexicalDictionaryBytes(std::vector<std::byte> &out, std::span<const std::string> dictionary)
+{
     for (const std::string &term : dictionary)
     {
         appendVarint(out, term.size());
@@ -121,30 +124,48 @@ std::vector<std::byte> encodeLexicalSection(std::span<const std::vector<std::str
             out.push_back(static_cast<std::byte>(static_cast<unsigned char>(byte)));
         }
     }
+}
+
+static void appendLexicalLinePostings(std::vector<std::byte> &out, std::span<const std::string> terms,
+                                      const std::unordered_map<std::string, std::uint32_t> &ids)
+{
+    std::unordered_map<std::uint32_t, std::uint32_t> counts;
+    counts.reserve(terms.size());
+    for (const std::string &term : terms)
+    {
+        ++counts[ids.at(term)];
+    }
+    std::vector<std::pair<std::uint32_t, std::uint32_t>> entries;
+    entries.reserve(counts.size());
+    for (const auto &[termId, frequency] : counts)
+    {
+        entries.emplace_back(termId, frequency);
+    }
+    std::ranges::sort(entries, [](const auto &left, const auto &right) { return left.first < right.first; });
+    appendVarint(out, entries.size());
+    std::uint32_t previous = 0;
+    for (const auto &[termId, frequency] : entries)
+    {
+        appendVarint(out, static_cast<std::uint64_t>(termId) - previous);
+        appendVarint(out, frequency);
+        previous = termId;
+    }
+    appendVarint(out, terms.size());
+}
+
+std::vector<std::byte> encodeLexicalSection(std::span<const std::vector<std::string>> lineTerms)
+{
+    const std::vector<std::string> dictionary = buildLexicalDictionary(lineTerms);
+    const std::unordered_map<std::string, std::uint32_t> ids = lexicalTermIds(dictionary);
+
+    std::vector<std::byte> out;
+    out.reserve(16 + (dictionary.size() * 8));
+    appendU64(out, dictionary.size());
+    appendU64(out, lineTerms.size());
+    appendLexicalDictionaryBytes(out, dictionary);
     for (const std::vector<std::string> &terms : lineTerms)
     {
-        std::unordered_map<std::uint32_t, std::uint32_t> counts;
-        counts.reserve(terms.size());
-        for (const std::string &term : terms)
-        {
-            ++counts[ids.at(term)];
-        }
-        std::vector<std::pair<std::uint32_t, std::uint32_t>> entries;
-        entries.reserve(counts.size());
-        for (const auto &[termId, frequency] : counts)
-        {
-            entries.emplace_back(termId, frequency);
-        }
-        std::ranges::sort(entries, [](const auto &left, const auto &right) { return left.first < right.first; });
-        appendVarint(out, entries.size());
-        std::uint32_t previous = 0;
-        for (const auto &[termId, frequency] : entries)
-        {
-            appendVarint(out, static_cast<std::uint64_t>(termId) - previous);
-            appendVarint(out, frequency);
-            previous = termId;
-        }
-        appendVarint(out, terms.size());
+        appendLexicalLinePostings(out, terms, ids);
     }
     return out;
 }
