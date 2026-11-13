@@ -343,9 +343,8 @@ static bool isRegularArchiveMember(archive_entry *entry)
     return type == AE_IFREG && archive_entry_hardlink(entry) == nullptr && archive_entry_symlink(entry) == nullptr;
 }
 
-static std::expected<void, ArchiveFailure> skipNonRegularMember(archive *handle, archive_entry *entry,
-                                                                ArchiveSkipStats *skips,
-                                                                const std::filesystem::path &path)
+static std::expected<void, ArchiveFailure>
+skipNonRegularMember(archive *handle, archive_entry *entry, ArchiveSkipStats *skips, const std::filesystem::path &path)
 {
     countSkippedEntry(entry, skips);
     if (!skipMember(handle))
