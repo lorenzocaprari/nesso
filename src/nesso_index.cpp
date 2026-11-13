@@ -117,8 +117,9 @@ static std::expected<void, Error> flushIndexEmbeddings(IndexEmbedState &state)
     }
     const LineCounts &counts = state.scanned->counts;
     const size_t linesInFlush = state.linesSeen - state.linesReported;
-    auto embeddings = embedDistinct(state.distinct.pending(), *state.model, *state.progress, state.linesReported,
-                                    linesInFlush, state.scanned->chunks, counts);
+    auto embeddings = embedDistinct(
+        state.distinct.pending(), *state.model, *state.progress,
+        {.linesBefore = state.linesReported, .linesInFlush = linesInFlush, .total = state.scanned->chunks}, counts);
     if (!embeddings)
     {
         return std::unexpected(embeddings.error());

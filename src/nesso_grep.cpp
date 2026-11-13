@@ -207,8 +207,9 @@ static std::expected<void, Error> flushGrepEmbeddings(GrepEmbedState &state)
         state.progress->update(state.linesReported, state.scanned->chunks);
         return {};
     }
-    const auto embeddings = embedDistinct(state.distinct.pending(), *state.model, *state.progress, state.linesReported,
-                                          linesInFlush, state.scanned->chunks, counts);
+    const auto embeddings = embedDistinct(
+        state.distinct.pending(), *state.model, *state.progress,
+        {.linesBefore = state.linesReported, .linesInFlush = linesInFlush, .total = state.scanned->chunks}, counts);
     if (!embeddings)
     {
         return std::unexpected(embeddings.error());
@@ -486,6 +487,73 @@ static std::vector<GrepHit> groupGrepHits(const std::vector<GrepHit> &hits, cons
     return groups;
 }
 
+static TextResults emptyGrepResults(const GrepEmbedState &state, bool group)
+{
+    return TextResults{.matches = {},
+                       .skippedLines = state.scanned->counts.skipped,
+                       .emptyLines = state.scanned->counts.emptyLines,
+                       .malformedLines = state.scanned->counts.malformedLines,
+                       .missingFieldLines = state.scanned->counts.missingFieldLines,
+                       .truncatedLines = state.scanned->counts.truncated,
+                       .binaryEntries = 0,
+                       .jsonField = state.scanned->counts.jsonField,
+                       .multipleSources = state.severalSources,
+                       .staleSources = {},
+                       .bundleSkips = state.scanned->bundleSkips,
+                       .policyMismatch = false,
+                       .lexicalFallback = false,
+                       .grouped = group};
+}
+
+static TextResults materializeGrepHits(const GrepEmbedState &state, std::span<const GrepHit> hits, EffectiveMode mode,
+                                       bool lexicalFallback)
+{
+    TextResults results = emptyGrepResults(state, state.request->group);
+    results.lexicalFallback = lexicalFallback;
+    results.matches.reserve(hits.size());
+    const std::string modeLabel{effectiveModeName(mode)};
+    for (const GrepHit &hit : hits)
+    {
+        TextMatch match{.source = state.sources[hit.source],
+                        .line = hit.line,
+                        .score = hit.score,
+                        .text = hit.text,
+                        .arrayElement = hit.arrayElement,
+                        .occurrences = state.distinct.occurrences(hit.distinctId),
+                        .mode = modeLabel,
+                        .dense = std::nullopt,
+                        .lexical = std::nullopt};
+        if (hit.hasDense)
+        {
+            match.dense = hit.dense;
+        }
+        if (hit.hasLexical)
+        {
+            match.lexical = hit.lexical;
+        }
+        results.matches.push_back(std::move(match));
+    }
+    return results;
+}
+
+static TextResults rankLexicalGrep(GrepEmbedState &state, const nesso::core::QueryTokens &queryTokens,
+                                   EffectiveMode effective)
+{
+    const GrepBm25 lexical = buildGrepBm25Scores(state.allLines, queryTokens, effective);
+    std::vector<GrepHit> hits = lexical.effective == EffectiveMode::Lexical
+                                    ? lexicalGrepHits(state.allLines, lexical.scores, queryTokens)
+                                    : hybridGrepHits(state.allLines, state.scores, lexical.scores);
+    if (state.request->group)
+    {
+        hits = groupGrepHits(hits, state.allLines, state.scores, lexical.effective, state.request->topK);
+    }
+    else if (hits.size() > state.request->topK)
+    {
+        hits.resize(state.request->topK);
+    }
+    return materializeGrepHits(state, hits, lexical.effective, lexical.lexicalFallback);
+}
+
 std::expected<TextResults, Error> Nesso::grep(const GrepRequest &input) const
 {
     const TraceSession session;
@@ -548,64 +616,11 @@ std::expected<TextResults, Error> Nesso::grep(const GrepRequest &input) const
     }
     progress.finish();
 
-    TextResults results{.matches = {},
-                        .skippedLines = state.scanned->counts.skipped,
-                        .emptyLines = state.scanned->counts.emptyLines,
-                        .malformedLines = state.scanned->counts.malformedLines,
-                        .missingFieldLines = state.scanned->counts.missingFieldLines,
-                        .truncatedLines = state.scanned->counts.truncated,
-                        .binaryEntries = 0,
-                        .jsonField = state.scanned->counts.jsonField,
-                        .multipleSources = state.severalSources,
-                        .staleSources = {},
-                        .bundleSkips = state.scanned->bundleSkips,
-                        .policyMismatch = false,
-                        .lexicalFallback = false,
-                        .grouped = request.group};
-
     if (!needLexical)
     {
-        return denseGrepResults(state, std::move(results));
+        return denseGrepResults(state, emptyGrepResults(state, request.group));
     }
-
-    const GrepBm25 lexical = buildGrepBm25Scores(state.allLines, queryTokens, effective);
-    std::vector<GrepHit> hits = lexical.effective == EffectiveMode::Lexical
-                                    ? lexicalGrepHits(state.allLines, lexical.scores, queryTokens)
-                                    : hybridGrepHits(state.allLines, state.scores, lexical.scores);
-    if (request.group)
-    {
-        hits = groupGrepHits(hits, state.allLines, state.scores, lexical.effective, request.topK);
-    }
-    else if (hits.size() > request.topK)
-    {
-        hits.resize(request.topK);
-    }
-
-    results.lexicalFallback = lexical.lexicalFallback;
-    results.matches.reserve(hits.size());
-    const std::string modeLabel{effectiveModeName(lexical.effective)};
-    for (const GrepHit &hit : hits)
-    {
-        TextMatch match{.source = state.sources[hit.source],
-                        .line = hit.line,
-                        .score = hit.score,
-                        .text = hit.text,
-                        .arrayElement = hit.arrayElement,
-                        .occurrences = state.distinct.occurrences(hit.distinctId),
-                        .mode = modeLabel,
-                        .dense = std::nullopt,
-                        .lexical = std::nullopt};
-        if (hit.hasDense)
-        {
-            match.dense = hit.dense;
-        }
-        if (hit.hasLexical)
-        {
-            match.lexical = hit.lexical;
-        }
-        results.matches.push_back(std::move(match));
-    }
-    return results;
+    return rankLexicalGrep(state, queryTokens, effective);
 }
 
 } // namespace nesso
