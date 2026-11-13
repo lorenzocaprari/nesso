@@ -284,8 +284,8 @@ TEST_CASE("Chunker maps missing gzip to FileOpenFailure", "[parser][gzip]")
     REQUIRE_FALSE(fromFile);
     CHECK(fromFile.error() == nesso::parser::ParseError::FileOpenFailure);
 
-    const auto walked = nesso::parser::Chunker::forEachRecord(
-        missing, 4096, nullptr, "message", [](nesso::parser::ParsedChunk) {});
+    const auto walked =
+        nesso::parser::Chunker::forEachRecord(missing, 4096, nullptr, "message", [](nesso::parser::ParsedChunk) {});
     REQUIRE_FALSE(walked);
     CHECK(walked.error() == nesso::parser::ParseError::FileOpenFailure);
 

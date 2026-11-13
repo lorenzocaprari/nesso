@@ -857,9 +857,9 @@ TEST_CASE("Chunker skips non-object JSON array elements", "[Chunker][parser][Uni
     writeBytes(path, "[1,{\"message\":\"ok\"}]");
     nesso::parser::ParseStats stats{};
     std::vector<nesso::parser::ParsedChunk> records;
-    const auto walked = nesso::parser::Chunker::forEachRecord(
-        path, 4096, &stats, "message",
-        [&records](nesso::parser::ParsedChunk chunk) { records.push_back(std::move(chunk)); });
+    const auto walked = nesso::parser::Chunker::forEachRecord(path, 4096, &stats, "message",
+                                                              [&records](nesso::parser::ParsedChunk chunk)
+                                                              { records.push_back(std::move(chunk)); });
     std::filesystem::remove(path);
     REQUIRE(walked);
     REQUIRE(records.size() == 2);

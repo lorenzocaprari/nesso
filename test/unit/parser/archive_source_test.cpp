@@ -596,9 +596,9 @@ TEST_CASE("Chunker marks entryStart on a skipped first archive record", "[parser
     writeBundle(path, "tar", "none", {{.name = "app.log", .bytes = "\nkept\n"}});
 
     std::vector<nesso::parser::ParsedChunk> records;
-    const auto walked = nesso::parser::Chunker::forEachRecord(
-        path, 4096, nullptr, "message",
-        [&records](nesso::parser::ParsedChunk chunk) { records.push_back(std::move(chunk)); });
+    const auto walked = nesso::parser::Chunker::forEachRecord(path, 4096, nullptr, "message",
+                                                              [&records](nesso::parser::ParsedChunk chunk)
+                                                              { records.push_back(std::move(chunk)); });
     REQUIRE(walked);
     REQUIRE(records.size() == 2);
     CHECK(records[0].skipped);

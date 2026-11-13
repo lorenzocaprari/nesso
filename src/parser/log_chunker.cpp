@@ -422,8 +422,8 @@ static std::expected<void, ParseError> dispatchStream(std::istream &input, const
     return readLogStream(input, maxLineLength, stats, consume);
 }
 
-static std::expected<const nlohmann::json *, ParseError>
-selectJsonRecordEntry(const nlohmann::json &document, uint64_t lineNumber, bool arrayElement)
+static std::expected<const nlohmann::json *, ParseError> selectJsonRecordEntry(const nlohmann::json &document,
+                                                                               uint64_t lineNumber, bool arrayElement)
 {
     if (arrayElement)
     {
@@ -591,16 +591,15 @@ static void ingestArchiveMember(std::string_view name, std::string_view bytes, c
     const std::string label = path.string() + ":" + std::string{name};
     bool first = true;
     std::istringstream input{std::string{bytes}};
-    const auto streamed =
-        dispatchStream(input, formatExtension(std::filesystem::path{std::string{name}}), maxLineLength, stats,
-                       jsonField,
-                       [&](ParsedChunk chunk)
-                       {
-                           chunk.source = label;
-                           chunk.entryStart = first;
-                           first = false;
-                           consume(std::move(chunk));
-                       });
+    const auto streamed = dispatchStream(input, formatExtension(std::filesystem::path{std::string{name}}),
+                                         maxLineLength, stats, jsonField,
+                                         [&](ParsedChunk chunk)
+                                         {
+                                             chunk.source = label;
+                                             chunk.entryStart = first;
+                                             first = false;
+                                             consume(std::move(chunk));
+                                         });
     if (!streamed)
     {
         failed = streamed.error();
@@ -615,8 +614,7 @@ static std::expected<void, ParseError> forEachArchivePath(const std::filesystem:
     std::optional<ParseError> failed;
     ArchiveSkipStats skips{};
     const auto read = readArchive(
-        path, limits,
-        [&](std::string_view name, std::string_view bytes)
+        path, limits, [&](std::string_view name, std::string_view bytes)
         { ingestArchiveMember(name, bytes, path, maxLineLength, stats, jsonField, consume, failed); }, &skips);
     if (stats != nullptr)
     {
