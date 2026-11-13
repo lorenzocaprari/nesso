@@ -11,6 +11,24 @@
 namespace nesso::embed
 {
 
+static void runWaveSlot(const std::function<SlotResult(std::size_t)> &work, std::vector<SlotResult> &slots,
+                        std::size_t slot)
+{
+    try
+    {
+        slots[slot] = work(slot);
+    }
+    // bad_alloc: flat buffers. Ort::Exception stays in infer's try. system_error from work.
+    catch (const std::bad_alloc &)
+    {
+        slots[slot] = std::unexpected(EmbedError::InferenceFailure);
+    }
+    catch (const std::system_error &)
+    {
+        slots[slot] = std::unexpected(EmbedError::InferenceFailure);
+    }
+}
+
 std::expected<std::vector<SlotResult>, EmbedError> runInferenceWave(std::size_t width,
                                                                     const std::function<SlotResult(std::size_t)> &work)
 {
@@ -23,23 +41,7 @@ std::expected<std::vector<SlotResult>, EmbedError> runInferenceWave(std::size_t 
         workers.reserve(width);
         for (std::size_t slot = 0; slot < width; ++slot)
         {
-            workers.emplace_back(
-                [&work, &slots, slot]
-                {
-                    try
-                    {
-                        slots[slot] = work(slot);
-                    }
-                    // bad_alloc: flat buffers. Ort::Exception stays in infer's try. system_error from work.
-                    catch (const std::bad_alloc &)
-                    {
-                        slots[slot] = std::unexpected(EmbedError::InferenceFailure);
-                    }
-                    catch (const std::system_error &)
-                    {
-                        slots[slot] = std::unexpected(EmbedError::InferenceFailure);
-                    }
-                });
+            workers.emplace_back([&work, &slots, slot] { runWaveSlot(work, slots, slot); });
         }
     }
     catch (const std::system_error &)
