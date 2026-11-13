@@ -346,9 +346,8 @@ static std::vector<char32_t> decodeUtf8(std::string_view text)
     return codes;
 }
 
-static std::vector<std::string> basicTokenize(std::string_view text)
+static void cleanBasicCodes(std::string_view text, std::vector<char32_t> &cleaned)
 {
-    std::vector<char32_t> cleaned;
     for (const char32_t code : decodeUtf8(text))
     {
         if (code == 0 || code == REPLACEMENT || isControl(code))
@@ -357,8 +356,10 @@ static std::vector<std::string> basicTokenize(std::string_view text)
         }
         cleaned.push_back(isWhitespace(code) ? static_cast<char32_t>(' ') : code);
     }
+}
 
-    std::vector<char32_t> spaced;
+static void spaceChineseCodes(const std::vector<char32_t> &cleaned, std::vector<char32_t> &spaced)
+{
     for (const char32_t code : cleaned)
     {
         if (isChinese(code))
@@ -372,6 +373,63 @@ static std::vector<std::string> basicTokenize(std::string_view text)
             spaced.push_back(code);
         }
     }
+}
+
+static void normalizeBasicSpan(const std::vector<char32_t> &spaced, std::size_t begin, std::size_t end,
+                               std::vector<char32_t> &plain)
+{
+    std::vector<char32_t> lowered;
+    for (std::size_t cursor = begin; cursor < end; ++cursor)
+    {
+        appendLower(spaced[cursor], lowered);
+    }
+    std::vector<char32_t> decomposed;
+    for (const char32_t code : lowered)
+    {
+        decompose(code, decomposed);
+    }
+    for (const char32_t code : decomposed)
+    {
+        if (!isMark(code))
+        {
+            plain.push_back(code);
+        }
+    }
+}
+
+static void appendPunctSplit(const std::vector<char32_t> &plain, std::vector<std::string> &tokens)
+{
+    std::vector<char32_t> current;
+    const auto flush = [&tokens, &current]()
+    {
+        if (!current.empty())
+        {
+            tokens.push_back(utf8Of(current));
+            current.clear();
+        }
+    };
+    for (const char32_t code : plain)
+    {
+        if (isPunctuation(code))
+        {
+            flush();
+            tokens.push_back(utf8OfOne(code));
+        }
+        else
+        {
+            current.push_back(code);
+        }
+    }
+    flush();
+}
+
+static std::vector<std::string> basicTokenize(std::string_view text)
+{
+    std::vector<char32_t> cleaned;
+    cleanBasicCodes(text, cleaned);
+
+    std::vector<char32_t> spaced;
+    spaceChineseCodes(cleaned, spaced);
 
     std::vector<std::string> tokens;
     std::size_t index = 0;
@@ -391,47 +449,9 @@ static std::vector<std::string> basicTokenize(std::string_view text)
             ++end;
         }
 
-        std::vector<char32_t> lowered;
-        for (std::size_t cursor = index; cursor < end; ++cursor)
-        {
-            appendLower(spaced[cursor], lowered);
-        }
-        std::vector<char32_t> decomposed;
-        for (const char32_t code : lowered)
-        {
-            decompose(code, decomposed);
-        }
         std::vector<char32_t> plain;
-        for (const char32_t code : decomposed)
-        {
-            if (!isMark(code))
-            {
-                plain.push_back(code);
-            }
-        }
-
-        std::vector<char32_t> current;
-        const auto flush = [&tokens, &current]()
-        {
-            if (!current.empty())
-            {
-                tokens.push_back(utf8Of(current));
-                current.clear();
-            }
-        };
-        for (const char32_t code : plain)
-        {
-            if (isPunctuation(code))
-            {
-                flush();
-                tokens.push_back(utf8OfOne(code));
-            }
-            else
-            {
-                current.push_back(code);
-            }
-        }
-        flush();
+        normalizeBasicSpan(spaced, index, end, plain);
+        appendPunctSplit(plain, tokens);
         index = end;
     }
     return tokens;
