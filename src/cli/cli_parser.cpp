@@ -1,13 +1,13 @@
 // Copyright (c) 2026 Lorenzo Caprari
 // SPDX-License-Identifier: Apache-2.0
 
-#include <cli_parser.hpp>
+#include <cli/cli_parser.hpp>
 
 #include <parser/archive_source.hpp>
 
 #include <embed/onnx_embedder.hpp>
 
-#include <thread_count.hpp>
+#include <cli/thread_count.hpp>
 
 #include <CLI/CLI.hpp>
 

@@ -4,7 +4,7 @@
 #include <catch2/catch_all.hpp>
 #include <core/top_k.hpp>
 #include <embed/embedder.hpp>
-#include <nesso.hpp>
+#include <nesso/nesso.hpp>
 
 #include "test_embedder_identity.hpp"
 

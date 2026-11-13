@@ -1,10 +1,10 @@
 // Copyright (c) 2026 Lorenzo Caprari
 // SPDX-License-Identifier: Apache-2.0
 
-#include <nesso.hpp>
+#include <nesso/nesso.hpp>
 
-#include <error_map.hpp>
-#include <model_paths.hpp>
+#include <nesso/error_map.hpp>
+#include <nesso/model_paths.hpp>
 #include <nesso_detail.hpp>
 
 #include <core/bm25.hpp>

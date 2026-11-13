@@ -1,7 +1,7 @@
 // Copyright (c) 2026 Lorenzo Caprari
 // SPDX-License-Identifier: Apache-2.0
 
-#include <render_text.hpp>
+#include <cli/render_text.hpp>
 
 #include <cstddef>
 #include <cstdint>

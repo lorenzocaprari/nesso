@@ -41,7 +41,7 @@ set_property(
 
 add_executable(render_json_test render_json_test.cpp)
 add_test(NAME render_json_test COMMAND render_json_test)
-target_link_libraries(render_json_test PRIVATE nesso_lib Catch2::Catch2WithMain)
+target_link_libraries(render_json_test PRIVATE nesso_cli Catch2::Catch2WithMain)
 # Catch2 checks add uncoverable branches. render_json.cpp stays in the floor.
 set_property(
   TARGET render_json_test
@@ -50,11 +50,11 @@ set_property(
 
 add_executable(render_text_test render_text_test.cpp)
 add_test(NAME render_text_test COMMAND render_text_test)
-target_link_libraries(render_text_test PRIVATE nesso_lib Catch2::Catch2WithMain)
+target_link_libraries(render_text_test PRIVATE nesso_cli Catch2::Catch2WithMain)
 
 add_executable(check_stdout_test check_stdout_test.cpp)
 add_test(NAME check_stdout_test COMMAND check_stdout_test)
-target_link_libraries(check_stdout_test PRIVATE nesso_lib
+target_link_libraries(check_stdout_test PRIVATE nesso_cli
                                                 Catch2::Catch2WithMain)
 
 add_executable(nesso_group_test nesso_group_test.cpp)
@@ -71,7 +71,7 @@ target_link_libraries(
 
 add_executable(thread_count_test thread_count_test.cpp)
 add_test(NAME thread_count_test COMMAND thread_count_test)
-target_link_libraries(thread_count_test PRIVATE nesso_options nesso_lib
+target_link_libraries(thread_count_test PRIVATE nesso_options nesso_cli
                                                 Catch2::Catch2WithMain)
 
 set_tests_properties(

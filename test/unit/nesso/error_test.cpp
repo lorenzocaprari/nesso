@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include <catch2/catch_all.hpp>
-#include <error_map.hpp>
+#include <nesso/error_map.hpp>
 
 #include <cstdint>
 #include <filesystem>

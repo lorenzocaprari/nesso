@@ -4,7 +4,7 @@
 #ifndef NESSO_RENDER_JSON_HPP
 #define NESSO_RENDER_JSON_HPP
 
-#include <nesso.hpp>
+#include <nesso/nesso.hpp>
 
 #include <cstddef>
 #include <string>

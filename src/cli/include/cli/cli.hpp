@@ -4,7 +4,7 @@
 #ifndef NESSO_CLI_HPP
 #define NESSO_CLI_HPP
 
-#include <nesso.hpp>
+#include <nesso/nesso.hpp>
 
 namespace nesso::cli
 {

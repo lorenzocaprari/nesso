@@ -1,7 +1,7 @@
 // Copyright (c) 2026 Lorenzo Caprari
 // SPDX-License-Identifier: Apache-2.0
 
-#include <model_paths.hpp>
+#include <nesso/model_paths.hpp>
 
 #include <cstdlib>
 
