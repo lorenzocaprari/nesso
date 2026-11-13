@@ -864,8 +864,8 @@ std::expected<TextResults, Error> Nesso::search(const SearchRequest &request) co
     }
     effective = maybeLexicalFallback(effective, bm25Scores, lexicalFallback);
 
-    std::vector<RankedLine> ranked = selectSearchRanked(*corpus, dense.scores, bm25Scores, queryTokens, effective,
-                                                        request.topK, threads, request.group);
+    const std::vector<RankedLine> ranked = selectSearchRanked(*corpus, dense.scores, bm25Scores, queryTokens, effective,
+                                                              request.topK, threads, request.group);
     if (ranked.empty())
     {
         return fail(ErrorKind::NoMatches, ErrorCause::None);
