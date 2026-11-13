@@ -319,6 +319,36 @@ OnnxEmbedder::SessionImpl::infer(Ort::Session &session, std::span<const Tokenize
     }
 }
 
+static std::expected<void, EmbedError> reportWaveProgress(std::span<const SlotResult> parts, size_t waveStart,
+                                                          size_t waveBatches,
+                                                          const std::function<void(size_t)> &onCompleted)
+{
+    size_t completed = 0;
+    for (size_t index = 0; index < waveStart + waveBatches; ++index)
+    {
+        if (!parts[index])
+        {
+            return std::unexpected(parts[index].error());
+        }
+        completed += parts[index]->size();
+        // A wave runs several batches at once. Report each one so
+        // progress still advances by a batch.
+        if (index >= waveStart)
+        {
+            onCompleted(completed);
+        }
+    }
+    return {};
+}
+
+static void storeWaveParts(const BatchWave &wave, std::vector<SlotResult> &waveOutcome, std::vector<SlotResult> &parts)
+{
+    for (std::size_t slot = 0; slot < wave.batchIndices.size(); ++slot)
+    {
+        parts[wave.batchIndices[slot]] = std::move(waveOutcome[slot]);
+    }
+}
+
 std::expected<std::vector<std::vector<float>>, EmbedError>
 OnnxEmbedder::SessionImpl::inferAll(std::span<const TokenizedInput> encoded,
                                     const std::function<void(size_t)> &onCompleted)
@@ -335,7 +365,7 @@ OnnxEmbedder::SessionImpl::inferAll(std::span<const TokenizedInput> encoded,
         tokenCounts.push_back(item.inputIds.size());
     }
     const BatchPlan plan = planBatches(tokenCounts);
-    std::vector<std::expected<std::vector<std::vector<float>>, EmbedError>> parts(plan.batches.size());
+    std::vector<SlotResult> parts(plan.batches.size());
     const std::vector<BatchWave> waves = batchWaves(plan.batches.size(), sessions_.size());
     size_t waveStart = 0;
     for (const BatchWave &wave : waves)
@@ -351,26 +381,13 @@ OnnxEmbedder::SessionImpl::inferAll(std::span<const TokenizedInput> encoded,
         {
             return std::unexpected(waveOutcome.error());
         }
-        for (std::size_t slot = 0; slot < wave.batchIndices.size(); ++slot)
-        {
-            parts[wave.batchIndices[slot]] = std::move((*waveOutcome)[slot]);
-        }
+        storeWaveParts(wave, *waveOutcome, parts);
         if (onCompleted)
         {
-            size_t completed = 0;
-            for (size_t index = 0; index < waveStart + wave.batchIndices.size(); ++index)
+            if (const auto reported = reportWaveProgress(parts, waveStart, wave.batchIndices.size(), onCompleted);
+                !reported)
             {
-                if (!parts[index])
-                {
-                    return std::unexpected(parts[index].error());
-                }
-                completed += parts[index]->size();
-                // A wave runs several batches at once. Report each one so
-                // progress still advances by a batch.
-                if (index >= waveStart)
-                {
-                    onCompleted(completed);
-                }
+                return std::unexpected(reported.error());
             }
         }
         waveStart += wave.batchIndices.size();
