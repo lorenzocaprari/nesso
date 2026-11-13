@@ -1,7 +1,11 @@
 add_library(
   nesso_core
   distance.cpp
-  corpus_index.cpp
+  corpus_format.cpp
+  corpus_policy.cpp
+  corpus_lexical.cpp
+  corpus_writer.cpp
+  corpus_reader.cpp
   dedup.cpp
   bm25.cpp
   lexical_terms.cpp
@@ -10,8 +14,10 @@ add_library(
   sha256.cpp
   top_k.cpp)
 find_package(Threads REQUIRED)
-target_include_directories(nesso_core
-                           PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
+target_include_directories(
+  nesso_core
+  PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include"
+  PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
 target_link_libraries(
   nesso_core
   PUBLIC nesso_platform Threads::Threads
