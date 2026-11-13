@@ -364,4 +364,29 @@ TEST_CASE("usable cores follow affinity and cgroup cpu.max", "[session-policy]")
     writeText(cgroup / "stopped/cpu.max", "0 100000\n");
     const MachineResources zero = nesso::embed::readMachine(proc, sys, cgroup);
     CHECK(zero.physicalCores == 1);
+
+    writeText(proc / "self/status", "Cpus_allowed_list:\t0-3\n");
+    writeText(proc / "self/cgroup", "0::/bad\n");
+    writeText(cgroup / "bad/cpu.max", "nope\n");
+    const MachineResources malformed = nesso::embed::readMachine(proc, sys, cgroup);
+    CHECK(malformed.physicalCores == 4);
+
+    writeText(cgroup / "bad/cpu.max", "100000\n");
+    const MachineResources missingPeriod = nesso::embed::readMachine(proc, sys, cgroup);
+    CHECK(missingPeriod.physicalCores == 4);
+
+    std::filesystem::remove(proc / "self/cgroup");
+    const MachineResources noCgroup = nesso::embed::readMachine(proc, sys, cgroup);
+    CHECK(noCgroup.physicalCores == 4);
+
+    writeText(proc / "self/cgroup", "2:cpu:/broken\n");
+    writeText(cgroup / "cpu/broken/cpu.cfs_quota_us", "not-a-number\n");
+    writeText(cgroup / "cpu/broken/cpu.cfs_period_us", "100000\n");
+    const MachineResources badQuota = nesso::embed::readMachine(proc, sys, cgroup);
+    CHECK(badQuota.physicalCores == 4);
+
+    writeText(cgroup / "cpu/broken/cpu.cfs_quota_us", "200000\n");
+    writeText(cgroup / "cpu/broken/cpu.cfs_period_us", "0\n");
+    const MachineResources zeroPeriod = nesso::embed::readMachine(proc, sys, cgroup);
+    CHECK(zeroPeriod.physicalCores == 4);
 }

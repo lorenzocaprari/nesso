@@ -231,4 +231,20 @@ TEST_CASE("WordPieceTokenizer matches BERT uncased token ids", "[WordPieceTokeni
     const auto tabbed = tokenizer->encode("hello\tworld");
     REQUIRE(tabbed.has_value());
     REQUIRE(tabbed->inputIds == std::vector<int64_t>{101, 7592, 2088, 102});
+
+    const auto padded = tokenizer->encode("  hello   world  ");
+    REQUIRE(padded.has_value());
+    REQUIRE(padded->inputIds == std::vector<int64_t>{101, 7592, 2088, 102});
+
+    const auto soh = tokenizer->encode(std::string("hel\x01lo"));
+    REQUIRE(soh.has_value());
+    REQUIRE(soh->inputIds == std::vector<int64_t>{101, 7592, 102});
+
+    const auto bangs = tokenizer->encode("!!");
+    REQUIRE(bangs.has_value());
+    REQUIRE(bangs->inputIds == std::vector<int64_t>{101, 999, 999, 102});
+
+    const auto adjacentPunct = tokenizer->encode("hello!!world");
+    REQUIRE(adjacentPunct.has_value());
+    REQUIRE(adjacentPunct->inputIds == std::vector<int64_t>{101, 7592, 999, 999, 2088, 102});
 }
