@@ -365,36 +365,24 @@ static std::expected<void, EngineError> loadMappedLines(std::span<const std::byt
     return {};
 }
 
-struct LexicalAttachTargets
+static std::expected<void, EngineError> decodeMappedLexical(std::span<const std::byte> bytes, const Layout &layout,
+                                                            std::vector<std::string> &ownedTerms,
+                                                            std::vector<std::string_view> &dictionary,
+                                                            std::vector<LexicalLinePostings> &postings)
 {
-    std::vector<std::string> &ownedTerms;
-    std::vector<std::string_view> &dictionary;
-    std::vector<LexicalLinePostings> &postings;
-    std::string &termsVersion;
-    LexicalStatus &status;
-};
+    return decodeLexicalSection(
+        bytes.subspan(static_cast<std::size_t>(layout.lexicalOffset), static_cast<std::size_t>(layout.lexicalBytes)),
+        layout.lineCount, ownedTerms, dictionary, postings);
+}
 
-static std::expected<void, EngineError> attachLexicalSection(std::span<const std::byte> bytes, const Layout &layout,
-                                                             bool hasLexical, const CorpusPolicy &policy,
-                                                             LexicalAttachTargets &targets)
+static void applyLexicalPolicy(bool hasLexical, const CorpusPolicy &policy, std::string &termsVersion,
+                               LexicalStatus &status)
 {
-    if (hasLexical)
-    {
-        if (const auto decoded =
-                decodeLexicalSection(bytes.subspan(static_cast<std::size_t>(layout.lexicalOffset),
-                                                   static_cast<std::size_t>(layout.lexicalBytes)),
-                                     layout.lineCount, targets.ownedTerms, targets.dictionary, targets.postings);
-            !decoded)
-        {
-            return std::unexpected(decoded.error());
-        }
-    }
     if (policy.contains("lexical.terms"))
     {
-        targets.termsVersion = policy.at("lexical.terms");
+        termsVersion = policy.at("lexical.terms");
     }
-    targets.status = lexicalStatusOf(hasLexical, policy);
-    return {};
+    status = lexicalStatusOf(hasLexical, policy);
 }
 
 std::expected<MappedCorpus, EngineError> mapCorpusFile(const std::filesystem::path &path,
@@ -446,15 +434,16 @@ std::expected<MappedCorpus, EngineError> mapCorpusFile(const std::filesystem::pa
     {
         return std::unexpected(lines.error());
     }
-    LexicalAttachTargets lexicalTargets{.ownedTerms = impl->lexicalTermStorage,
-                                        .dictionary = impl->lexicalDictionary,
-                                        .postings = impl->lexicalPostings,
-                                        .termsVersion = impl->corpusLexicalTermsVersion,
-                                        .status = impl->lexicalStatus};
-    if (const auto lexical = attachLexicalSection(bytes, *layout, hasLexical, impl->policy, lexicalTargets); !lexical)
+    if (hasLexical)
     {
-        return std::unexpected(lexical.error());
+        if (const auto decoded = decodeMappedLexical(bytes, *layout, impl->lexicalTermStorage, impl->lexicalDictionary,
+                                                     impl->lexicalPostings);
+            !decoded)
+        {
+            return std::unexpected(decoded.error());
+        }
     }
+    applyLexicalPolicy(hasLexical, impl->policy, impl->corpusLexicalTermsVersion, impl->lexicalStatus);
 
     impl->file = std::move(*mapped);
     const auto stable = impl->file.bytes();
