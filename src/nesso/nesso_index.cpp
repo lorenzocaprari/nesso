@@ -4,8 +4,8 @@
 #include <nesso/nesso.hpp>
 
 #include <nesso/error_map.hpp>
-#include <nesso_detail.hpp>
 #include <nesso/trace.hpp>
+#include <nesso_detail.hpp>
 
 #include <core/corpus_index.hpp>
 #include <core/dedup.hpp>

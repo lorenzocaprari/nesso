@@ -2,7 +2,8 @@ add_subdirectory(platform)
 add_subdirectory(core)
 add_subdirectory(embed)
 add_subdirectory(parser)
-# Binary dir is not "nesso": the nesso executable must stay at build/<Config>/src/nesso.
+# Binary dir is not "nesso": the nesso executable must stay at
+# build/<Config>/src/nesso.
 add_subdirectory(nesso nesso_lib)
 add_subdirectory(cli)
 
