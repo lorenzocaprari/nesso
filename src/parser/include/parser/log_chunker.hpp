@@ -90,9 +90,11 @@ class Chunker
 
     /// Re-read a kept file record using its source metadata, field and code-point limit.
     /// JSON values are decoded. Stdin and archive members cannot be re-read this way.
-    [[nodiscard]] static std::expected<std::string, ParseError>
-    readRecord(const std::filesystem::path &path, uint64_t byteOffset, uint64_t byteLength, uint64_t lineNumber,
-               bool arrayElement, std::string_view jsonField, size_t maxLineLength);
+    /// `key` supplies lineNumber, byteOffset, byteLength, and arrayElement.
+    [[nodiscard]] static std::expected<std::string, ParseError> readRecord(const std::filesystem::path &path,
+                                                                           const ParsedChunk &key,
+                                                                           std::string_view jsonField,
+                                                                           size_t maxLineLength);
 
     [[nodiscard]] static std::expected<std::vector<ParsedChunk>, ParseError>
     fromFile(const std::filesystem::path &path, size_t maxLineLength = 4096, ParseStats *stats = nullptr,

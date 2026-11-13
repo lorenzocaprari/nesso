@@ -258,10 +258,12 @@ TEST_CASE("Chunker reads gzip logs and json, and rejects binary or corrupt gzip"
     REQUIRE_FALSE(broken);
     CHECK(broken.error() == nesso::parser::ParseError::CorruptGzip);
 
-    const auto second = nesso::parser::Chunker::readRecord(two, 4, 3, 2, false, "message", 4096);
+    const auto second = nesso::parser::Chunker::readRecord(
+        two, {.text = {}, .lineNumber = 2, .byteOffset = 4, .arrayElement = false, .byteLength = 3}, "message", 4096);
     REQUIRE(second);
     CHECK(*second == "two");
-    const auto object = nesso::parser::Chunker::readRecord(json, 0, 0, 1, false, "message", 4096);
+    const auto object = nesso::parser::Chunker::readRecord(
+        json, {.text = {}, .lineNumber = 1, .byteOffset = 0, .arrayElement = false, .byteLength = 0}, "message", 4096);
     REQUIRE(object);
     CHECK(*object == "database connection refused");
 }
@@ -289,7 +291,9 @@ TEST_CASE("Chunker maps missing gzip to FileOpenFailure", "[parser][gzip]")
     REQUIRE_FALSE(walked);
     CHECK(walked.error() == nesso::parser::ParseError::FileOpenFailure);
 
-    const auto record = nesso::parser::Chunker::readRecord(missing, 0, 1, 1, false, "message", 4096);
+    const auto record = nesso::parser::Chunker::readRecord(
+        missing, {.text = {}, .lineNumber = 1, .byteOffset = 0, .arrayElement = false, .byteLength = 1}, "message",
+        4096);
     REQUIRE_FALSE(record);
     CHECK(record.error() == nesso::parser::ParseError::FileOpenFailure);
 }

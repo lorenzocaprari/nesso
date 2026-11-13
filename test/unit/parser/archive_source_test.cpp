@@ -396,7 +396,8 @@ TEST_CASE("a corrupt archive is rejected and an empty one has no members", "[par
     REQUIRE(emptyChunks);
     CHECK(emptyChunks->empty());
 
-    const auto record = nesso::parser::Chunker::readRecord(bad, 0, 1, 1, false, "message", 4096);
+    const auto record = nesso::parser::Chunker::readRecord(
+        bad, {.text = {}, .lineNumber = 1, .byteOffset = 0, .arrayElement = false, .byteLength = 1}, "message", 4096);
     REQUIRE_FALSE(record);
     CHECK(record.error() == nesso::parser::ParseError::UnsupportedFormat);
 }

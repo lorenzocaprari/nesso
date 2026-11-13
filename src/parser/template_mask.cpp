@@ -782,6 +782,31 @@ static std::size_t variableLength(std::string_view text, std::size_t index) noex
     return matchDecimal(text, index);
 }
 
+static bool tryMaskPath(std::string_view text, std::size_t &index, std::string &out)
+{
+    if (text[index] != '/' || (index != 0 && isPathChar(text[index - 1])))
+    {
+        return false;
+    }
+    bool digit = false;
+    const std::size_t length = pathSpan(text, index, digit);
+    // A path with no digit is copied in one span so a long literal path is not rescanned.
+    if (length <= 1)
+    {
+        return false;
+    }
+    if (digit)
+    {
+        appendMasked(out);
+    }
+    else
+    {
+        out.append(text.substr(index, length));
+    }
+    index += length;
+    return true;
+}
+
 std::string maskTemplate(std::string_view text)
 {
     std::string out;
@@ -789,26 +814,10 @@ std::string maskTemplate(std::string_view text)
     std::size_t index = 0;
     while (index < text.size())
     {
-        if (text[index] == '/' && (index == 0 || !isPathChar(text[index - 1])))
+        if (tryMaskPath(text, index, out))
         {
-            bool digit = false;
-            const std::size_t length = pathSpan(text, index, digit);
-            // A path with no digit is copied in one span so a long literal path is not rescanned.
-            if (length > 1)
-            {
-                if (digit)
-                {
-                    appendMasked(out);
-                }
-                else
-                {
-                    out.append(text.substr(index, length));
-                }
-                index += length;
-                continue;
-            }
+            continue;
         }
-
         if (const std::size_t taken = variableLength(text, index); taken > 0)
         {
             appendMasked(out);

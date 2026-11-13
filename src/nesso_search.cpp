@@ -443,9 +443,13 @@ static void rematerializeLexicalSubstrings(const nesso::core::MappedCorpus &corp
         else
         {
             const nesso::core::SourceInfo &source = corpus.sources()[line.sourceIndex];
-            auto reread =
-                nesso::parser::Chunker::readRecord(source.path, line.byteOffset, line.byteLength, line.lineNumber,
-                                                   line.arrayElement, source.jsonField, MAX_LINE_LENGTH);
+            auto reread = nesso::parser::Chunker::readRecord(source.path,
+                                                             {.text = {},
+                                                              .lineNumber = line.lineNumber,
+                                                              .byteOffset = line.byteOffset,
+                                                              .arrayElement = line.arrayElement,
+                                                              .byteLength = line.byteLength},
+                                                             source.jsonField, MAX_LINE_LENGTH);
             if (reread)
             {
                 own = std::move(*reread);
@@ -628,9 +632,13 @@ static TextResults materializeSearchMatches(const nesso::core::MappedCorpus &cor
         std::string text{line.storedText.value_or(corpus.texts()[line.distinctId])};
         if (!line.storedText && !sourceIsStale(source.path))
         {
-            auto reread =
-                nesso::parser::Chunker::readRecord(source.path, line.byteOffset, line.byteLength, line.lineNumber,
-                                                   line.arrayElement, source.jsonField, MAX_LINE_LENGTH);
+            auto reread = nesso::parser::Chunker::readRecord(source.path,
+                                                             {.text = {},
+                                                              .lineNumber = line.lineNumber,
+                                                              .byteOffset = line.byteOffset,
+                                                              .arrayElement = line.arrayElement,
+                                                              .byteLength = line.byteLength},
+                                                             source.jsonField, MAX_LINE_LENGTH);
             if (!reread)
             {
                 addSourceWarning(sourceWarnings, {.path = source.path, .unreadable = true});

@@ -52,15 +52,22 @@ TEST_CASE("Chunker visits skipped lines with source byte ranges", "[Chunker][par
     CHECK(records[3].byteLength == 3);
     CHECK(stats.emptyLines == 1);
 
-    const auto first = nesso::parser::Chunker::readRecord(path, 0, 4, 1, false, "message", 4096);
+    const auto first = nesso::parser::Chunker::readRecord(
+        path, {.text = {}, .lineNumber = 1, .byteOffset = 0, .arrayElement = false, .byteLength = 4}, "message", 4096);
     REQUIRE(first);
     CHECK(*first == "one");
-    const auto cut = nesso::parser::Chunker::readRecord(path, 7, 4, 3, false, "message", 2);
+    const auto cut = nesso::parser::Chunker::readRecord(
+        path, {.text = {}, .lineNumber = 3, .byteOffset = 7, .arrayElement = false, .byteLength = 4}, "message", 2);
     REQUIRE(cut);
     CHECK(*cut == "fo");
-    CHECK_FALSE(nesso::parser::Chunker::readRecord(path, 100, 4, 1, false, "message", 4096));
-    CHECK_FALSE(nesso::parser::Chunker::readRecord(path, 0, 4, 1, true, "message", 4096));
-    CHECK_FALSE(nesso::parser::Chunker::readRecord(directory / "missing", 0, 1, 1, false, "message", 4096));
+    CHECK_FALSE(nesso::parser::Chunker::readRecord(
+        path, {.text = {}, .lineNumber = 1, .byteOffset = 100, .arrayElement = false, .byteLength = 4}, "message",
+        4096));
+    CHECK_FALSE(nesso::parser::Chunker::readRecord(
+        path, {.text = {}, .lineNumber = 1, .byteOffset = 0, .arrayElement = true, .byteLength = 4}, "message", 4096));
+    CHECK_FALSE(nesso::parser::Chunker::readRecord(
+        directory / "missing", {.text = {}, .lineNumber = 1, .byteOffset = 0, .arrayElement = false, .byteLength = 1},
+        "message", 4096));
     const auto unreadable =
         nesso::parser::Chunker::forEachRecord(directory, 4096, nullptr, "message", [](nesso::parser::ParsedChunk) {});
     REQUIRE_FALSE(unreadable);
@@ -101,8 +108,13 @@ TEST_CASE("Blank records retain their source ranges and array ordinals", "[Chunk
     CHECK(stats.skippedLines == 2);
     CHECK(stats.emptyLines == 2);
     CHECK(stats.truncatedLines == 0);
-    const auto reread = nesso::parser::Chunker::readRecord(log, records[1].byteOffset, records[1].byteLength,
-                                                           records[1].lineNumber, false, "message", 4096);
+    const auto reread = nesso::parser::Chunker::readRecord(log,
+                                                           {.text = {},
+                                                            .lineNumber = records[1].lineNumber,
+                                                            .byteOffset = records[1].byteOffset,
+                                                            .arrayElement = false,
+                                                            .byteLength = records[1].byteLength},
+                                                           "message", 4096);
     REQUIRE(reread);
     CHECK(*reread == "  keep \t");
 
@@ -186,22 +198,52 @@ TEST_CASE("Chunker re-reads decoded JSON values by field and array ordinal", "[C
                     nlohmann::json::parse_error);
     CHECK(callbacks == 1);
     CHECK(callbackStats.malformedLines == 0);
-    const auto decoded =
-        nesso::parser::Chunker::readRecord(jsonl, records[0].byteOffset, records[0].byteLength, 1, false, "msg", 4096);
+    const auto decoded = nesso::parser::Chunker::readRecord(jsonl,
+                                                            {.text = {},
+                                                             .lineNumber = 1,
+                                                             .byteOffset = records[0].byteOffset,
+                                                             .arrayElement = false,
+                                                             .byteLength = records[0].byteLength},
+                                                            "msg", 4096);
     REQUIRE(decoded);
     CHECK(*decoded == "line\nvalue");
-    const auto truncated =
-        nesso::parser::Chunker::readRecord(jsonl, records[0].byteOffset, records[0].byteLength, 1, false, "msg", 4);
+    const auto truncated = nesso::parser::Chunker::readRecord(jsonl,
+                                                              {.text = {},
+                                                               .lineNumber = 1,
+                                                               .byteOffset = records[0].byteOffset,
+                                                               .arrayElement = false,
+                                                               .byteLength = records[0].byteLength},
+                                                              "msg", 4);
     REQUIRE(truncated);
     CHECK(*truncated == "line");
-    CHECK_FALSE(
-        nesso::parser::Chunker::readRecord(jsonl, records[0].byteOffset, records[0].byteLength, 1, true, "msg", 4096));
-    CHECK_FALSE(
-        nesso::parser::Chunker::readRecord(jsonl, records[1].byteOffset, records[1].byteLength, 2, false, "msg", 4096));
-    CHECK_FALSE(
-        nesso::parser::Chunker::readRecord(jsonl, records[2].byteOffset, records[2].byteLength, 3, false, "msg", 4096));
-    CHECK_FALSE(
-        nesso::parser::Chunker::readRecord(jsonl, 0, std::numeric_limits<uint64_t>::max(), 1, false, "msg", 4096));
+    CHECK_FALSE(nesso::parser::Chunker::readRecord(jsonl,
+                                                   {.text = {},
+                                                    .lineNumber = 1,
+                                                    .byteOffset = records[0].byteOffset,
+                                                    .arrayElement = true,
+                                                    .byteLength = records[0].byteLength},
+                                                   "msg", 4096));
+    CHECK_FALSE(nesso::parser::Chunker::readRecord(jsonl,
+                                                   {.text = {},
+                                                    .lineNumber = 2,
+                                                    .byteOffset = records[1].byteOffset,
+                                                    .arrayElement = false,
+                                                    .byteLength = records[1].byteLength},
+                                                   "msg", 4096));
+    CHECK_FALSE(nesso::parser::Chunker::readRecord(jsonl,
+                                                   {.text = {},
+                                                    .lineNumber = 3,
+                                                    .byteOffset = records[2].byteOffset,
+                                                    .arrayElement = false,
+                                                    .byteLength = records[2].byteLength},
+                                                   "msg", 4096));
+    CHECK_FALSE(nesso::parser::Chunker::readRecord(jsonl,
+                                                   {.text = {},
+                                                    .lineNumber = 1,
+                                                    .byteOffset = 0,
+                                                    .arrayElement = false,
+                                                    .byteLength = std::numeric_limits<uint64_t>::max()},
+                                                   "msg", 4096));
 
     const auto json = directory / "array.json";
     writeBytes(json, "[{\"msg\":\"first\"},{\"missing\":1},{\"msg\":\"third\"}]");
@@ -213,12 +255,16 @@ TEST_CASE("Chunker re-reads decoded JSON values by field and array ordinal", "[C
     CHECK(records[1].skipped);
     CHECK(records[1].arrayElement);
     CHECK(records[2].lineNumber == 3);
-    const auto third = nesso::parser::Chunker::readRecord(json, 0, 0, 3, true, "msg", 4096);
+    const auto third = nesso::parser::Chunker::readRecord(
+        json, {.text = {}, .lineNumber = 3, .byteOffset = 0, .arrayElement = true, .byteLength = 0}, "msg", 4096);
     REQUIRE(third);
     CHECK(*third == "third");
-    CHECK_FALSE(nesso::parser::Chunker::readRecord(json, 0, 0, 2, true, "msg", 4096));
-    CHECK_FALSE(nesso::parser::Chunker::readRecord(json, 0, 0, 4, true, "msg", 4096));
-    CHECK_FALSE(nesso::parser::Chunker::readRecord(json, 0, 0, 1, false, "msg", 4096));
+    CHECK_FALSE(nesso::parser::Chunker::readRecord(
+        json, {.text = {}, .lineNumber = 2, .byteOffset = 0, .arrayElement = true, .byteLength = 0}, "msg", 4096));
+    CHECK_FALSE(nesso::parser::Chunker::readRecord(
+        json, {.text = {}, .lineNumber = 4, .byteOffset = 0, .arrayElement = true, .byteLength = 0}, "msg", 4096));
+    CHECK_FALSE(nesso::parser::Chunker::readRecord(
+        json, {.text = {}, .lineNumber = 1, .byteOffset = 0, .arrayElement = false, .byteLength = 0}, "msg", 4096));
     callbacks = 0;
     callbackStats = {};
     CHECK_THROWS_AS(nesso::parser::Chunker::forEachRecord(json, 4096, &callbackStats, "msg",
@@ -232,12 +278,16 @@ TEST_CASE("Chunker re-reads decoded JSON values by field and array ordinal", "[C
     CHECK(callbacks == 1);
     CHECK(callbackStats.malformedLines == 0);
     writeBytes(json, "{\"msg\":\"object\"}");
-    const auto object = nesso::parser::Chunker::readRecord(json, 0, 0, 1, false, "msg", 4096);
+    const auto object = nesso::parser::Chunker::readRecord(
+        json, {.text = {}, .lineNumber = 1, .byteOffset = 0, .arrayElement = false, .byteLength = 0}, "msg", 4096);
     REQUIRE(object);
     CHECK(*object == "object");
-    CHECK_FALSE(nesso::parser::Chunker::readRecord(json, 1, 0, 1, false, "msg", 4096));
-    CHECK_FALSE(nesso::parser::Chunker::readRecord(json, 0, 0, 2, false, "msg", 4096));
-    CHECK_FALSE(nesso::parser::Chunker::readRecord(json, 0, 0, 1, true, "msg", 4096));
+    CHECK_FALSE(nesso::parser::Chunker::readRecord(
+        json, {.text = {}, .lineNumber = 1, .byteOffset = 1, .arrayElement = false, .byteLength = 0}, "msg", 4096));
+    CHECK_FALSE(nesso::parser::Chunker::readRecord(
+        json, {.text = {}, .lineNumber = 2, .byteOffset = 0, .arrayElement = false, .byteLength = 0}, "msg", 4096));
+    CHECK_FALSE(nesso::parser::Chunker::readRecord(
+        json, {.text = {}, .lineNumber = 1, .byteOffset = 0, .arrayElement = true, .byteLength = 0}, "msg", 4096));
     writeBytes(json, "{invalid");
     records.clear();
     REQUIRE(nesso::parser::Chunker::forEachRecord(json, 4096, nullptr, "msg",
@@ -245,6 +295,7 @@ TEST_CASE("Chunker re-reads decoded JSON values by field and array ordinal", "[C
                                                   { records.push_back(std::move(record)); }));
     REQUIRE(records.size() == 1);
     CHECK(records[0].skipped);
-    CHECK_FALSE(nesso::parser::Chunker::readRecord(json, 0, 0, 1, false, "msg", 4096));
+    CHECK_FALSE(nesso::parser::Chunker::readRecord(
+        json, {.text = {}, .lineNumber = 1, .byteOffset = 0, .arrayElement = false, .byteLength = 0}, "msg", 4096));
     std::filesystem::remove_all(directory);
 }

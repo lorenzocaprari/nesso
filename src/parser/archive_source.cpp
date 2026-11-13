@@ -386,12 +386,25 @@ static std::uint64_t declaredMemberSize(archive_entry *entry)
     return static_cast<std::uint64_t>(size);
 }
 
-static std::expected<void, ArchiveFailure> loadMemberPayload(archive *handle, std::string &payload,
-                                                             std::uint64_t declared, const ArchiveLimits &limits,
-                                                             std::uint64_t accepted, std::uint64_t compressed,
-                                                             const std::string &name, const std::filesystem::path &path)
+struct MemberLoadBudget
 {
-    const auto readError = readMember(handle, payload, declared, limits, accepted, compressed);
+    std::uint64_t declared = 0;
+    std::uint64_t accepted = 0;
+    std::uint64_t compressed = 0;
+};
+
+struct MemberIdentity
+{
+    // NOLINTNEXTLINE(readability-redundant-member-init)
+    std::string name{};
+    std::filesystem::path path;
+};
+
+static std::expected<void, ArchiveFailure> loadMemberPayload(archive *handle, std::string &payload,
+                                                             const MemberLoadBudget &budget,
+                                                             const ArchiveLimits &limits, const MemberIdentity &id)
+{
+    const auto readError = readMember(handle, payload, budget.declared, limits, budget.accepted, budget.compressed);
     if (readError)
     {
         return {};
@@ -400,9 +413,9 @@ static std::expected<void, ArchiveFailure> loadMemberPayload(archive *handle, st
     // not a generic corrupt archive (avoids dumping libarchive's crypto message).
     if (readError.error() == ArchiveError::Corrupt && archive_read_has_encrypted_entries(handle) > 0)
     {
-        return std::unexpected(failure(ArchiveError::Encrypted, name));
+        return std::unexpected(failure(ArchiveError::Encrypted, id.name));
     }
-    return std::unexpected(afterReadFailure(readError.error(), path));
+    return std::unexpected(afterReadFailure(readError.error(), id.path));
 }
 
 static std::expected<void, ArchiveFailure> inflateNestedGzipMember(std::string &payload, const std::string &name,
@@ -449,18 +462,32 @@ enum class ArchiveMemberAction : std::uint8_t
     Accept
 };
 
+struct ArchiveMemberSession
+{
+    ArchiveLimits limits;
+    std::uint64_t compressed = 0;
+    std::filesystem::path path;
+};
+
+struct ArchiveAccumulate
+{
+    std::uint64_t accepted = 0;
+    std::uint64_t entries = 0;
+    // NOLINTNEXTLINE(readability-redundant-member-init)
+    std::string payload{};
+};
+
 // One regular member: encrypt/count/limits, load (and optional nested gzip), then accept against totals.
 static std::expected<ArchiveMemberAction, ArchiveFailure>
-processArchiveMember(archive *handle, archive_entry *entry, ArchiveSkipStats *skips, const ArchiveLimits &limits,
-                     std::uint64_t &accepted, std::uint64_t &entries, std::uint64_t compressed, std::string &payload,
-                     const std::filesystem::path &path,
+processArchiveMember(archive *handle, archive_entry *entry, ArchiveSkipStats *skips,
+                     const ArchiveMemberSession &session, ArchiveAccumulate &acc,
                      const std::function<void(std::string_view name, std::string_view bytes)> &consume)
 {
     const bool regular = isRegularArchiveMember(entry);
     const std::string name = regular ? memberName(archive_entry_pathname(entry)) : std::string{};
     if (!regular || name.empty())
     {
-        if (const auto skipped = skipNonRegularMember(handle, entry, skips, path); !skipped)
+        if (const auto skipped = skipNonRegularMember(handle, entry, skips, session.path); !skipped)
         {
             return std::unexpected(skipped.error());
         }
@@ -472,29 +499,31 @@ processArchiveMember(archive *handle, archive_entry *entry, ArchiveSkipStats *sk
         return std::unexpected(encrypted.error());
     }
 
-    ++entries;
-    if (const auto count = rejectTooManyEntries(entries, limits.maxEntries); !count)
+    ++acc.entries;
+    if (const auto count = rejectTooManyEntries(acc.entries, session.limits.maxEntries); !count)
     {
         return std::unexpected(count.error());
     }
 
-    if (const auto loaded =
-            loadMemberPayload(handle, payload, declaredMemberSize(entry), limits, accepted, compressed, name, path);
-        !loaded)
+    const MemberLoadBudget budget{
+        .declared = declaredMemberSize(entry), .accepted = acc.accepted, .compressed = session.compressed};
+    const MemberIdentity id{.name = name, .path = session.path};
+    if (const auto loaded = loadMemberPayload(handle, acc.payload, budget, session.limits, id); !loaded)
     {
         return std::unexpected(loaded.error());
     }
-    if (const auto inflated = inflateNestedGzipMember(payload, name, limits, path); !inflated)
+    if (const auto inflated = inflateNestedGzipMember(acc.payload, name, session.limits, session.path); !inflated)
     {
         return std::unexpected(inflated.error());
     }
-    if (const auto acceptedLimits = acceptMemberAgainstLimits(accepted, payload.size(), compressed, limits);
+    if (const auto acceptedLimits =
+            acceptMemberAgainstLimits(acc.accepted, acc.payload.size(), session.compressed, session.limits);
         !acceptedLimits)
     {
         return std::unexpected(acceptedLimits.error());
     }
-    accepted += payload.size();
-    consume(name, payload);
+    acc.accepted += acc.payload.size();
+    consume(name, acc.payload);
     return ArchiveMemberAction::Accept;
 }
 
@@ -519,9 +548,8 @@ readArchive(const std::filesystem::path &path, const ArchiveLimits &limits,
     }
     archive *handle = reader->get();
 
-    std::uint64_t accepted = 0;
-    std::uint64_t entries = 0;
-    std::string payload;
+    const ArchiveMemberSession session{.limits = limits, .compressed = *compressed, .path = path};
+    ArchiveAccumulate acc;
     while (true)
     {
         const auto step = advanceArchiveHeader(handle, path);
@@ -537,9 +565,7 @@ readArchive(const std::filesystem::path &path, const ArchiveLimits &limits,
         {
             continue;
         }
-        if (const auto processed = processArchiveMember(handle, step->entry, skips, limits, accepted, entries,
-                                                        *compressed, payload, path, consume);
-            !processed)
+        if (const auto processed = processArchiveMember(handle, step->entry, skips, session, acc, consume); !processed)
         {
             return std::unexpected(processed.error());
         }
