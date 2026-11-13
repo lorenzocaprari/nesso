@@ -340,16 +340,23 @@ std::expected<std::uint32_t, EngineError> CorpusWriter::addDistinct(std::string_
     return *id;
 }
 
+struct LastLineCursor
+{
+    std::uint32_t lastSource = 0;
+    std::uint64_t lastLine = 0;
+    bool hasLastLine = false;
+};
+
 static bool addLineRejected(const CorpusLine &line, std::span<const SourceInfo> sources,
                             std::span<const std::uint32_t> uses, std::span<const std::string> terms,
-                            std::uint32_t lastSource, std::uint64_t lastLine, bool hasLastLine)
+                            const LastLineCursor &cursor)
 {
     if (line.sourceIndex >= sources.size() || line.lineNumber == 0 ||
         (line.distinctId != NO_DISTINCT && line.distinctId >= uses.size()) ||
         (line.storedText && line.storedText->size() > MAX_TEXT_BYTES) ||
         (line.distinctId == NO_DISTINCT && !terms.empty()) ||
-        (hasLastLine &&
-         (line.sourceIndex < lastSource || (line.sourceIndex == lastSource && line.lineNumber <= lastLine))))
+        (cursor.hasLastLine && (line.sourceIndex < cursor.lastSource ||
+                                (line.sourceIndex == cursor.lastSource && line.lineNumber <= cursor.lastLine))))
     {
         return true;
     }
@@ -365,28 +372,36 @@ static bool addLineRejected(const CorpusLine &line, std::span<const SourceInfo> 
            (source.tracked && !rangeInside(line.byteOffset, line.byteLength, source.size));
 }
 
-static std::expected<void, EngineError>
-validateAddLines(std::span<const SourceInfo> sources, std::span<const std::uint32_t> uses,
-                 std::span<const CorpusLine> lines, std::span<const std::vector<std::string>> lineTerms,
-                 std::uint32_t &lastSource, std::uint64_t &lastLine, bool &hasLastLine)
+static std::expected<void, EngineError> validateAddLines(std::span<const SourceInfo> sources,
+                                                         std::span<const std::uint32_t> uses,
+                                                         std::span<const CorpusLine> lines,
+                                                         std::span<const std::vector<std::string>> lineTerms,
+                                                         LastLineCursor &cursor)
 {
     for (std::size_t index = 0; index < lines.size(); ++index)
     {
         const CorpusLine &line = lines[index];
-        if (addLineRejected(line, sources, uses, lineTerms[index], lastSource, lastLine, hasLastLine))
+        if (addLineRejected(line, sources, uses, lineTerms[index], cursor))
         {
             return std::unexpected(EngineError::CorruptDatabase);
         }
-        lastSource = line.sourceIndex;
-        lastLine = line.lineNumber;
-        hasLastLine = true;
+        cursor.lastSource = line.sourceIndex;
+        cursor.lastLine = line.lineNumber;
+        cursor.hasLastLine = true;
     }
     return {};
 }
 
-static std::expected<void, EngineError> spillAddLines(std::ostream &linesOut, std::ostream &termsOut,
-                                                      std::span<std::uint32_t> uses, std::uint64_t &storedBytes,
-                                                      std::uint64_t &lineCount, std::span<const CorpusLine> lines,
+struct SpillAddState
+{
+    std::ostream &linesOut;
+    std::ostream &termsOut;
+    std::span<std::uint32_t> uses;
+    std::uint64_t &storedBytes;
+    std::uint64_t &lineCount;
+};
+
+static std::expected<void, EngineError> spillAddLines(SpillAddState &state, std::span<const CorpusLine> lines,
                                                       std::span<const std::vector<std::string>> lineTerms)
 {
     for (std::size_t index = 0; index < lines.size(); ++index)
@@ -396,32 +411,32 @@ static std::expected<void, EngineError> spillAddLines(std::ostream &linesOut, st
                                     (line.storedText ? LINE_STORED_TEXT : 0U) |
                                     (line.distinctId == NO_DISTINCT ? LINE_SKIPPED : 0U);
         const std::string_view text = line.storedText.value_or(std::string_view{});
-        if (!writeU64(linesOut, line.lineNumber) || !writeU64(linesOut, line.byteOffset) ||
-            !writeU64(linesOut, line.byteLength) || !writeU32(linesOut, line.sourceIndex) ||
-            !writeU32(linesOut, line.distinctId) || !writeU32(linesOut, flags) ||
-            !writeU32(linesOut, static_cast<std::uint32_t>(text.size())) ||
-            !writeRaw(linesOut, text.data(), text.size()))
+        if (!writeU64(state.linesOut, line.lineNumber) || !writeU64(state.linesOut, line.byteOffset) ||
+            !writeU64(state.linesOut, line.byteLength) || !writeU32(state.linesOut, line.sourceIndex) ||
+            !writeU32(state.linesOut, line.distinctId) || !writeU32(state.linesOut, flags) ||
+            !writeU32(state.linesOut, static_cast<std::uint32_t>(text.size())) ||
+            !writeRaw(state.linesOut, text.data(), text.size()))
         {
             return std::unexpected(EngineError::FileOpenFailure);
         }
-        if (!writeU32(termsOut, static_cast<std::uint32_t>(lineTerms[index].size())))
+        if (!writeU32(state.termsOut, static_cast<std::uint32_t>(lineTerms[index].size())))
         {
             return std::unexpected(EngineError::FileOpenFailure);
         }
         for (const std::string &term : lineTerms[index])
         {
-            if (!writeU32(termsOut, static_cast<std::uint32_t>(term.size())) ||
-                !writeRaw(termsOut, term.data(), term.size()))
+            if (!writeU32(state.termsOut, static_cast<std::uint32_t>(term.size())) ||
+                !writeRaw(state.termsOut, term.data(), term.size()))
             {
                 return std::unexpected(EngineError::FileOpenFailure);
             }
         }
         if (line.distinctId != NO_DISTINCT)
         {
-            ++uses[line.distinctId];
+            ++state.uses[line.distinctId];
         }
-        storedBytes += text.size();
-        ++lineCount;
+        state.storedBytes += text.size();
+        ++state.lineCount;
     }
     return {};
 }
@@ -434,25 +449,25 @@ std::expected<void, EngineError> CorpusWriter::addLines(std::span<const CorpusLi
     {
         return std::unexpected(EngineError::CorruptDatabase);
     }
-    auto lastSource = impl_->lastSource;
-    auto lastLine = impl_->lastLine;
-    bool hasLastLine = impl_->hasLastLine;
-    if (const auto valid =
-            validateAddLines(impl_->sources, impl_->uses, lines, lineTerms, lastSource, lastLine, hasLastLine);
-        !valid)
+    LastLineCursor cursor{
+        .lastSource = impl_->lastSource, .lastLine = impl_->lastLine, .hasLastLine = impl_->hasLastLine};
+    if (const auto valid = validateAddLines(impl_->sources, impl_->uses, lines, lineTerms, cursor); !valid)
     {
         return std::unexpected(valid.error());
     }
-    if (const auto spilled = spillAddLines(impl_->lines.output, impl_->terms.output, impl_->uses, impl_->storedBytes,
-                                           impl_->lineCount, lines, lineTerms);
-        !spilled)
+    SpillAddState spill{.linesOut = impl_->lines.output,
+                        .termsOut = impl_->terms.output,
+                        .uses = impl_->uses,
+                        .storedBytes = impl_->storedBytes,
+                        .lineCount = impl_->lineCount};
+    if (const auto spilled = spillAddLines(spill, lines, lineTerms); !spilled)
     {
         impl_->failed = true;
         return std::unexpected(spilled.error());
     }
-    impl_->lastSource = lastSource;
-    impl_->lastLine = lastLine;
-    impl_->hasLastLine = hasLastLine;
+    impl_->lastSource = cursor.lastSource;
+    impl_->lastLine = cursor.lastLine;
+    impl_->hasLastLine = cursor.hasLastLine;
     return {};
 }
 
@@ -506,41 +521,56 @@ static std::expected<std::vector<std::vector<std::string>>, EngineError> readSpi
     return lineTerms;
 }
 
-static CorpusOffsets corpusLayoutOffsets(std::span<const SourceInfo> sources, std::uint64_t lineCount,
-                                         std::uint64_t distinctCount, std::uint64_t textBytes,
-                                         std::uint64_t storedBytes, std::uint32_t dimensions, std::uint64_t policyBytes,
-                                         std::uint64_t lexicalBytes)
+struct CorpusLayoutSizes
+{
+    std::uint64_t lineCount = 0;
+    std::uint64_t distinctCount = 0;
+    std::uint64_t textBytes = 0;
+    std::uint64_t storedBytes = 0;
+    std::uint32_t dimensions = 0;
+    std::uint64_t policyBytes = 0;
+    std::uint64_t lexicalBytes = 0;
+};
+
+static CorpusOffsets corpusLayoutOffsets(std::span<const SourceInfo> sources, const CorpusLayoutSizes &sizes)
 {
     CorpusOffsets offsets;
-    offsets.sourceOffset = alignUp(HEADER_BYTES + policyBytes, 8);
+    offsets.sourceOffset = alignUp(HEADER_BYTES + sizes.policyBytes, 8);
     offsets.lineOffset = offsets.sourceOffset + (sources.size() * SOURCE_RECORD_BYTES);
     for (const SourceInfo &source : sources)
     {
         offsets.lineOffset += source.path.size() + source.jsonField.size();
     }
-    offsets.distinctOffset = offsets.lineOffset + (lineCount * LINE_RECORD_BYTES);
-    offsets.textOffset = offsets.distinctOffset + (distinctCount * TEXT_RECORD_BYTES);
-    offsets.storedOffset = offsets.textOffset + textBytes;
-    offsets.lexicalOffset = offsets.storedOffset + storedBytes;
-    offsets.lexicalBytes = lexicalBytes;
+    offsets.distinctOffset = offsets.lineOffset + (sizes.lineCount * LINE_RECORD_BYTES);
+    offsets.textOffset = offsets.distinctOffset + (sizes.distinctCount * TEXT_RECORD_BYTES);
+    offsets.storedOffset = offsets.textOffset + sizes.textBytes;
+    offsets.lexicalOffset = offsets.storedOffset + sizes.storedBytes;
+    offsets.lexicalBytes = sizes.lexicalBytes;
     offsets.matrixOffset = alignUp(offsets.lexicalOffset + offsets.lexicalBytes, 64);
-    offsets.matrixBytes = distinctCount * static_cast<std::uint64_t>(dimensions) * sizeof(float);
+    offsets.matrixBytes = sizes.distinctCount * static_cast<std::uint64_t>(sizes.dimensions) * sizeof(float);
     return offsets;
 }
 
-static bool writeCorpusHeader(std::ostream &output, std::string_view policy, std::uint32_t dimensions,
-                              std::uint64_t sourceCount, std::uint64_t lineCount, std::uint64_t distinctCount,
+struct CorpusHeaderCounts
+{
+    std::uint32_t dimensions = 0;
+    std::uint64_t sourceCount = 0;
+    std::uint64_t lineCount = 0;
+    std::uint64_t distinctCount = 0;
+};
+
+static bool writeCorpusHeader(std::ostream &output, std::string_view policy, const CorpusHeaderCounts &counts,
                               const CorpusOffsets &offsets)
 {
     return writeRaw(output, MAGIC.data(), MAGIC.size()) && writeU32(output, CORPUS_VERSION) &&
-           writeU32(output, static_cast<std::uint32_t>(policy.size())) && writeU32(output, dimensions) &&
-           writeU64(output, sourceCount) && writeU64(output, lineCount) && writeU64(output, offsets.sourceOffset) &&
-           writeU64(output, offsets.lineOffset) && writeU64(output, offsets.matrixOffset) &&
-           writeU64(output, distinctCount) && writeU64(output, offsets.distinctOffset) &&
-           writeU64(output, offsets.textOffset) && writeU64(output, offsets.storedOffset) &&
-           writeU64(output, offsets.lexicalOffset) && writeU64(output, offsets.lexicalBytes) &&
-           writeU64(output, HEADER_BYTES) && writeU64(output, 0) && writeU64(output, 0) &&
-           writeRaw(output, policy.data(), policy.size()) &&
+           writeU32(output, static_cast<std::uint32_t>(policy.size())) && writeU32(output, counts.dimensions) &&
+           writeU64(output, counts.sourceCount) && writeU64(output, counts.lineCount) &&
+           writeU64(output, offsets.sourceOffset) && writeU64(output, offsets.lineOffset) &&
+           writeU64(output, offsets.matrixOffset) && writeU64(output, counts.distinctCount) &&
+           writeU64(output, offsets.distinctOffset) && writeU64(output, offsets.textOffset) &&
+           writeU64(output, offsets.storedOffset) && writeU64(output, offsets.lexicalOffset) &&
+           writeU64(output, offsets.lexicalBytes) && writeU64(output, HEADER_BYTES) && writeU64(output, 0) &&
+           writeU64(output, 0) && writeRaw(output, policy.data(), policy.size()) &&
            writePadding(output, offsets.sourceOffset - HEADER_BYTES - policy.size());
 }
 
@@ -624,25 +654,85 @@ static bool writeCorpusDistinctTexts(std::istream &texts, std::istream &lines, s
     return atEnd(texts) && rewind(lines);
 }
 
-static bool writeCorpusStoredAndMatrix(std::istream &lines, std::istream &vectors, std::ostream &output,
-                                       std::span<const std::byte> lexical, std::uint64_t lineCount,
-                                       std::uint64_t storedCursor, std::uint64_t storedOffset,
-                                       std::uint64_t storedBytes, std::uint64_t lexicalOffset,
-                                       std::uint64_t lexicalBytes, std::uint64_t matrixOffset,
-                                       std::uint64_t matrixBytes)
+struct StoredMatrixWrite
+{
+    std::istream &lines;
+    std::istream &vectors;
+    std::ostream &output;
+    std::span<const std::byte> lexical;
+    std::uint64_t lineCount = 0;
+    std::uint64_t storedCursor = 0;
+    std::uint64_t storedBytes = 0;
+};
+
+static bool writeCorpusStoredAndMatrix(StoredMatrixWrite &write, const CorpusOffsets &offsets)
 {
     SpilledLine line;
-    for (std::uint64_t index = 0; index < lineCount; ++index)
+    for (std::uint64_t index = 0; index < write.lineCount; ++index)
     {
-        if (!readSpilledLine(lines, line) || !writeRaw(output, line.storedText.data(), line.storedText.size()))
+        if (!readSpilledLine(write.lines, line) ||
+            !writeRaw(write.output, line.storedText.data(), line.storedText.size()))
         {
             return false;
         }
     }
-    return atEnd(lines) && storedCursor == storedOffset + storedBytes &&
-           writeRaw(output, lexical.data(), lexical.size()) &&
-           writePadding(output, matrixOffset - (lexicalOffset + lexicalBytes)) &&
-           copyBytes(vectors, output, matrixBytes);
+    return atEnd(write.lines) && write.storedCursor == offsets.storedOffset + write.storedBytes &&
+           writeRaw(write.output, write.lexical.data(), write.lexical.size()) &&
+           writePadding(write.output, offsets.matrixOffset - (offsets.lexicalOffset + offsets.lexicalBytes)) &&
+           copyBytes(write.vectors, write.output, offsets.matrixBytes);
+}
+
+struct CorpusSectionsWrite
+{
+    std::istream &lines;
+    std::istream &texts;
+    std::istream &vectors;
+    std::ostream &output;
+    std::span<const SourceInfo> sources;
+    const CorpusPolicy &policy;
+    std::uint32_t dimensions = 0;
+    std::uint64_t lineCount = 0;
+    std::uint64_t distinctCount = 0;
+    std::uint64_t textBytes = 0;
+    std::uint64_t storedBytes = 0;
+    std::span<const std::byte> lexical;
+};
+
+static bool writeCorpusSections(CorpusSectionsWrite &write)
+{
+    const std::string policy = serializePolicy(write.policy);
+    const CorpusLayoutSizes sizes{.lineCount = write.lineCount,
+                                  .distinctCount = write.distinctCount,
+                                  .textBytes = write.textBytes,
+                                  .storedBytes = write.storedBytes,
+                                  .dimensions = write.dimensions,
+                                  .policyBytes = policy.size(),
+                                  .lexicalBytes = write.lexical.size()};
+    const CorpusOffsets offsets = corpusLayoutOffsets(write.sources, sizes);
+    const CorpusHeaderCounts counts{.dimensions = write.dimensions,
+                                    .sourceCount = write.sources.size(),
+                                    .lineCount = write.lineCount,
+                                    .distinctCount = write.distinctCount};
+    if (!writeCorpusHeader(write.output, policy, counts, offsets) ||
+        !writeCorpusSources(write.output, write.sources, offsets.sourceOffset))
+    {
+        return false;
+    }
+    std::uint64_t storedCursor = offsets.storedOffset;
+    if (!writeCorpusLineTable(write.lines, write.output, write.lineCount, storedCursor) ||
+        !writeCorpusDistinctTexts(write.texts, write.lines, write.output, write.distinctCount, offsets.textOffset,
+                                  offsets.storedOffset))
+    {
+        return false;
+    }
+    StoredMatrixWrite stored{.lines = write.lines,
+                             .vectors = write.vectors,
+                             .output = write.output,
+                             .lexical = write.lexical,
+                             .lineCount = write.lineCount,
+                             .storedCursor = storedCursor,
+                             .storedBytes = write.storedBytes};
+    return writeCorpusStoredAndMatrix(stored, offsets);
 }
 
 std::expected<void, EngineError> CorpusWriter::finish()
@@ -696,31 +786,19 @@ std::expected<void, EngineError> CorpusWriter::finish()
         return std::unexpected(EngineError::FileOpenFailure);
     };
 
-    const std::string policy = serializePolicy(impl_->policy);
-    const CorpusOffsets offsets =
-        corpusLayoutOffsets(impl_->sources, impl_->lineCount, impl_->uses.size(), impl_->textBytes, impl_->storedBytes,
-                            impl_->dimensions, policy.size(), lexical.size());
-    if (!writeCorpusHeader(output, policy, impl_->dimensions, impl_->sources.size(), impl_->lineCount,
-                           impl_->uses.size(), offsets))
-    {
-        return fail();
-    }
-    if (!writeCorpusSources(output, impl_->sources, offsets.sourceOffset))
-    {
-        return fail();
-    }
-    std::uint64_t storedCursor = offsets.storedOffset;
-    if (!writeCorpusLineTable(lines, output, impl_->lineCount, storedCursor))
-    {
-        return fail();
-    }
-    if (!writeCorpusDistinctTexts(texts, lines, output, impl_->uses.size(), offsets.textOffset, offsets.storedOffset))
-    {
-        return fail();
-    }
-    if (!writeCorpusStoredAndMatrix(lines, vectors, output, lexical, impl_->lineCount, storedCursor,
-                                    offsets.storedOffset, impl_->storedBytes, offsets.lexicalOffset,
-                                    offsets.lexicalBytes, offsets.matrixOffset, offsets.matrixBytes))
+    CorpusSectionsWrite sections{.lines = lines,
+                                 .texts = texts,
+                                 .vectors = vectors,
+                                 .output = output,
+                                 .sources = impl_->sources,
+                                 .policy = impl_->policy,
+                                 .dimensions = impl_->dimensions,
+                                 .lineCount = impl_->lineCount,
+                                 .distinctCount = impl_->uses.size(),
+                                 .textBytes = impl_->textBytes,
+                                 .storedBytes = impl_->storedBytes,
+                                 .lexical = lexical};
+    if (!writeCorpusSections(sections))
     {
         return fail();
     }
