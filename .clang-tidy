@@ -77,3 +77,9 @@ CheckOptions:
   cppcoreguidelines-pro-type-vararg.AllowVaArgs: false
   cppcoreguidelines-pro-bounds-array-to-pointer-decay.AllowPtrToArrayDecays: false
   readability-function-cognitive-complexity.Threshold: '25'
+  readability-function-size.LineThreshold: '100'
+  readability-function-size.StatementThreshold: '100'
+  readability-function-size.BranchThreshold: '20'
+  readability-function-size.ParameterThreshold: '6'
+  readability-function-size.NestingThreshold: '4'
+  readability-function-size.VariableThreshold: '30'

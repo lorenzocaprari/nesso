@@ -697,17 +697,25 @@ static TextMatch makeSearchMatch(const nesso::core::MappedCorpus &corpus, const 
     return match;
 }
 
+struct SearchMaterializeFlags
+{
+    bool multipleSources = false;
+    bool policyMismatch = false;
+    bool lexicalFallback = false;
+    bool group = false;
+};
+
 static TextResults materializeSearchMatches(const nesso::core::MappedCorpus &corpus,
                                             const std::vector<RankedLine> &ranked,
-                                            const std::vector<std::uint32_t> &occurrences, bool multipleSources,
-                                            bool policyMismatch, bool lexicalFallback, bool group,
-                                            std::string_view modeLabel, std::vector<StaleSource> sourceWarnings)
+                                            const std::vector<std::uint32_t> &occurrences,
+                                            const SearchMaterializeFlags &flags, std::string_view modeLabel,
+                                            std::vector<StaleSource> sourceWarnings)
 {
     TextResults results{};
-    results.grouped = group;
-    results.multipleSources = multipleSources;
-    results.policyMismatch = policyMismatch;
-    results.lexicalFallback = lexicalFallback;
+    results.grouped = flags.group;
+    results.multipleSources = flags.multipleSources;
+    results.policyMismatch = flags.policyMismatch;
+    results.lexicalFallback = flags.lexicalFallback;
     results.matches.reserve(ranked.size());
     for (const RankedLine &hit : ranked)
     {
@@ -751,21 +759,29 @@ static SearchDenseScores scoreSearchDense(const nesso::core::MappedCorpus &corpu
     return result;
 }
 
+struct SearchRankOptions
+{
+    EffectiveMode effective = EffectiveMode::Dense;
+    size_t topK = 0;
+    size_t threads = 0;
+    bool group = false;
+};
+
 static std::vector<RankedLine> selectSearchRanked(const nesso::core::MappedCorpus &corpus,
                                                   const std::vector<float> &scores,
                                                   const std::vector<double> &bm25Scores,
-                                                  const nesso::core::QueryTokens &queryTokens, EffectiveMode effective,
-                                                  size_t topK, size_t threads, bool group)
+                                                  const nesso::core::QueryTokens &queryTokens,
+                                                  const SearchRankOptions &options)
 {
-    if (effective == EffectiveMode::Dense)
+    if (options.effective == EffectiveMode::Dense)
     {
-        return rankDenseLines(corpus, scores, topK, threads, group);
+        return rankDenseLines(corpus, scores, options.topK, options.threads, options.group);
     }
-    if (effective == EffectiveMode::Lexical)
+    if (options.effective == EffectiveMode::Lexical)
     {
-        return rankLexicalLines(corpus, bm25Scores, queryTokens.stripped, topK, group);
+        return rankLexicalLines(corpus, bm25Scores, queryTokens.stripped, options.topK, options.group);
     }
-    return rankHybridLines(corpus, scores, bm25Scores, topK, threads, group);
+    return rankHybridLines(corpus, scores, bm25Scores, options.topK, options.threads, options.group);
 }
 
 static EffectiveMode maybeLexicalFallback(EffectiveMode effective, std::span<const double> bm25Scores,
@@ -864,16 +880,20 @@ std::expected<TextResults, Error> Nesso::search(const SearchRequest &request) co
     }
     effective = maybeLexicalFallback(effective, bm25Scores, lexicalFallback);
 
-    const std::vector<RankedLine> ranked = selectSearchRanked(*corpus, dense.scores, bm25Scores, queryTokens, effective,
-                                                              request.topK, threads, request.group);
+    const std::vector<RankedLine> ranked =
+        selectSearchRanked(*corpus, dense.scores, bm25Scores, queryTokens,
+                           {.effective = effective, .topK = request.topK, .threads = threads, .group = request.group});
     if (ranked.empty())
     {
         return fail(ErrorKind::NoMatches, ErrorCause::None);
     }
 
-    return materializeSearchMatches(*corpus, ranked, lineMeta.occurrences, lineMeta.multipleSources, policyMismatch,
-                                    lexicalFallback, request.group, effectiveModeName(effective),
-                                    std::move(sourceWarnings));
+    return materializeSearchMatches(*corpus, ranked, lineMeta.occurrences,
+                                    {.multipleSources = lineMeta.multipleSources,
+                                     .policyMismatch = policyMismatch,
+                                     .lexicalFallback = lexicalFallback,
+                                     .group = request.group},
+                                    effectiveModeName(effective), std::move(sourceWarnings));
 }
 
 } // namespace nesso
