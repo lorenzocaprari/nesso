@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794524265585,
+  "lastUpdate": 1794556070630,
   "repoUrl": "https://github.com/lorenzocaprari/nesso",
   "entries": {
     "nesso": [
@@ -5561,6 +5561,60 @@ window.BENCHMARK_DATA = {
           {
             "name": "grep-100000-rss",
             "value": 145428480,
+            "unit": "bytes"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "caprarilorenzo5@gmail.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "committer": {
+            "email": "85455384+lorenzocaprari@users.noreply.github.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "distinct": true,
+          "id": "3ff5ecd657098220f03982587eb0bfa059cd17ee",
+          "message": "refactor(cli): split nesso.cpp into per-command files\n\nMove error formatting, scanning, grep, index, and search into dedicated\ntranslation units behind a private nesso_detail.hpp. Bodies stay\nmove-only aside from detail linkage.",
+          "timestamp": "2026-11-13T08:43:21+01:00",
+          "tree_id": "b9ed1399040daa1b4d967cfc787610a0eca19072",
+          "url": "https://github.com/lorenzocaprari/nesso/commit/3ff5ecd657098220f03982587eb0bfa059cd17ee"
+        },
+        "date": 1794556070274,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "grep-1000-wall",
+            "value": 0.12,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-1000-rss",
+            "value": 117514240,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-10000-wall",
+            "value": 0.13,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-10000-rss",
+            "value": 119500800,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-100000-wall",
+            "value": 0.31,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-100000-rss",
+            "value": 144596992,
             "unit": "bytes"
           }
         ]
