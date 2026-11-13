@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794584990304,
+  "lastUpdate": 1794585796177,
   "repoUrl": "https://github.com/lorenzocaprari/nesso",
   "entries": {
     "nesso": [
@@ -6101,6 +6101,60 @@ window.BENCHMARK_DATA = {
           {
             "name": "grep-100000-rss",
             "value": 143409152,
+            "unit": "bytes"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "caprarilorenzo5@gmail.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "committer": {
+            "email": "85455384+lorenzocaprari@users.noreply.github.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "distinct": true,
+          "id": "38339f4c6bd2cd32393b77fcf62a8645089ecc76",
+          "message": "refactor(embed): lower function-size\n\nExtract wave-slot and wave-progress helpers so nesting stays under\nreadability-function-size NestingThreshold 4.",
+          "timestamp": "2026-11-13T16:58:44+01:00",
+          "tree_id": "b431a3f6ada60b9a7edb51e8c3b1435f27994a04",
+          "url": "https://github.com/lorenzocaprari/nesso/commit/38339f4c6bd2cd32393b77fcf62a8645089ecc76"
+        },
+        "date": 1794585795515,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "grep-1000-wall",
+            "value": 1.22,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-1000-rss",
+            "value": 118611968,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-10000-wall",
+            "value": 1.25,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-10000-rss",
+            "value": 116928512,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-100000-wall",
+            "value": 1.46,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-100000-rss",
+            "value": 144781312,
             "unit": "bytes"
           }
         ]
