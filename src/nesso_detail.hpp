@@ -113,9 +113,16 @@ expandRequestFiles(std::span<const std::filesystem::path> files);
 
 [[nodiscard]] size_t streamBatch();
 
+struct EmbedProgressSpan
+{
+    size_t linesBefore = 0;
+    size_t linesInFlush = 0;
+    size_t total = 0;
+};
+
 [[nodiscard]] std::expected<std::vector<std::vector<float>>, Error>
 embedDistinct(std::span<const std::string> texts, const nesso::embed::Embedder &embedder, ProgressReporter &progress,
-              size_t linesBefore, size_t linesInFlush, size_t total, const LineCounts &counts);
+              EmbedProgressSpan span, const LineCounts &counts);
 
 // NOLINTNEXTLINE(readability-identifier-naming)
 [[nodiscard]] std::expected<nesso::core::CorpusPolicy, Error> MakeCorpusPolicy(const nesso::embed::Embedder &embedder,

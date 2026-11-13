@@ -217,14 +217,15 @@ namespace detail
 
 size_t streamBatch() { return nesso::embed::BATCH_WINDOW; }
 
-std::expected<std::vector<std::vector<float>>, Error>
-embedDistinct(std::span<const std::string> texts, const nesso::embed::Embedder &embedder, ProgressReporter &progress,
-              size_t linesBefore, size_t linesInFlush, size_t total, const LineCounts &counts)
+std::expected<std::vector<std::vector<float>>, Error> embedDistinct(std::span<const std::string> texts,
+                                                                    const nesso::embed::Embedder &embedder,
+                                                                    ProgressReporter &progress, EmbedProgressSpan span,
+                                                                    const LineCounts &counts)
 {
     const size_t distinct = texts.size();
     auto embeddings = embedder.embedBatch(
-        texts, [&progress, linesBefore, linesInFlush, distinct, total](size_t batchCompleted, size_t)
-        { progress.update(linesBefore + (linesInFlush * batchCompleted / distinct), total); });
+        texts, [&progress, span, distinct](size_t batchCompleted, size_t)
+        { progress.update(span.linesBefore + (span.linesInFlush * batchCompleted / distinct), span.total); });
     if (!embeddings)
     {
         return std::unexpected(makeError(ErrorKind::Embed, causeOf(embeddings.error()), {}, counts));
@@ -233,7 +234,7 @@ embedDistinct(std::span<const std::string> texts, const nesso::embed::Embedder &
     {
         return textFailure(ErrorKind::Embed, nesso::core::EngineError::MismatchedDimensions, counts);
     }
-    progress.update(linesBefore + linesInFlush, total);
+    progress.update(span.linesBefore + span.linesInFlush, span.total);
     return std::move(*embeddings);
 }
 
