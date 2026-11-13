@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794559023362,
+  "lastUpdate": 1794562055210,
   "repoUrl": "https://github.com/lorenzocaprari/nesso",
   "entries": {
     "nesso": [
@@ -5669,6 +5669,60 @@ window.BENCHMARK_DATA = {
           {
             "name": "grep-100000-rss",
             "value": 146173952,
+            "unit": "bytes"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "caprarilorenzo5@gmail.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "committer": {
+            "email": "85455384+lorenzocaprari@users.noreply.github.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "distinct": true,
+          "id": "cb00d8c176ca43a1e75a1f5f393b76d7952a21da",
+          "message": "refactor(core): split corpus_index.cpp into writer, reader and codec files\n\nMove-only: private corpus_detail.hpp plus format, policy, lexical, writer,\nand reader TUs. Public API, on-disk format, and behaviour unchanged.",
+          "timestamp": "2026-11-13T10:23:16+01:00",
+          "tree_id": "6644e6681bd6411b218b281a4d0979c587b77b19",
+          "url": "https://github.com/lorenzocaprari/nesso/commit/cb00d8c176ca43a1e75a1f5f393b76d7952a21da"
+        },
+        "date": 1794562054601,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "grep-1000-wall",
+            "value": 0.13,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-1000-rss",
+            "value": 118759424,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-10000-wall",
+            "value": 0.15,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-10000-rss",
+            "value": 118812672,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-100000-wall",
+            "value": 0.31,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-100000-rss",
+            "value": 145256448,
             "unit": "bytes"
           }
         ]
