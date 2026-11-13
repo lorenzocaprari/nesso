@@ -238,22 +238,31 @@ static std::string_view stripSlash(std::string_view path)
     return path;
 }
 
-static std::optional<size_t> cgroupCpuLimit(const std::filesystem::path &procRoot,
-                                            const std::filesystem::path &cgroupRoot)
+static void minQuota(std::optional<size_t> &tightest, size_t parsed)
+{
+    tightest = tightest ? std::min(*tightest, parsed) : std::optional<size_t>{parsed};
+}
+
+struct CgroupCpuPaths
+{
+    std::optional<std::filesystem::path> v2Path;
+    std::optional<std::filesystem::path> v1Path;
+};
+
+static std::optional<CgroupCpuPaths> readCgroupCpuPaths(const std::filesystem::path &procRoot)
 {
     std::ifstream cgroup(procRoot / "self/cgroup");
     if (!cgroup)
     {
         return std::nullopt;
     }
-    std::optional<std::filesystem::path> v2Path;
-    std::optional<std::filesystem::path> v1Path;
+    CgroupCpuPaths paths;
     std::string line;
     while (std::getline(cgroup, line))
     {
         if (line.starts_with("0::"))
         {
-            v2Path = std::filesystem::path{std::string{stripSlash(line.substr(3))}};
+            paths.v2Path = std::filesystem::path{std::string{stripSlash(line.substr(3))}};
             continue;
         }
         const std::size_t first = line.find(':');
@@ -264,40 +273,60 @@ static std::optional<size_t> cgroupCpuLimit(const std::filesystem::path &procRoo
         }
         if (controllerIsCpu(line.substr(first + 1, second - first - 1)))
         {
-            v1Path = std::filesystem::path{std::string{stripSlash(line.substr(second + 1))}};
+            paths.v1Path = std::filesystem::path{std::string{stripSlash(line.substr(second + 1))}};
         }
     }
+    return paths;
+}
+
+static std::optional<size_t> tightestV1Quota(const std::filesystem::path &cgroupRoot, std::filesystem::path relative)
+{
+    // v1 stores the quota and the period in two files. Rejoin them into the cpu.max shape.
     std::optional<size_t> tightest;
-    if (v2Path)
+    const std::filesystem::path controller = cgroupRoot / "cpu";
+    while (true)
     {
-        tightest = tightestQuota(cgroupRoot, *v2Path, "cpu.max");
-    }
-    if (v1Path)
-    {
-        // v1 stores the quota and the period in two files. Rejoin them into the cpu.max shape.
-        std::filesystem::path relative = *v1Path;
-        const std::filesystem::path controller = cgroupRoot / "cpu";
-        while (true)
+        const std::filesystem::path directory = relative.empty() ? controller : controller / relative;
+        std::ifstream quotaFile(directory / "cpu.cfs_quota_us");
+        std::ifstream periodFile(directory / "cpu.cfs_period_us");
+        std::string quota;
+        std::string period;
+        if (quotaFile && periodFile && std::getline(quotaFile, quota) && std::getline(periodFile, period))
         {
-            const std::filesystem::path directory = relative.empty() ? controller : controller / relative;
-            std::ifstream quotaFile(directory / "cpu.cfs_quota_us");
-            std::ifstream periodFile(directory / "cpu.cfs_period_us");
-            std::string quota;
-            std::string period;
-            if (quotaFile && periodFile && std::getline(quotaFile, quota) && std::getline(periodFile, period))
+            const std::string quotaText = trim(quota) == "-1" ? std::string{"max"} : std::string{trim(quota)};
+            const std::string joined = quotaText + " " + std::string{trim(period)};
+            if (const std::optional<size_t> parsed = parseCpuMax(joined))
             {
-                const std::string quotaText = trim(quota) == "-1" ? std::string{"max"} : std::string{trim(quota)};
-                const std::string joined = quotaText + " " + std::string{trim(period)};
-                if (const std::optional<size_t> parsed = parseCpuMax(joined))
-                {
-                    tightest = tightest ? std::min(*tightest, *parsed) : parsed;
-                }
+                minQuota(tightest, *parsed);
             }
-            if (relative.empty())
-            {
-                break;
-            }
-            relative = relative.parent_path();
+        }
+        if (relative.empty())
+        {
+            break;
+        }
+        relative = relative.parent_path();
+    }
+    return tightest;
+}
+
+static std::optional<size_t> cgroupCpuLimit(const std::filesystem::path &procRoot,
+                                            const std::filesystem::path &cgroupRoot)
+{
+    const std::optional<CgroupCpuPaths> paths = readCgroupCpuPaths(procRoot);
+    if (!paths)
+    {
+        return std::nullopt;
+    }
+    std::optional<size_t> tightest;
+    if (paths->v2Path)
+    {
+        tightest = tightestQuota(cgroupRoot, *paths->v2Path, "cpu.max");
+    }
+    if (paths->v1Path)
+    {
+        if (const std::optional<size_t> v1 = tightestV1Quota(cgroupRoot, *paths->v1Path))
+        {
+            minQuota(tightest, *v1);
         }
     }
     return tightest;
