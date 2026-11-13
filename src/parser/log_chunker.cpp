@@ -571,6 +571,117 @@ std::expected<void, ParseError> Chunker::forEach(const std::filesystem::path &pa
         limits);
 }
 
+static void ingestArchiveMember(std::string_view name, std::string_view bytes, const std::filesystem::path &path,
+                                size_t maxLineLength, ParseStats *stats, std::string_view jsonField,
+                                const std::function<void(ParsedChunk)> &consume, std::optional<ParseError> &failed)
+{
+    if (failed)
+    {
+        return;
+    }
+    const std::size_t probe = std::min(bytes.size(), BINARY_PROBE_BYTES);
+    if (containsNul(bytes.substr(0, probe)))
+    {
+        if (stats != nullptr)
+        {
+            ++stats->binaryEntries;
+        }
+        return;
+    }
+    const std::string label = path.string() + ":" + std::string{name};
+    bool first = true;
+    std::istringstream input{std::string{bytes}};
+    const auto streamed =
+        dispatchStream(input, formatExtension(std::filesystem::path{std::string{name}}), maxLineLength, stats,
+                       jsonField,
+                       [&](ParsedChunk chunk)
+                       {
+                           chunk.source = label;
+                           chunk.entryStart = first;
+                           first = false;
+                           consume(std::move(chunk));
+                       });
+    if (!streamed)
+    {
+        failed = streamed.error();
+    }
+}
+
+static std::expected<void, ParseError> forEachArchivePath(const std::filesystem::path &path, size_t maxLineLength,
+                                                          ParseStats *stats, std::string_view jsonField,
+                                                          const std::function<void(ParsedChunk)> &consume,
+                                                          const ArchiveLimits &limits)
+{
+    std::optional<ParseError> failed;
+    ArchiveSkipStats skips{};
+    const auto read = readArchive(
+        path, limits,
+        [&](std::string_view name, std::string_view bytes)
+        { ingestArchiveMember(name, bytes, path, maxLineLength, stats, jsonField, consume, failed); }, &skips);
+    if (stats != nullptr)
+    {
+        stats->archiveDirectories += skips.directories;
+        stats->archiveSymlinks += skips.symlinks;
+        stats->archiveHardlinks += skips.hardlinks;
+        stats->archiveOtherSkipped += skips.other;
+    }
+    if (!read)
+    {
+        if (stats != nullptr && read.error().code == ArchiveError::Encrypted)
+        {
+            stats->encryptedEntry = read.error().entry;
+        }
+        return std::unexpected(archiveParseError(read.error()));
+    }
+    if (failed)
+    {
+        return std::unexpected(*failed);
+    }
+    return {};
+}
+
+static std::expected<void, ParseError> forEachStdinPath(size_t maxLineLength, ParseStats *stats,
+                                                        const std::function<void(ParsedChunk)> &consume)
+{
+    auto bytes = readStdinChecked();
+    if (!bytes)
+    {
+        return std::unexpected(bytes.error());
+    }
+    std::istringstream input{*bytes};
+    return readLogStream(input, maxLineLength, stats, consume);
+}
+
+static std::expected<void, ParseError> forEachGzipPath(const std::filesystem::path &path, size_t maxLineLength,
+                                                       ParseStats *stats, std::string_view jsonField,
+                                                       const std::function<void(ParsedChunk)> &consume)
+{
+    auto bytes = readGzip(path);
+    if (!bytes)
+    {
+        return std::unexpected(gzipParseError(bytes.error()));
+    }
+    const std::size_t probe = std::min(bytes->size(), BINARY_PROBE_BYTES);
+    if (containsNul(std::string_view(*bytes).substr(0, probe)))
+    {
+        return std::unexpected(ParseError::BinaryFile);
+    }
+    std::istringstream input{*bytes};
+    return dispatchStream(input, formatExtension(path), maxLineLength, stats, jsonField, consume);
+}
+
+static std::expected<void, ParseError> forEachPlainPath(const std::filesystem::path &path, size_t maxLineLength,
+                                                        ParseStats *stats, std::string_view jsonField,
+                                                        const std::function<void(ParsedChunk)> &consume)
+{
+    auto input = openChecked(path);
+    if (!input)
+    {
+        return std::unexpected(input.error());
+    }
+    return dispatchStream(*input, extensionLower(path), maxLineLength, stats, jsonField, consume);
+}
+
 std::expected<void, ParseError> Chunker::forEachRecord(const std::filesystem::path &path, size_t maxLineLength,
                                                        ParseStats *stats, std::string_view jsonField,
                                                        const std::function<void(ParsedChunk)> &consume,
@@ -578,95 +689,17 @@ std::expected<void, ParseError> Chunker::forEachRecord(const std::filesystem::pa
 {
     if (isArchivePath(path))
     {
-        std::optional<ParseError> failed;
-        ArchiveSkipStats skips{};
-        const auto read = readArchive(
-            path, limits,
-            [&](std::string_view name, std::string_view bytes)
-            {
-                if (failed)
-                {
-                    return;
-                }
-                const std::size_t probe = std::min(bytes.size(), BINARY_PROBE_BYTES);
-                if (containsNul(bytes.substr(0, probe)))
-                {
-                    if (stats != nullptr)
-                    {
-                        ++stats->binaryEntries;
-                    }
-                    return;
-                }
-                const std::string label = path.string() + ":" + std::string{name};
-                bool first = true;
-                std::istringstream input{std::string{bytes}};
-                const auto streamed = dispatchStream(input, formatExtension(std::filesystem::path{std::string{name}}),
-                                                     maxLineLength, stats, jsonField,
-                                                     [&](ParsedChunk chunk)
-                                                     {
-                                                         chunk.source = label;
-                                                         chunk.entryStart = first;
-                                                         first = false;
-                                                         consume(std::move(chunk));
-                                                     });
-                if (!streamed)
-                {
-                    failed = streamed.error();
-                }
-            },
-            &skips);
-        if (stats != nullptr)
-        {
-            stats->archiveDirectories += skips.directories;
-            stats->archiveSymlinks += skips.symlinks;
-            stats->archiveHardlinks += skips.hardlinks;
-            stats->archiveOtherSkipped += skips.other;
-        }
-        if (!read)
-        {
-            if (stats != nullptr && read.error().code == ArchiveError::Encrypted)
-            {
-                stats->encryptedEntry = read.error().entry;
-            }
-            return std::unexpected(archiveParseError(read.error()));
-        }
-        if (failed)
-        {
-            return std::unexpected(*failed);
-        }
-        return {};
+        return forEachArchivePath(path, maxLineLength, stats, jsonField, consume, limits);
     }
     if (path == "-")
     {
-        auto bytes = readStdinChecked();
-        if (!bytes)
-        {
-            return std::unexpected(bytes.error());
-        }
-        std::istringstream input{*bytes};
-        return readLogStream(input, maxLineLength, stats, consume);
+        return forEachStdinPath(maxLineLength, stats, consume);
     }
     if (isGzipPath(path))
     {
-        auto bytes = readGzip(path);
-        if (!bytes)
-        {
-            return std::unexpected(gzipParseError(bytes.error()));
-        }
-        const std::size_t probe = std::min(bytes->size(), BINARY_PROBE_BYTES);
-        if (containsNul(std::string_view(*bytes).substr(0, probe)))
-        {
-            return std::unexpected(ParseError::BinaryFile);
-        }
-        std::istringstream input{*bytes};
-        return dispatchStream(input, formatExtension(path), maxLineLength, stats, jsonField, consume);
+        return forEachGzipPath(path, maxLineLength, stats, jsonField, consume);
     }
-    auto input = openChecked(path);
-    if (!input)
-    {
-        return std::unexpected(input.error());
-    }
-    return dispatchStream(*input, extensionLower(path), maxLineLength, stats, jsonField, consume);
+    return forEachPlainPath(path, maxLineLength, stats, jsonField, consume);
 }
 
 std::expected<std::string, ParseError> Chunker::readRecord(const std::filesystem::path &path, uint64_t byteOffset,
