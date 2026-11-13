@@ -361,9 +361,9 @@ std::expected<ParsedCommand, int> parseCommandLine(int argc, char **argv)
     const CLI::Option *indexModelDir = nullptr;
     const CLI::Option *searchThreads = nullptr;
     const CLI::Option *searchModelDir = nullptr;
-    CLI::App *grepCmd = addGrepSubcommand(app, text, grepThreads, grepModelDir);
-    CLI::App *indexCmd = addIndexSubcommand(app, text, indexThreads, indexModelDir);
-    CLI::App *searchCmd = addSearchSubcommand(app, text, searchThreads, searchModelDir);
+    const CLI::App *grepCmd = addGrepSubcommand(app, text, grepThreads, grepModelDir);
+    const CLI::App *indexCmd = addIndexSubcommand(app, text, indexThreads, indexModelDir);
+    const CLI::App *searchCmd = addSearchSubcommand(app, text, searchThreads, searchModelDir);
 
     try
     {
