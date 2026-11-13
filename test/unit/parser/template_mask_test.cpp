@@ -89,9 +89,16 @@ TEST_CASE("ipv6 addresses and bracketed ports are masked", "[template_mask]")
     expectMasked("::ffff:192.0.2.1", "<*>");
     expectMasked("[2001:db8::1]:443", "<*>");
     expectMasked("[::1]", "<*>");
+    expectMasked("2001:db8::", "<*>");
+    expectMasked("::abcd", "<*>");
+    expectMasked("2001:db8::192.0.2.1", "<*>");
     CHECK(masked("std::vector") == "std::vector");
     CHECK(masked("foo::bar") == "foo::bar");
     CHECK(masked("::") == "::");
+    // Word lead-in rejects IPv6 at the digit; the trailing compressed form still matches.
+    CHECK(masked("x2001:db8::1") == "x2001:<*>");
+    // A five-digit hextet breaks the address; the leading decimal and trailing ::1 remain.
+    CHECK(masked("2001:db80a::1") == "<*>:db80a::<*>");
 }
 
 TEST_CASE("absolute paths that contain a digit are masked", "[template_mask]")
