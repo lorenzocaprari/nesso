@@ -641,22 +641,11 @@ static std::vector<std::byte> encodeLexicalSection(std::span<const std::vector<s
     return out;
 }
 
-static std::expected<void, EngineError> decodeLexicalSection(std::span<const std::byte> bytes, std::uint64_t lineCount,
-                                                             std::vector<std::string> &ownedTerms,
-                                                             std::vector<std::string_view> &dictionary,
-                                                             std::vector<LexicalLinePostings> &postings)
+static std::expected<void, EngineError> decodeLexicalDictionary(std::span<const std::byte> bytes, std::uint64_t &cursor,
+                                                                std::uint64_t termCount,
+                                                                std::vector<std::string> &ownedTerms,
+                                                                std::vector<std::string_view> &dictionary)
 {
-    std::uint64_t cursor = 0;
-    std::uint64_t termCount = 0;
-    std::uint64_t postingLines = 0;
-    if (!readU64At(bytes, cursor, termCount) || !readU64At(bytes, cursor, postingLines) ||
-        termCount > MAX_LEXICAL_TERMS || postingLines != lineCount)
-    {
-        return std::unexpected(EngineError::CorruptDatabase);
-    }
-    ownedTerms.clear();
-    dictionary.clear();
-    postings.clear();
     ownedTerms.reserve(static_cast<std::size_t>(termCount));
     dictionary.reserve(static_cast<std::size_t>(termCount));
     std::string previous;
@@ -682,7 +671,13 @@ static std::expected<void, EngineError> decodeLexicalSection(std::span<const std
         ownedTerms.push_back(std::move(term));
         dictionary.emplace_back(ownedTerms.back());
     }
-    postings.resize(static_cast<std::size_t>(postingLines));
+    return {};
+}
+
+static std::expected<void, EngineError> decodeLexicalPostings(std::span<const std::byte> bytes, std::uint64_t &cursor,
+                                                              std::uint64_t termCount, std::uint64_t postingLines,
+                                                              std::vector<LexicalLinePostings> &postings)
+{
     for (std::uint64_t line = 0; line < postingLines; ++line)
     {
         std::uint64_t unique = 0;
@@ -717,6 +712,34 @@ static std::expected<void, EngineError> decodeLexicalSection(std::span<const std
             return std::unexpected(EngineError::CorruptDatabase);
         }
         row.length = static_cast<std::uint32_t>(length);
+    }
+    return {};
+}
+
+static std::expected<void, EngineError> decodeLexicalSection(std::span<const std::byte> bytes, std::uint64_t lineCount,
+                                                             std::vector<std::string> &ownedTerms,
+                                                             std::vector<std::string_view> &dictionary,
+                                                             std::vector<LexicalLinePostings> &postings)
+{
+    std::uint64_t cursor = 0;
+    std::uint64_t termCount = 0;
+    std::uint64_t postingLines = 0;
+    if (!readU64At(bytes, cursor, termCount) || !readU64At(bytes, cursor, postingLines) ||
+        termCount > MAX_LEXICAL_TERMS || postingLines != lineCount)
+    {
+        return std::unexpected(EngineError::CorruptDatabase);
+    }
+    ownedTerms.clear();
+    dictionary.clear();
+    postings.clear();
+    if (const auto decoded = decodeLexicalDictionary(bytes, cursor, termCount, ownedTerms, dictionary); !decoded)
+    {
+        return std::unexpected(decoded.error());
+    }
+    postings.resize(static_cast<std::size_t>(postingLines));
+    if (const auto decoded = decodeLexicalPostings(bytes, cursor, termCount, postingLines, postings); !decoded)
+    {
+        return std::unexpected(decoded.error());
     }
     if (cursor != bytes.size())
     {
