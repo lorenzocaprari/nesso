@@ -920,6 +920,94 @@ std::expected<std::uint32_t, EngineError> CorpusWriter::addDistinct(std::string_
     return *id;
 }
 
+static bool addLineRejected(const CorpusLine &line, std::span<const SourceInfo> sources,
+                           std::span<const std::uint32_t> uses, std::span<const std::string> terms,
+                           std::uint32_t lastSource, std::uint64_t lastLine, bool hasLastLine)
+{
+    if (line.sourceIndex >= sources.size() || line.lineNumber == 0 ||
+        (line.distinctId != NO_DISTINCT && line.distinctId >= uses.size()) ||
+        (line.storedText && line.storedText->size() > MAX_TEXT_BYTES) ||
+        (line.distinctId == NO_DISTINCT && !terms.empty()) ||
+        (hasLastLine &&
+         (line.sourceIndex < lastSource || (line.sourceIndex == lastSource && line.lineNumber <= lastLine))))
+    {
+        return true;
+    }
+    for (const std::string &term : terms)
+    {
+        if (term.empty() || term.size() > MAX_TEXT_BYTES || term.find('\0') != std::string::npos)
+        {
+            return true;
+        }
+    }
+    const SourceInfo &source = sources[line.sourceIndex];
+    return (source.storedOnly && !line.storedText) ||
+           (source.tracked && !rangeInside(line.byteOffset, line.byteLength, source.size));
+}
+
+static std::expected<void, EngineError> validateAddLines(std::span<const SourceInfo> sources,
+                                                         std::span<const std::uint32_t> uses,
+                                                         std::span<const CorpusLine> lines,
+                                                         std::span<const std::vector<std::string>> lineTerms,
+                                                         std::uint32_t &lastSource, std::uint64_t &lastLine,
+                                                         bool &hasLastLine)
+{
+    for (std::size_t index = 0; index < lines.size(); ++index)
+    {
+        const CorpusLine &line = lines[index];
+        if (addLineRejected(line, sources, uses, lineTerms[index], lastSource, lastLine, hasLastLine))
+        {
+            return std::unexpected(EngineError::CorruptDatabase);
+        }
+        lastSource = line.sourceIndex;
+        lastLine = line.lineNumber;
+        hasLastLine = true;
+    }
+    return {};
+}
+
+static std::expected<void, EngineError> spillAddLines(std::ostream &linesOut, std::ostream &termsOut,
+                                                      std::span<std::uint32_t> uses, std::uint64_t &storedBytes,
+                                                      std::uint64_t &lineCount, std::span<const CorpusLine> lines,
+                                                      std::span<const std::vector<std::string>> lineTerms)
+{
+    for (std::size_t index = 0; index < lines.size(); ++index)
+    {
+        const CorpusLine &line = lines[index];
+        const std::uint32_t flags = (line.arrayElement ? LINE_ARRAY_ELEMENT : 0U) |
+                                    (line.storedText ? LINE_STORED_TEXT : 0U) |
+                                    (line.distinctId == NO_DISTINCT ? LINE_SKIPPED : 0U);
+        const std::string_view text = line.storedText.value_or(std::string_view{});
+        if (!writeU64(linesOut, line.lineNumber) || !writeU64(linesOut, line.byteOffset) ||
+            !writeU64(linesOut, line.byteLength) || !writeU32(linesOut, line.sourceIndex) ||
+            !writeU32(linesOut, line.distinctId) || !writeU32(linesOut, flags) ||
+            !writeU32(linesOut, static_cast<std::uint32_t>(text.size())) ||
+            !writeRaw(linesOut, text.data(), text.size()))
+        {
+            return std::unexpected(EngineError::FileOpenFailure);
+        }
+        if (!writeU32(termsOut, static_cast<std::uint32_t>(lineTerms[index].size())))
+        {
+            return std::unexpected(EngineError::FileOpenFailure);
+        }
+        for (const std::string &term : lineTerms[index])
+        {
+            if (!writeU32(termsOut, static_cast<std::uint32_t>(term.size())) ||
+                !writeRaw(termsOut, term.data(), term.size()))
+            {
+                return std::unexpected(EngineError::FileOpenFailure);
+            }
+        }
+        if (line.distinctId != NO_DISTINCT)
+        {
+            ++uses[line.distinctId];
+        }
+        storedBytes += text.size();
+        ++lineCount;
+    }
+    return {};
+}
+
 std::expected<void, EngineError> CorpusWriter::addLines(std::span<const CorpusLine> lines,
                                                         std::span<const std::vector<std::string>> lineTerms)
 {
@@ -931,71 +1019,18 @@ std::expected<void, EngineError> CorpusWriter::addLines(std::span<const CorpusLi
     auto lastSource = impl_->lastSource;
     auto lastLine = impl_->lastLine;
     bool hasLastLine = impl_->hasLastLine;
-    for (std::size_t index = 0; index < lines.size(); ++index)
+    if (const auto valid = validateAddLines(impl_->sources, impl_->uses, lines, lineTerms, lastSource, lastLine,
+                                            hasLastLine);
+        !valid)
     {
-        const CorpusLine &line = lines[index];
-        if (line.sourceIndex >= impl_->sources.size() || line.lineNumber == 0 ||
-            (line.distinctId != NO_DISTINCT && line.distinctId >= impl_->uses.size()) ||
-            (line.storedText && line.storedText->size() > MAX_TEXT_BYTES) ||
-            (line.distinctId == NO_DISTINCT && !lineTerms[index].empty()) ||
-            (hasLastLine &&
-             (line.sourceIndex < lastSource || (line.sourceIndex == lastSource && line.lineNumber <= lastLine))))
-        {
-            return std::unexpected(EngineError::CorruptDatabase);
-        }
-        for (const std::string &term : lineTerms[index])
-        {
-            if (term.empty() || term.size() > MAX_TEXT_BYTES || term.find('\0') != std::string::npos)
-            {
-                return std::unexpected(EngineError::CorruptDatabase);
-            }
-        }
-        const SourceInfo &source = impl_->sources[line.sourceIndex];
-        if ((source.storedOnly && !line.storedText) ||
-            (source.tracked && !rangeInside(line.byteOffset, line.byteLength, source.size)))
-        {
-            return std::unexpected(EngineError::CorruptDatabase);
-        }
-        lastSource = line.sourceIndex;
-        lastLine = line.lineNumber;
-        hasLastLine = true;
+        return std::unexpected(valid.error());
     }
-    for (std::size_t index = 0; index < lines.size(); ++index)
+    if (const auto spilled = spillAddLines(impl_->lines.output, impl_->terms.output, impl_->uses, impl_->storedBytes,
+                                           impl_->lineCount, lines, lineTerms);
+        !spilled)
     {
-        const CorpusLine &line = lines[index];
-        const std::uint32_t flags = (line.arrayElement ? LINE_ARRAY_ELEMENT : 0U) |
-                                    (line.storedText ? LINE_STORED_TEXT : 0U) |
-                                    (line.distinctId == NO_DISTINCT ? LINE_SKIPPED : 0U);
-        const std::string_view text = line.storedText.value_or(std::string_view{});
-        if (!writeU64(impl_->lines.output, line.lineNumber) || !writeU64(impl_->lines.output, line.byteOffset) ||
-            !writeU64(impl_->lines.output, line.byteLength) || !writeU32(impl_->lines.output, line.sourceIndex) ||
-            !writeU32(impl_->lines.output, line.distinctId) || !writeU32(impl_->lines.output, flags) ||
-            !writeU32(impl_->lines.output, static_cast<std::uint32_t>(text.size())) ||
-            !writeRaw(impl_->lines.output, text.data(), text.size()))
-        {
-            impl_->failed = true;
-            return std::unexpected(EngineError::FileOpenFailure);
-        }
-        if (!writeU32(impl_->terms.output, static_cast<std::uint32_t>(lineTerms[index].size())))
-        {
-            impl_->failed = true;
-            return std::unexpected(EngineError::FileOpenFailure);
-        }
-        for (const std::string &term : lineTerms[index])
-        {
-            if (!writeU32(impl_->terms.output, static_cast<std::uint32_t>(term.size())) ||
-                !writeRaw(impl_->terms.output, term.data(), term.size()))
-            {
-                impl_->failed = true;
-                return std::unexpected(EngineError::FileOpenFailure);
-            }
-        }
-        if (line.distinctId != NO_DISTINCT)
-        {
-            ++impl_->uses[line.distinctId];
-        }
-        impl_->storedBytes += text.size();
-        ++impl_->lineCount;
+        impl_->failed = true;
+        return std::unexpected(spilled.error());
     }
     impl_->lastSource = lastSource;
     impl_->lastLine = lastLine;
