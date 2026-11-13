@@ -59,7 +59,6 @@ Checks: >
   -modernize-use-trailing-return-type,
   -performance-unnecessary-value-param,
   -readability-convert-member-functions-to-static,
-  -readability-function-cognitive-complexity,
   -readability-identifier-length,
   -readability-magic-numbers,
   -clang-diagnostic-error
@@ -77,3 +76,4 @@ CheckOptions:
   modernize-use-concepts.AllowNullaryConcepts: true
   cppcoreguidelines-pro-type-vararg.AllowVaArgs: false
   cppcoreguidelines-pro-bounds-array-to-pointer-decay.AllowPtrToArrayDecays: false
+  readability-function-cognitive-complexity.Threshold: '25'
