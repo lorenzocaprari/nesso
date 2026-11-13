@@ -662,7 +662,7 @@ struct StoredMatrixCounts
 
 static bool writeCorpusStoredAndMatrix(std::istream &lines, std::istream &vectors, std::ostream &output,
                                        std::span<const std::byte> lexical, const CorpusOffsets &offsets,
-                                       StoredMatrixCounts counts)
+                                       const StoredMatrixCounts &counts)
 {
     SpilledLine line;
     for (std::uint64_t index = 0; index < counts.lineCount; ++index)
