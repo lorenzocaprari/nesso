@@ -152,113 +152,131 @@ static std::size_t matchIpv4At(std::string_view text, std::size_t begin, bool ch
     return cursor - begin;
 }
 
-static std::size_t matchIpv6(std::string_view text, std::size_t begin) noexcept
+enum class Ipv6Step : unsigned char
+{
+    Continue,
+    Break,
+    Fail
+};
+
+static bool ipv6ScanStart(std::string_view text, std::size_t begin, std::size_t &cursor, bool &bracket) noexcept
 {
     const std::size_t size = text.size();
-    std::size_t cursor = begin;
-    const bool bracket = cursor < size && text[cursor] == '[';
+    cursor = begin;
+    bracket = cursor < size && text[cursor] == '[';
     if (bracket)
     {
         ++cursor;
+        return true;
     }
-    else if (begin > 0 && isWord(text[begin - 1]))
+    if (begin > 0 && isWord(text[begin - 1]))
     {
-        return 0;
+        return false;
     }
+    return true;
+}
 
-    const std::size_t scanEnd = cursor + 64 < size ? cursor + 64 : size;
-    int groups = 0;
-    bool compressed = false;
-    bool sawHex = false;
-
-    while (cursor < scanEnd)
+static Ipv6Step ipv6TakeCompression(std::string_view text, std::size_t scanEnd, std::size_t &cursor,
+                                    bool &compressed) noexcept
+{
+    if (text[cursor] != ':')
     {
-        if (text[cursor] == ':')
-        {
-            if (compressed || cursor + 1 >= scanEnd || text[cursor + 1] != ':')
-            {
-                return 0;
-            }
-            compressed = true;
-            cursor += 2;
-            continue;
-        }
-
-        bool dotted = false;
-        if (isDigit(text[cursor]))
-        {
-            const std::size_t lookEnd = cursor + 16 < scanEnd ? cursor + 16 : scanEnd;
-            for (std::size_t look = cursor; look < lookEnd; ++look)
-            {
-                if (text[look] == '.')
-                {
-                    dotted = true;
-                    break;
-                }
-                if (!isDigit(text[look]))
-                {
-                    break;
-                }
-            }
-        }
-        if (dotted)
-        {
-            const std::size_t tail = matchIpv4At(text, cursor, false, false);
-            if (tail == 0 || groups > 6)
-            {
-                return 0;
-            }
-            groups += 2;
-            sawHex = true;
-            cursor += tail;
-            break;
-        }
-
-        if (!isHex(text[cursor]))
-        {
-            break;
-        }
-        std::size_t hexes = 0;
-        while (hexes < 4 && cursor < scanEnd && isHex(text[cursor]))
-        {
-            ++cursor;
-            ++hexes;
-        }
-        if (hexes == 0 || (cursor < scanEnd && isHex(text[cursor])))
-        {
-            return 0;
-        }
-        sawHex = true;
-        ++groups;
-        if (groups > 8)
-        {
-            return 0;
-        }
-        if (cursor < scanEnd && text[cursor] == ':')
-        {
-            if (cursor + 1 < scanEnd && text[cursor + 1] == ':')
-            {
-                continue;
-            }
-            if (groups == 8)
-            {
-                return 0;
-            }
-            ++cursor;
-            if (cursor >= scanEnd)
-            {
-                return 0;
-            }
-            continue;
-        }
-        break;
+        return Ipv6Step::Continue;
     }
-
-    if (!sawHex || (!compressed && groups != 8) || (compressed && groups >= 8))
+    if (compressed || cursor + 1 >= scanEnd || text[cursor + 1] != ':')
     {
-        return 0;
+        return Ipv6Step::Fail;
     }
+    compressed = true;
+    cursor += 2;
+    return Ipv6Step::Break;
+}
 
+static bool ipv6EmbeddedIpv4Ahead(std::string_view text, std::size_t cursor, std::size_t scanEnd) noexcept
+{
+    if (!isDigit(text[cursor]))
+    {
+        return false;
+    }
+    const std::size_t lookEnd = cursor + 16 < scanEnd ? cursor + 16 : scanEnd;
+    for (std::size_t look = cursor; look < lookEnd; ++look)
+    {
+        if (text[look] == '.')
+        {
+            return true;
+        }
+        if (!isDigit(text[look]))
+        {
+            return false;
+        }
+    }
+    return false;
+}
+
+static Ipv6Step ipv6TakeEmbeddedIpv4(std::string_view text, std::size_t &cursor, int &groups, bool &sawHex) noexcept
+{
+    const std::size_t tail = matchIpv4At(text, cursor, false, false);
+    if (tail == 0 || groups > 6)
+    {
+        return Ipv6Step::Fail;
+    }
+    groups += 2;
+    sawHex = true;
+    cursor += tail;
+    return Ipv6Step::Break;
+}
+
+static Ipv6Step ipv6TakeHextet(std::string_view text, std::size_t scanEnd, std::size_t &cursor, int &groups,
+                               bool &sawHex) noexcept
+{
+    if (!isHex(text[cursor]))
+    {
+        return Ipv6Step::Break;
+    }
+    std::size_t hexes = 0;
+    while (hexes < 4 && cursor < scanEnd && isHex(text[cursor]))
+    {
+        ++cursor;
+        ++hexes;
+    }
+    if (hexes == 0 || (cursor < scanEnd && isHex(text[cursor])))
+    {
+        return Ipv6Step::Fail;
+    }
+    sawHex = true;
+    ++groups;
+    if (groups > 8)
+    {
+        return Ipv6Step::Fail;
+    }
+    if (cursor < scanEnd && text[cursor] == ':')
+    {
+        if (cursor + 1 < scanEnd && text[cursor + 1] == ':')
+        {
+            return Ipv6Step::Continue;
+        }
+        if (groups == 8)
+        {
+            return Ipv6Step::Fail;
+        }
+        ++cursor;
+        if (cursor >= scanEnd)
+        {
+            return Ipv6Step::Fail;
+        }
+        return Ipv6Step::Continue;
+    }
+    return Ipv6Step::Break;
+}
+
+static bool ipv6BodyValid(bool sawHex, bool compressed, int groups) noexcept
+{
+    return sawHex && ((compressed && groups < 8) || (!compressed && groups == 8));
+}
+
+static std::size_t ipv6Finish(std::string_view text, std::size_t begin, std::size_t cursor, bool bracket) noexcept
+{
+    const std::size_t size = text.size();
     if (bracket)
     {
         if (cursor >= size || text[cursor] != ']')
@@ -285,6 +303,58 @@ static std::size_t matchIpv6(std::string_view text, std::size_t begin) noexcept
         }
     }
     return cursor > begin ? cursor - begin : 0;
+}
+
+static std::size_t matchIpv6(std::string_view text, std::size_t begin) noexcept
+{
+    std::size_t cursor = begin;
+    bool bracket = false;
+    if (!ipv6ScanStart(text, begin, cursor, bracket))
+    {
+        return 0;
+    }
+
+    const std::size_t size = text.size();
+    const std::size_t scanEnd = cursor + 64 < size ? cursor + 64 : size;
+    int groups = 0;
+    bool compressed = false;
+    bool sawHex = false;
+
+    while (cursor < scanEnd)
+    {
+        const Ipv6Step compression = ipv6TakeCompression(text, scanEnd, cursor, compressed);
+        if (compression == Ipv6Step::Fail)
+        {
+            return 0;
+        }
+        if (compression == Ipv6Step::Break)
+        {
+            continue;
+        }
+        if (ipv6EmbeddedIpv4Ahead(text, cursor, scanEnd))
+        {
+            if (ipv6TakeEmbeddedIpv4(text, cursor, groups, sawHex) == Ipv6Step::Fail)
+            {
+                return 0;
+            }
+            break;
+        }
+        const Ipv6Step hextet = ipv6TakeHextet(text, scanEnd, cursor, groups, sawHex);
+        if (hextet == Ipv6Step::Fail)
+        {
+            return 0;
+        }
+        if (hextet == Ipv6Step::Break)
+        {
+            break;
+        }
+    }
+
+    if (!ipv6BodyValid(sawHex, compressed, groups))
+    {
+        return 0;
+    }
+    return ipv6Finish(text, begin, cursor, bracket);
 }
 
 static std::size_t matchUuid(std::string_view text, std::size_t begin) noexcept
