@@ -217,10 +217,9 @@ namespace detail
 
 size_t streamBatch() { return nesso::embed::BATCH_WINDOW; }
 
-std::expected<std::vector<std::vector<float>>, Error> embedDistinct(std::span<const std::string> texts,
-                                                                    const nesso::embed::Embedder &embedder,
-                                                                    ProgressReporter &progress, EmbedProgressSpan span,
-                                                                    const LineCounts &counts)
+std::expected<std::vector<std::vector<float>>, Error>
+embedDistinct(std::span<const std::string> texts, const nesso::embed::Embedder &embedder, ProgressReporter &progress,
+              const EmbedProgressSpan &span, const LineCounts &counts)
 {
     const size_t distinct = texts.size();
     auto embeddings = embedder.embedBatch(
