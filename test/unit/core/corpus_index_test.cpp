@@ -147,6 +147,83 @@ void writeExample(const std::filesystem::path &corpus, const std::filesystem::pa
     REQUIRE(writer->finish());
 }
 
+bool readVarintAt(std::string_view bytes, std::size_t &cursor, std::uint64_t &value)
+{
+    value = 0;
+    for (unsigned shift = 0; shift < 64; shift += 7)
+    {
+        if (cursor >= bytes.size())
+        {
+            return false;
+        }
+        const auto piece = static_cast<unsigned char>(bytes[cursor]);
+        value |= static_cast<std::uint64_t>(piece & 0x7FU) << shift;
+        ++cursor;
+        if ((piece & 0x80U) == 0)
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
+struct LexicalSites
+{
+    std::size_t firstTermByte = 0;
+    std::size_t firstFrequency = 0;
+    std::size_t firstPostingLength = 0;
+    std::size_t firstDelta = 0;
+    std::uint64_t termCount = 0;
+};
+
+LexicalSites lexicalSites(std::string_view bytes)
+{
+    const auto origin = getU64(bytes, 88);
+    LexicalSites sites;
+    sites.termCount = getU64(bytes, origin);
+    const auto postingLines = getU64(bytes, origin + 8);
+    std::size_t cursor = origin + 16;
+    for (std::uint64_t term = 0; term < sites.termCount; ++term)
+    {
+        std::uint64_t length = 0;
+        REQUIRE(readVarintAt(bytes, cursor, length));
+        REQUIRE(length > 0);
+        REQUIRE(cursor + length <= bytes.size());
+        if (term == 0)
+        {
+            sites.firstTermByte = cursor;
+        }
+        cursor += static_cast<std::size_t>(length);
+    }
+    for (std::uint64_t line = 0; line < postingLines; ++line)
+    {
+        std::uint64_t unique = 0;
+        REQUIRE(readVarintAt(bytes, cursor, unique));
+        for (std::uint64_t index = 0; index < unique; ++index)
+        {
+            if (sites.firstDelta == 0)
+            {
+                sites.firstDelta = cursor;
+            }
+            std::uint64_t delta = 0;
+            REQUIRE(readVarintAt(bytes, cursor, delta));
+            if (sites.firstFrequency == 0)
+            {
+                sites.firstFrequency = cursor;
+            }
+            std::uint64_t frequency = 0;
+            REQUIRE(readVarintAt(bytes, cursor, frequency));
+        }
+        if (sites.firstPostingLength == 0 && unique > 0)
+        {
+            sites.firstPostingLength = cursor;
+        }
+        std::uint64_t length = 0;
+        REQUIRE(readVarintAt(bytes, cursor, length));
+    }
+    return sites;
+}
+
 bool hasSpill(const std::filesystem::path &directory)
 {
     for (const auto &entry : std::filesystem::directory_iterator(directory))
@@ -622,4 +699,159 @@ TEST_CASE("v3 corpus bytes match across repeated finishes", "[corpus][core]")
     }
     CHECK(corpora[0] == corpora[1]);
     CHECK(corpora[0] == corpora[2]);
+}
+
+TEST_CASE("v3 lexical payload errors stay corrupt", "[corpus][core]")
+{
+    const TempDir dir;
+    const auto path = dir.path() / "corpus.nesso";
+    writeExample(path, dir.path() / "app.log");
+    std::string bytes = readBytes(path);
+    const auto sites = lexicalSites(bytes);
+    REQUIRE(sites.termCount >= 2);
+    REQUIRE(sites.firstTermByte != 0);
+    REQUIRE(sites.firstFrequency != 0);
+    REQUIRE(sites.firstPostingLength != 0);
+    REQUIRE(sites.firstDelta != 0);
+    const auto lexicalOffset = getU64(bytes, 88);
+    const auto lexicalBytes = getU64(bytes, 96);
+    const auto matrixOffset = getU64(bytes, 48);
+
+    SECTION("posting line count") { putU64(bytes, lexicalOffset + 8, getU64(bytes, 24) + 1); }
+    SECTION("unsorted dictionary") { bytes[sites.firstTermByte] = static_cast<char>(0xFF); }
+    SECTION("zero frequency")
+    {
+        REQUIRE(static_cast<unsigned char>(bytes[sites.firstFrequency]) != 0);
+        REQUIRE((static_cast<unsigned char>(bytes[sites.firstFrequency]) & 0x80U) == 0);
+        bytes[sites.firstFrequency] = 0;
+    }
+    SECTION("posting length")
+    {
+        REQUIRE((static_cast<unsigned char>(bytes[sites.firstPostingLength]) & 0x80U) == 0);
+        REQUIRE(static_cast<unsigned char>(bytes[sites.firstPostingLength]) < 127);
+        ++bytes[sites.firstPostingLength];
+    }
+    SECTION("term id delta")
+    {
+        REQUIRE(sites.termCount < 0x7F);
+        REQUIRE((static_cast<unsigned char>(bytes[sites.firstDelta]) & 0x80U) == 0);
+        bytes[sites.firstDelta] = static_cast<char>(0x7F);
+    }
+    SECTION("trailing lexical byte")
+    {
+        REQUIRE(lexicalOffset + lexicalBytes < matrixOffset);
+        putU64(bytes, 96, lexicalBytes + 1);
+    }
+
+    reseal(bytes);
+    writeBytes(path, bytes);
+    const auto mapped = nesso::core::mapCorpusFile(path);
+    REQUIRE_FALSE(mapped);
+    CHECK(mapped.error() == EngineError::CorruptDatabase);
+}
+
+TEST_CASE("v3 addLines rejects term and order errors before writing", "[corpus][core]")
+{
+    const TempDir dir;
+    const auto path = dir.path() / "corpus.nesso";
+    writeBytes(path, "old corpus");
+    auto writer = CorpusWriter::create(path, policy());
+    REQUIRE(writer);
+    REQUIRE(writer->addSource({.path = "-", .storedOnly = true}) == 0);
+    REQUIRE(writer->addDistinct("alpha", std::array<float, 2>{1.F, 0.F}) == 0);
+    const CorpusLine line{.lineNumber = 2, .distinctId = 0, .storedText = "alpha"};
+    const std::vector<std::string> alpha = termsOf("alpha");
+
+    SECTION("term count mismatch")
+    {
+        const std::array<std::vector<std::string>, 2> terms{alpha, alpha};
+        const auto rejected = writer->addLines(std::span{&line, 1}, terms);
+        REQUIRE_FALSE(rejected);
+        CHECK(rejected.error() == EngineError::CorruptDatabase);
+    }
+    SECTION("empty term")
+    {
+        const std::vector<std::string> terms{""};
+        const auto rejected = writer->addLines(std::span{&line, 1}, std::span{&terms, 1});
+        REQUIRE_FALSE(rejected);
+        CHECK(rejected.error() == EngineError::CorruptDatabase);
+    }
+    SECTION("NUL term")
+    {
+        const std::vector<std::string> terms{std::string{"a\0b", 3}};
+        const auto rejected = writer->addLines(std::span{&line, 1}, std::span{&terms, 1});
+        REQUIRE_FALSE(rejected);
+        CHECK(rejected.error() == EngineError::CorruptDatabase);
+    }
+    SECTION("terms on a skipped line")
+    {
+        const CorpusLine skipped{.lineNumber = 2, .distinctId = NO_DISTINCT, .storedText = ""};
+        const auto rejected = writer->addLines(std::span{&skipped, 1}, std::span{&alpha, 1});
+        REQUIRE_FALSE(rejected);
+        CHECK(rejected.error() == EngineError::CorruptDatabase);
+    }
+    SECTION("line order")
+    {
+        const std::array<CorpusLine, 2> lines{
+            line, CorpusLine{.lineNumber = 1, .distinctId = 0, .storedText = "alpha"}};
+        const std::array<std::vector<std::string>, 2> terms{alpha, alpha};
+        const auto rejected = writer->addLines(lines, terms);
+        REQUIRE_FALSE(rejected);
+        CHECK(rejected.error() == EngineError::CorruptDatabase);
+    }
+    CHECK(readBytes(path) == "old corpus");
+}
+
+TEST_CASE("v3 file open failures stay distinct from corrupt corpora", "[corpus][core]")
+{
+    const TempDir dir;
+    SECTION("directory destination")
+    {
+        const auto rejected = CorpusWriter::create(dir.path(), policy());
+        REQUIRE_FALSE(rejected);
+        CHECK(rejected.error() == EngineError::FileOpenFailure);
+    }
+    SECTION("missing corpus")
+    {
+        const auto mapped = nesso::core::mapCorpusFile(dir.path() / "missing.nesso");
+        REQUIRE_FALSE(mapped);
+        CHECK(mapped.error() == EngineError::FileOpenFailure);
+    }
+    SECTION("finish cannot reopen a spill")
+    {
+        const auto path = dir.path() / "corpus.nesso";
+        auto writer = CorpusWriter::create(path, policy());
+        REQUIRE(writer);
+        REQUIRE(writer->addSource({.path = "-", .storedOnly = true}) == 0);
+        REQUIRE(writer->addDistinct("alpha", std::array<float, 2>{1.F, 0.F}) == 0);
+        const CorpusLine line{.lineNumber = 1, .distinctId = 0, .storedText = "alpha"};
+        const std::vector<std::string> terms = termsOf("alpha");
+        REQUIRE(writer->addLines(std::span{&line, 1}, std::span{&terms, 1}));
+        for (const auto &entry : std::filesystem::directory_iterator(dir.path()))
+        {
+            if (entry.path().filename().string().find(".lines.") != std::string::npos)
+            {
+                std::filesystem::remove(entry.path());
+            }
+        }
+        const auto rejected = writer->finish();
+        REQUIRE_FALSE(rejected);
+        CHECK(rejected.error() == EngineError::FileOpenFailure);
+    }
+}
+
+TEST_CASE("v3 map rejects a policy dimension that disagrees with the header", "[corpus][core]")
+{
+    const TempDir dir;
+    const auto path = dir.path() / "corpus.nesso";
+    writeExample(path, dir.path() / "app.log");
+    std::string bytes = readBytes(path);
+    const auto field = bytes.find("dimensions=2\n");
+    REQUIRE(field != std::string::npos);
+    bytes[field + std::string_view{"dimensions="}.size()] = '3';
+    reseal(bytes);
+    writeBytes(path, bytes);
+    const auto mapped = nesso::core::mapCorpusFile(path);
+    REQUIRE_FALSE(mapped);
+    CHECK(mapped.error() == EngineError::CorruptDatabase);
 }
