@@ -23,9 +23,11 @@ enum class HashError : std::uint8_t
     ReadFailure
 };
 
-[[nodiscard]] Sha256Digest sha256(std::span<const std::byte> bytes);
+// NOLINTNEXTLINE(readability-identifier-naming)
+[[nodiscard]] Sha256Digest ComputeSha256(std::span<const std::byte> bytes);
 /// Digest of `parts` hashed in order, as if they were one contiguous buffer.
-[[nodiscard]] Sha256Digest sha256(std::span<const std::span<const std::byte>> parts);
+// NOLINTNEXTLINE(readability-identifier-naming)
+[[nodiscard]] Sha256Digest ComputeSha256(std::span<const std::span<const std::byte>> parts);
 [[nodiscard]] std::expected<Sha256Digest, HashError> sha256File(const std::filesystem::path &path);
 [[nodiscard]] std::string hexSha256(const Sha256Digest &digest);
 

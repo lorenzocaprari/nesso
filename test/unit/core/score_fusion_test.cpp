@@ -12,7 +12,7 @@ TEST_CASE("zScoreStats edge cases", "[fusion][core]")
 {
     SECTION("empty span")
     {
-        const nesso::core::ZScoreStats stats = nesso::core::zScoreStats({});
+        const nesso::core::ZScoreStats stats = nesso::core::ComputeZScoreStats({});
         CHECK(stats.mean == 0.0);
         CHECK(stats.deviation == 0.0);
     }
@@ -20,7 +20,7 @@ TEST_CASE("zScoreStats edge cases", "[fusion][core]")
     SECTION("singleton")
     {
         const std::vector<double> values{42.0};
-        const nesso::core::ZScoreStats stats = nesso::core::zScoreStats(values);
+        const nesso::core::ZScoreStats stats = nesso::core::ComputeZScoreStats(values);
         CHECK(stats.mean == 42.0);
         CHECK(stats.deviation == 0.0);
         CHECK(nesso::core::zScore(42.0, stats) == 0.0);
@@ -29,7 +29,7 @@ TEST_CASE("zScoreStats edge cases", "[fusion][core]")
     SECTION("all equal values")
     {
         const std::vector<double> values{3.0, 3.0, 3.0, 3.0};
-        const nesso::core::ZScoreStats stats = nesso::core::zScoreStats(values);
+        const nesso::core::ZScoreStats stats = nesso::core::ComputeZScoreStats(values);
         CHECK(stats.mean == 3.0);
         CHECK(stats.deviation == 0.0);
         CHECK(nesso::core::zScore(3.0, stats) == 0.0);
@@ -39,7 +39,7 @@ TEST_CASE("zScoreStats edge cases", "[fusion][core]")
 TEST_CASE("zScoreStats uses population deviation over the full vector", "[fusion][core]")
 {
     const std::vector<double> values{1.0, 2.0, 3.0, 4.0, 5.0};
-    const nesso::core::ZScoreStats stats = nesso::core::zScoreStats(values);
+    const nesso::core::ZScoreStats stats = nesso::core::ComputeZScoreStats(values);
 
     CHECK(stats.mean == Catch::Approx(3.0));
     const double expectedDeviation = std::sqrt(2.0);
@@ -56,8 +56,8 @@ TEST_CASE("fuseHybridScore applies fixed weights and truncates to float", "[fusi
 
     const std::vector<double> dense{1.0, 5.0};
     const std::vector<double> bm25{0.0, 10.0};
-    const nesso::core::ZScoreStats denseStats = nesso::core::zScoreStats(dense);
-    const nesso::core::ZScoreStats bm25Stats = nesso::core::zScoreStats(bm25);
+    const nesso::core::ZScoreStats denseStats = nesso::core::ComputeZScoreStats(dense);
+    const nesso::core::ZScoreStats bm25Stats = nesso::core::ComputeZScoreStats(bm25);
 
     const float lowPair = nesso::core::fuseHybridScore(dense[0], bm25[0], denseStats, bm25Stats);
     const float highPair = nesso::core::fuseHybridScore(dense[1], bm25[1], denseStats, bm25Stats);

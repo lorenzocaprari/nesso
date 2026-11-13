@@ -178,12 +178,13 @@ namespace nesso::core
 
 static_assert(std::endian::native == std::endian::little);
 
-CorpusChecksum corpusChecksum(std::span<const std::byte> file)
+// NOLINTNEXTLINE(readability-identifier-naming)
+CorpusChecksum ComputeCorpusChecksum(std::span<const std::byte> file)
 {
     constexpr std::array<std::byte, CORPUS_CHECKSUM_BYTES> zeros{};
     const std::array<std::span<const std::byte>, 3> parts{file.first(CORPUS_CHECKSUM_OFFSET), zeros,
                                                           file.subspan(CORPUS_CHECKSUM_OFFSET + CORPUS_CHECKSUM_BYTES)};
-    const Sha256Digest digest = sha256(parts);
+    const Sha256Digest digest = ComputeSha256(parts);
     CorpusChecksum checksum{};
     std::ranges::transform(std::span{digest}.first(CORPUS_CHECKSUM_BYTES), checksum.begin(),
                            [](std::uint8_t value) { return std::byte{value}; });

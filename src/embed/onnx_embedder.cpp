@@ -202,7 +202,7 @@ class OnnxEmbedder::SessionImpl
 };
 
 OnnxEmbedder::SessionImpl::SessionImpl(const std::filesystem::path &modelPath, size_t requestedThreads)
-    : SessionImpl(modelPath, sessionPolicy(modelIsQuantized(modelPath), requestedThreads, readMachine()))
+    : SessionImpl(modelPath, MakeSessionPolicy(modelIsQuantized(modelPath), requestedThreads, readMachine()))
 {
 }
 
@@ -390,7 +390,8 @@ OnnxEmbedder::SessionImpl::inferAll(std::span<const TokenizedInput> encoded,
 }
 
 OnnxEmbedder::OnnxEmbedder(WordPieceTokenizer tokenizer, const std::filesystem::path &modelPath, size_t threads)
-    : OnnxEmbedder(std::move(tokenizer), modelPath, sessionPolicy(modelIsQuantized(modelPath), threads, readMachine()))
+    : OnnxEmbedder(std::move(tokenizer), modelPath,
+                   MakeSessionPolicy(modelIsQuantized(modelPath), threads, readMachine()))
 {
 }
 

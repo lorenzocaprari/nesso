@@ -130,7 +130,8 @@ class Pool
 
     std::mutex &mutex() { return mutex_; }
 
-    Job &job(size_t index) { return *jobs_[index]; }
+    // NOLINTNEXTLINE(readability-identifier-naming)
+    Job &GetJob(size_t index) { return *jobs_[index]; }
 
     bool ensure(size_t background)
     {
@@ -308,7 +309,7 @@ class WaitGuard
     {
         for (size_t index = 0; index < background_; ++index)
         {
-            team_->job(index).wait();
+            team_->GetJob(index).wait();
         }
     }
 
@@ -319,7 +320,8 @@ class WaitGuard
 
 } // namespace
 
-static Pool &pool()
+// NOLINTNEXTLINE(readability-identifier-naming)
+static Pool &GetPool()
 {
     static Pool instance;
     return instance;
@@ -367,7 +369,7 @@ void parallelRows(size_t threads, size_t rows, void (*fn)(void *context, size_t 
         return;
     }
 
-    Pool &team = pool();
+    Pool &team = GetPool();
     const std::scoped_lock poolLock(team.mutex());
     if (!team.ensure(width - 1))
     {
@@ -380,7 +382,7 @@ void parallelRows(size_t threads, size_t rows, void (*fn)(void *context, size_t 
 
     for (size_t index = 1; index < width; ++index)
     {
-        team.job(index - 1).publish(fn, context, ranges[index].begin, ranges[index].end);
+        team.GetJob(index - 1).publish(fn, context, ranges[index].begin, ranges[index].end);
     }
     fn(context, ranges[0].begin, ranges[0].end);
 }

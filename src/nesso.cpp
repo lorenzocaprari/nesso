@@ -66,7 +66,8 @@ struct FileStamp
     friend bool operator==(const FileStamp &, const FileStamp &) = default;
 };
 
-static std::optional<FileStamp> fileStamp(const std::filesystem::path &path)
+// NOLINTNEXTLINE(readability-identifier-naming)
+static std::optional<FileStamp> ReadFileStamp(const std::filesystem::path &path)
 {
     struct stat status{};
     if (::stat(path.c_str(), &status) != 0)
@@ -108,14 +109,15 @@ class OnnxBoundEmbedder final : public nesso::embed::Embedder
         {
             return *identity_;
         }
-        if (!modelStamp_ || !vocabStamp_ || fileStamp(modelPath_) != modelStamp_ ||
-            fileStamp(vocabPath_) != vocabStamp_)
+        if (!modelStamp_ || !vocabStamp_ || ReadFileStamp(modelPath_) != modelStamp_ ||
+            ReadFileStamp(vocabPath_) != vocabStamp_)
         {
             return std::unexpected(nesso::embed::EmbedError::ModelLoadFailure);
         }
         const auto modelHash = nesso::core::sha256File(modelPath_);
         const auto vocabHash = nesso::core::sha256File(vocabPath_);
-        if (!modelHash || !vocabHash || fileStamp(modelPath_) != modelStamp_ || fileStamp(vocabPath_) != vocabStamp_)
+        if (!modelHash || !vocabHash || ReadFileStamp(modelPath_) != modelStamp_ ||
+            ReadFileStamp(vocabPath_) != vocabStamp_)
         {
             return std::unexpected(nesso::embed::EmbedError::ModelLoadFailure);
         }
@@ -179,8 +181,8 @@ std::expected<const nesso::embed::Embedder *, Error> Nesso::embedder() const
             tried = modelDirCandidates();
             modelDir = resolveDefaultModelDir();
         }
-        auto modelStamp = fileStamp(modelDir / "model.onnx");
-        auto vocabStamp = fileStamp(modelDir / "vocab.txt");
+        auto modelStamp = ReadFileStamp(modelDir / "model.onnx");
+        auto vocabStamp = ReadFileStamp(modelDir / "vocab.txt");
         auto created = nesso::embed::OnnxEmbedder::create(modelDir, config_.threads);
         if (!created)
         {
@@ -200,7 +202,7 @@ std::expected<const nesso::embed::Embedder *, Error> Nesso::embedder() const
         {
             std::println(stderr, "{}", warning);
         }
-        if (fileStamp(modelDir / "model.onnx") != modelStamp || fileStamp(modelDir / "vocab.txt") != vocabStamp)
+        if (ReadFileStamp(modelDir / "model.onnx") != modelStamp || ReadFileStamp(modelDir / "vocab.txt") != vocabStamp)
         {
             modelStamp.reset();
             vocabStamp.reset();
@@ -235,8 +237,9 @@ embedDistinct(std::span<const std::string> texts, const nesso::embed::Embedder &
     return std::move(*embeddings);
 }
 
-std::expected<nesso::core::CorpusPolicy, Error> corpusPolicy(const nesso::embed::Embedder &embedder,
-                                                             const LineCounts &counts)
+// NOLINTNEXTLINE(readability-identifier-naming)
+std::expected<nesso::core::CorpusPolicy, Error> MakeCorpusPolicy(const nesso::embed::Embedder &embedder,
+                                                                 const LineCounts &counts)
 {
     const auto identity = embedder.identity();
     if (!identity)

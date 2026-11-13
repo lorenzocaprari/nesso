@@ -110,7 +110,7 @@ void putU64(std::string &bytes, std::size_t offset, std::uint64_t value)
 void reseal(std::string &bytes)
 {
     REQUIRE(bytes.size() >= nesso::core::CORPUS_CHECKSUM_OFFSET + nesso::core::CORPUS_CHECKSUM_BYTES);
-    const auto checksum = nesso::core::corpusChecksum(std::as_bytes(std::span{bytes}));
+    const auto checksum = nesso::core::ComputeCorpusChecksum(std::as_bytes(std::span{bytes}));
     std::memcpy(bytes.data() + nesso::core::CORPUS_CHECKSUM_OFFSET, checksum.data(), checksum.size());
 }
 
@@ -176,7 +176,7 @@ struct LexicalSites
     std::uint64_t termCount = 0;
 };
 
-LexicalSites lexicalSites(std::string_view bytes)
+LexicalSites ParseLexicalSites(std::string_view bytes)
 {
     const auto origin = getU64(bytes, 88);
     LexicalSites sites;
@@ -707,7 +707,7 @@ TEST_CASE("v3 lexical payload errors stay corrupt", "[corpus][core]")
     const auto path = dir.path() / "corpus.nesso";
     writeExample(path, dir.path() / "app.log");
     std::string bytes = readBytes(path);
-    const auto sites = lexicalSites(bytes);
+    const auto sites = ParseLexicalSites(bytes);
     REQUIRE(sites.termCount >= 2);
     REQUIRE(sites.firstTermByte != 0);
     REQUIRE(sites.firstFrequency != 0);

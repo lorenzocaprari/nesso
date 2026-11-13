@@ -111,7 +111,8 @@ class MappedCorpus
     /// One posting list per corpus line, including skipped lines.
     [[nodiscard]] std::span<const LexicalLinePostings> lexicalPostings() const noexcept;
     /// Soft lexical gate for non-dense modes. Dense search ignores this.
-    [[nodiscard]] LexicalStatus lexicalStatus() const noexcept;
+    // NOLINTNEXTLINE(readability-identifier-naming)
+    [[nodiscard]] LexicalStatus GetLexicalStatus() const noexcept;
     /// Corpus `lexical.terms` policy value when present; empty when absent.
     [[nodiscard]] std::string_view corpusLexicalTermsVersion() const noexcept;
 
@@ -162,7 +163,8 @@ class CorpusWriter
 /// Expands distinct vectors for callers that need owned per-line chunks.
 /// First 16 bytes of the SHA-256 of a whole corpus file, with the checksum field itself read as zeros.
 /// `file` must be at least one header long.
-[[nodiscard]] CorpusChecksum corpusChecksum(std::span<const std::byte> file);
+// NOLINTNEXTLINE(readability-identifier-naming)
+[[nodiscard]] CorpusChecksum ComputeCorpusChecksum(std::span<const std::byte> file);
 
 [[nodiscard]] std::expected<std::vector<CorpusChunk>, EngineError> readCorpusFile(const std::filesystem::path &path);
 

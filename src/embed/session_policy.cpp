@@ -394,7 +394,8 @@ MachineResources readMachine(const std::filesystem::path &procRoot, const std::f
     return machine;
 }
 
-SessionPolicy sessionPolicy(bool quantized, size_t requestedThreads, const MachineResources &machine)
+// NOLINTNEXTLINE(readability-identifier-naming)
+SessionPolicy MakeSessionPolicy(bool quantized, size_t requestedThreads, const MachineResources &machine)
 {
     const size_t logical = atLeastOne(machine.logicalThreads);
     if (!quantized)
@@ -451,8 +452,8 @@ SessionPolicy sessionPolicy(bool quantized, size_t requestedThreads, const Machi
 
 std::string sessionPolicyText(size_t requestedThreads, const MachineResources &machine)
 {
-    const SessionPolicy quantized = sessionPolicy(true, requestedThreads, machine);
-    const SessionPolicy floating = sessionPolicy(false, requestedThreads, machine);
+    const SessionPolicy quantized = MakeSessionPolicy(true, requestedThreads, machine);
+    const SessionPolicy floating = MakeSessionPolicy(false, requestedThreads, machine);
     const char *sessionWord = quantized.sessions == 1 ? "session" : "sessions";
     const char *threadWord = quantized.intraOpThreads == 1 ? "thread" : "threads";
     std::string text = quantized.intraOpThreads == 1

@@ -114,7 +114,8 @@ static void renderPolicyWarning(bool mismatch)
     }
 }
 
-static LineReport lineReport(const TextResults &results)
+// NOLINTNEXTLINE(readability-identifier-naming)
+static LineReport MakeLineReport(const TextResults &results)
 {
     return {.emptyLines = results.emptyLines,
             .malformedLines = results.malformedLines,
@@ -124,7 +125,8 @@ static LineReport lineReport(const TextResults &results)
             .bundleSkips = results.bundleSkips};
 }
 
-static LineReport lineReport(const IndexSummary &summary)
+// NOLINTNEXTLINE(readability-identifier-naming)
+static LineReport MakeLineReport(const IndexSummary &summary)
 {
     return {.emptyLines = summary.emptyLines,
             .malformedLines = summary.malformedLines,
@@ -134,7 +136,8 @@ static LineReport lineReport(const IndexSummary &summary)
             .bundleSkips = summary.bundleSkips};
 }
 
-static LineReport lineReport(const Error &error)
+// NOLINTNEXTLINE(readability-identifier-naming)
+static LineReport MakeLineReport(const Error &error)
 {
     return {.emptyLines = error.emptyLines,
             .malformedLines = error.malformedLines,
@@ -190,7 +193,7 @@ static int renderJson(const TextResults &results)
 
 static int render(const TextResults &results, bool json)
 {
-    renderLineCounts(lineReport(results));
+    renderLineCounts(MakeLineReport(results));
     renderPolicyWarning(results.policyMismatch);
     renderStaleSources(results.staleSources);
     if (results.lexicalFallback)
@@ -223,7 +226,7 @@ static int render(const TextResults &results, bool json)
 
 static int render(const IndexSummary &summary, const IndexRequest &request)
 {
-    renderLineCounts(lineReport(summary));
+    renderLineCounts(MakeLineReport(summary));
     std::println(std::cerr, "Indexed {} chunks into '{}'.", summary.chunks, request.output.string());
     return 0;
 }
@@ -235,7 +238,7 @@ static int renderError(const Error &error, int status)
     {
         std::println(std::cerr, "{}", text);
     }
-    renderLineCounts(lineReport(error));
+    renderLineCounts(MakeLineReport(error));
     renderPolicyWarning(error.policyMismatch);
     renderStaleSources(error.staleSources);
     return status;

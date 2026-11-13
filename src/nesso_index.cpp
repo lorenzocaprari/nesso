@@ -26,10 +26,10 @@
 namespace nesso
 {
 
-using detail::corpusPolicy;
 using detail::embedDistinct;
 using detail::expandRequestFiles;
 using detail::LineCounts;
+using detail::MakeCorpusPolicy;
 using detail::makeError;
 using detail::MAX_LINE_LENGTH;
 using detail::noKeptLines;
@@ -288,7 +288,7 @@ std::expected<IndexSummary, Error> Nesso::index(const IndexRequest &input) const
         return std::unexpected(scanned.error());
     }
 
-    auto policy = corpusPolicy(**model, scanned->counts);
+    auto policy = MakeCorpusPolicy(**model, scanned->counts);
     if (!policy)
     {
         return std::unexpected(policy.error());

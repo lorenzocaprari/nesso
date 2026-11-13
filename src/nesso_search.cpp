@@ -39,9 +39,9 @@ namespace nesso
 {
 
 using detail::betterHit;
-using detail::corpusPolicy;
 using detail::EffectiveMode;
 using detail::effectiveModeName;
+using detail::MakeCorpusPolicy;
 using detail::makeError;
 using detail::MAX_LINE_LENGTH;
 using detail::queryTermViews;
@@ -693,7 +693,7 @@ std::expected<TextResults, Error> Nesso::search(const SearchRequest &request) co
     {
         return std::unexpected(model.error());
     }
-    const auto current = corpusPolicy(**model, {});
+    const auto current = MakeCorpusPolicy(**model, {});
     if (!current)
     {
         return std::unexpected(current.error());
@@ -716,7 +716,7 @@ std::expected<TextResults, Error> Nesso::search(const SearchRequest &request) co
     };
 
     if (const auto lexicalReady =
-            requireLexicalReady(corpus->lexicalStatus(), corpus->corpusLexicalTermsVersion(), request.mode);
+            requireLexicalReady(corpus->GetLexicalStatus(), corpus->corpusLexicalTermsVersion(), request.mode);
         !lexicalReady)
     {
         Error error = lexicalReady.error();

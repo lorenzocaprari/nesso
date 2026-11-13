@@ -16,7 +16,7 @@ namespace
 
 std::string digest(std::string_view text)
 {
-    return nesso::core::hexSha256(nesso::core::sha256(std::as_bytes(std::span{text})));
+    return nesso::core::hexSha256(nesso::core::ComputeSha256(std::as_bytes(std::span{text})));
 }
 
 } // namespace
