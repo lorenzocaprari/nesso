@@ -422,59 +422,83 @@ static std::expected<void, ParseError> dispatchStream(std::istream &input, const
     return readLogStream(input, maxLineLength, stats, consume);
 }
 
-static std::expected<std::string, ParseError> readOpenedRecord(std::istream &input, const std::string &extension,
-                                                               uint64_t byteOffset, uint64_t byteLength,
-                                                               uint64_t lineNumber, bool arrayElement,
-                                                               std::string_view jsonField, size_t maxLineLength)
+static std::expected<const nlohmann::json *, ParseError>
+selectJsonRecordEntry(const nlohmann::json &document, uint64_t lineNumber, bool arrayElement)
 {
-    if (!input || byteOffset > static_cast<uint64_t>(std::numeric_limits<std::streamoff>::max()))
+    if (arrayElement)
     {
-        return std::unexpected(ParseError::FileOpenFailure);
-    }
-    if (arrayElement && extension != ".json")
-    {
-        return std::unexpected(ParseError::UnsupportedFormat);
-    }
-    if (extension == ".json")
-    {
-        if (byteOffset != 0 || byteLength != 0)
+        if (!document.is_array() || lineNumber == 0 || lineNumber > document.size())
         {
             return std::unexpected(ParseError::UnsupportedFormat);
         }
-        try
-        {
-            const auto document = nlohmann::json::parse(input);
-            const nlohmann::json *entry = &document;
-            if (arrayElement)
-            {
-                if (!document.is_array() || lineNumber == 0 || lineNumber > document.size())
-                {
-                    return std::unexpected(ParseError::UnsupportedFormat);
-                }
-                entry = &document.at(lineNumber - 1);
-            }
-            else if (document.is_array() || lineNumber != 1)
-            {
-                return std::unexpected(ParseError::UnsupportedFormat);
-            }
-            const std::string field{jsonField};
-            if (!entry->contains(field) || !entry->at(field).is_string())
-            {
-                return std::unexpected(ParseError::UnsupportedFormat);
-            }
-            std::string text = entry->at(field).get<std::string>();
-            limitValue(text, maxLineLength, nullptr);
-            return text;
-        }
-        catch (const std::ios_base::failure &)
-        {
-            return std::unexpected(ParseError::FileOpenFailure);
-        }
-        catch (const nlohmann::json::exception &)
-        {
-            return std::unexpected(input.bad() ? ParseError::FileOpenFailure : ParseError::UnsupportedFormat);
-        }
+        return &document.at(lineNumber - 1);
     }
+    if (document.is_array() || lineNumber != 1)
+    {
+        return std::unexpected(ParseError::UnsupportedFormat);
+    }
+    return &document;
+}
+
+static std::expected<std::string, ParseError> readOpenedJsonRecord(std::istream &input, uint64_t byteOffset,
+                                                                   uint64_t byteLength, uint64_t lineNumber,
+                                                                   bool arrayElement, std::string_view jsonField,
+                                                                   size_t maxLineLength)
+{
+    if (byteOffset != 0 || byteLength != 0)
+    {
+        return std::unexpected(ParseError::UnsupportedFormat);
+    }
+    try
+    {
+        const auto document = nlohmann::json::parse(input);
+        const auto entry = selectJsonRecordEntry(document, lineNumber, arrayElement);
+        if (!entry)
+        {
+            return std::unexpected(entry.error());
+        }
+        const std::string field{jsonField};
+        if (!(*entry)->contains(field) || !(*entry)->at(field).is_string())
+        {
+            return std::unexpected(ParseError::UnsupportedFormat);
+        }
+        std::string text = (*entry)->at(field).get<std::string>();
+        limitValue(text, maxLineLength, nullptr);
+        return text;
+    }
+    catch (const std::ios_base::failure &)
+    {
+        return std::unexpected(ParseError::FileOpenFailure);
+    }
+    catch (const nlohmann::json::exception &)
+    {
+        return std::unexpected(input.bad() ? ParseError::FileOpenFailure : ParseError::UnsupportedFormat);
+    }
+}
+
+static std::expected<void, ParseError> decodeJsonlField(std::string &text, std::string_view jsonField)
+{
+    try
+    {
+        const auto document = nlohmann::json::parse(text);
+        const std::string field{jsonField};
+        if (!document.contains(field) || !document.at(field).is_string())
+        {
+            return std::unexpected(ParseError::UnsupportedFormat);
+        }
+        text = document.at(field).get<std::string>();
+        return {};
+    }
+    catch (const nlohmann::json::exception &)
+    {
+        return std::unexpected(ParseError::UnsupportedFormat);
+    }
+}
+
+static std::expected<std::string, ParseError> readOpenedRangedRecord(std::istream &input, const std::string &extension,
+                                                                     uint64_t byteOffset, uint64_t byteLength,
+                                                                     std::string_view jsonField, size_t maxLineLength)
+{
     input.seekg(static_cast<std::streamoff>(byteOffset));
     if (!input)
     {
@@ -497,19 +521,9 @@ static std::expected<std::string, ParseError> readOpenedRecord(std::istream &inp
     }
     if (extension == ".jsonl")
     {
-        try
+        if (const auto decoded = decodeJsonlField(text, jsonField); !decoded)
         {
-            const auto document = nlohmann::json::parse(text);
-            const std::string field{jsonField};
-            if (!document.contains(field) || !document.at(field).is_string())
-            {
-                return std::unexpected(ParseError::UnsupportedFormat);
-            }
-            text = document.at(field).get<std::string>();
-        }
-        catch (const nlohmann::json::exception &)
-        {
-            return std::unexpected(ParseError::UnsupportedFormat);
+            return std::unexpected(decoded.error());
         }
     }
     else if (readLength == byteLength)
@@ -518,6 +532,26 @@ static std::expected<std::string, ParseError> readOpenedRecord(std::istream &inp
     }
     limitValue(text, maxLineLength, nullptr);
     return text;
+}
+
+static std::expected<std::string, ParseError> readOpenedRecord(std::istream &input, const std::string &extension,
+                                                               uint64_t byteOffset, uint64_t byteLength,
+                                                               uint64_t lineNumber, bool arrayElement,
+                                                               std::string_view jsonField, size_t maxLineLength)
+{
+    if (!input || byteOffset > static_cast<uint64_t>(std::numeric_limits<std::streamoff>::max()))
+    {
+        return std::unexpected(ParseError::FileOpenFailure);
+    }
+    if (arrayElement && extension != ".json")
+    {
+        return std::unexpected(ParseError::UnsupportedFormat);
+    }
+    if (extension == ".json")
+    {
+        return readOpenedJsonRecord(input, byteOffset, byteLength, lineNumber, arrayElement, jsonField, maxLineLength);
+    }
+    return readOpenedRangedRecord(input, extension, byteOffset, byteLength, jsonField, maxLineLength);
 }
 
 std::expected<void, ParseError> Chunker::forEach(const std::filesystem::path &path, size_t maxLineLength,
