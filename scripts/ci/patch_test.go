@@ -24,7 +24,7 @@ func TestGateFailsOnUncoveredChangedLines(t *testing.T) {
 	// Absolute SF paths are what lcov writes inside the coverage job.
 	trace := "" +
 		"TN:\n" +
-		"SF:/__w/nesso/nesso/src/cli.cpp\n" +
+		"SF:/__w/nesso/nesso/src/cli/cli.cpp\n" +
 		"FN:2,covered\n" +
 		"FNDA:1,covered\n" +
 		"DA:2,1,abc123\n" +
@@ -33,7 +33,7 @@ func TestGateFailsOnUncoveredChangedLines(t *testing.T) {
 		"DA:5,1\n" +
 		"BRDA:2,0,0,1\n" +
 		"end_of_record\n" +
-		"SF:/__w/nesso/nesso/src/cli.cpp\n" +
+		"SF:/__w/nesso/nesso/src/cli/cli.cpp\n" +
 		"DA:3,0\n" +
 		"DA:4,8\n" +
 		"end_of_record\n"
@@ -45,9 +45,9 @@ func TestGateFailsOnUncoveredChangedLines(t *testing.T) {
 		"+++ b/.github/workflows/ci.yml\n" +
 		"@@ -1,0 +1,1 @@\n" +
 		"+name: Pipeline\n" +
-		"diff --git a/src/cli.cpp b/src/cli.cpp\n" +
-		"--- a/src/cli.cpp\n" +
-		"+++ b/src/cli.cpp\n" +
+		"diff --git a/src/cli/cli.cpp b/src/cli/cli.cpp\n" +
+		"--- a/src/cli/cli.cpp\n" +
+		"+++ b/src/cli/cli.cpp\n" +
 		"@@ -0,0 +1,5 @@\n" +
 		"+// comment only\n" +
 		"+int covered() { return 1; }\n" +
@@ -79,10 +79,10 @@ func TestGateFailsOnUncoveredChangedLines(t *testing.T) {
 	if !strings.Contains(text, "75.0% of changed executable lines under `src/` are covered (3/4). Required >= 80%.") {
 		t.Fatalf("summary:\n%s", text)
 	}
-	if !strings.Contains(text, "src/cli.cpp:3\n") {
+	if !strings.Contains(text, "src/cli/cli.cpp:3\n") {
 		t.Fatalf("missing uncovered line:\n%s", text)
 	}
-	if strings.Contains(text, "src/cli.cpp:1") || strings.Contains(text, "ci.yml") {
+	if strings.Contains(text, "src/cli/cli.cpp:1") || strings.Contains(text, "ci.yml") {
 		t.Fatalf("counted a non-executable or non-product line:\n%s", text)
 	}
 }
@@ -92,9 +92,9 @@ func TestGatePassesAtEightyPercent(t *testing.T) {
 	lcov := filepath.Join(dir, "coverage.cleaned")
 	diff := filepath.Join(dir, "pr.diff")
 	summary := filepath.Join(dir, "summary.md")
-	trace := "SF:src/cli.cpp\nDA:1,1\nDA:2,1\nDA:3,0\nDA:4,4\nDA:5,1\nend_of_record\n"
+	trace := "SF:src/cli/cli.cpp\nDA:1,1\nDA:2,1\nDA:3,0\nDA:4,4\nDA:5,1\nend_of_record\n"
 	body := "" +
-		"diff --git a/src/cli.cpp b/src/cli.cpp\n" +
+		"diff --git a/src/cli/cli.cpp b/src/cli/cli.cpp\n" +
 		"@@ -0,0 +1,5 @@\n" +
 		"+a\n+b\n+c\n+d\n+e\n"
 	if err := os.WriteFile(lcov, []byte(trace), 0o644); err != nil {
@@ -119,7 +119,7 @@ func TestGatePassesAtEightyPercent(t *testing.T) {
 	if !strings.Contains(string(text), "80.0% of changed executable lines under `src/` are covered (4/5). Required >= 80%.") {
 		t.Fatalf("summary:\n%s", text)
 	}
-	if !strings.Contains(string(text), "src/cli.cpp:3\n") {
+	if !strings.Contains(string(text), "src/cli/cli.cpp:3\n") {
 		t.Fatalf("passing gate should still list the miss:\n%s", text)
 	}
 }
@@ -129,13 +129,13 @@ func TestGatePassesWhenDiffHasNoExecutableProductLines(t *testing.T) {
 	lcov := filepath.Join(dir, "coverage.cleaned")
 	diff := filepath.Join(dir, "pr.diff")
 	summary := filepath.Join(dir, "summary.md")
-	trace := "SF:src/cli.cpp\nDA:10,1\nend_of_record\n"
+	trace := "SF:src/cli/cli.cpp\nDA:10,1\nend_of_record\n"
 	body := "" +
 		"diff --git a/.github/workflows/ci.yml b/.github/workflows/ci.yml\n" +
 		"@@ -4,0 +5,2 @@\n" +
 		"+  # ci only\n" +
 		"+  run: true\n" +
-		"diff --git a/src/cli.cpp b/src/cli.cpp\n" +
+		"diff --git a/src/cli/cli.cpp b/src/cli/cli.cpp\n" +
 		"@@ -1,0 +1,2 @@\n" +
 		"+// docs comment\n" +
 		"+// still not executable\n" +
@@ -190,18 +190,18 @@ func TestGateGitDiffFailsUncoveredLine(t *testing.T) {
 	git("add", "README.md")
 	git("commit", "-m", "base")
 	base := strings.TrimSpace(gitOutput(t, dir, "rev-parse", "HEAD"))
-	if err := os.Mkdir(filepath.Join(dir, "src"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(dir, "src", "cli"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	source := "int covered() { return 1; }\nint missed() { return 2; }\n"
-	if err := os.WriteFile(filepath.Join(dir, "src", "cli.cpp"), []byte(source), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "src", "cli", "cli.cpp"), []byte(source), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	git("add", "src/cli.cpp")
+	git("add", "src/cli/cli.cpp")
 	git("commit", "-m", "add cli")
 	head := strings.TrimSpace(gitOutput(t, dir, "rev-parse", "HEAD"))
 	lcov := filepath.Join(dir, "coverage.cleaned")
-	trace := "SF:" + filepath.Join(dir, "src", "cli.cpp") + "\nDA:1,4\nDA:2,0\nend_of_record\n"
+	trace := "SF:" + filepath.Join(dir, "src", "cli", "cli.cpp") + "\nDA:1,4\nDA:2,0\nend_of_record\n"
 	if err := os.WriteFile(lcov, []byte(trace), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -225,7 +225,7 @@ func TestGateGitDiffFailsUncoveredLine(t *testing.T) {
 	if !strings.Contains(string(text), "50.0% of changed executable lines under `src/` are covered (1/2). Required >= 80%.") {
 		t.Fatalf("summary:\n%s", text)
 	}
-	if !strings.Contains(string(text), "src/cli.cpp:2\n") {
+	if !strings.Contains(string(text), "src/cli/cli.cpp:2\n") {
 		t.Fatalf("summary:\n%s", text)
 	}
 }
@@ -253,7 +253,7 @@ func TestPatchCoverageRejectsBadArgs(t *testing.T) {
 func TestFormatPatchCapsUncoveredList(t *testing.T) {
 	uncovered := make([]string, maxUncoveredListed+3)
 	for i := range uncovered {
-		uncovered[i] = "src/cli.cpp:1"
+		uncovered[i] = "src/cli/cli.cpp:1"
 	}
 	text := formatPatch(patchResult{
 		covered:   0,
@@ -265,8 +265,8 @@ func TestFormatPatchCapsUncoveredList(t *testing.T) {
 	if !strings.Contains(text, "... and 3 more\n") {
 		t.Fatalf("summary:\n%s", text)
 	}
-	if strings.Count(text, "src/cli.cpp:1\n") != maxUncoveredListed {
-		t.Fatalf("listed %d lines", strings.Count(text, "src/cli.cpp:1\n"))
+	if strings.Count(text, "src/cli/cli.cpp:1\n") != maxUncoveredListed {
+		t.Fatalf("listed %d lines", strings.Count(text, "src/cli/cli.cpp:1\n"))
 	}
 }
 

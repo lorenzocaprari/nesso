@@ -1,7 +1,7 @@
 // Copyright (c) 2026 Lorenzo Caprari
 // SPDX-License-Identifier: Apache-2.0
 
-#include <render_json.hpp>
+#include <cli/render_json.hpp>
 
 #include <nlohmann/json.hpp>
 

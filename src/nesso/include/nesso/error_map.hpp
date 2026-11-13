@@ -4,7 +4,7 @@
 #ifndef NESSO_ERROR_MAP_HPP
 #define NESSO_ERROR_MAP_HPP
 
-#include <nesso.hpp>
+#include <nesso/nesso.hpp>
 
 #include <core/core_types.hpp>
 #include <embed/embed_types.hpp>

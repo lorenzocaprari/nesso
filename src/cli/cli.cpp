@@ -1,10 +1,10 @@
 // Copyright (c) 2026 Lorenzo Caprari
 // SPDX-License-Identifier: Apache-2.0
 
-#include <check_stdout.hpp>
-#include <cli.hpp>
-#include <render_json.hpp>
-#include <render_text.hpp>
+#include <cli/check_stdout.hpp>
+#include <cli/cli.hpp>
+#include <cli/render_json.hpp>
+#include <cli/render_text.hpp>
 
 #include <cstdio>
 #include <expected>

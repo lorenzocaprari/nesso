@@ -8,8 +8,8 @@
 #include <embed/batch_plan.hpp>
 #include <embed/embedder.hpp>
 #include <embed/onnx_embedder.hpp>
-#include <model_paths.hpp>
-#include <nesso.hpp>
+#include <nesso/model_paths.hpp>
+#include <nesso/nesso.hpp>
 
 #include "test_embedder_identity.hpp"
 

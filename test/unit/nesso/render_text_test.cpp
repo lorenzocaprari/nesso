@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include <catch2/catch_all.hpp>
-#include <render_text.hpp>
+#include <cli/render_text.hpp>
 
 #include <string>
 

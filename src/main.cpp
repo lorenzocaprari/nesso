@@ -2,10 +2,10 @@
 // SPDX-License-Identifier: Apache-2.0
 // Licensed under the Apache License, Version 2.0. See LICENSE for details.
 
-#include <cli.hpp>
-#include <cli_parser.hpp>
+#include <cli/cli.hpp>
+#include <cli/cli_parser.hpp>
 
-#include <nesso.hpp>
+#include <nesso/nesso.hpp>
 
 #include <exception>
 #include <format>

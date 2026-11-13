@@ -39,7 +39,7 @@ merged as [PR #88](https://github.com/lorenzocaprari/nesso/pull/88) on 2026-10-1
   tokens. The groups do not follow the session count.
   [ADR 0010](0010-corpus-format-v3.md) records the same policy for corpus
   format v3. This tree still writes the current corpus format, so an
-  existing corpus needs `nesso index` again. `src/cli_parser.cpp` has no
+  existing corpus needs `nesso index` again. `src/cli/cli_parser.cpp` has no
   batch option.
 * Good, because an embed, score, or spill error returns from that batch.
   `index` replaces the destination only when `CorpusWriter::finish` completes,

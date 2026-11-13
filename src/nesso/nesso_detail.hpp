@@ -4,9 +4,9 @@
 #ifndef NESSO_NESSO_DETAIL_HPP
 #define NESSO_NESSO_DETAIL_HPP
 
-#include <nesso.hpp>
+#include <nesso/nesso.hpp>
 
-#include <error_map.hpp>
+#include <nesso/error_map.hpp>
 
 #include <core/bm25.hpp>
 #include <core/corpus_index.hpp>

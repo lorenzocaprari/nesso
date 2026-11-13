@@ -5,7 +5,7 @@
 #include <core/corpus_index.hpp>
 #include <embed/batch_plan.hpp>
 #include <embed/embedder.hpp>
-#include <nesso.hpp>
+#include <nesso/nesso.hpp>
 
 #include "test_embedder_identity.hpp"
 
