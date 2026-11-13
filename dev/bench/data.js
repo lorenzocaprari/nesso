@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794582720909,
+  "lastUpdate": 1794584990304,
   "repoUrl": "https://github.com/lorenzocaprari/nesso",
   "entries": {
     "nesso": [
@@ -6047,6 +6047,60 @@ window.BENCHMARK_DATA = {
           {
             "name": "grep-100000-rss",
             "value": 145281024,
+            "unit": "bytes"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "caprarilorenzo5@gmail.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "committer": {
+            "email": "85455384+lorenzocaprari@users.noreply.github.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "distinct": true,
+          "id": "9dc2ca8e40a711137eeb89c5e1a2e7130754beaa",
+          "message": "refactor(parser): lower function-size\n\nPack location and archive helper args into value structs, take\nParsedChunk keys in Chunker::readRecord, and extract tryMaskPath so\nreadability-function-size thresholds can land later.",
+          "timestamp": "2026-11-13T16:44:41+01:00",
+          "tree_id": "9254d6135ec9f40f050a384fcd38d17de81c0b48",
+          "url": "https://github.com/lorenzocaprari/nesso/commit/9dc2ca8e40a711137eeb89c5e1a2e7130754beaa"
+        },
+        "date": 1794584989701,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "grep-1000-wall",
+            "value": 1.21,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-1000-rss",
+            "value": 118018048,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-10000-wall",
+            "value": 1.22,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-10000-rss",
+            "value": 117456896,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-100000-wall",
+            "value": 1.43,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-100000-rss",
+            "value": 143409152,
             "unit": "bytes"
           }
         ]
