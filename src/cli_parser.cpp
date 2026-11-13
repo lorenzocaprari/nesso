@@ -105,7 +105,8 @@ static void addArchiveLimits(CLI::App *command, nesso::parser::ArchiveLimits &li
 
 static constexpr const char *THREADS_HELP = "CPU budget N from 1 to 1024. Default and layout rules: docs/usage.md.";
 
-static CLI::Validator threadCount()
+// NOLINTNEXTLINE(readability-identifier-naming)
+static CLI::Validator MakeThreadCountValidator()
 {
     return CLI::Validator{[](std::string &value)
                           {
@@ -260,7 +261,8 @@ std::expected<ParsedCommand, int> parseCommandLine(int argc, char **argv)
     grepCmd->add_option("--mode", text.mode, "Ranking mode: auto, hybrid, dense, or lexical")
         ->default_val("auto")
         ->check(CLI::IsMember({"auto", "hybrid", "dense", "lexical"}));
-    const auto *grepThreads = grepCmd->add_option("--threads", text.threads, THREADS_HELP)->check(threadCount());
+    const auto *grepThreads =
+        grepCmd->add_option("--threads", text.threads, THREADS_HELP)->check(MakeThreadCountValidator());
     const auto *grepModelDir = grepCmd->add_option("--model-dir", text.modelDir, MODEL_DIR_HELP);
     addArchiveLimits(grepCmd, text.grepArchiveLimits);
 
@@ -269,7 +271,8 @@ std::expected<ParsedCommand, int> parseCommandLine(int argc, char **argv)
     indexCmd->add_option("files", text.files, TEXT_FILES_HELP)->required()->expected(1, -1)->check(inputFile());
     indexCmd->add_option("--json-field", text.jsonField, "JSON object field to read")->default_val("message");
     indexCmd->add_flag("--quiet", text.quiet, "Suppress interactive progress output");
-    const auto *indexThreads = indexCmd->add_option("--threads", text.threads, THREADS_HELP)->check(threadCount());
+    const auto *indexThreads =
+        indexCmd->add_option("--threads", text.threads, THREADS_HELP)->check(MakeThreadCountValidator());
     const auto *indexModelDir = indexCmd->add_option("--model-dir", text.modelDir, MODEL_DIR_HELP);
     addArchiveLimits(indexCmd, text.indexArchiveLimits);
 
@@ -284,7 +287,8 @@ std::expected<ParsedCommand, int> parseCommandLine(int argc, char **argv)
     searchCmd->add_option("--mode", text.mode, "Ranking mode: auto, hybrid, dense, or lexical")
         ->default_val("auto")
         ->check(CLI::IsMember({"auto", "hybrid", "dense", "lexical"}));
-    const auto *searchThreads = searchCmd->add_option("--threads", text.threads, THREADS_HELP)->check(threadCount());
+    const auto *searchThreads =
+        searchCmd->add_option("--threads", text.threads, THREADS_HELP)->check(MakeThreadCountValidator());
     const auto *searchModelDir = searchCmd->add_option("--model-dir", text.modelDir, MODEL_DIR_HELP);
 
     try

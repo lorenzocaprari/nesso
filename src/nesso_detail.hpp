@@ -117,8 +117,9 @@ expandRequestFiles(std::span<const std::filesystem::path> files);
 embedDistinct(std::span<const std::string> texts, const nesso::embed::Embedder &embedder, ProgressReporter &progress,
               size_t linesBefore, size_t linesInFlush, size_t total, const LineCounts &counts);
 
-[[nodiscard]] std::expected<nesso::core::CorpusPolicy, Error> corpusPolicy(const nesso::embed::Embedder &embedder,
-                                                                           const LineCounts &counts);
+// NOLINTNEXTLINE(readability-identifier-naming)
+[[nodiscard]] std::expected<nesso::core::CorpusPolicy, Error> MakeCorpusPolicy(const nesso::embed::Embedder &embedder,
+                                                                               const LineCounts &counts);
 
 [[nodiscard]] std::string_view effectiveModeName(EffectiveMode mode) noexcept;
 

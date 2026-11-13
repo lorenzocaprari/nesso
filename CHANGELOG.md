@@ -29,6 +29,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Internal helpers that shared a CamelCase name with a type were renamed to a verb form (for example `sessionPolicy` to `MakeSessionPolicy`, `sha256` to `ComputeSha256`) so a later FunctionCase clang-tidy pass does not clash. Those names keep a temporary `readability-identifier-naming` NOLINT while FunctionCase is still `camelBack`. CLI, JSON keys, and corpus bytes are unchanged.
 - BM25 scoring keeps `(termId, tf)` rows and a shared term dictionary instead of copying term strings per line. `search` scores mapped corpus postings in place; `grep` interns terms once. Scores stay byte-identical (same idf, double summation order, and z-score fusion). Corpus format and `lexical.terms` are unchanged.
 - **Breaking:** `--json` on `grep` and `search` sets `schema_version` to 2 and appends `mode`, `dense`, and `lexical` after `occurrences`. Default `--mode auto` changes rankings relative to dense-only search. JSON `score` is the effective-mode ranking score. `--mode dense` keeps the previous ranking. Lexical/`hybrid`/`auto` exit 2 on a corpus without postings or with a mismatched `lexical.terms` version; dense still maps those corpora.
 

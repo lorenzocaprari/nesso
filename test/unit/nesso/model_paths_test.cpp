@@ -64,7 +64,7 @@ class EnvGuard
     Slot xdgDataHome;
     Slot home;
 
-    Slot &slot(const char *key)
+    Slot &GetSlot(const char *key)
     {
         if (std::string_view(key) == "NESSO_MODEL_DIR")
         {
@@ -79,7 +79,7 @@ class EnvGuard
 
     void snapshot(const char *key)
     {
-        Slot &entry = slot(key);
+        Slot &entry = GetSlot(key);
         entry.key = key;
         if (const char *value = std::getenv(key); value != nullptr)
         {
@@ -90,7 +90,7 @@ class EnvGuard
 
     void restore(const char *key)
     {
-        const Slot &entry = slot(key);
+        const Slot &entry = GetSlot(key);
         if (entry.present)
         {
             setenv(key, entry.value.c_str(), 1);

@@ -8,7 +8,8 @@
 namespace nesso::core
 {
 
-ZScoreStats zScoreStats(std::span<const double> values)
+// NOLINTNEXTLINE(readability-identifier-naming)
+ZScoreStats ComputeZScoreStats(std::span<const double> values)
 {
     ZScoreStats stats;
     if (values.empty())
@@ -67,8 +68,8 @@ std::vector<float> fuseHybridScores(std::span<const double> dense, std::span<con
     {
         return {};
     }
-    const ZScoreStats denseStats = zScoreStats(dense);
-    const ZScoreStats bm25Stats = zScoreStats(bm25);
+    const ZScoreStats denseStats = ComputeZScoreStats(dense);
+    const ZScoreStats bm25Stats = ComputeZScoreStats(bm25);
     std::vector<float> fused;
     fused.reserve(dense.size());
     for (std::size_t index = 0; index < dense.size(); ++index)

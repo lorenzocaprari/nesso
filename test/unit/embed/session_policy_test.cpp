@@ -124,24 +124,24 @@ TEST_CASE("without MemAvailable or a topology the machine falls back", "[session
 TEST_CASE("int8 splits a cpu budget into sessions and intra-op threads", "[session-policy]")
 {
     const MachineResources wide{.physicalCores = 16, .logicalThreads = 32, .memoryLimitBytes = 64 * GIB};
-    const SessionPolicy sixteen = nesso::embed::sessionPolicy(true, 0, wide);
+    const SessionPolicy sixteen = nesso::embed::MakeSessionPolicy(true, 0, wide);
     CHECK(sixteen.intraOpThreads == static_cast<int>(INT8_INTRA_OP_MAX));
     CHECK(sixteen.sessions == 16 / INT8_INTRA_OP_MAX);
     CHECK(sixteen.quantized);
 
     const MachineResources eight{.physicalCores = 8, .logicalThreads = 16, .memoryLimitBytes = 64 * GIB};
-    CHECK(nesso::embed::sessionPolicy(true, 0, eight).sessions == 2);
-    CHECK(nesso::embed::sessionPolicy(true, 0, eight).intraOpThreads == 4);
+    CHECK(nesso::embed::MakeSessionPolicy(true, 0, eight).sessions == 2);
+    CHECK(nesso::embed::MakeSessionPolicy(true, 0, eight).intraOpThreads == 4);
 
     const MachineResources four{.physicalCores = 4, .logicalThreads = 4, .memoryLimitBytes = 64 * GIB};
     const MachineResources six{.physicalCores = 6, .logicalThreads = 12, .memoryLimitBytes = 64 * GIB};
-    const auto at = [&](size_t budget) { return nesso::embed::sessionPolicy(true, budget, wide); };
+    const auto at = [&](size_t budget) { return nesso::embed::MakeSessionPolicy(true, budget, wide); };
 #ifdef __aarch64__
-    CHECK(nesso::embed::sessionPolicy(true, 0, four).sessions == 1);
-    CHECK(nesso::embed::sessionPolicy(true, 0, four).intraOpThreads == 4);
-    CHECK(nesso::embed::sessionPolicy(true, 0, four).shrinkArena);
-    CHECK(nesso::embed::sessionPolicy(true, 0, six).sessions == 1);
-    CHECK(nesso::embed::sessionPolicy(true, 0, six).intraOpThreads == 4);
+    CHECK(nesso::embed::MakeSessionPolicy(true, 0, four).sessions == 1);
+    CHECK(nesso::embed::MakeSessionPolicy(true, 0, four).intraOpThreads == 4);
+    CHECK(nesso::embed::MakeSessionPolicy(true, 0, four).shrinkArena);
+    CHECK(nesso::embed::MakeSessionPolicy(true, 0, six).sessions == 1);
+    CHECK(nesso::embed::MakeSessionPolicy(true, 0, six).intraOpThreads == 4);
     CHECK(at(1).sessions == 1);
     CHECK(at(1).intraOpThreads == 2);
     CHECK(at(1).shrinkArena);
@@ -154,12 +154,12 @@ TEST_CASE("int8 splits a cpu budget into sessions and intra-op threads", "[sessi
     CHECK(at(6).sessions == 1);
     CHECK(at(6).intraOpThreads == 4);
 #else
-    CHECK(nesso::embed::sessionPolicy(true, 0, four).sessions == 4);
-    CHECK(nesso::embed::sessionPolicy(true, 0, four).intraOpThreads == 1);
-    CHECK_FALSE(nesso::embed::sessionPolicy(true, 0, four).shrinkArena);
-    CHECK(nesso::embed::sessionPolicy(true, 0, six).sessions == 2);
-    CHECK(nesso::embed::sessionPolicy(true, 0, six).intraOpThreads == 3);
-    CHECK(nesso::embed::sessionPolicy(true, 0, six).shrinkArena);
+    CHECK(nesso::embed::MakeSessionPolicy(true, 0, four).sessions == 4);
+    CHECK(nesso::embed::MakeSessionPolicy(true, 0, four).intraOpThreads == 1);
+    CHECK_FALSE(nesso::embed::MakeSessionPolicy(true, 0, four).shrinkArena);
+    CHECK(nesso::embed::MakeSessionPolicy(true, 0, six).sessions == 2);
+    CHECK(nesso::embed::MakeSessionPolicy(true, 0, six).intraOpThreads == 3);
+    CHECK(nesso::embed::MakeSessionPolicy(true, 0, six).shrinkArena);
     CHECK(at(1).sessions == 1);
     CHECK(at(1).intraOpThreads == 1);
     CHECK_FALSE(at(1).shrinkArena);
@@ -186,7 +186,7 @@ TEST_CASE("the default int8 pool reduces sessions while the estimate exceeds the
     {
         const MachineResources machine{
             .physicalCores = cores, .logicalThreads = cores * 2, .memoryLimitBytes = available};
-        return nesso::embed::sessionPolicy(true, 0, machine);
+        return nesso::embed::MakeSessionPolicy(true, 0, machine);
     };
     // Half of 4 session-estimates fits 2 sessions. 16 cores would otherwise open 4.
     const SessionPolicy two = policyWith(4 * INT8_SESSION_BYTES, 16);
@@ -211,7 +211,7 @@ TEST_CASE("the default int8 pool reduces sessions while the estimate exceeds the
 TEST_CASE("an unknown memory limit leaves the derived session count", "[session-policy]")
 {
     const MachineResources machine{.physicalCores = 6, .logicalThreads = 12, .memoryLimitBytes = 0};
-    const SessionPolicy policy = nesso::embed::sessionPolicy(true, 0, machine);
+    const SessionPolicy policy = nesso::embed::MakeSessionPolicy(true, 0, machine);
 #ifdef __aarch64__
     CHECK(policy.sessions == 1);
     CHECK(policy.intraOpThreads == 4);
@@ -220,34 +220,34 @@ TEST_CASE("an unknown memory limit leaves the derived session count", "[session-
     CHECK(policy.intraOpThreads == 3);
 #endif
     CHECK(policy.memoryCap == 0);
-    CHECK(nesso::embed::overrideWarning(nesso::embed::sessionPolicy(true, 64, machine), 64).empty());
+    CHECK(nesso::embed::overrideWarning(nesso::embed::MakeSessionPolicy(true, 64, machine), 64).empty());
 
     const MachineResources noCores{.physicalCores = 0, .logicalThreads = 0, .memoryLimitBytes = 0};
-    CHECK(nesso::embed::sessionPolicy(true, 0, noCores).sessions == 1);
-    CHECK(nesso::embed::sessionPolicy(true, 0, noCores).intraOpThreads == nesso::embed::intraOpThreadFloor());
-    CHECK(nesso::embed::sessionPolicy(false, 0, noCores).intraOpThreads == nesso::embed::intraOpThreadFloor());
+    CHECK(nesso::embed::MakeSessionPolicy(true, 0, noCores).sessions == 1);
+    CHECK(nesso::embed::MakeSessionPolicy(true, 0, noCores).intraOpThreads == nesso::embed::intraOpThreadFloor());
+    CHECK(nesso::embed::MakeSessionPolicy(false, 0, noCores).intraOpThreads == nesso::embed::intraOpThreadFloor());
 }
 
 TEST_CASE("an explicit cpu budget is not reduced and warns above the cap", "[session-policy]")
 {
     const MachineResources machine{
         .physicalCores = 8, .logicalThreads = 16, .memoryLimitBytes = 4 * INT8_SESSION_BYTES};
-    const SessionPolicy capped = nesso::embed::sessionPolicy(true, 0, machine);
+    const SessionPolicy capped = nesso::embed::MakeSessionPolicy(true, 0, machine);
     CHECK(capped.memoryCap == 2);
     CHECK(capped.sessions == 2);
     CHECK(nesso::embed::overrideWarning(capped, 0).empty());
 
-    const SessionPolicy within = nesso::embed::sessionPolicy(true, 8, machine);
+    const SessionPolicy within = nesso::embed::MakeSessionPolicy(true, 8, machine);
     CHECK(within.sessions == 2);
     CHECK(within.intraOpThreads == 4);
     CHECK(nesso::embed::overrideWarning(within, 8).empty());
 
-    const SessionPolicy one = nesso::embed::sessionPolicy(true, 1, machine);
+    const SessionPolicy one = nesso::embed::MakeSessionPolicy(true, 1, machine);
     CHECK(one.sessions == 1);
     CHECK(one.intraOpThreads == nesso::embed::intraOpThreadFloor());
     CHECK(nesso::embed::overrideWarning(one, 1).empty());
 
-    const SessionPolicy above = nesso::embed::sessionPolicy(true, 16, machine);
+    const SessionPolicy above = nesso::embed::MakeSessionPolicy(true, 16, machine);
     CHECK(above.sessions == 4);
     CHECK(above.intraOpThreads == 4);
     CHECK(above.memoryCap == 2);
@@ -258,18 +258,18 @@ TEST_CASE("an explicit cpu budget is not reduced and warns above the cap", "[ses
 TEST_CASE("fp32 keeps one session at the logical thread count", "[session-policy]")
 {
     const MachineResources machine{.physicalCores = 4, .logicalThreads = 8, .memoryLimitBytes = 1 * GIB};
-    const SessionPolicy policy = nesso::embed::sessionPolicy(false, 0, machine);
+    const SessionPolicy policy = nesso::embed::MakeSessionPolicy(false, 0, machine);
     CHECK_FALSE(policy.quantized);
     CHECK(policy.sessions == 1);
     CHECK(policy.intraOpThreads == 8);
     CHECK(policy.memoryCap == 0);
 
-    const SessionPolicy requested = nesso::embed::sessionPolicy(false, 64, machine);
+    const SessionPolicy requested = nesso::embed::MakeSessionPolicy(false, 64, machine);
     CHECK(requested.sessions == 1);
     CHECK(requested.intraOpThreads == 64);
     CHECK(nesso::embed::overrideWarning(requested, 64).empty());
 
-    const SessionPolicy oneThread = nesso::embed::sessionPolicy(false, 1, machine);
+    const SessionPolicy oneThread = nesso::embed::MakeSessionPolicy(false, 1, machine);
     CHECK(oneThread.sessions == 1);
     CHECK(oneThread.intraOpThreads == nesso::embed::intraOpThreadFloor());
 }
@@ -277,7 +277,7 @@ TEST_CASE("fp32 keeps one session at the logical thread count", "[session-policy
 TEST_CASE("fp32 budget 1024 does not wrap intra-op threads", "[session-policy]")
 {
     const MachineResources machine{.physicalCores = 4, .logicalThreads = 8, .memoryLimitBytes = 1 * GIB};
-    const SessionPolicy policy = nesso::embed::sessionPolicy(false, 1024, machine);
+    const SessionPolicy policy = nesso::embed::MakeSessionPolicy(false, 1024, machine);
     CHECK(policy.sessions == 1);
     CHECK(policy.intraOpThreads == 1024);
 }

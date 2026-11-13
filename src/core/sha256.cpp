@@ -134,14 +134,16 @@ class Sha256
 
 } // namespace
 
-Sha256Digest sha256(std::span<const std::byte> bytes)
+// NOLINTNEXTLINE(readability-identifier-naming)
+Sha256Digest ComputeSha256(std::span<const std::byte> bytes)
 {
     Sha256 hash;
     hash.update(bytes);
     return hash.finish();
 }
 
-Sha256Digest sha256(std::span<const std::span<const std::byte>> parts)
+// NOLINTNEXTLINE(readability-identifier-naming)
+Sha256Digest ComputeSha256(std::span<const std::span<const std::byte>> parts)
 {
     Sha256 hash;
     for (const std::span<const std::byte> part : parts)

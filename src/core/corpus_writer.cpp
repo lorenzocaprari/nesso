@@ -121,7 +121,7 @@ static bool sealCorpus(const std::filesystem::path &path)
         {
             return false;
         }
-        checksum = corpusChecksum(mapped->bytes());
+        checksum = ComputeCorpusChecksum(mapped->bytes());
     }
     std::fstream file(path, std::ios::binary | std::ios::in | std::ios::out);
     file.seekp(static_cast<std::streamoff>(CORPUS_CHECKSUM_OFFSET));

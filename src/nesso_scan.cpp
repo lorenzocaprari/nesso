@@ -30,7 +30,8 @@ using detail::parseFailure;
 using detail::sameSource;
 using detail::Scan;
 
-static LineCounts lineCounts(const nesso::parser::ParseStats &stats, std::string jsonField)
+// NOLINTNEXTLINE(readability-identifier-naming)
+static LineCounts MakeLineCounts(const nesso::parser::ParseStats &stats, std::string jsonField)
 {
     return {.skipped = stats.skippedLines,
             .emptyLines = stats.emptyLines,
@@ -77,8 +78,8 @@ static std::expected<void, Error> scanStdin(Scan &scan, nesso::parser::ParseStat
                  : nesso::parser::Chunker::forEach(path, MAX_LINE_LENGTH, &stats, jsonField, keep, limits);
     if (!streamed)
     {
-        return std::unexpected(parseFailure(streamed.error(), path, lineCounts(stats, std::string{jsonField}), limits,
-                                            stats.encryptedEntry, scan.bundleSkips));
+        return std::unexpected(parseFailure(streamed.error(), path, MakeLineCounts(stats, std::string{jsonField}),
+                                            limits, stats.encryptedEntry, scan.bundleSkips));
     }
     if (forIndex)
     {
@@ -86,7 +87,7 @@ static std::expected<void, Error> scanStdin(Scan &scan, nesso::parser::ParseStat
         if (!after || !sameSource(scan.sources.back(), *after))
         {
             return std::unexpected(makeError(ErrorKind::Parse, ErrorCause::SourceChanged, path,
-                                             lineCounts(stats, std::string{jsonField}), scan.bundleSkips));
+                                             MakeLineCounts(stats, std::string{jsonField}), scan.bundleSkips));
         }
     }
     return {};
@@ -115,7 +116,7 @@ std::expected<Scan, Error> scanFiles(std::span<const std::filesystem::path> file
             if (!source)
             {
                 return std::unexpected(makeError(ErrorKind::Parse, causeOf(source.error()), path,
-                                                 lineCounts(stats, std::string{jsonField})));
+                                                 MakeLineCounts(stats, std::string{jsonField})));
             }
             scan.sources.push_back(std::move(*source));
         }
@@ -139,12 +140,12 @@ std::expected<Scan, Error> scanFiles(std::span<const std::filesystem::path> file
         if (!streamed)
         {
             recordBundleSkips(scan, path, before, stats);
-            return std::unexpected(parseFailure(streamed.error(), path, lineCounts(stats, std::string{jsonField}),
+            return std::unexpected(parseFailure(streamed.error(), path, MakeLineCounts(stats, std::string{jsonField}),
                                                 limits, stats.encryptedEntry, scan.bundleSkips));
         }
         recordBundleSkips(scan, path, before, stats);
     }
-    scan.counts = lineCounts(stats, std::string{jsonField});
+    scan.counts = MakeLineCounts(stats, std::string{jsonField});
     return scan;
 }
 
