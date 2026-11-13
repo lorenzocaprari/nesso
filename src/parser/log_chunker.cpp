@@ -234,99 +234,91 @@ static std::expected<void, ParseError> readLogStream(std::istream &input, size_t
     return {};
 }
 
-static std::expected<void, ParseError> readJsonStream(std::istream &input, bool jsonLines, ParseStats *stats,
-                                                      std::string_view jsonField, size_t maxLineLength,
-                                                      const std::function<void(ParsedChunk)> &consume)
+static void consumeSkipped(ParseStats *stats, SkipReason reason, uint64_t sourceLine, uint64_t byteOffset,
+                           uint64_t byteLength, bool arrayElement, const std::function<void(ParsedChunk)> &consume)
+{
+    countSkip(stats, reason);
+    consume(ParsedChunk{.text = {},
+                        .lineNumber = sourceLine,
+                        .byteOffset = byteOffset,
+                        .arrayElement = arrayElement,
+                        .skipped = true,
+                        .byteLength = byteLength,
+                        .source = {}});
+}
+
+static void appendJsonField(const nlohmann::json &document, const std::string &field, uint64_t sourceLine,
+                            uint64_t byteOffset, uint64_t byteLength, bool arrayElement, size_t maxLineLength,
+                            ParseStats *stats, const std::function<void(ParsedChunk)> &consume)
+{
+    if (!document.contains(field) || !document.at(field).is_string())
+    {
+        consumeSkipped(stats, SkipReason::MissingField, sourceLine, byteOffset, byteLength, arrayElement, consume);
+        return;
+    }
+    std::string text = document.at(field).get<std::string>();
+    if (isBlank(text))
+    {
+        consumeSkipped(stats, SkipReason::Empty, sourceLine, byteOffset, byteLength, arrayElement, consume);
+        return;
+    }
+    limitValue(text, maxLineLength, stats);
+    consume(ParsedChunk{.text = std::move(text),
+                        .lineNumber = sourceLine,
+                        .byteOffset = byteOffset,
+                        .arrayElement = arrayElement,
+                        .byteLength = byteLength,
+                        .source = {}});
+}
+
+static std::expected<void, ParseError> readJsonLinesStream(std::istream &input, ParseStats *stats,
+                                                           const std::string &field, size_t maxLineLength,
+                                                           const std::function<void(ParsedChunk)> &consume)
 {
     std::string line;
     uint64_t lineNumber = 0;
-    const std::string field{jsonField};
-
-    const auto appendValue = [&](const nlohmann::json &document, uint64_t sourceLine, uint64_t byteOffset,
-                                 uint64_t byteLength, bool arrayElement)
+    uint64_t byteOffset = 0;
+    while (std::getline(input, line))
     {
-        const auto skip = [&](SkipReason reason)
+        ++lineNumber;
+        const bool hadCarriageReturn = stripCarriageReturn(line);
+        const size_t fileBytes = line.size() + (hadCarriageReturn ? 1U : 0U);
+        if (isBlank(line))
         {
-            countSkip(stats, reason);
-            consume(ParsedChunk{.text = {},
-                                .lineNumber = sourceLine,
-                                .byteOffset = byteOffset,
-                                .arrayElement = arrayElement,
-                                .skipped = true,
-                                .byteLength = byteLength,
-                                .source = {}});
-        };
-        if (!document.contains(field) || !document.at(field).is_string())
-        {
-            skip(SkipReason::MissingField);
-            return;
+            consumeSkipped(stats, SkipReason::Empty, lineNumber, byteOffset, fileBytes, false, consume);
         }
-        std::string text = document.at(field).get<std::string>();
-        if (isBlank(text))
+        else
         {
-            skip(SkipReason::Empty);
-            return;
-        }
-        limitValue(text, maxLineLength, stats);
-        consume(ParsedChunk{.text = std::move(text),
-                            .lineNumber = sourceLine,
-                            .byteOffset = byteOffset,
-                            .arrayElement = arrayElement,
-                            .byteLength = byteLength,
-                            .source = {}});
-    };
-
-    if (jsonLines)
-    {
-        uint64_t byteOffset = 0;
-        while (std::getline(input, line))
-        {
-            ++lineNumber;
-            const bool hadCarriageReturn = stripCarriageReturn(line);
-            const size_t fileBytes = line.size() + (hadCarriageReturn ? 1U : 0U);
-            if (isBlank(line))
+            nlohmann::json document;
+            bool parsed = true;
+            try
             {
-                countSkip(stats, SkipReason::Empty);
-                consume(ParsedChunk{.text = {},
-                                    .lineNumber = lineNumber,
-                                    .byteOffset = byteOffset,
-                                    .skipped = true,
-                                    .byteLength = fileBytes,
-                                    .source = {}});
+                document = nlohmann::json::parse(line);
             }
-            else
+            catch (const nlohmann::json::exception &)
             {
-                nlohmann::json document;
-                bool parsed = true;
-                try
-                {
-                    document = nlohmann::json::parse(line);
-                }
-                catch (const nlohmann::json::exception &)
-                {
-                    countSkip(stats, SkipReason::Malformed);
-                    consume(ParsedChunk{.text = {},
-                                        .lineNumber = lineNumber,
-                                        .byteOffset = byteOffset,
-                                        .skipped = true,
-                                        .byteLength = fileBytes,
-                                        .source = {}});
-                    parsed = false;
-                }
-                if (parsed)
-                {
-                    appendValue(document, lineNumber, byteOffset, fileBytes, false);
-                }
+                consumeSkipped(stats, SkipReason::Malformed, lineNumber, byteOffset, fileBytes, false, consume);
+                parsed = false;
             }
-            advanceOffset(byteOffset, fileBytes, !input.eof());
+            if (parsed)
+            {
+                appendJsonField(document, field, lineNumber, byteOffset, fileBytes, false, maxLineLength, stats,
+                                consume);
+            }
         }
-        if (input.bad() || !input.eof())
-        {
-            return std::unexpected(ParseError::FileOpenFailure);
-        }
-        return {};
+        advanceOffset(byteOffset, fileBytes, !input.eof());
     }
+    if (input.bad() || !input.eof())
+    {
+        return std::unexpected(ParseError::FileOpenFailure);
+    }
+    return {};
+}
 
+static std::expected<void, ParseError> readJsonDocumentStream(std::istream &input, ParseStats *stats,
+                                                              const std::string &field, size_t maxLineLength,
+                                                              const std::function<void(ParsedChunk)> &consume)
+{
     nlohmann::json document;
     try
     {
@@ -352,12 +344,24 @@ static std::expected<void, ParseError> readJsonStream(std::istream &input, bool 
         for (const auto &entry : document)
         {
             ++index;
-            appendValue(entry, index, 0, 0, true);
+            appendJsonField(entry, field, index, 0, 0, true, maxLineLength, stats, consume);
         }
         return {};
     }
-    appendValue(document, 1, 0, 0, false);
+    appendJsonField(document, field, 1, 0, 0, false, maxLineLength, stats, consume);
     return {};
+}
+
+static std::expected<void, ParseError> readJsonStream(std::istream &input, bool jsonLines, ParseStats *stats,
+                                                      std::string_view jsonField, size_t maxLineLength,
+                                                      const std::function<void(ParsedChunk)> &consume)
+{
+    const std::string field{jsonField};
+    if (jsonLines)
+    {
+        return readJsonLinesStream(input, stats, field, maxLineLength, consume);
+    }
+    return readJsonDocumentStream(input, stats, field, maxLineLength, consume);
 }
 
 static ParseError gzipParseError(GzipError error)
