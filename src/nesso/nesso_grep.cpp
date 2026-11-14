@@ -250,10 +250,10 @@ static std::optional<Error> ingestGrepChunk(GrepEmbedState &state, GrepSourceCur
     {
         state.severalSources = true;
     }
-    const std::uint32_t id = state.distinct.add(chunk.text);
+    const std::uint32_t entryId = state.distinct.add(chunk.text);
     ++state.linesSeen;
     const GrepWaiting item{.ordinal = state.ordinal,
-                           .distinctId = id,
+                           .distinctId = entryId,
                            .source = cursor.sourceId,
                            .line = chunk.lineNumber,
                            .arrayElement = chunk.arrayElement,
@@ -262,7 +262,7 @@ static std::optional<Error> ingestGrepChunk(GrepEmbedState &state, GrepSourceCur
     {
         state.allLines.push_back(item);
     }
-    if (id < state.scores.size())
+    if (entryId < state.scores.size())
     {
         considerDenseGrep(state, item);
     }

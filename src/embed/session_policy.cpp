@@ -336,10 +336,10 @@ static std::optional<size_t> cgroupCpuLimit(const ProcCgroupRoots &roots)
     }
     if (paths->v1Path)
     {
-        if (const std::optional<size_t> v1 =
+        if (const std::optional<size_t> v1Quota =
                 tightestV1Quota({.cgroupRoot = roots.cgroupRoot, .relative = *paths->v1Path}))
         {
-            minQuota(tightest, *v1);
+            minQuota(tightest, *v1Quota);
         }
     }
     return tightest;

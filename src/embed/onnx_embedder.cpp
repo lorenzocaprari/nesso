@@ -154,39 +154,40 @@ static Ort::Env makeEnv()
 static ModelIo readModelIo(Ort::Session &session)
 {
     const Ort::AllocatorWithDefaultOptions allocator;
-    ModelIo io;
+    ModelIo modelIo;
     for (size_t index = 0; index < session.GetInputCount(); ++index)
     {
         const auto allocated = session.GetInputNameAllocated(index, allocator);
         const std::string name = allocated.get();
         if (name == "input_ids")
         {
-            io.inputIds = name;
+            modelIo.inputIds = name;
         }
         else if (name == "attention_mask")
         {
-            io.attentionMask = name;
+            modelIo.attentionMask = name;
         }
         else if (name == "token_type_ids")
         {
-            io.tokenTypeIds = name;
+            modelIo.tokenTypeIds = name;
         }
     }
-    if (io.inputIds.empty() || io.attentionMask.empty() || io.tokenTypeIds.empty() || session.GetOutputCount() < 1)
+    if (modelIo.inputIds.empty() || modelIo.attentionMask.empty() || modelIo.tokenTypeIds.empty() ||
+        session.GetOutputCount() < 1)
     {
         throw std::runtime_error("model is missing input_ids, attention_mask, "
                                  "token_type_ids, or an output");
     }
 
     const auto outputName = session.GetOutputNameAllocated(0, allocator);
-    io.output = outputName.get();
+    modelIo.output = outputName.get();
 
     const auto shape = session.GetOutputTypeInfo(0).GetTensorTypeAndShapeInfo().GetShape();
     if (shape.size() != 3 || std::cmp_not_equal(shape[2], MINILM_EMBEDDING_DIMENSIONS))
     {
         throw std::runtime_error("model hidden size is not 384");
     }
-    return io;
+    return modelIo;
 }
 
 class OnnxEmbedder::SessionImpl

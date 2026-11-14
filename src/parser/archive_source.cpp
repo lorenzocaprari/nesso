@@ -402,7 +402,7 @@ struct MemberIdentity
 
 static std::expected<void, ArchiveFailure> loadMemberPayload(archive *handle, std::string &payload,
                                                              const MemberLoadBudget &budget,
-                                                             const ArchiveLimits &limits, const MemberIdentity &id)
+                                                             const ArchiveLimits &limits, const MemberIdentity &member)
 {
     const auto readError = readMember(handle, payload, budget.declared, limits, budget.accepted, budget.compressed);
     if (readError)
@@ -413,9 +413,9 @@ static std::expected<void, ArchiveFailure> loadMemberPayload(archive *handle, st
     // not a generic corrupt archive (avoids dumping libarchive's crypto message).
     if (readError.error() == ArchiveError::Corrupt && archive_read_has_encrypted_entries(handle) > 0)
     {
-        return std::unexpected(failure(ArchiveError::Encrypted, id.name));
+        return std::unexpected(failure(ArchiveError::Encrypted, member.name));
     }
-    return std::unexpected(afterReadFailure(readError.error(), id.path));
+    return std::unexpected(afterReadFailure(readError.error(), member.path));
 }
 
 static std::expected<void, ArchiveFailure> inflateNestedGzipMember(std::string &payload, const std::string &name,
@@ -507,8 +507,8 @@ processArchiveMember(archive *handle, archive_entry *entry, ArchiveSkipStats *sk
 
     const MemberLoadBudget budget{
         .declared = declaredMemberSize(entry), .accepted = acc.accepted, .compressed = session.compressed};
-    const MemberIdentity id{.name = name, .path = session.path};
-    if (const auto loaded = loadMemberPayload(handle, acc.payload, budget, session.limits, id); !loaded)
+    const MemberIdentity member{.name = name, .path = session.path};
+    if (const auto loaded = loadMemberPayload(handle, acc.payload, budget, session.limits, member); !loaded)
     {
         return std::unexpected(loaded.error());
     }

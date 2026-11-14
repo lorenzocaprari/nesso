@@ -492,12 +492,12 @@ std::expected<WordPieceTokenizer, EmbedError> WordPieceTokenizer::fromVocabFile(
 
     const auto lookup = [&vocab](const std::string &symbol) -> std::optional<int64_t>
     {
-        const auto it = vocab.find(symbol);
-        if (it == vocab.end())
+        const auto found = vocab.find(symbol);
+        if (found == vocab.end())
         {
             return std::nullopt;
         }
-        return it->second;
+        return found->second;
     };
 
     const auto clsId = lookup(CLS_TOKEN);
@@ -576,8 +576,8 @@ std::expected<TokenizedInput, EmbedError> WordPieceTokenizer::encode(std::string
                 break;
             }
 
-            const auto it = vocab_.find(piece);
-            encoded.inputIds.push_back(it == vocab_.end() ? unkId_ : it->second);
+            const auto found = vocab_.find(piece);
+            encoded.inputIds.push_back(found == vocab_.end() ? unkId_ : found->second);
             encoded.attentionMask.push_back(1);
             encoded.tokenTypeIds.push_back(0);
         }

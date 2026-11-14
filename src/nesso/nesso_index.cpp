@@ -160,14 +160,14 @@ static std::optional<Error> ingestIndexChunk(IndexEmbedState &state, IndexSource
         cursor.activeSource = *added;
         cursor.storeLines = true;
     }
-    std::uint32_t id = nesso::core::NO_DISTINCT;
+    std::uint32_t entryId = nesso::core::NO_DISTINCT;
     if (!chunk.skipped)
     {
-        id = state.distinct.add(chunk.text);
-        if (id == state.reserved)
+        entryId = state.distinct.add(chunk.text);
+        if (entryId == state.reserved)
         {
-            const auto added = state.writer->reserveDistinct(state.distinct.text(id));
-            if (!added || *added != id)
+            const auto added = state.writer->reserveDistinct(state.distinct.text(entryId));
+            if (!added || *added != entryId)
             {
                 return makeError(ErrorKind::CorpusWrite, added ? ErrorCause::CorruptFile : causeOf(added.error()),
                                  state.request->output, counts);
@@ -180,7 +180,7 @@ static std::optional<Error> ingestIndexChunk(IndexEmbedState &state, IndexSource
                                  .byteOffset = chunk.byteOffset,
                                  .byteLength = chunk.byteLength,
                                  .sourceIndex = cursor.activeSource,
-                                 .distinctId = id,
+                                 .distinctId = entryId,
                                  .arrayElement = chunk.arrayElement};
     if (cursor.storeLines)
     {
