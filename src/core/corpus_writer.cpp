@@ -698,10 +698,10 @@ struct CorpusEmitMeta
 
 struct CorpusSpillStreams
 {
-    std::istream &lines;
-    std::istream &texts;
-    std::istream &vectors;
-    std::ostream &output;
+    std::istream *lines = nullptr;
+    std::istream *texts = nullptr;
+    std::istream *vectors = nullptr;
+    std::ostream *output = nullptr;
 };
 
 static bool writeCorpusSections(const CorpusSpillStreams &streams, const CorpusPolicy &policy,
@@ -720,14 +720,14 @@ static bool writeCorpusSections(const CorpusSpillStreams &streams, const CorpusP
                                     .sourceCount = meta.sources.size(),
                                     .lineCount = meta.lineCount,
                                     .distinctCount = meta.distinctCount};
-    if (!writeCorpusHeader(streams.output, policyText, counts, offsets) ||
-        !writeCorpusSources(streams.output, meta.sources, offsets.sourceOffset))
+    if (!writeCorpusHeader(*streams.output, policyText, counts, offsets) ||
+        !writeCorpusSources(*streams.output, meta.sources, offsets.sourceOffset))
     {
         return false;
     }
     std::uint64_t storedCursor = offsets.storedOffset;
-    if (!writeCorpusLineTable(streams.lines, streams.output, meta.lineCount, storedCursor) ||
-        !writeCorpusDistinctTexts(streams.texts, streams.lines, streams.output,
+    if (!writeCorpusLineTable(*streams.lines, *streams.output, meta.lineCount, storedCursor) ||
+        !writeCorpusDistinctTexts(*streams.texts, *streams.lines, *streams.output,
                                   {.distinctCount = static_cast<std::size_t>(meta.distinctCount),
                                    .textOffset = offsets.textOffset,
                                    .storedOffset = offsets.storedOffset}))
@@ -735,7 +735,7 @@ static bool writeCorpusSections(const CorpusSpillStreams &streams, const CorpusP
         return false;
     }
     return writeCorpusStoredAndMatrix(
-        streams.lines, streams.vectors, streams.output, meta.lexical, offsets,
+        *streams.lines, *streams.vectors, *streams.output, meta.lexical, offsets,
         {.lineCount = meta.lineCount, .storedCursor = storedCursor, .storedBytes = meta.storedBytes});
 }
 
@@ -797,7 +797,7 @@ std::expected<void, EngineError> CorpusWriter::finish()
                               .textBytes = impl_->textBytes,
                               .storedBytes = impl_->storedBytes,
                               .lexical = lexical};
-    if (!writeCorpusSections({.lines = lines, .texts = texts, .vectors = vectors, .output = output}, impl_->policy,
+    if (!writeCorpusSections({.lines = &lines, .texts = &texts, .vectors = &vectors, .output = &output}, impl_->policy,
                              meta))
     {
         return fail();
