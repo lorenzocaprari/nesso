@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794677663198,
+  "lastUpdate": 1794682355281,
   "repoUrl": "https://github.com/lorenzocaprari/nesso",
   "entries": {
     "nesso": [
@@ -6803,6 +6803,60 @@ window.BENCHMARK_DATA = {
           {
             "name": "grep-100000-rss",
             "value": 144093184,
+            "unit": "bytes"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "caprarilorenzo5@gmail.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "committer": {
+            "email": "85455384+lorenzocaprari@users.noreply.github.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "distinct": true,
+          "id": "2a00926a6fcc4ae25413d135fd8e6fea9a9a96c5",
+          "message": "ci(clang-tidy): enable pro-bounds-pointer-arithmetic\n\nDrop the disable now that src/ has no pointer-arithmetic hits.",
+          "timestamp": "2026-11-14T19:47:12+01:00",
+          "tree_id": "1cda4713b5d341f09864cfdc2d75d08e33cb4bce",
+          "url": "https://github.com/lorenzocaprari/nesso/commit/2a00926a6fcc4ae25413d135fd8e6fea9a9a96c5"
+        },
+        "date": 1794682354581,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "grep-1000-wall",
+            "value": 1.22,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-1000-rss",
+            "value": 118337536,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-10000-wall",
+            "value": 1.23,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-10000-rss",
+            "value": 119541760,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-100000-wall",
+            "value": 1.47,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-100000-rss",
+            "value": 145047552,
             "unit": "bytes"
           }
         ]
