@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794683464465,
+  "lastUpdate": 1794684590031,
   "repoUrl": "https://github.com/lorenzocaprari/nesso",
   "entries": {
     "nesso": [
@@ -6911,6 +6911,60 @@ window.BENCHMARK_DATA = {
           {
             "name": "grep-100000-rss",
             "value": 145022976,
+            "unit": "bytes"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "caprarilorenzo5@gmail.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "committer": {
+            "email": "85455384+lorenzocaprari@users.noreply.github.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "distinct": true,
+          "id": "bc311f186f7bebf2d1f5714b10b25645633a57bb",
+          "message": "refactor: clear remaining identifier-length hits\n\nRename short locals and parameters outside core so\nreadability-identifier-length can be enabled with the planned ignores.",
+          "timestamp": "2026-11-14T20:11:50+01:00",
+          "tree_id": "127897ad394083b2f42a086ba55ebd579fb918dc",
+          "url": "https://github.com/lorenzocaprari/nesso/commit/bc311f186f7bebf2d1f5714b10b25645633a57bb"
+        },
+        "date": 1794684589303,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "grep-1000-wall",
+            "value": 0.13,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-1000-rss",
+            "value": 117248000,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-10000-wall",
+            "value": 0.14,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-10000-rss",
+            "value": 118943744,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-100000-wall",
+            "value": 0.31,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-100000-rss",
+            "value": 144699392,
             "unit": "bytes"
           }
         ]
