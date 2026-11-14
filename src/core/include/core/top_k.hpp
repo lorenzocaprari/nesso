@@ -51,27 +51,27 @@ namespace detail
 {
 
 template <typename ResultT, typename Compare>
-void selectTopKInPlace(std::vector<ResultT> &results, size_t k, Compare compare)
+void selectTopKInPlace(std::vector<ResultT> &results, size_t topK, Compare compare)
 {
-    if (k == 0 || results.empty())
+    if (topK == 0 || results.empty())
     {
         results.clear();
         return;
     }
 
-    const size_t resultCount = std::min(k, results.size());
+    const size_t resultCount = std::min(topK, results.size());
     std::partial_sort(results.begin(), results.begin() + static_cast<std::ptrdiff_t>(resultCount), results.end(),
                       compare);
     results.resize(resultCount);
 }
 
-/// Runs `fn(context, begin, end)` on contiguous pieces of `[0, rows)`.
+/// Runs `rowFn(context, begin, end)` on contiguous pieces of `[0, rows)`.
 ///
 /// `threads` counts the caller. One piece when `threads <= 1`, `rows` is below
 /// `PARALLEL_MIN_ROWS`, or a worker cannot be started. The pool is process-wide
 /// and grows to the widest budget seen, capped at `PARALLEL_MAX_THREADS`, so a
-/// later scan does not spawn threads again. `fn` must not call `parallelRows`.
-void parallelRows(size_t threads, size_t rows, void (*fn)(void *context, size_t begin, size_t end), void *context);
+/// later scan does not spawn threads again. `rowFn` must not call `parallelRows`.
+void parallelRows(size_t threads, size_t rows, void (*rowFn)(void *context, size_t begin, size_t end), void *context);
 
 } // namespace detail
 

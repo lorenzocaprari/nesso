@@ -31,11 +31,11 @@ class DistinctIndex
 
     void clearPending() noexcept;
 
-    /// The first raw line `add` stored for `id`. The view stays valid for the life of this index.
-    [[nodiscard]] std::string_view text(std::uint32_t id) const noexcept;
+    /// The first raw line `add` stored for `entryId`. The view stays valid for the life of this index.
+    [[nodiscard]] std::string_view text(std::uint32_t entryId) const noexcept;
 
-    /// Input lines that share `id`'s masked key. At least 1 for an id `add` returned.
-    [[nodiscard]] std::uint32_t occurrences(std::uint32_t id) const noexcept;
+    /// Input lines that share `entryId`'s masked key. At least 1 for an id `add` returned.
+    [[nodiscard]] std::uint32_t occurrences(std::uint32_t entryId) const noexcept;
 
   private:
     struct TextHash

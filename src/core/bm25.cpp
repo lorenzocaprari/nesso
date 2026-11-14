@@ -58,10 +58,10 @@ struct TermWeightInput
 
 static double termWeight(const TermWeightInput &input) noexcept
 {
-    const auto tf = static_cast<double>(input.frequency);
+    const auto termFreq = static_cast<double>(input.frequency);
     const double norm = (1.0 - BM25_B) + (BM25_B * (static_cast<double>(input.length) / input.averageLength));
-    const double denominator = tf + (BM25_K1 * norm);
-    return (tf * (BM25_K1 + 1.0)) / denominator;
+    const double denominator = termFreq + (BM25_K1 * norm);
+    return (termFreq * (BM25_K1 + 1.0)) / denominator;
 }
 
 static std::vector<std::string> distinctQueryTerms(std::span<const std::string_view> query)
@@ -116,12 +116,12 @@ static std::vector<double> scoreLines(std::size_t lineCount, std::size_t totalLe
         {
             continue;
         }
-        const std::size_t df = documentFrequency[*termId];
-        if (df == 0)
+        const std::size_t docFreq = documentFrequency[*termId];
+        if (docFreq == 0)
         {
             continue;
         }
-        const double idf = idfOf(lineCount, df);
+        const double idf = idfOf(lineCount, docFreq);
         for (std::size_t line = 0; line < lineCount; ++line)
         {
             const auto [frequencies, length] = lineAt(line);
@@ -144,10 +144,10 @@ std::uint32_t Bm25Index::internTerm(std::string_view term)
     {
         return found->second;
     }
-    const auto id = static_cast<std::uint32_t>(documentFrequency_.size());
-    ids_.emplace(std::move(key), id);
+    const auto termId = static_cast<std::uint32_t>(documentFrequency_.size());
+    ids_.emplace(std::move(key), termId);
     documentFrequency_.push_back(0);
-    return id;
+    return termId;
 }
 
 void Bm25Index::addLine(std::span<const std::string_view> terms)
@@ -164,9 +164,9 @@ void Bm25Index::addLine(std::span<const std::string_view> terms)
     line.frequencies.reserve(counts.size());
     for (const auto &entry : counts)
     {
-        const std::uint32_t id = internTerm(entry.first);
-        ++documentFrequency_[id];
-        line.frequencies.emplace_back(id, static_cast<std::uint32_t>(entry.second));
+        const std::uint32_t termId = internTerm(entry.first);
+        ++documentFrequency_[termId];
+        line.frequencies.emplace_back(termId, static_cast<std::uint32_t>(entry.second));
     }
     std::ranges::sort(line.frequencies, [](const auto &left, const auto &right) { return left.first < right.first; });
     totalLength_ += line.length;

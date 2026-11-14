@@ -140,7 +140,8 @@ class CorpusWriter
     /// Reserve a distinct id before its embedding is available, so lines can be streamed immediately.
     [[nodiscard]] std::expected<std::uint32_t, EngineError> reserveDistinct(std::string_view text);
     /// Write vectors in distinct-id order. Every reserved id must have a vector before finish.
-    [[nodiscard]] std::expected<void, EngineError> addVector(std::uint32_t id, std::span<const float> embedding);
+    [[nodiscard]] std::expected<void, EngineError> addVector(std::uint32_t distinctId,
+                                                             std::span<const float> embedding);
     [[nodiscard]] std::expected<std::uint32_t, EngineError> addDistinct(std::string_view text,
                                                                         std::span<const float> embedding);
     /// `lineTerms.size()` must equal `lines.size()`. Each entry is the term

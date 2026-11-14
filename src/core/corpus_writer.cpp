@@ -273,9 +273,9 @@ std::expected<std::uint32_t, EngineError> CorpusWriter::addSource(SourceInfo sou
     {
         return std::unexpected(EngineError::CorruptDatabase);
     }
-    const auto id = static_cast<std::uint32_t>(impl_->sources.size());
+    const auto sourceId = static_cast<std::uint32_t>(impl_->sources.size());
     impl_->sources.push_back(std::move(source));
-    return id;
+    return sourceId;
 }
 
 std::expected<std::uint32_t, EngineError> CorpusWriter::reserveDistinct(std::string_view text)
@@ -291,16 +291,16 @@ std::expected<std::uint32_t, EngineError> CorpusWriter::reserveDistinct(std::str
         impl_->failed = true;
         return std::unexpected(EngineError::FileOpenFailure);
     }
-    const auto id = static_cast<std::uint32_t>(impl_->uses.size());
+    const auto distinctId = static_cast<std::uint32_t>(impl_->uses.size());
     impl_->distinctTexts.emplace(text);
     impl_->uses.push_back(0);
     impl_->textBytes += text.size();
-    return id;
+    return distinctId;
 }
 
-std::expected<void, EngineError> CorpusWriter::addVector(std::uint32_t id, std::span<const float> embedding)
+std::expected<void, EngineError> CorpusWriter::addVector(std::uint32_t distinctId, std::span<const float> embedding)
 {
-    if (impl_->failed || impl_->finished || id != impl_->vectorCount || id >= impl_->uses.size())
+    if (impl_->failed || impl_->finished || distinctId != impl_->vectorCount || distinctId >= impl_->uses.size())
     {
         return std::unexpected(EngineError::CorruptDatabase);
     }
@@ -328,16 +328,16 @@ std::expected<std::uint32_t, EngineError> CorpusWriter::addDistinct(std::string_
     {
         return std::unexpected(valid.error());
     }
-    const auto id = reserveDistinct(text);
-    if (!id)
+    const auto distinctId = reserveDistinct(text);
+    if (!distinctId)
     {
-        return std::unexpected(id.error());
+        return std::unexpected(distinctId.error());
     }
-    if (const auto added = addVector(*id, embedding); !added)
+    if (const auto added = addVector(*distinctId, embedding); !added)
     {
         return std::unexpected(added.error());
     }
-    return *id;
+    return *distinctId;
 }
 
 struct LastLineCursor
