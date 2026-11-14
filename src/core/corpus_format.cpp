@@ -125,8 +125,10 @@ bool readU64(std::span<const std::byte> bytes, std::uint64_t offset, std::uint64
 
 std::string_view viewBytes(std::span<const std::byte> bytes, std::uint64_t offset, std::uint64_t length)
 {
+    const std::span<const std::byte> slice =
+        bytes.subspan(static_cast<std::size_t>(offset), static_cast<std::size_t>(length));
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-    return {reinterpret_cast<const char *>(bytes.data() + offset), static_cast<std::size_t>(length)};
+    return {reinterpret_cast<const char *>(slice.data()), slice.size()};
 }
 
 bool atEnd(std::istream &input) { return input.peek() == std::char_traits<char>::eof() && input.eof() && !input.bad(); }
