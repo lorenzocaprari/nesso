@@ -48,17 +48,23 @@ static bool appendVarint(std::vector<std::byte> &out, std::uint64_t value)
     return true;
 }
 
-static bool readVarint(std::span<const std::byte> bytes, std::uint64_t &cursor, std::uint64_t &value)
+struct VarintDecode
 {
-    value = 0;
+    std::uint64_t &cursor;
+    std::uint64_t &value;
+};
+
+static bool readVarint(std::span<const std::byte> bytes, const VarintDecode &out)
+{
+    out.value = 0;
     for (unsigned shift = 0; shift < 64; shift += 7)
     {
-        if (cursor >= bytes.size())
+        if (out.cursor >= bytes.size())
         {
             return false;
         }
-        const auto piece = static_cast<std::uint64_t>(bytes[cursor++]);
-        value |= (piece & 0x7FU) << shift;
+        const auto piece = static_cast<std::uint64_t>(bytes[out.cursor++]);
+        out.value |= (piece & 0x7FU) << shift;
         if ((piece & 0x80U) == 0)
         {
             return shift < 63 || piece <= 1;
@@ -180,7 +186,8 @@ static std::expected<void, EngineError> decodeLexicalDictionary(std::span<const 
     for (std::uint64_t index = 0; index < termCount; ++index)
     {
         std::uint64_t length = 0;
-        if (!readVarint(bytes, cursor, length) || length > MAX_TEXT_BYTES || !rangeInside(cursor, length, bytes.size()))
+        if (!readVarint(bytes, {.cursor = cursor, .value = length}) || length > MAX_TEXT_BYTES ||
+            !rangeInside(cursor, length, bytes.size()))
         {
             return std::unexpected(EngineError::CorruptDatabase);
         }
@@ -202,14 +209,20 @@ static std::expected<void, EngineError> decodeLexicalDictionary(std::span<const 
     return {};
 }
 
+struct LexicalPostingLimits
+{
+    std::uint64_t termCount = 0;
+    std::uint64_t postingLines = 0;
+};
+
 static std::expected<void, EngineError> decodeLexicalPostings(std::span<const std::byte> bytes, std::uint64_t &cursor,
-                                                              std::uint64_t termCount, std::uint64_t postingLines,
+                                                              const LexicalPostingLimits &limits,
                                                               std::vector<LexicalLinePostings> &postings)
 {
-    for (std::uint64_t line = 0; line < postingLines; ++line)
+    for (std::uint64_t line = 0; line < limits.postingLines; ++line)
     {
         std::uint64_t unique = 0;
-        if (!readVarint(bytes, cursor, unique) || unique > termCount)
+        if (!readVarint(bytes, {.cursor = cursor, .value = unique}) || unique > limits.termCount)
         {
             return std::unexpected(EngineError::CorruptDatabase);
         }
@@ -221,8 +234,9 @@ static std::expected<void, EngineError> decodeLexicalPostings(std::span<const st
         {
             std::uint64_t delta = 0;
             std::uint64_t frequency = 0;
-            if (!readVarint(bytes, cursor, delta) || !readVarint(bytes, cursor, frequency) || frequency == 0 ||
-                delta > termCount || previousId + delta >= termCount || (index > 0 && delta == 0))
+            if (!readVarint(bytes, {.cursor = cursor, .value = delta}) ||
+                !readVarint(bytes, {.cursor = cursor, .value = frequency}) || frequency == 0 ||
+                delta > limits.termCount || previousId + delta >= limits.termCount || (index > 0 && delta == 0))
             {
                 return std::unexpected(EngineError::CorruptDatabase);
             }
@@ -235,7 +249,7 @@ static std::expected<void, EngineError> decodeLexicalPostings(std::span<const st
             row.entries.emplace_back(static_cast<std::uint32_t>(previousId), static_cast<std::uint32_t>(frequency));
         }
         std::uint64_t length = 0;
-        if (!readVarint(bytes, cursor, length) || length != lengthSum || length > MAX_TEXT_BYTES)
+        if (!readVarint(bytes, {.cursor = cursor, .value = length}) || length != lengthSum || length > MAX_TEXT_BYTES)
         {
             return std::unexpected(EngineError::CorruptDatabase);
         }
@@ -265,7 +279,9 @@ std::expected<void, EngineError> decodeLexicalSection(std::span<const std::byte>
         return std::unexpected(decoded.error());
     }
     postings.resize(static_cast<std::size_t>(postingLines));
-    if (const auto decoded = decodeLexicalPostings(bytes, cursor, termCount, postingLines, postings); !decoded)
+    if (const auto decoded =
+            decodeLexicalPostings(bytes, cursor, {.termCount = termCount, .postingLines = postingLines}, postings);
+        !decoded)
     {
         return std::unexpected(decoded.error());
     }

@@ -67,7 +67,7 @@ TEST_CASE("Semantic grep ranks the expected log line", "[grep][integration]")
     REQUIRE(queryEmbedding.has_value());
 
     const std::span<const float> matrix{(*embeddings)[0]};
-    const auto results = nesso::core::topK(*queryEmbedding, matrix, matrix.size(), 1);
+    const auto results = nesso::core::topK({.query = *queryEmbedding, .matrix = matrix, .dims = matrix.size(), .k = 1});
     REQUIRE(results.has_value());
     REQUIRE(results->size() == 1);
     REQUIRE((*results)[0].index == 0);

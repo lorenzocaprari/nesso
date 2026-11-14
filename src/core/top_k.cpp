@@ -199,8 +199,8 @@ class MergedHits
 class TopScan
 {
   public:
-    TopScan(std::span<const float> query, std::span<const float> matrix, size_t dims, size_t k)
-        : query_(query), matrix_(matrix), dims_(dims), k_(k)
+    explicit TopScan(const TopKRequest &request)
+        : query_(request.query), matrix_(request.matrix), dims_(request.dims), k_(request.k)
     {
     }
 
@@ -389,45 +389,43 @@ void parallelRows(size_t threads, size_t rows, void (*fn)(void *context, size_t 
 
 } // namespace detail
 
-std::expected<std::vector<Hit>, EngineError> topK(std::span<const float> query, std::span<const float> matrix,
-                                                  size_t dims, size_t k, size_t threads)
+std::expected<std::vector<Hit>, EngineError> topK(const TopKRequest &request)
 {
-    if (k == 0 || matrix.empty())
+    if (request.k == 0 || request.matrix.empty())
     {
         return std::vector<Hit>{};
     }
-    if (dims == 0)
+    if (request.dims == 0)
     {
         return std::unexpected(EngineError::DatabaseNotInitialized);
     }
-    if (query.size() != dims)
+    if (request.query.size() != request.dims)
     {
         return std::unexpected(EngineError::MismatchedDimensions);
     }
-    if (matrix.size() % dims != 0)
+    if (request.matrix.size() % request.dims != 0)
     {
         return std::unexpected(EngineError::CorruptDatabase);
     }
 
-    TopScan scan(query, matrix, dims, k);
-    detail::parallelRows(threads, matrix.size() / dims, runTopChunk, &scan);
+    TopScan scan(request);
+    detail::parallelRows(request.threads, request.matrix.size() / request.dims, runTopChunk, &scan);
     if (scan.error())
     {
         return std::unexpected(*scan.error());
     }
-    return scan.finish(k);
+    return scan.finish(request.k);
 }
 
-std::vector<Hit> rankTop(size_t count, size_t k, size_t threads, float (*score)(void *context, size_t index),
-                         bool (*keep)(void *context, size_t index), void *context)
+std::vector<Hit> rankTop(const RankTopRequest &request)
 {
-    if (k == 0 || count == 0 || score == nullptr || keep == nullptr)
+    if (request.k == 0 || request.count == 0 || request.score == nullptr || request.keep == nullptr)
     {
         return {};
     }
-    RankScan scan(score, keep, context, k);
-    detail::parallelRows(threads, count, runRankChunk, &scan);
-    return scan.finish(k);
+    RankScan scan(request.score, request.keep, request.context, request.k);
+    detail::parallelRows(request.threads, request.count, runRankChunk, &scan);
+    return scan.finish(request.k);
 }
 
 } // namespace nesso::core

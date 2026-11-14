@@ -112,7 +112,7 @@ TEST_CASE("expanded distinct scores match the search oracle", "[dedup]")
 
     const std::array<float, 1> query{1.F};
     constexpr size_t top = 4;
-    const auto ranked = nesso::core::topK(query, matrix, 1, top);
+    const auto ranked = nesso::core::topK({.query = query, .matrix = matrix, .dims = 1, .k = top});
     REQUIRE(ranked.has_value());
 
     struct Row

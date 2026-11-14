@@ -49,10 +49,17 @@ static double idfOf(std::size_t lineCount, std::size_t documentFrequency) noexce
     return std::log(1.0 + (numerator / denominator));
 }
 
-static double termWeight(std::uint32_t frequency, std::uint32_t length, double averageLength) noexcept
+struct TermWeightInput
 {
-    const auto tf = static_cast<double>(frequency);
-    const double norm = (1.0 - BM25_B) + (BM25_B * (static_cast<double>(length) / averageLength));
+    std::uint32_t frequency = 0;
+    std::uint32_t length = 0;
+    double averageLength = 0.0;
+};
+
+static double termWeight(const TermWeightInput &input) noexcept
+{
+    const auto tf = static_cast<double>(input.frequency);
+    const double norm = (1.0 - BM25_B) + (BM25_B * (static_cast<double>(input.length) / input.averageLength));
     const double denominator = tf + (BM25_K1 * norm);
     return (tf * (BM25_K1 + 1.0)) / denominator;
 }
@@ -123,7 +130,8 @@ static std::vector<double> scoreLines(std::size_t lineCount, std::size_t totalLe
             {
                 continue;
             }
-            result[line] += idf * termWeight(frequency, length, averageLength);
+            result[line] +=
+                idf * termWeight({.frequency = frequency, .length = length, .averageLength = averageLength});
         }
     }
     return result;
