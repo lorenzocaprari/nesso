@@ -57,7 +57,6 @@ Checks: >
   -modernize-use-trailing-return-type,
   -performance-unnecessary-value-param,
   -readability-convert-member-functions-to-static,
-  -readability-identifier-length,
   -readability-magic-numbers,
   -clang-diagnostic-error
 
@@ -83,3 +82,10 @@ CheckOptions:
   readability-function-size.VariableThreshold: '30'
   bugprone-easily-swappable-parameters.MinimumLength: '2'
   bugprone-easily-swappable-parameters.ModelImplicitConversions: 'false'
+  readability-identifier-length.MinimumVariableNameLength: '3'
+  readability-identifier-length.MinimumParameterNameLength: '3'
+  readability-identifier-length.MinimumLoopCounterNameLength: '2'
+  readability-identifier-length.IgnoredLoopCounterNames: '^[ijk]$'
+  readability-identifier-length.IgnoredParameterNames: '^[ab]$'
+  readability-identifier-length.IgnoredVariableNames: '^[a-h]$'
+  readability-identifier-length.IgnoredExceptionVariableNames: '^[e]$'
