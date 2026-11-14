@@ -152,7 +152,7 @@ struct CorpusScore
     std::span<const float> query;
     std::span<const float> matrix;
     size_t dimensions = 0;
-    float *scores = nullptr;
+    std::span<float> scores;
     std::mutex mutex;
     std::optional<nesso::core::EngineError> dotError;
     size_t failureAt = std::numeric_limits<size_t>::max();
@@ -760,7 +760,7 @@ static SearchDenseScores scoreSearchDense(const nesso::core::MappedCorpus &corpu
     scored.query = queryEmbedding;
     scored.matrix = corpus.matrix();
     scored.dimensions = corpus.dimensions();
-    scored.scores = result.scores.data();
+    scored.scores = result.scores;
     nesso::core::detail::parallelRows(threads, result.scores.size(), scoreCorpusRows, &scored);
     result.dotError = scored.dotError;
     result.nonFinite = scored.nonFinite;

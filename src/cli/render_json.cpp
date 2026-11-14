@@ -8,6 +8,7 @@
 #include <array>
 #include <charconv>
 #include <format>
+#include <iterator>
 #include <string>
 #include <string_view>
 
@@ -23,7 +24,7 @@ static std::string formatScore(float score)
 {
     std::array<char, 64> buffer{};
     const std::to_chars_result result =
-        std::to_chars(buffer.data(), buffer.data() + buffer.size(), score, std::chars_format::general);
+        std::to_chars(buffer.data(), std::to_address(buffer.end()), score, std::chars_format::general);
     return {buffer.data(), static_cast<std::size_t>(result.ptr - buffer.data())};
 }
 

@@ -7,6 +7,7 @@
 #include <charconv>
 #include <cstdint>
 #include <expected>
+#include <iterator>
 #include <string_view>
 #include <system_error>
 
@@ -34,8 +35,8 @@ class ThreadCount
             return std::unexpected(ThreadCountError::NotPositiveInteger);
         }
         size_t parsed = 0;
-        const char *const first = text.data();
-        const char *const last = first + text.size();
+        const char *const first = std::to_address(text.begin());
+        const char *const last = std::to_address(text.end());
         const std::from_chars_result result = std::from_chars(first, last, parsed);
         if (result.ec != std::errc{} || result.ptr != last)
         {
