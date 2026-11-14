@@ -75,6 +75,16 @@ void parallelRows(size_t threads, size_t rows, void (*fn)(void *context, size_t 
 
 } // namespace detail
 
+/// Inputs for a dense top-k scan over a row-major embedding matrix.
+struct TopKRequest
+{
+    std::span<const float> query;
+    std::span<const float> matrix;
+    size_t dims = 0;
+    size_t k = 0;
+    size_t threads = 1;
+};
+
 /// Highest dot-product rows of a row-major `matrix` (`rows * dims` floats).
 /// Text for those rows is the caller's job: a hit carries only `index` and `score`.
 ///
@@ -82,17 +92,25 @@ void parallelRows(size_t threads, size_t rows, void (*fn)(void *context, size_t 
 /// contiguous row chunk and keeps a private top k. The chunks merge by score
 /// descending, then ascending index. A budget of one, or a short matrix, stays
 /// on the caller and produces the same hits.
-[[nodiscard]] std::expected<std::vector<Hit>, EngineError>
-topK(std::span<const float> query, std::span<const float> matrix, size_t dims, size_t k, size_t threads = 1);
+[[nodiscard]] std::expected<std::vector<Hit>, EngineError> topK(const TopKRequest &request);
+
+/// Inputs for an exact top-k scan over `count` indices.
+struct RankTopRequest
+{
+    size_t count = 0;
+    size_t k = 0;
+    size_t threads = 1;
+    float (*score)(void *context, size_t index) = nullptr;
+    bool (*keep)(void *context, size_t index) = nullptr;
+    void *context = nullptr;
+};
 
 /// Exact top k over `count` indices.
 ///
 /// `keep` is consulted first. `score` runs once for each kept index. Chunks keep
 /// a private top k and merge by score descending, then ascending index. `threads`
 /// follows the same cutoff as `topK`.
-[[nodiscard]] std::vector<Hit> rankTop(size_t count, size_t k, size_t threads,
-                                       float (*score)(void *context, size_t index),
-                                       bool (*keep)(void *context, size_t index), void *context);
+[[nodiscard]] std::vector<Hit> rankTop(const RankTopRequest &request);
 
 } // namespace nesso::core
 

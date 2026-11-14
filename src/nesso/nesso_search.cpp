@@ -284,8 +284,12 @@ static std::vector<RankedLine> rankDenseLines(const nesso::core::MappedCorpus &c
         return rankDenseGroups(corpus, distinctScores, topK);
     }
     LineRank view{.lines = corpus.lines(), .scores = &distinctScores};
-    const std::vector<nesso::core::Hit> hits =
-        nesso::core::rankTop(corpus.lines().size(), topK, threads, lineScore, lineKeep, &view);
+    const std::vector<nesso::core::Hit> hits = nesso::core::rankTop({.count = corpus.lines().size(),
+                                                                     .k = topK,
+                                                                     .threads = threads,
+                                                                     .score = lineScore,
+                                                                     .keep = lineKeep,
+                                                                     .context = &view});
     std::vector<RankedLine> ranked;
     ranked.reserve(hits.size());
     for (const nesso::core::Hit &hit : hits)
@@ -411,8 +415,12 @@ static std::vector<RankedLine> rankHybridUngrouped(const nesso::core::MappedCorp
         keep[static_cast<size_t>(inputs.ordinals[index])] = 1;
     }
     FusedLineRank view{.scores = &lineScores, .keep = &keep};
-    const std::vector<nesso::core::Hit> hits =
-        nesso::core::rankTop(corpus.lines().size(), topK, threads, fusedLineScore, fusedLineKeep, &view);
+    const std::vector<nesso::core::Hit> hits = nesso::core::rankTop({.count = corpus.lines().size(),
+                                                                     .k = topK,
+                                                                     .threads = threads,
+                                                                     .score = fusedLineScore,
+                                                                     .keep = fusedLineKeep,
+                                                                     .context = &view});
     std::vector<RankedLine> ranked;
     ranked.reserve(hits.size());
     for (const nesso::core::Hit &hit : hits)

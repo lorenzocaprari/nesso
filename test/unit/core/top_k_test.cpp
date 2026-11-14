@@ -39,7 +39,7 @@ TEST_CASE("topK ranks rows by dot product", "[topK][core][Unit]")
     const std::array<float, 3> gamma{0.7F, 0.7F, 0.0F};
     const auto matrix = pack({alpha, beta, gamma});
 
-    const auto results = topK(std::array<float, 3>{0.6F, 0.8F, 0.0F}, matrix, 3, 2);
+    const auto results = topK({.query = std::array<float, 3>{0.6F, 0.8F, 0.0F}, .matrix = matrix, .dims = 3, .k = 2});
     REQUIRE(results.has_value());
     REQUIRE(results->size() == 2);
     REQUIRE((*results)[0].index == 2);
@@ -52,7 +52,7 @@ TEST_CASE("topK breaks score ties by ascending index", "[topK][core][Unit]")
     const std::array<float, 3> row{1.0F, 0.0F, 0.0F};
     const auto matrix = pack({row, row});
 
-    const auto results = topK(row, matrix, 3, 2);
+    const auto results = topK({.query = row, .matrix = matrix, .dims = 3, .k = 2});
     REQUIRE(results.has_value());
     REQUIRE(results->size() == 2);
     REQUIRE((*results)[0].index == 0);
@@ -63,7 +63,8 @@ TEST_CASE("topK breaks score ties by ascending index", "[topK][core][Unit]")
 TEST_CASE("topK rejects a query whose width differs from the matrix", "[topK][core][Unit]")
 {
     const std::array<float, 3> row{1.0F, 0.0F, 0.0F};
-    const auto results = topK(std::array<float, 2>{1.0F, 0.0F}, std::span<const float>{row}, 3, 1);
+    const auto results =
+        topK({.query = std::array<float, 2>{1.0F, 0.0F}, .matrix = std::span<const float>{row}, .dims = 3, .k = 1});
     REQUIRE_FALSE(results.has_value());
     REQUIRE(results.error() == EngineError::MismatchedDimensions);
 }
@@ -71,7 +72,7 @@ TEST_CASE("topK rejects a query whose width differs from the matrix", "[topK][co
 TEST_CASE("topK clamps k to the row count", "[topK][core][Unit]")
 {
     const std::array<float, 2> row{1.0F, 0.0F};
-    const auto results = topK(row, std::span<const float>{row}, 2, 10);
+    const auto results = topK({.query = row, .matrix = std::span<const float>{row}, .dims = 2, .k = 10});
     REQUIRE(results.has_value());
     REQUIRE(results->size() == 1);
 }
@@ -79,11 +80,11 @@ TEST_CASE("topK clamps k to the row count", "[topK][core][Unit]")
 TEST_CASE("topK returns no hits for an empty matrix or zero k", "[topK][core][Unit]")
 {
     const std::array<float, 3> query{1.0F, 0.0F, 0.0F};
-    const auto empty = topK(query, {}, 3, 1);
+    const auto empty = topK({.query = query, .matrix = {}, .dims = 3, .k = 1});
     REQUIRE(empty.has_value());
     REQUIRE(empty->empty());
 
-    const auto zeroK = topK(query, query, 3, 0);
+    const auto zeroK = topK({.query = query, .matrix = query, .dims = 3, .k = 0});
     REQUIRE(zeroK.has_value());
     REQUIRE(zeroK->empty());
 }
@@ -91,11 +92,11 @@ TEST_CASE("topK returns no hits for an empty matrix or zero k", "[topK][core][Un
 TEST_CASE("topK rejects a zero-width or ragged matrix", "[topK][core][Unit]")
 {
     const std::array<float, 3> row{1.0F, 0.0F, 0.0F};
-    const auto zeroWidth = topK(std::span<const float>{}, row, 0, 1);
+    const auto zeroWidth = topK({.query = std::span<const float>{}, .matrix = row, .dims = 0, .k = 1});
     REQUIRE_FALSE(zeroWidth.has_value());
     REQUIRE(zeroWidth.error() == EngineError::DatabaseNotInitialized);
 
-    const auto ragged = topK(std::array<float, 2>{1.0F, 0.0F}, row, 2, 1);
+    const auto ragged = topK({.query = std::array<float, 2>{1.0F, 0.0F}, .matrix = row, .dims = 2, .k = 1});
     REQUIRE_FALSE(ragged.has_value());
     REQUIRE(ragged.error() == EngineError::CorruptDatabase);
 }
@@ -224,14 +225,14 @@ TEST_CASE("topK at several thread counts matches the single-thread hit list", "[
     {
         for (const size_t k : limits)
         {
-            const auto variedHits = topK(query, varied, dims, k, threads);
-            const auto tiedHits = topK(query, tied, dims, k, threads);
+            const auto variedHits = topK({.query = query, .matrix = varied, .dims = dims, .k = k, .threads = threads});
+            const auto tiedHits = topK({.query = query, .matrix = tied, .dims = dims, .k = k, .threads = threads});
             REQUIRE(variedHits.has_value());
             REQUIRE(tiedHits.has_value());
             requireSameHits(*variedHits, oracleTop(query, varied, dims, k));
             requireSameHits(*tiedHits, oracleTop(query, tied, dims, k));
         }
-        const auto again = topK(query, varied, dims, 5, threads);
+        const auto again = topK({.query = query, .matrix = varied, .dims = dims, .k = 5, .threads = threads});
         REQUIRE(again.has_value());
         requireSameHits(*again, oracleTop(query, varied, dims, 5));
     }
@@ -245,19 +246,20 @@ TEST_CASE("topK at several thread counts matches the single-thread hit list", "[
     {
         for (const size_t k : {size_t{1}, size_t{3}, size_t{17}, size_t{40}})
         {
-            const auto hits = topK(query, small, dims, k, threads);
+            const auto hits = topK({.query = query, .matrix = small, .dims = dims, .k = k, .threads = threads});
             REQUIRE(hits.has_value());
             requireSameHits(*hits, oracleTop(query, small, dims, k));
         }
     }
 
-    const auto empty = topK(query, {}, dims, 3, 4);
+    const auto empty = topK({.query = query, .matrix = {}, .dims = dims, .k = 3, .threads = 4});
     REQUIRE(empty.has_value());
     REQUIRE(empty->empty());
-    const auto zeroK = topK(query, varied, dims, 0, 7);
+    const auto zeroK = topK({.query = query, .matrix = varied, .dims = dims, .k = 0, .threads = 7});
     REQUIRE(zeroK.has_value());
     REQUIRE(zeroK->empty());
-    const auto mismatch = topK(std::array<float, 2>{1.0F, 0.0F}, varied, dims, 1, 4);
+    const auto mismatch =
+        topK({.query = std::array<float, 2>{1.0F, 0.0F}, .matrix = varied, .dims = dims, .k = 1, .threads = 4});
     REQUIRE_FALSE(mismatch.has_value());
     REQUIRE(mismatch.error() == EngineError::MismatchedDimensions);
 }
@@ -302,13 +304,21 @@ TEST_CASE("rankTop keeps skipped rows out and matches a full sort", "[topK][core
         {
             std::vector<Hit> wanted = expected;
             detail::selectTopKInPlace(wanted, k, better);
-            const auto actual = rankTop(count, k, threads, contextScore, contextKeep, &context);
+            const auto actual = rankTop({.count = count,
+                                         .k = k,
+                                         .threads = threads,
+                                         .score = contextScore,
+                                         .keep = contextKeep,
+                                         .context = &context});
             requireSameHits(actual, wanted);
         }
     }
 
-    REQUIRE(rankTop(count, 0, 4, contextScore, contextKeep, &context).empty());
-    REQUIRE(rankTop(0, 3, 4, contextScore, contextKeep, &context).empty());
+    REQUIRE(
+        rankTop({.count = count, .k = 0, .threads = 4, .score = contextScore, .keep = contextKeep, .context = &context})
+            .empty());
+    REQUIRE(rankTop({.count = 0, .k = 3, .threads = 4, .score = contextScore, .keep = contextKeep, .context = &context})
+                .empty());
 }
 
 TEST_CASE("selectTopKInPlace clears on empty or zero k", "[topK][core][Unit]")
@@ -455,8 +465,10 @@ TEST_CASE("rankTop with NaN scores matches single and multi-thread results", "[t
     { return rankBefore(left.score, left.index, right.score, right.index); };
     detail::selectTopKInPlace(finiteOnly, k, better);
 
-    const auto single = rankTop(count, k, 1, contextScore, keepAll, &context);
-    const auto multi = rankTop(count, k, 4, contextScore, keepAll, &context);
+    const auto single =
+        rankTop({.count = count, .k = k, .threads = 1, .score = contextScore, .keep = keepAll, .context = &context});
+    const auto multi =
+        rankTop({.count = count, .k = k, .threads = 4, .score = contextScore, .keep = keepAll, .context = &context});
     requireSameHits(single, multi);
     REQUIRE(single.size() == k);
     REQUIRE(finiteOnly.size() < k);
@@ -481,8 +493,8 @@ TEST_CASE("topK with NaN rows places them last and matches across threads", "[to
     const std::array<float, 1> query{1.0F};
     constexpr size_t k = 20;
 
-    const auto single = topK(query, matrix, dims, k, 1);
-    const auto multi = topK(query, matrix, dims, k, 4);
+    const auto single = topK({.query = query, .matrix = matrix, .dims = dims, .k = k, .threads = 1});
+    const auto multi = topK({.query = query, .matrix = matrix, .dims = dims, .k = k, .threads = 4});
     REQUIRE(single.has_value());
     REQUIRE(multi.has_value());
     requireSameHits(*single, *multi);

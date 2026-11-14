@@ -114,7 +114,7 @@ void topKFlatMatrix(benchmark::State &state)
 
     for (auto _ : state)
     {
-        auto hits = nesso::core::topK(query, matrix, EMBEDDING_DIMENSIONS, TOP_K);
+        auto hits = nesso::core::topK({.query = query, .matrix = matrix, .dims = EMBEDDING_DIMENSIONS, .k = TOP_K});
         benchmark::DoNotOptimize(hits);
     }
     state.SetItemsProcessed(static_cast<int64_t>(state.iterations() * rows));
