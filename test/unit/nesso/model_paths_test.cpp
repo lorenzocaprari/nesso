@@ -132,7 +132,10 @@ TEST_CASE("resolveDefaultModelDir search order")
     std::filesystem::create_directories(cwd);
     std::filesystem::create_directories(packaged);
 
-    SECTION("falls back to packaged dir") { REQUIRE(nesso::resolveDefaultModelDir(cwd, packaged) == packaged); }
+    SECTION("falls back to packaged dir")
+    {
+        REQUIRE(nesso::resolveDefaultModelDir({.cwd = cwd, .packagedDir = packaged}) == packaged);
+    }
 
     SECTION("NESSO_MODEL_DIR wins even if incomplete")
     {
@@ -140,13 +143,13 @@ TEST_CASE("resolveDefaultModelDir search order")
         std::filesystem::create_directories(envDir);
         EnvGuard::set("NESSO_MODEL_DIR", envDir.string());
         seedModelDir(cwd / "models");
-        REQUIRE(nesso::resolveDefaultModelDir(cwd, packaged) == envDir);
+        REQUIRE(nesso::resolveDefaultModelDir({.cwd = cwd, .packagedDir = packaged}) == envDir);
     }
 
     SECTION("cwd/models when complete")
     {
         seedModelDir(cwd / "models");
-        REQUIRE(nesso::resolveDefaultModelDir(cwd, packaged) == cwd / "models");
+        REQUIRE(nesso::resolveDefaultModelDir({.cwd = cwd, .packagedDir = packaged}) == cwd / "models");
     }
 
     SECTION("XDG_DATA_HOME/nesso when complete")
@@ -154,7 +157,7 @@ TEST_CASE("resolveDefaultModelDir search order")
         const auto xdg = root / "xdg";
         seedModelDir(xdg / "nesso");
         EnvGuard::set("XDG_DATA_HOME", xdg.string());
-        REQUIRE(nesso::resolveDefaultModelDir(cwd, packaged) == xdg / "nesso");
+        REQUIRE(nesso::resolveDefaultModelDir({.cwd = cwd, .packagedDir = packaged}) == xdg / "nesso");
     }
 
     SECTION("HOME/.local/share/nesso when XDG unset")
@@ -162,7 +165,8 @@ TEST_CASE("resolveDefaultModelDir search order")
         const auto home = root / "home";
         seedModelDir(home / ".local" / "share" / "nesso");
         EnvGuard::set("HOME", home.string());
-        REQUIRE(nesso::resolveDefaultModelDir(cwd, packaged) == home / ".local" / "share" / "nesso");
+        REQUIRE(nesso::resolveDefaultModelDir({.cwd = cwd, .packagedDir = packaged}) ==
+                home / ".local" / "share" / "nesso");
     }
 
     std::filesystem::remove_all(root);
