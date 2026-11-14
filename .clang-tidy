@@ -43,7 +43,6 @@ Checks: >
   -cppcoreguidelines-noexcept-swap,
   -cppcoreguidelines-non-private-member-variables-in-classes,
   -cppcoreguidelines-owning-memory,
-  -cppcoreguidelines-pro-bounds-pointer-arithmetic,
   -cppcoreguidelines-use-default-member-init,
   -google-build-using-namespace,
   -google-readability-braces-around-statements,
