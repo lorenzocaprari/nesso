@@ -491,19 +491,25 @@ static std::expected<void, ParseError> decodeJsonlField(std::string &text, std::
     }
 }
 
-static std::expected<std::string, ParseError> readOpenedRangedRecord(std::istream &input, const std::string &extension,
-                                                                     uint64_t byteOffset, uint64_t byteLength,
-                                                                     std::string_view jsonField, size_t maxLineLength)
+struct ByteRange
 {
-    input.seekg(static_cast<std::streamoff>(byteOffset));
+    uint64_t offset = 0;
+    uint64_t length = 0;
+};
+
+static std::expected<std::string, ParseError> readOpenedRangedRecord(std::istream &input, const std::string &extension,
+                                                                     const ByteRange &range, std::string_view jsonField,
+                                                                     size_t maxLineLength)
+{
+    input.seekg(static_cast<std::streamoff>(range.offset));
     if (!input)
     {
         return std::unexpected(ParseError::FileOpenFailure);
     }
-    uint64_t readLength = byteLength;
+    uint64_t readLength = range.length;
     if (extension != ".jsonl" && maxLineLength <= (std::numeric_limits<size_t>::max() - 4) / 4)
     {
-        readLength = std::min<uint64_t>(byteLength, (maxLineLength * 4) + 4);
+        readLength = std::min<uint64_t>(range.length, (maxLineLength * 4) + 4);
     }
     if (!std::in_range<std::streamsize>(readLength) || !std::in_range<size_t>(readLength))
     {
@@ -522,7 +528,7 @@ static std::expected<std::string, ParseError> readOpenedRangedRecord(std::istrea
             return std::unexpected(decoded.error());
         }
     }
-    else if (readLength == byteLength)
+    else if (readLength == range.length)
     {
         static_cast<void>(stripCarriageReturn(text));
     }
@@ -546,7 +552,8 @@ static std::expected<std::string, ParseError> readOpenedRecord(std::istream &inp
     {
         return readOpenedJsonRecord(input, key, jsonField, maxLineLength);
     }
-    return readOpenedRangedRecord(input, extension, key.byteOffset, key.byteLength, jsonField, maxLineLength);
+    return readOpenedRangedRecord(input, extension, {.offset = key.byteOffset, .length = key.byteLength}, jsonField,
+                                  maxLineLength);
 }
 
 std::expected<void, ParseError> Chunker::forEach(const std::filesystem::path &path, size_t maxLineLength,
@@ -574,16 +581,21 @@ struct ArchiveMemberIngest
     std::string jsonField{};
 };
 
-static void ingestArchiveMember(std::string_view name, std::string_view bytes, const ArchiveMemberIngest &opts,
-                                ParseStats *stats, const std::function<void(ParsedChunk)> &consume,
-                                std::optional<ParseError> &failed)
+struct ArchiveMemberContent
+{
+    std::string_view name;
+    std::string_view bytes;
+};
+
+static void ingestArchiveMember(const ArchiveMemberContent &member, const ArchiveMemberIngest &opts, ParseStats *stats,
+                                const std::function<void(ParsedChunk)> &consume, std::optional<ParseError> &failed)
 {
     if (failed)
     {
         return;
     }
-    const std::size_t probe = std::min(bytes.size(), BINARY_PROBE_BYTES);
-    if (containsNul(bytes.substr(0, probe)))
+    const std::size_t probe = std::min(member.bytes.size(), BINARY_PROBE_BYTES);
+    if (containsNul(member.bytes.substr(0, probe)))
     {
         if (stats != nullptr)
         {
@@ -591,10 +603,10 @@ static void ingestArchiveMember(std::string_view name, std::string_view bytes, c
         }
         return;
     }
-    const std::string label = opts.path.string() + ":" + std::string{name};
+    const std::string label = opts.path.string() + ":" + std::string{member.name};
     bool first = true;
-    std::istringstream input{std::string{bytes}};
-    const auto streamed = dispatchStream(input, formatExtension(std::filesystem::path{std::string{name}}),
+    std::istringstream input{std::string{member.bytes}};
+    const auto streamed = dispatchStream(input, formatExtension(std::filesystem::path{std::string{member.name}}),
                                          opts.maxLineLength, stats, opts.jsonField,
                                          [&](ParsedChunk chunk)
                                          {
@@ -619,7 +631,7 @@ static std::expected<void, ParseError> forEachArchivePath(const std::filesystem:
     const ArchiveMemberIngest opts{.path = path, .maxLineLength = maxLineLength, .jsonField = std::string{jsonField}};
     const auto read = readArchive(
         path, limits, [&](std::string_view name, std::string_view bytes)
-        { ingestArchiveMember(name, bytes, opts, stats, consume, failed); }, &skips);
+        { ingestArchiveMember({.name = name, .bytes = bytes}, opts, stats, consume, failed); }, &skips);
     if (stats != nullptr)
     {
         stats->archiveDirectories += skips.directories;
