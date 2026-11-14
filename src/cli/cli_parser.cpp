@@ -15,6 +15,8 @@
 #include <cstdint>
 #include <cstdlib>
 #include <iostream>
+#include <iterator>
+#include <span>
 #include <string>
 #include <string_view>
 #include <system_error>
@@ -75,8 +77,8 @@ static CLI::Validator positiveUint64()
                                   return std::string{"must be a positive integer"};
                               }
                               std::uint64_t parsed = 0;
-                              const char *const first = value.data();
-                              const char *const last = first + value.size();
+                              const char *const first = std::to_address(value.begin());
+                              const char *const last = std::to_address(value.end());
                               const std::from_chars_result result = std::from_chars(first, last, parsed);
                               if (result.ec != std::errc{} || result.ptr != last)
                               {
@@ -196,10 +198,10 @@ static Config configFrom(const CLI::Option &modelDirOpt, const TextOptions &text
 
 static std::expected<size_t, ThreadCountError> threadsFromEnvironment()
 {
-    // getenv is not thread-safe. The CLI reads the environment once on the main thread.
-    // NOLINTNEXTLINE(concurrency-mt-unsafe)
+    // getenv is not thread-safe. The CLI reads the environment once on the main
+    // thread. NOLINTNEXTLINE(concurrency-mt-unsafe)
     const char *value = std::getenv("NESSO_THREADS");
-    if (value == nullptr || value[0] == '\0')
+    if (value == nullptr || std::string_view{value}.empty())
     {
         return 0;
     }
@@ -350,9 +352,10 @@ std::expected<ParsedCommand, int> parseCommandLine(int argc, char **argv)
     TextOptions text;
     CLI::App app{"Nesso - local semantic search for unstructured text"};
     bool verbose = false;
+    const std::span<char *> args{argv, static_cast<std::size_t>(argc)};
     for (int index = 1; index < argc; ++index)
     {
-        if (std::string_view{argv[index]} == "--verbose")
+        if (std::string_view{args[static_cast<std::size_t>(index)]} == "--verbose")
         {
             verbose = true;
         }

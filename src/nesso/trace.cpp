@@ -9,6 +9,7 @@
 #include <cstdlib>
 #include <iostream>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace nesso
@@ -36,12 +37,13 @@ static TraceState &state()
     return current;
 }
 
-// getenv is not thread-safe. The CLI reads it on the main thread, once per stage.
+// getenv is not thread-safe. The CLI reads it on the main thread, once per
+// stage.
 static bool tracingEnabled()
 {
     // NOLINTNEXTLINE(concurrency-mt-unsafe)
     const char *value = std::getenv("NESSO_TRACE");
-    return value != nullptr && value[0] == '1' && value[1] == '\0';
+    return value != nullptr && std::string_view{value} == "1";
 }
 
 static void emit(TraceState &current)
