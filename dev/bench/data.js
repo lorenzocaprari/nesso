@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794651172793,
+  "lastUpdate": 1794652383995,
   "repoUrl": "https://github.com/lorenzocaprari/nesso",
   "entries": {
     "nesso": [
@@ -6479,6 +6479,60 @@ window.BENCHMARK_DATA = {
           {
             "name": "grep-100000-rss",
             "value": 145068032,
+            "unit": "bytes"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "caprarilorenzo5@gmail.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "committer": {
+            "email": "85455384+lorenzocaprari@users.noreply.github.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "distinct": true,
+          "id": "ec0f48a0dbb588ad1cd5b31ccab30597497548c0",
+          "message": "refactor(cli): bundle easily-swappable parameters into structs\n\nGroup UTF-8 slice offsets, model-dir lookup roots, bound-embedder\nfile stamps, and CLI subcommand option pointers into named structs.",
+          "timestamp": "2026-11-14T11:28:10+01:00",
+          "tree_id": "458c5b2344bdd0fef3f5761c681f1add14b76793",
+          "url": "https://github.com/lorenzocaprari/nesso/commit/ec0f48a0dbb588ad1cd5b31ccab30597497548c0"
+        },
+        "date": 1794652383168,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "grep-1000-wall",
+            "value": 0.15,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-1000-rss",
+            "value": 118931456,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-10000-wall",
+            "value": 0.16,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-10000-rss",
+            "value": 118177792,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-100000-wall",
+            "value": 0.33,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-100000-rss",
+            "value": 146395136,
             "unit": "bytes"
           }
         ]
