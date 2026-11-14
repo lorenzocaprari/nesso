@@ -17,6 +17,7 @@
 #include <functional>
 #include <memory>
 #include <onnxruntime_cxx_api.h>
+#include <span>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -31,8 +32,8 @@ struct HiddenShape
     size_t hiddenSize = 0;
 };
 
-static std::vector<float> meanPoolAndNormalize(const float *hiddenStates, const int64_t *attentionMask,
-                                               const HiddenShape &shape)
+static std::vector<float> meanPoolAndNormalize(std::span<const float> hiddenStates,
+                                               std::span<const int64_t> attentionMask, const HiddenShape &shape)
 {
     std::vector<float> pooled(shape.hiddenSize, 0.0F);
     size_t activeTokens = 0;
@@ -43,7 +44,7 @@ static std::vector<float> meanPoolAndNormalize(const float *hiddenStates, const 
             continue;
         }
         ++activeTokens;
-        const float *tokenVector = hiddenStates + (token * shape.hiddenSize);
+        const std::span<const float> tokenVector = hiddenStates.subspan(token * shape.hiddenSize, shape.hiddenSize);
         for (size_t dim = 0; dim < shape.hiddenSize; ++dim)
         {
             pooled[dim] += tokenVector[dim];
@@ -98,12 +99,13 @@ static bool modelIsQuantized(const std::filesystem::path &modelPath)
 
     std::ifstream input(modelPath, std::ios::binary);
     std::array<char, kOverlap + kChunk> buffer{};
+    const std::span<char> storage{buffer};
     std::size_t kept = 0;
     while (input)
     {
-        input.read(buffer.data() + kept, static_cast<std::streamsize>(kChunk));
+        input.read(storage.subspan(kept).data(), static_cast<std::streamsize>(kChunk));
         const auto got = static_cast<std::size_t>(input.gcount());
-        const std::string_view window(buffer.data(), kept + got);
+        const std::string_view window(storage.data(), kept + got);
         if (window.find(kMatMulInteger) != std::string_view::npos ||
             window.find(kDynamicQuantizeLinear) != std::string_view::npos)
         {
@@ -113,7 +115,8 @@ static bool modelIsQuantized(const std::filesystem::path &modelPath)
         {
             return false;
         }
-        std::memmove(buffer.data(), window.data() + window.size() - kOverlap, kOverlap);
+        const std::span<char> overlap = storage.subspan(window.size() - kOverlap, kOverlap);
+        std::memmove(storage.data(), overlap.data(), kOverlap);
         kept = kOverlap;
     }
     return false;
@@ -307,14 +310,17 @@ OnnxEmbedder::SessionImpl::infer(Ort::Session &session, std::span<const Tokenize
         {
             return std::unexpected(EmbedError::InferenceFailure);
         }
+        const std::size_t rowWidth = paddedLength * MINILM_EMBEDDING_DIMENSIONS;
+        const std::span<const float> hidden{hiddenStates, batchSize * rowWidth};
+        const std::span<const int64_t> attention{flatAttentionMask};
 
         std::vector<std::vector<float>> embeddings;
         embeddings.reserve(batchSize);
         for (size_t batchIndex = 0; batchIndex < batchSize; ++batchIndex)
         {
-            const float *batchHidden = hiddenStates + (batchIndex * paddedLength * MINILM_EMBEDDING_DIMENSIONS);
             embeddings.push_back(
-                meanPoolAndNormalize(batchHidden, flatAttentionMask.data() + (batchIndex * paddedLength),
+                meanPoolAndNormalize(hidden.subspan(batchIndex * rowWidth, rowWidth),
+                                     attention.subspan(batchIndex * paddedLength, paddedLength),
                                      {.sequenceLength = paddedLength, .hiddenSize = MINILM_EMBEDDING_DIMENSIONS}));
         }
         return embeddings;
