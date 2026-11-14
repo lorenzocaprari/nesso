@@ -31,7 +31,6 @@ Checks: >
   performance-*,
   portability-*,
   readability-*,
-  -bugprone-easily-swappable-parameters,
   -cppcoreguidelines-avoid-c-arrays,
   -cppcoreguidelines-avoid-magic-numbers,
   -cppcoreguidelines-c-copy-assignment-signature,
@@ -83,3 +82,5 @@ CheckOptions:
   readability-function-size.ParameterThreshold: '6'
   readability-function-size.NestingThreshold: '4'
   readability-function-size.VariableThreshold: '30'
+  bugprone-easily-swappable-parameters.MinimumLength: '2'
+  bugprone-easily-swappable-parameters.ModelImplicitConversions: 'false'
