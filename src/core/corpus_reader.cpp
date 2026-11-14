@@ -447,9 +447,9 @@ std::expected<MappedCorpus, EngineError> mapCorpusFile(const std::filesystem::pa
 
     impl->file = std::move(*mapped);
     const auto stable = impl->file.bytes();
+    const std::span<const std::byte> matrixBytes = stable.subspan(static_cast<std::size_t>(layout->matrixOffset));
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-    impl->matrix = {reinterpret_cast<const float *>(stable.data() + layout->matrixOffset),
-                    layout->distinctCount * layout->dimensions};
+    impl->matrix = {reinterpret_cast<const float *>(matrixBytes.data()), layout->distinctCount * layout->dimensions};
     return MappedCorpus{std::move(impl)};
 }
 
