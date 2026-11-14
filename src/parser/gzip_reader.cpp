@@ -9,6 +9,7 @@
 #include <cstring>
 #include <fstream>
 #include <memory>
+#include <span>
 #include <string>
 #include <string_view>
 
@@ -39,8 +40,8 @@ enum class PullStatus : std::uint8_t
 
 static std::expected<void, GzipError> initGzipInflate(z_stream &stream)
 {
-    // 16 selects the gzip wrapper. inflate stops at each member; the reset below continues so
-    // concatenated members are one byte stream.
+    // 16 selects the gzip wrapper. inflate stops at each member; the reset below
+    // continues so concatenated members are one byte stream.
     if (inflateInit2(&stream, 16 + MAX_WBITS) != Z_OK)
     {
         return std::unexpected(GzipError::Corrupt);
@@ -132,7 +133,8 @@ bool isGzipPath(const std::filesystem::path &path)
     return extension == ".gz";
 }
 
-// `pull` fills `dest` with the next compressed bytes. `End` is a clean EOF. `Error` is a read failure.
+// `pull` fills `dest` with the next compressed bytes. `End` is a clean EOF.
+// `Error` is a read failure.
 template <typename Pull> static std::expected<std::string, GzipError> inflateGzip(Pull pull)
 {
     z_stream stream{};
@@ -220,7 +222,8 @@ std::expected<std::string, GzipError> readGzipBytes(std::string_view bytes)
             }
             const std::size_t room = bytes.size() - offset;
             const std::size_t take = std::min(room, static_cast<std::size_t>(capacity));
-            std::memcpy(dest, bytes.data() + offset, take);
+            const std::span<const char> compressed{bytes.data(), bytes.size()};
+            std::memcpy(dest, compressed.subspan(offset).data(), take);
             offset += take;
             count = static_cast<unsigned int>(take);
             return PullStatus::Bytes;
