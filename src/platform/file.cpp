@@ -45,26 +45,26 @@ MappedFile &MappedFile::operator=(MappedFile &&other) noexcept
 std::expected<MappedFile, FileError> MappedFile::open(const std::filesystem::path &path)
 {
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg, hicpp-vararg)
-    const int fd = ::open(path.c_str(), O_RDONLY);
-    if (fd < 0)
+    const int fileDescriptor = ::open(path.c_str(), O_RDONLY);
+    if (fileDescriptor < 0)
     {
         return std::unexpected(FileError::OpenFailure);
     }
-    const off_t length = ::lseek(fd, 0, SEEK_END);
+    const off_t length = ::lseek(fileDescriptor, 0, SEEK_END);
     if (length < 0)
     {
-        ::close(fd);
+        ::close(fileDescriptor);
         return std::unexpected(FileError::MapFailure);
     }
     MappedFile mapped;
     mapped.size_ = static_cast<std::size_t>(length);
     if (mapped.size_ == 0)
     {
-        ::close(fd);
+        ::close(fileDescriptor);
         return mapped;
     }
-    void *const view = ::mmap(nullptr, mapped.size_, PROT_READ, MAP_PRIVATE, fd, 0);
-    ::close(fd);
+    void *const view = ::mmap(nullptr, mapped.size_, PROT_READ, MAP_PRIVATE, fileDescriptor, 0);
+    ::close(fileDescriptor);
     if (view == MAP_FAILED)
     {
         return std::unexpected(FileError::MapFailure);

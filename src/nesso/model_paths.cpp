@@ -20,9 +20,9 @@ static const char *envOrEmpty(const char *key)
 
 bool containsModelFiles(const std::filesystem::path &dir)
 {
-    std::error_code ec;
-    return std::filesystem::is_regular_file(dir / VOCAB_FILENAME, ec) &&
-           std::filesystem::is_regular_file(dir / MODEL_FILENAME, ec);
+    std::error_code errorCode;
+    return std::filesystem::is_regular_file(dir / VOCAB_FILENAME, errorCode) &&
+           std::filesystem::is_regular_file(dir / MODEL_FILENAME, errorCode);
 }
 
 std::vector<std::filesystem::path> modelDirCandidates(const ModelDirLookup &lookup)

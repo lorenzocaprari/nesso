@@ -349,23 +349,23 @@ static std::vector<RankedLine> rankHybridGrouped(const nesso::core::MappedCorpus
     for (std::size_t index = 0; index < inputs.ordinals.size(); ++index)
     {
         const uint64_t ordinal = inputs.ordinals[index];
-        const auto id = corpus.lines()[static_cast<std::size_t>(ordinal)].distinctId;
+        const auto distinctId = corpus.lines()[static_cast<std::size_t>(ordinal)].distinctId;
         const float score = inputs.fused[index];
         const auto lexical = static_cast<float>(bm25Scores[static_cast<std::size_t>(ordinal)]);
-        if (have[id] == 0)
+        if (have[distinctId] == 0)
         {
-            have[id] = 1;
-            first[id] = ordinal;
-            ids.push_back(id);
-            bestScore[id] = score;
-            bestLexical[id] = lexical;
-            bestOrdinal[id] = ordinal;
+            have[distinctId] = 1;
+            first[distinctId] = ordinal;
+            ids.push_back(distinctId);
+            bestScore[distinctId] = score;
+            bestLexical[distinctId] = lexical;
+            bestOrdinal[distinctId] = ordinal;
         }
-        else if (betterHit(score, ordinal, bestScore[id], bestOrdinal[id]))
+        else if (betterHit(score, ordinal, bestScore[distinctId], bestOrdinal[distinctId]))
         {
-            bestScore[id] = score;
-            bestLexical[id] = lexical;
-            bestOrdinal[id] = ordinal;
+            bestScore[distinctId] = score;
+            bestLexical[distinctId] = lexical;
+            bestOrdinal[distinctId] = ordinal;
         }
     }
     struct Group
@@ -377,10 +377,12 @@ static std::vector<RankedLine> rankHybridGrouped(const nesso::core::MappedCorpus
     };
     std::vector<Group> groups;
     groups.reserve(ids.size());
-    for (const std::uint32_t id : ids)
+    for (const std::uint32_t distinctId : ids)
     {
-        groups.push_back(Group{
-            .ordinal = first[id], .score = bestScore[id], .dense = distinctScores[id], .lexical = bestLexical[id]});
+        groups.push_back(Group{.ordinal = first[distinctId],
+                               .score = bestScore[distinctId],
+                               .dense = distinctScores[distinctId],
+                               .lexical = bestLexical[distinctId]});
     }
     std::ranges::sort(groups, [](const Group &left, const Group &right)
                       { return betterHit(left.score, left.ordinal, right.score, right.ordinal); });
@@ -522,14 +524,14 @@ static std::vector<LexicalCandidate> collapseLexicalGroups(const nesso::core::Ma
     groups.reserve(hits.size());
     for (const LexicalCandidate &hit : hits)
     {
-        const auto id = corpus.lines()[static_cast<std::size_t>(hit.ordinal)].distinctId;
-        if (taken[id] != 0)
+        const auto distinctId = corpus.lines()[static_cast<std::size_t>(hit.ordinal)].distinctId;
+        if (taken[distinctId] != 0)
         {
             continue;
         }
-        taken[id] = 1;
+        taken[distinctId] = 1;
         LexicalCandidate row = hit;
-        row.ordinal = first[id];
+        row.ordinal = first[distinctId];
         groups.push_back(std::move(row));
     }
     std::ranges::sort(groups, lexicalCandidateBefore);
