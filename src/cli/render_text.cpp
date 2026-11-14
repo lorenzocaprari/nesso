@@ -35,15 +35,21 @@ static std::size_t utf8SequenceLength(unsigned char lead)
     return 0;
 }
 
-static bool decodeUtf8(std::string_view text, std::size_t offset, std::size_t length, std::uint32_t &codepoint)
+struct Utf8Slice
+{
+    std::size_t offset = 0;
+    std::size_t length = 0;
+};
+
+static bool decodeUtf8(std::string_view text, const Utf8Slice &slice, std::uint32_t &codepoint)
 {
     const auto byte = [&text](std::size_t index) { return static_cast<unsigned char>(text[index]); };
-    const unsigned char lead = byte(offset);
-    if (length == 2)
+    const unsigned char lead = byte(slice.offset);
+    if (slice.length == 2)
     {
         codepoint = lead & 0x1FU;
     }
-    else if (length == 3)
+    else if (slice.length == 3)
     {
         codepoint = lead & 0x0FU;
     }
@@ -51,17 +57,17 @@ static bool decodeUtf8(std::string_view text, std::size_t offset, std::size_t le
     {
         codepoint = lead & 0x07U;
     }
-    for (std::size_t index = 1; index < length; ++index)
+    for (std::size_t index = 1; index < slice.length; ++index)
     {
-        const unsigned char continuation = byte(offset + index);
+        const unsigned char continuation = byte(slice.offset + index);
         if ((continuation & 0xC0U) != 0x80U)
         {
             return false;
         }
         codepoint = (codepoint << 6U) | (continuation & 0x3FU);
     }
-    return (length != 2 || codepoint >= 0x80U) && (length != 3 || codepoint >= 0x800U) &&
-           (length != 4 || codepoint >= 0x10000U) && codepoint <= 0x10FFFFU &&
+    return (slice.length != 2 || codepoint >= 0x80U) && (slice.length != 3 || codepoint >= 0x800U) &&
+           (slice.length != 4 || codepoint >= 0x10000U) && codepoint <= 0x10FFFFU &&
            (codepoint < 0xD800U || codepoint > 0xDFFFU);
 }
 
@@ -87,7 +93,8 @@ std::string escapeTerminalControls(std::string_view text)
 
         const std::size_t length = utf8SequenceLength(current);
         std::uint32_t codepoint = 0;
-        if (length == 0 || length > text.size() - index || !decodeUtf8(text, index, length, codepoint))
+        if (length == 0 || length > text.size() - index ||
+            !decodeUtf8(text, {.offset = index, .length = length}, codepoint))
         {
             appendHexByte(output, current);
             ++index;

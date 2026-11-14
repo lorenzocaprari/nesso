@@ -234,8 +234,14 @@ static void configureAppVersion(CLI::App &app, bool &verbose)
                          });
 }
 
-static CLI::App *addGrepSubcommand(CLI::App &app, TextOptions &text, const CLI::Option *&threadsOpt,
-                                   const CLI::Option *&modelDirOpt)
+struct TextSubcommand
+{
+    CLI::App *cmd = nullptr;
+    const CLI::Option *threadsOpt = nullptr;
+    const CLI::Option *modelDirOpt = nullptr;
+};
+
+static TextSubcommand addGrepSubcommand(CLI::App &app, TextOptions &text)
 {
     auto *cmd = app.add_subcommand("grep", "Semantic search of text files. See docs/usage.md.");
     cmd->add_option("query", text.query, "Natural-language query")->required();
@@ -250,28 +256,28 @@ static CLI::App *addGrepSubcommand(CLI::App &app, TextOptions &text, const CLI::
     cmd->add_option("--mode", text.mode, "Ranking mode: auto, hybrid, dense, or lexical")
         ->default_val("auto")
         ->check(CLI::IsMember({"auto", "hybrid", "dense", "lexical"}));
-    threadsOpt = cmd->add_option("--threads", text.threads, THREADS_HELP)->check(MakeThreadCountValidator());
-    modelDirOpt = cmd->add_option("--model-dir", text.modelDir, MODEL_DIR_HELP);
     addArchiveLimits(cmd, text.grepArchiveLimits);
-    return cmd;
+    return TextSubcommand{
+        .cmd = cmd,
+        .threadsOpt = cmd->add_option("--threads", text.threads, THREADS_HELP)->check(MakeThreadCountValidator()),
+        .modelDirOpt = cmd->add_option("--model-dir", text.modelDir, MODEL_DIR_HELP)};
 }
 
-static CLI::App *addIndexSubcommand(CLI::App &app, TextOptions &text, const CLI::Option *&threadsOpt,
-                                    const CLI::Option *&modelDirOpt)
+static TextSubcommand addIndexSubcommand(CLI::App &app, TextOptions &text)
 {
     auto *cmd = app.add_subcommand("index", "Embed text into a corpus file. See docs/usage.md.");
     cmd->add_option("-o,--output", text.output, "Corpus file to write")->required();
     cmd->add_option("files", text.files, TEXT_FILES_HELP)->required()->expected(1, -1)->check(inputFile());
     cmd->add_option("--json-field", text.jsonField, "JSON object field to read")->default_val("message");
     cmd->add_flag("--quiet", text.quiet, "Suppress interactive progress output");
-    threadsOpt = cmd->add_option("--threads", text.threads, THREADS_HELP)->check(MakeThreadCountValidator());
-    modelDirOpt = cmd->add_option("--model-dir", text.modelDir, MODEL_DIR_HELP);
     addArchiveLimits(cmd, text.indexArchiveLimits);
-    return cmd;
+    return TextSubcommand{
+        .cmd = cmd,
+        .threadsOpt = cmd->add_option("--threads", text.threads, THREADS_HELP)->check(MakeThreadCountValidator()),
+        .modelDirOpt = cmd->add_option("--model-dir", text.modelDir, MODEL_DIR_HELP)};
 }
 
-static CLI::App *addSearchSubcommand(CLI::App &app, TextOptions &text, const CLI::Option *&threadsOpt,
-                                     const CLI::Option *&modelDirOpt)
+static TextSubcommand addSearchSubcommand(CLI::App &app, TextOptions &text)
 {
     auto *cmd = app.add_subcommand("search", "Semantic search of a corpus file. Prints matches only.");
     cmd->add_option("query", text.query, "Natural-language query")->required();
@@ -284,9 +290,10 @@ static CLI::App *addSearchSubcommand(CLI::App &app, TextOptions &text, const CLI
     cmd->add_option("--mode", text.mode, "Ranking mode: auto, hybrid, dense, or lexical")
         ->default_val("auto")
         ->check(CLI::IsMember({"auto", "hybrid", "dense", "lexical"}));
-    threadsOpt = cmd->add_option("--threads", text.threads, THREADS_HELP)->check(MakeThreadCountValidator());
-    modelDirOpt = cmd->add_option("--model-dir", text.modelDir, MODEL_DIR_HELP);
-    return cmd;
+    return TextSubcommand{
+        .cmd = cmd,
+        .threadsOpt = cmd->add_option("--threads", text.threads, THREADS_HELP)->check(MakeThreadCountValidator()),
+        .modelDirOpt = cmd->add_option("--model-dir", text.modelDir, MODEL_DIR_HELP)};
 }
 
 static std::expected<size_t, int> resolveThreads(const CLI::Option &threadsOpt, size_t flagged)
@@ -355,15 +362,9 @@ std::expected<ParsedCommand, int> parseCommandLine(int argc, char **argv)
     app.footer(HELP_FOOTER);
     app.require_subcommand(1);
 
-    const CLI::Option *grepThreads = nullptr;
-    const CLI::Option *grepModelDir = nullptr;
-    const CLI::Option *indexThreads = nullptr;
-    const CLI::Option *indexModelDir = nullptr;
-    const CLI::Option *searchThreads = nullptr;
-    const CLI::Option *searchModelDir = nullptr;
-    const CLI::App *grepCmd = addGrepSubcommand(app, text, grepThreads, grepModelDir);
-    const CLI::App *indexCmd = addIndexSubcommand(app, text, indexThreads, indexModelDir);
-    const CLI::App *searchCmd = addSearchSubcommand(app, text, searchThreads, searchModelDir);
+    const TextSubcommand grep = addGrepSubcommand(app, text);
+    const TextSubcommand index = addIndexSubcommand(app, text);
+    const TextSubcommand search = addSearchSubcommand(app, text);
 
     try
     {
@@ -375,17 +376,17 @@ std::expected<ParsedCommand, int> parseCommandLine(int argc, char **argv)
         return std::unexpected(code == 0 ? 0 : 2);
     }
 
-    const CLI::Option *threadsOpt = grepThreads;
-    const CLI::Option *modelDirOpt = grepModelDir;
-    if (indexCmd->parsed())
+    const CLI::Option *threadsOpt = grep.threadsOpt;
+    const CLI::Option *modelDirOpt = grep.modelDirOpt;
+    if (index.cmd->parsed())
     {
-        threadsOpt = indexThreads;
-        modelDirOpt = indexModelDir;
+        threadsOpt = index.threadsOpt;
+        modelDirOpt = index.modelDirOpt;
     }
-    else if (searchCmd->parsed())
+    else if (search.cmd->parsed())
     {
-        threadsOpt = searchThreads;
-        modelDirOpt = searchModelDir;
+        threadsOpt = search.threadsOpt;
+        modelDirOpt = search.modelDirOpt;
     }
 
     const auto threads = resolveThreads(*threadsOpt, text.threads);
@@ -393,7 +394,7 @@ std::expected<ParsedCommand, int> parseCommandLine(int argc, char **argv)
     {
         return std::unexpected(threads.error());
     }
-    return makeParsedCommand(*grepCmd, *indexCmd, *modelDirOpt, text, *threads);
+    return makeParsedCommand(*grep.cmd, *index.cmd, *modelDirOpt, text, *threads);
 }
 
 } // namespace nesso::cli

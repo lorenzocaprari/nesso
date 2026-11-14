@@ -23,8 +23,7 @@ bool containsModelFiles(const std::filesystem::path &dir)
            std::filesystem::is_regular_file(dir / MODEL_FILENAME, ec);
 }
 
-std::vector<std::filesystem::path> modelDirCandidates(const std::filesystem::path &cwd,
-                                                      const std::filesystem::path &packagedDir)
+std::vector<std::filesystem::path> modelDirCandidates(const ModelDirLookup &lookup)
 {
     if (const char *envDir = envOrEmpty("NESSO_MODEL_DIR"); envDir[0] != '\0')
     {
@@ -32,7 +31,7 @@ std::vector<std::filesystem::path> modelDirCandidates(const std::filesystem::pat
     }
 
     std::vector<std::filesystem::path> dirs;
-    dirs.push_back(cwd / "models");
+    dirs.push_back(lookup.cwd / "models");
     if (const char *xdg = envOrEmpty("XDG_DATA_HOME"); xdg[0] != '\0')
     {
         dirs.push_back(std::filesystem::path(xdg) / "nesso");
@@ -41,25 +40,25 @@ std::vector<std::filesystem::path> modelDirCandidates(const std::filesystem::pat
     {
         dirs.push_back(std::filesystem::path(home) / ".local" / "share" / "nesso");
     }
-    dirs.push_back(packagedDir);
+    dirs.push_back(lookup.packagedDir);
     return dirs;
 }
 
-std::filesystem::path resolveDefaultModelDir(const std::filesystem::path &cwd, const std::filesystem::path &packagedDir)
+std::filesystem::path resolveDefaultModelDir(const ModelDirLookup &lookup)
 {
     if (const char *envDir = envOrEmpty("NESSO_MODEL_DIR"); envDir[0] != '\0')
     {
         return envDir;
     }
 
-    for (const std::filesystem::path &dir : modelDirCandidates(cwd, packagedDir))
+    for (const std::filesystem::path &dir : modelDirCandidates(lookup))
     {
         if (containsModelFiles(dir))
         {
             return dir;
         }
     }
-    return packagedDir;
+    return lookup.packagedDir;
 }
 
 } // namespace nesso

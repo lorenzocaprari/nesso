@@ -88,10 +88,16 @@ namespace
 class OnnxBoundEmbedder final : public nesso::embed::Embedder
 {
   public:
+    struct ModelFileStamps
+    {
+        std::optional<FileStamp> model;
+        std::optional<FileStamp> vocab;
+    };
+
     OnnxBoundEmbedder(std::unique_ptr<nesso::embed::OnnxEmbedder> inner, std::filesystem::path modelDir,
-                      std::optional<FileStamp> modelStamp, std::optional<FileStamp> vocabStamp)
+                      const ModelFileStamps &stamps)
         : inner_(std::move(inner)), modelPath_(modelDir / "model.onnx"), vocabPath_(modelDir / "vocab.txt"),
-          modelStamp_(modelStamp), vocabStamp_(vocabStamp)
+          modelStamp_(stamps.model), vocabStamp_(stamps.vocab)
     {
     }
 
@@ -207,7 +213,9 @@ std::expected<const nesso::embed::Embedder *, Error> Nesso::embedder() const
             modelStamp.reset();
             vocabStamp.reset();
         }
-        embedder_ = std::make_unique<OnnxBoundEmbedder>(std::move(*created), modelDir, modelStamp, vocabStamp);
+        embedder_ = std::make_unique<OnnxBoundEmbedder>(
+            std::move(*created), modelDir,
+            OnnxBoundEmbedder::ModelFileStamps{.model = modelStamp, .vocab = vocabStamp});
     }
     return embedder_.get();
 }
