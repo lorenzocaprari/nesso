@@ -81,11 +81,13 @@ static bool matchLongHex(std::string_view token) noexcept
         return false;
     }
 
-    if (!std::ranges::all_of(body, [](const char ch) { return isAsciiHex(static_cast<unsigned char>(ch)); }))
+    if (!std::ranges::all_of(body,
+                             [](const char codeUnit) { return isAsciiHex(static_cast<unsigned char>(codeUnit)); }))
     {
         return false;
     }
-    return std::ranges::any_of(body, [](const char ch) { return isAsciiDigit(static_cast<unsigned char>(ch)); });
+    return std::ranges::any_of(body,
+                               [](const char codeUnit) { return isAsciiDigit(static_cast<unsigned char>(codeUnit)); });
 }
 
 static bool matchDecimalDigits(std::string_view token) noexcept
@@ -94,7 +96,8 @@ static bool matchDecimalDigits(std::string_view token) noexcept
     {
         return false;
     }
-    return std::ranges::all_of(token, [](const char ch) { return isAsciiDigit(static_cast<unsigned char>(ch)); });
+    return std::ranges::all_of(token,
+                               [](const char codeUnit) { return isAsciiDigit(static_cast<unsigned char>(codeUnit)); });
 }
 
 static bool matchPrefixedCode(std::string_view token) noexcept
@@ -149,13 +152,13 @@ static bool parseDecimalPort(std::string_view text, std::uint32_t &port) noexcep
         return false;
     }
     std::uint32_t value = 0;
-    for (const char ch : text)
+    for (const char codeUnit : text)
     {
-        if (!isAsciiDigit(static_cast<unsigned char>(ch)))
+        if (!isAsciiDigit(static_cast<unsigned char>(codeUnit)))
         {
             return false;
         }
-        value = (value * 10U) + static_cast<std::uint32_t>(ch - '0');
+        value = (value * 10U) + static_cast<std::uint32_t>(codeUnit - '0');
         if (value > 65535U)
         {
             return false;
@@ -254,7 +257,8 @@ static bool parseIpv6HexGroup(std::string_view group) noexcept
     {
         return false;
     }
-    return std::ranges::all_of(group, [](const char ch) { return isAsciiHex(static_cast<unsigned char>(ch)); });
+    return std::ranges::all_of(group,
+                               [](const char codeUnit) { return isAsciiHex(static_cast<unsigned char>(codeUnit)); });
 }
 
 static int countIpv6Pieces(std::string_view text, bool allowIpv4Tail) noexcept
@@ -389,7 +393,8 @@ static bool matchIpv6(std::string_view token) noexcept
         return false;
     }
 
-    if (!std::ranges::all_of(tail, [](const char ch) { return isAsciiDigit(static_cast<unsigned char>(ch)); }))
+    if (!std::ranges::all_of(tail,
+                             [](const char codeUnit) { return isAsciiDigit(static_cast<unsigned char>(codeUnit)); }))
     {
         return false;
     }

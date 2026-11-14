@@ -55,10 +55,10 @@ class Job
         cv_.notify_all();
     }
 
-    void publish(void (*fn)(void *, size_t, size_t), void *context, size_t begin, size_t end)
+    void publish(void (*rowFn)(void *, size_t, size_t), void *context, size_t begin, size_t end)
     {
         const std::scoped_lock lock(mutex_);
-        fn_ = fn;
+        fn_ = rowFn;
         context_ = context;
         begin_ = begin;
         end_ = end;
@@ -171,21 +171,21 @@ class MergedHits
         hits_.insert(hits_.end(), local.begin(), local.end());
     }
 
-    void noteError(size_t at, EngineError error)
+    void noteError(size_t row, EngineError error)
     {
         const std::scoped_lock lock(mutex_);
-        if (at < errorAt_)
+        if (row < errorAt_)
         {
             error_ = error;
-            errorAt_ = at;
+            errorAt_ = row;
         }
     }
 
     [[nodiscard]] const std::optional<EngineError> &error() const { return error_; }
 
-    std::vector<Hit> finish(size_t k)
+    std::vector<Hit> finish(size_t topK)
     {
-        detail::selectTopKInPlace(hits_, k, HitOrder{});
+        detail::selectTopKInPlace(hits_, topK, HitOrder{});
         return std::move(hits_);
     }
 
@@ -239,7 +239,7 @@ class TopScan
 
     [[nodiscard]] const std::optional<EngineError> &error() const { return merged_.error(); }
 
-    std::vector<Hit> finish(size_t k) { return merged_.finish(k); }
+    std::vector<Hit> finish(size_t topK) { return merged_.finish(topK); }
 
   private:
     std::span<const float> query_;
@@ -252,8 +252,8 @@ class TopScan
 class RankScan
 {
   public:
-    RankScan(float (*score)(void *, size_t), bool (*keep)(void *, size_t), void *context, size_t k)
-        : score_(score), keep_(keep), context_(context), k_(k)
+    RankScan(float (*score)(void *, size_t), bool (*keep)(void *, size_t), void *context, size_t topK)
+        : score_(score), keep_(keep), context_(context), k_(topK)
     {
     }
 
@@ -287,7 +287,7 @@ class RankScan
         merged_.merge(std::move(local));
     }
 
-    std::vector<Hit> finish(size_t k) { return merged_.finish(k); }
+    std::vector<Hit> finish(size_t topK) { return merged_.finish(topK); }
 
   private:
     float (*score_)(void *, size_t) = nullptr;
@@ -350,22 +350,22 @@ static void runRankChunk(void *raw, size_t begin, size_t end) { static_cast<Rank
 namespace detail
 {
 
-void parallelRows(size_t threads, size_t rows, void (*fn)(void *context, size_t begin, size_t end), void *context)
+void parallelRows(size_t threads, size_t rows, void (*rowFn)(void *context, size_t begin, size_t end), void *context)
 {
-    if (fn == nullptr)
+    if (rowFn == nullptr)
     {
         return;
     }
     if (rows == 0 || threads <= 1 || rows < PARALLEL_MIN_ROWS)
     {
-        fn(context, 0, rows);
+        rowFn(context, 0, rows);
         return;
     }
 
     const size_t width = std::min({rows, threads, PARALLEL_MAX_THREADS});
     if (width <= 1)
     {
-        fn(context, 0, rows);
+        rowFn(context, 0, rows);
         return;
     }
 
@@ -373,7 +373,7 @@ void parallelRows(size_t threads, size_t rows, void (*fn)(void *context, size_t 
     const std::scoped_lock poolLock(team.mutex());
     if (!team.ensure(width - 1))
     {
-        fn(context, 0, rows);
+        rowFn(context, 0, rows);
         return;
     }
 
@@ -382,9 +382,9 @@ void parallelRows(size_t threads, size_t rows, void (*fn)(void *context, size_t 
 
     for (size_t index = 1; index < width; ++index)
     {
-        team.GetJob(index - 1).publish(fn, context, ranges[index].begin, ranges[index].end);
+        team.GetJob(index - 1).publish(rowFn, context, ranges[index].begin, ranges[index].end);
     }
-    fn(context, ranges[0].begin, ranges[0].end);
+    rowFn(context, ranges[0].begin, ranges[0].end);
 }
 
 } // namespace detail

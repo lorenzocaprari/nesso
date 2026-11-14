@@ -14,18 +14,18 @@ std::uint32_t DistinctIndex::add(std::string_view text)
     const auto found = ids_.find(key);
     if (found != ids_.end())
     {
-        const std::uint32_t id = found->second;
-        ++occurrences_[id];
-        return id;
+        const std::uint32_t entryId = found->second;
+        ++occurrences_[entryId];
+        return entryId;
     }
 
     texts_.emplace_back(text);
     keys_.emplace_back(key);
-    const auto id = static_cast<std::uint32_t>(occurrences_.size());
-    ids_.emplace(keys_.back(), id);
+    const auto entryId = static_cast<std::uint32_t>(occurrences_.size());
+    ids_.emplace(keys_.back(), entryId);
     occurrences_.push_back(1);
     pending_.emplace_back(texts_.back());
-    return id;
+    return entryId;
 }
 
 void DistinctIndex::reserve(std::size_t lines) { occurrences_.reserve(lines); }
@@ -34,9 +34,9 @@ std::span<const std::string> DistinctIndex::pending() const noexcept { return pe
 
 void DistinctIndex::clearPending() noexcept { pending_.clear(); }
 
-std::string_view DistinctIndex::text(std::uint32_t id) const noexcept { return texts_[id]; }
+std::string_view DistinctIndex::text(std::uint32_t entryId) const noexcept { return texts_[entryId]; }
 
-std::uint32_t DistinctIndex::occurrences(std::uint32_t id) const noexcept { return occurrences_[id]; }
+std::uint32_t DistinctIndex::occurrences(std::uint32_t entryId) const noexcept { return occurrences_[entryId]; }
 
 std::vector<std::uint32_t> occurrenceCounts(std::span<const std::string_view> texts)
 {
