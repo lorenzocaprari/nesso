@@ -7,6 +7,7 @@
 #include <array>
 #include <bit>
 #include <fstream>
+#include <iterator>
 #include <span>
 #include <string_view>
 
@@ -34,7 +35,7 @@ class Sha256
         while (!bytes.empty())
         {
             const std::size_t count = std::min(bytes.size(), buffer_.size() - buffered_);
-            std::ranges::copy(bytes.first(count), buffer_.begin() + static_cast<std::ptrdiff_t>(buffered_));
+            std::ranges::copy(bytes.first(count), std::next(buffer_.begin(), static_cast<std::ptrdiff_t>(buffered_)));
             buffered_ += count;
             bytes = bytes.subspan(count);
             if (buffered_ == buffer_.size())

@@ -86,7 +86,7 @@ static bool readU64At(std::span<const std::byte> bytes, std::uint64_t &cursor, s
     {
         return false;
     }
-    std::memcpy(&value, bytes.data() + cursor, sizeof(value));
+    std::memcpy(&value, bytes.subspan(static_cast<std::size_t>(cursor)).data(), sizeof(value));
     cursor += sizeof(value);
     return true;
 }
