@@ -4,11 +4,13 @@
 #include <nesso/model_paths.hpp>
 
 #include <cstdlib>
+#include <string_view>
 
 namespace nesso
 {
 
-// getenv is not thread-safe. The CLI reads the environment once on the main thread.
+// getenv is not thread-safe. The CLI reads the environment once on the main
+// thread.
 static const char *envOrEmpty(const char *key)
 {
     // NOLINTNEXTLINE(concurrency-mt-unsafe)
@@ -25,18 +27,18 @@ bool containsModelFiles(const std::filesystem::path &dir)
 
 std::vector<std::filesystem::path> modelDirCandidates(const ModelDirLookup &lookup)
 {
-    if (const char *envDir = envOrEmpty("NESSO_MODEL_DIR"); envDir[0] != '\0')
+    if (const char *envDir = envOrEmpty("NESSO_MODEL_DIR"); !std::string_view{envDir}.empty())
     {
         return {envDir};
     }
 
     std::vector<std::filesystem::path> dirs;
     dirs.push_back(lookup.cwd / "models");
-    if (const char *xdg = envOrEmpty("XDG_DATA_HOME"); xdg[0] != '\0')
+    if (const char *xdg = envOrEmpty("XDG_DATA_HOME"); !std::string_view{xdg}.empty())
     {
         dirs.push_back(std::filesystem::path(xdg) / "nesso");
     }
-    else if (const char *home = envOrEmpty("HOME"); home[0] != '\0')
+    else if (const char *home = envOrEmpty("HOME"); !std::string_view{home}.empty())
     {
         dirs.push_back(std::filesystem::path(home) / ".local" / "share" / "nesso");
     }
@@ -46,7 +48,7 @@ std::vector<std::filesystem::path> modelDirCandidates(const ModelDirLookup &look
 
 std::filesystem::path resolveDefaultModelDir(const ModelDirLookup &lookup)
 {
-    if (const char *envDir = envOrEmpty("NESSO_MODEL_DIR"); envDir[0] != '\0')
+    if (const char *envDir = envOrEmpty("NESSO_MODEL_DIR"); !std::string_view{envDir}.empty())
     {
         return envDir;
     }
