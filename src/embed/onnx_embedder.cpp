@@ -25,20 +25,26 @@
 namespace nesso::embed
 {
 
-static std::vector<float> meanPoolAndNormalize(const float *hiddenStates, const int64_t *attentionMask,
-                                               size_t sequenceLength, size_t hiddenSize)
+struct HiddenShape
 {
-    std::vector<float> pooled(hiddenSize, 0.0F);
+    size_t sequenceLength = 0;
+    size_t hiddenSize = 0;
+};
+
+static std::vector<float> meanPoolAndNormalize(const float *hiddenStates, const int64_t *attentionMask,
+                                               const HiddenShape &shape)
+{
+    std::vector<float> pooled(shape.hiddenSize, 0.0F);
     size_t activeTokens = 0;
-    for (size_t token = 0; token < sequenceLength; ++token)
+    for (size_t token = 0; token < shape.sequenceLength; ++token)
     {
         if (attentionMask[token] == 0)
         {
             continue;
         }
         ++activeTokens;
-        const float *tokenVector = hiddenStates + (token * hiddenSize);
-        for (size_t dim = 0; dim < hiddenSize; ++dim)
+        const float *tokenVector = hiddenStates + (token * shape.hiddenSize);
+        for (size_t dim = 0; dim < shape.hiddenSize; ++dim)
         {
             pooled[dim] += tokenVector[dim];
         }
@@ -307,9 +313,9 @@ OnnxEmbedder::SessionImpl::infer(Ort::Session &session, std::span<const Tokenize
         for (size_t batchIndex = 0; batchIndex < batchSize; ++batchIndex)
         {
             const float *batchHidden = hiddenStates + (batchIndex * paddedLength * MINILM_EMBEDDING_DIMENSIONS);
-            embeddings.push_back(meanPoolAndNormalize(batchHidden,
-                                                      flatAttentionMask.data() + (batchIndex * paddedLength),
-                                                      paddedLength, MINILM_EMBEDDING_DIMENSIONS));
+            embeddings.push_back(
+                meanPoolAndNormalize(batchHidden, flatAttentionMask.data() + (batchIndex * paddedLength),
+                                     {.sequenceLength = paddedLength, .hiddenSize = MINILM_EMBEDDING_DIMENSIONS}));
         }
         return embeddings;
     }

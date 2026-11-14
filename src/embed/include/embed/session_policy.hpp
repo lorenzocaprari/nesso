@@ -77,9 +77,14 @@ struct SessionPolicy
 /// MemAvailable from /proc/meminfo, in bytes. 0 when the key is missing or unreadable.
 [[nodiscard]] std::uintmax_t memAvailableBytes(std::istream &meminfo);
 
-[[nodiscard]] MachineResources readMachine(const std::filesystem::path &procRoot = "/proc",
-                                           const std::filesystem::path &sysRoot = "/sys",
-                                           const std::filesystem::path &cgroupRoot = "/sys/fs/cgroup");
+struct MachineFsRoots
+{
+    std::filesystem::path procRoot{"/proc"};
+    std::filesystem::path sysRoot{"/sys"};
+    std::filesystem::path cgroupRoot{"/sys/fs/cgroup"};
+};
+
+[[nodiscard]] MachineResources readMachine(const MachineFsRoots &roots = {});
 
 } // namespace nesso::embed
 

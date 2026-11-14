@@ -9,19 +9,25 @@
 namespace nesso::embed
 {
 
-// Ascending order makes tokens(next) the padded length of the run that would include it.
-[[nodiscard]] static bool fitsBudget(size_t count, size_t tokens)
+struct BatchBudget
 {
-    if (count >= BATCH_MAX_TEXTS)
+    size_t count = 0;
+    size_t tokens = 0;
+};
+
+// Ascending order makes tokens(next) the padded length of the run that would include it.
+[[nodiscard]] static bool fitsBudget(const BatchBudget &budget)
+{
+    if (budget.count >= BATCH_MAX_TEXTS)
     {
         return false;
     }
-    const size_t next = count + 1;
-    if (tokens == 0)
+    const size_t next = budget.count + 1;
+    if (budget.tokens == 0)
     {
         return true;
     }
-    return next <= BATCH_TOKEN_BUDGET / tokens;
+    return next <= BATCH_TOKEN_BUDGET / budget.tokens;
 }
 
 BatchPlan planBatches(std::span<const size_t> tokenCounts)
@@ -39,7 +45,7 @@ BatchPlan planBatches(std::span<const size_t> tokenCounts)
         current.reserve(BATCH_MAX_TEXTS);
         for (const size_t index : order)
         {
-            if (!current.empty() && !fitsBudget(current.size(), tokenCounts[index]))
+            if (!current.empty() && !fitsBudget({.count = current.size(), .tokens = tokenCounts[index]}))
             {
                 plan.batches.push_back(PlannedBatch{.indices = current});
                 current.clear();
