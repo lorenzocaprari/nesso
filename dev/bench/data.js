@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794652383995,
+  "lastUpdate": 1794653648085,
   "repoUrl": "https://github.com/lorenzocaprari/nesso",
   "entries": {
     "nesso": [
@@ -6533,6 +6533,60 @@ window.BENCHMARK_DATA = {
           {
             "name": "grep-100000-rss",
             "value": 146395136,
+            "unit": "bytes"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "caprarilorenzo5@gmail.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "committer": {
+            "email": "85455384+lorenzocaprari@users.noreply.github.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "distinct": true,
+          "id": "64948b1902a376e31780c8e24338f2ab1b361e07",
+          "message": "ci(clang-tidy): enable easily-swappable-parameters\n\nTurn on bugprone-easily-swappable-parameters for src/ with MinimumLength\n2 and ModelImplicitConversions false after the behaviour-preserving\nstruct refactors cleared the hits.",
+          "timestamp": "2026-11-14T11:43:12+01:00",
+          "tree_id": "22cb12aa2480b17b28dad80e1ca859b302dedd20",
+          "url": "https://github.com/lorenzocaprari/nesso/commit/64948b1902a376e31780c8e24338f2ab1b361e07"
+        },
+        "date": 1794653647466,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "grep-1000-wall",
+            "value": 0.15,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-1000-rss",
+            "value": 118153216,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-10000-wall",
+            "value": 0.16,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-10000-rss",
+            "value": 117669888,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-100000-wall",
+            "value": 0.35,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-100000-rss",
+            "value": 143884288,
             "unit": "bytes"
           }
         ]
