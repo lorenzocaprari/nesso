@@ -279,11 +279,18 @@ static std::optional<CgroupCpuPaths> readCgroupCpuPaths(const std::filesystem::p
     return paths;
 }
 
-static std::optional<size_t> tightestV1Quota(const std::filesystem::path &cgroupRoot, std::filesystem::path relative)
+struct CgroupV1Walk
+{
+    std::filesystem::path cgroupRoot;
+    std::filesystem::path relative;
+};
+
+static std::optional<size_t> tightestV1Quota(const CgroupV1Walk &walk)
 {
     // v1 stores the quota and the period in two files. Rejoin them into the cpu.max shape.
     std::optional<size_t> tightest;
-    const std::filesystem::path controller = cgroupRoot / "cpu";
+    const std::filesystem::path controller = walk.cgroupRoot / "cpu";
+    std::filesystem::path relative = walk.relative;
     while (true)
     {
         const std::filesystem::path directory = relative.empty() ? controller : controller / relative;
@@ -309,10 +316,15 @@ static std::optional<size_t> tightestV1Quota(const std::filesystem::path &cgroup
     return tightest;
 }
 
-static std::optional<size_t> cgroupCpuLimit(const std::filesystem::path &procRoot,
-                                            const std::filesystem::path &cgroupRoot)
+struct ProcCgroupRoots
 {
-    const std::optional<CgroupCpuPaths> paths = readCgroupCpuPaths(procRoot);
+    std::filesystem::path procRoot;
+    std::filesystem::path cgroupRoot;
+};
+
+static std::optional<size_t> cgroupCpuLimit(const ProcCgroupRoots &roots)
+{
+    const std::optional<CgroupCpuPaths> paths = readCgroupCpuPaths(roots.procRoot);
     if (!paths)
     {
         return std::nullopt;
@@ -320,11 +332,12 @@ static std::optional<size_t> cgroupCpuLimit(const std::filesystem::path &procRoo
     std::optional<size_t> tightest;
     if (paths->v2Path)
     {
-        tightest = tightestQuota(cgroupRoot, *paths->v2Path, "cpu.max");
+        tightest = tightestQuota(roots.cgroupRoot, *paths->v2Path, "cpu.max");
     }
     if (paths->v1Path)
     {
-        if (const std::optional<size_t> v1 = tightestV1Quota(cgroupRoot, *paths->v1Path))
+        if (const std::optional<size_t> v1 =
+                tightestV1Quota({.cgroupRoot = roots.cgroupRoot, .relative = *paths->v1Path}))
         {
             minQuota(tightest, *v1);
         }
@@ -369,24 +382,24 @@ static size_t countPhysicalCores(const std::filesystem::path &cpuDir, const std:
     return cores.size();
 }
 
-MachineResources readMachine(const std::filesystem::path &procRoot, const std::filesystem::path &sysRoot,
-                             const std::filesystem::path &cgroupRoot)
+MachineResources readMachine(const MachineFsRoots &roots)
 {
     MachineResources machine;
     machine.logicalThreads = atLeastOne(std::thread::hardware_concurrency());
-    std::ifstream meminfo(procRoot / "meminfo");
+    std::ifstream meminfo(roots.procRoot / "meminfo");
     machine.memoryLimitBytes = meminfo ? memAvailableBytes(meminfo) : 0;
     if (machine.memoryLimitBytes == 0)
     {
         machine.memoryLimitBytes = physicalMemoryBytes();
     }
-    const std::optional<std::set<int>> allowed = allowedFromStatus(procRoot / "self/status");
-    size_t cores = countPhysicalCores(sysRoot / "devices/system/cpu", allowed);
+    const std::optional<std::set<int>> allowed = allowedFromStatus(roots.procRoot / "self/status");
+    size_t cores = countPhysicalCores(roots.sysRoot / "devices/system/cpu", allowed);
     if (cores == 0)
     {
         cores = allowed ? allowed->size() : machine.logicalThreads;
     }
-    if (const std::optional<size_t> quota = cgroupCpuLimit(procRoot, cgroupRoot))
+    if (const std::optional<size_t> quota =
+            cgroupCpuLimit({.procRoot = roots.procRoot, .cgroupRoot = roots.cgroupRoot}))
     {
         cores = std::min(cores, *quota);
     }

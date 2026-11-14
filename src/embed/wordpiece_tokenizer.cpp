@@ -457,9 +457,10 @@ static std::vector<std::string> basicTokenize(std::string_view text)
     return tokens;
 }
 
-WordPieceTokenizer::WordPieceTokenizer(std::unordered_map<std::string, int64_t> vocab, int64_t clsId, int64_t sepId,
-                                       int64_t unkId, size_t maxSequenceLength)
-    : vocab_(std::move(vocab)), clsId_(clsId), sepId_(sepId), unkId_(unkId), maxSequenceLength_(maxSequenceLength)
+WordPieceTokenizer::WordPieceTokenizer(std::unordered_map<std::string, int64_t> vocab, const SpecialTokenIds &ids,
+                                       size_t maxSequenceLength)
+    : vocab_(std::move(vocab)), clsId_(ids.clsId), sepId_(ids.sepId), unkId_(ids.unkId),
+      maxSequenceLength_(maxSequenceLength)
 {
 }
 
@@ -506,7 +507,7 @@ std::expected<WordPieceTokenizer, EmbedError> WordPieceTokenizer::fromVocabFile(
     {
         return std::unexpected(EmbedError::VocabLoadFailure);
     }
-    return WordPieceTokenizer(std::move(vocab), *clsId, *sepId, *unkId, maxSequenceLength);
+    return WordPieceTokenizer(std::move(vocab), {.clsId = *clsId, .sepId = *sepId, .unkId = *unkId}, maxSequenceLength);
 }
 
 std::vector<std::string> WordPieceTokenizer::wordPieceTokenize(std::string_view token) const

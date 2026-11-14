@@ -33,7 +33,14 @@ class WordPieceTokenizer
     [[nodiscard]] std::expected<TokenizedInput, EmbedError> encode(std::string_view text) const;
 
   private:
-    WordPieceTokenizer(std::unordered_map<std::string, int64_t> vocab, int64_t clsId, int64_t sepId, int64_t unkId,
+    struct SpecialTokenIds
+    {
+        int64_t clsId = 0;
+        int64_t sepId = 0;
+        int64_t unkId = 0;
+    };
+
+    WordPieceTokenizer(std::unordered_map<std::string, int64_t> vocab, const SpecialTokenIds &ids,
                        size_t maxSequenceLength);
 
     [[nodiscard]] std::vector<std::string> wordPieceTokenize(std::string_view token) const;

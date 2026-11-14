@@ -96,7 +96,7 @@ TEST_CASE("the machine is read from proc and sys roots", "[session-policy]")
     writeText(sys / "devices/system/cpu/cpu4x/topology/core_id", "7\n");
     std::filesystem::create_directories(sys / "devices/system/cpu/cpu5");
 
-    const MachineResources machine = nesso::embed::readMachine(proc, sys);
+    const MachineResources machine = nesso::embed::readMachine({.procRoot = proc, .sysRoot = sys});
     CHECK(machine.memoryLimitBytes == 4 * GIB);
     CHECK(machine.physicalCores == 3);
     CHECK(machine.logicalThreads >= 1);
@@ -113,11 +113,12 @@ TEST_CASE("without MemAvailable or a topology the machine falls back", "[session
     REQUIRE(pageSize > 0);
     const std::uintmax_t total = static_cast<std::uintmax_t>(pages) * static_cast<std::uintmax_t>(pageSize);
 
-    const MachineResources noKey = nesso::embed::readMachine(proc, dir.path() / "no-sys");
+    const MachineResources noKey = nesso::embed::readMachine({.procRoot = proc, .sysRoot = dir.path() / "no-sys"});
     CHECK(noKey.memoryLimitBytes == total);
     CHECK(noKey.physicalCores == noKey.logicalThreads);
 
-    const MachineResources noFile = nesso::embed::readMachine(dir.path() / "no-proc", dir.path() / "no-sys");
+    const MachineResources noFile =
+        nesso::embed::readMachine({.procRoot = dir.path() / "no-proc", .sysRoot = dir.path() / "no-sys"});
     CHECK(noFile.memoryLimitBytes == total);
 }
 
@@ -322,23 +323,26 @@ TEST_CASE("usable cores follow affinity and cgroup cpu.max", "[session-policy]")
     writeCpu(sys, "cpu3", 0, 3);
 
     writeText(proc / "self/status", "Name:\tnesso\nCpus_allowed:\tf\nCpus_allowed_list:\t0,2\n");
-    const MachineResources affinity = nesso::embed::readMachine(proc, sys, cgroup);
+    const MachineResources affinity =
+        nesso::embed::readMachine({.procRoot = proc, .sysRoot = sys, .cgroupRoot = cgroup});
     CHECK(affinity.physicalCores == 2);
 
     writeText(proc / "self/status", "Cpus_allowed_list:\t0-3\n");
     writeText(proc / "self/cgroup", "0::/slice/leaf\n");
     writeText(cgroup / "slice/cpu.max", "200000 100000\n");
-    const MachineResources quota = nesso::embed::readMachine(proc, sys, cgroup);
+    const MachineResources quota = nesso::embed::readMachine({.procRoot = proc, .sysRoot = sys, .cgroupRoot = cgroup});
     CHECK(quota.physicalCores == 2);
 
     writeText(cgroup / "slice/leaf/cpu.max", "max 100000\n");
     writeText(cgroup / "cpu.max", "100000 100000\n");
-    const MachineResources tightest = nesso::embed::readMachine(proc, sys, cgroup);
+    const MachineResources tightest =
+        nesso::embed::readMachine({.procRoot = proc, .sysRoot = sys, .cgroupRoot = cgroup});
     CHECK(tightest.physicalCores == 1);
 
     writeText(cgroup / "slice/cpu.max", "50000 100000\n");
     writeText(cgroup / "cpu.max", "max 100000\n");
-    const MachineResources fraction = nesso::embed::readMachine(proc, sys, cgroup);
+    const MachineResources fraction =
+        nesso::embed::readMachine({.procRoot = proc, .sysRoot = sys, .cgroupRoot = cgroup});
     CHECK(fraction.physicalCores == 1);
 
     writeText(proc / "self/cgroup", "not-a-cgroup-line\n1:cpuacct:/ignored\n2:cpu,cpuacct:/limited\n");
@@ -346,47 +350,53 @@ TEST_CASE("usable cores follow affinity and cgroup cpu.max", "[session-policy]")
     writeText(cgroup / "cpu/limited/cpu.cfs_period_us", "100000\n");
     writeText(cgroup / "cpu/cpu.cfs_quota_us", "-1\n");
     writeText(cgroup / "cpu/cpu.cfs_period_us", "100000\n");
-    const MachineResources v1 = nesso::embed::readMachine(proc, sys, cgroup);
+    const MachineResources v1 = nesso::embed::readMachine({.procRoot = proc, .sysRoot = sys, .cgroupRoot = cgroup});
     CHECK(v1.physicalCores == 3);
 
     writeText(proc / "self/cgroup", "0::/slice/leaf\n2:cpu:/limited\n");
     writeText(cgroup / "slice/cpu.max", "400000 100000\n");
-    const MachineResources both = nesso::embed::readMachine(proc, sys, cgroup);
+    const MachineResources both = nesso::embed::readMachine({.procRoot = proc, .sysRoot = sys, .cgroupRoot = cgroup});
     CHECK(both.physicalCores == 3);
 
     writeText(proc / "self/status", "Cpus_allowed_list:\tnope\n");
     writeText(proc / "self/cgroup", "0::/missing\n");
-    const MachineResources ignored = nesso::embed::readMachine(proc, sys, cgroup);
+    const MachineResources ignored =
+        nesso::embed::readMachine({.procRoot = proc, .sysRoot = sys, .cgroupRoot = cgroup});
     CHECK(ignored.physicalCores == 4);
 
     writeText(proc / "self/status", "Cpus_allowed_list:\t0-1\n");
     writeText(proc / "self/cgroup", "0::/stopped\n");
     writeText(cgroup / "stopped/cpu.max", "0 100000\n");
-    const MachineResources zero = nesso::embed::readMachine(proc, sys, cgroup);
+    const MachineResources zero = nesso::embed::readMachine({.procRoot = proc, .sysRoot = sys, .cgroupRoot = cgroup});
     CHECK(zero.physicalCores == 1);
 
     writeText(proc / "self/status", "Cpus_allowed_list:\t0-3\n");
     writeText(proc / "self/cgroup", "0::/bad\n");
     writeText(cgroup / "bad/cpu.max", "nope\n");
-    const MachineResources malformed = nesso::embed::readMachine(proc, sys, cgroup);
+    const MachineResources malformed =
+        nesso::embed::readMachine({.procRoot = proc, .sysRoot = sys, .cgroupRoot = cgroup});
     CHECK(malformed.physicalCores == 4);
 
     writeText(cgroup / "bad/cpu.max", "100000\n");
-    const MachineResources missingPeriod = nesso::embed::readMachine(proc, sys, cgroup);
+    const MachineResources missingPeriod =
+        nesso::embed::readMachine({.procRoot = proc, .sysRoot = sys, .cgroupRoot = cgroup});
     CHECK(missingPeriod.physicalCores == 4);
 
     std::filesystem::remove(proc / "self/cgroup");
-    const MachineResources noCgroup = nesso::embed::readMachine(proc, sys, cgroup);
+    const MachineResources noCgroup =
+        nesso::embed::readMachine({.procRoot = proc, .sysRoot = sys, .cgroupRoot = cgroup});
     CHECK(noCgroup.physicalCores == 4);
 
     writeText(proc / "self/cgroup", "2:cpu:/broken\n");
     writeText(cgroup / "cpu/broken/cpu.cfs_quota_us", "not-a-number\n");
     writeText(cgroup / "cpu/broken/cpu.cfs_period_us", "100000\n");
-    const MachineResources badQuota = nesso::embed::readMachine(proc, sys, cgroup);
+    const MachineResources badQuota =
+        nesso::embed::readMachine({.procRoot = proc, .sysRoot = sys, .cgroupRoot = cgroup});
     CHECK(badQuota.physicalCores == 4);
 
     writeText(cgroup / "cpu/broken/cpu.cfs_quota_us", "200000\n");
     writeText(cgroup / "cpu/broken/cpu.cfs_period_us", "0\n");
-    const MachineResources zeroPeriod = nesso::embed::readMachine(proc, sys, cgroup);
+    const MachineResources zeroPeriod =
+        nesso::embed::readMachine({.procRoot = proc, .sysRoot = sys, .cgroupRoot = cgroup});
     CHECK(zeroPeriod.physicalCores == 4);
 }
