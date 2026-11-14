@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794648755003,
+  "lastUpdate": 1794649750106,
   "repoUrl": "https://github.com/lorenzocaprari/nesso",
   "entries": {
     "nesso": [
@@ -6371,6 +6371,60 @@ window.BENCHMARK_DATA = {
           {
             "name": "grep-100000-rss",
             "value": 146489344,
+            "unit": "bytes"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "caprarilorenzo5@gmail.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "committer": {
+            "email": "85455384+lorenzocaprari@users.noreply.github.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "distinct": true,
+          "id": "32d8052db64e5ab74b5fb4f21539202a843fad3a",
+          "message": "refactor(embed): bundle easily-swappable parameters into structs\n\nGroup adjacent same-type parameters in batch planning, pooling,\nsession policy roots, and WordPiece special-token ids into named\nstructs with designated initializers. Store path helpers by value\nso clang-tidy does not flag reference data members.",
+          "timestamp": "2026-11-14T10:45:08+01:00",
+          "tree_id": "88b74bb559d3243abdc51f427213db9476cced38",
+          "url": "https://github.com/lorenzocaprari/nesso/commit/32d8052db64e5ab74b5fb4f21539202a843fad3a"
+        },
+        "date": 1794649749072,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "grep-1000-wall",
+            "value": 1.23,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-1000-rss",
+            "value": 118505472,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-10000-wall",
+            "value": 1.22,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-10000-rss",
+            "value": 118075392,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-100000-wall",
+            "value": 1.45,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-100000-rss",
+            "value": 146620416,
             "unit": "bytes"
           }
         ]
