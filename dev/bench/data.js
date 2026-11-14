@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794592803194,
+  "lastUpdate": 1794648755003,
   "repoUrl": "https://github.com/lorenzocaprari/nesso",
   "entries": {
     "nesso": [
@@ -6317,6 +6317,60 @@ window.BENCHMARK_DATA = {
           {
             "name": "grep-100000-rss",
             "value": 145956864,
+            "unit": "bytes"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "caprarilorenzo5@gmail.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "committer": {
+            "email": "85455384+lorenzocaprari@users.noreply.github.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "distinct": true,
+          "id": "b22f9c191c719aef1e8716a526cb58b1d719b2db",
+          "message": "fix(core): drop reference members from ESP helper structs\n\nclang-tidy forbids ref data members; return optional from readVarint\nand store stream pointers in CorpusSpillStreams.",
+          "timestamp": "2026-11-14T10:28:13+01:00",
+          "tree_id": "6ef0115d55687810994f0310f9476968d60c5688",
+          "url": "https://github.com/lorenzocaprari/nesso/commit/b22f9c191c719aef1e8716a526cb58b1d719b2db"
+        },
+        "date": 1794648754233,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "grep-1000-wall",
+            "value": 0.15,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-1000-rss",
+            "value": 116903936,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-10000-wall",
+            "value": 0.16,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-10000-rss",
+            "value": 118960128,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-100000-wall",
+            "value": 0.37,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-100000-rss",
+            "value": 146489344,
             "unit": "bytes"
           }
         ]
