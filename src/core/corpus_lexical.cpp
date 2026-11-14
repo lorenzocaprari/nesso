@@ -11,6 +11,7 @@
 #include <cstdint>
 #include <cstring>
 #include <expected>
+#include <optional>
 #include <span>
 #include <string>
 #include <string_view>
@@ -48,29 +49,27 @@ static bool appendVarint(std::vector<std::byte> &out, std::uint64_t value)
     return true;
 }
 
-struct VarintDecode
+static std::optional<std::uint64_t> readVarint(std::span<const std::byte> bytes, std::uint64_t &cursor)
 {
-    std::uint64_t &cursor;
-    std::uint64_t &value;
-};
-
-static bool readVarint(std::span<const std::byte> bytes, const VarintDecode &out)
-{
-    out.value = 0;
+    std::uint64_t value = 0;
     for (unsigned shift = 0; shift < 64; shift += 7)
     {
-        if (out.cursor >= bytes.size())
+        if (cursor >= bytes.size())
         {
-            return false;
+            return std::nullopt;
         }
-        const auto piece = static_cast<std::uint64_t>(bytes[out.cursor++]);
-        out.value |= (piece & 0x7FU) << shift;
+        const auto piece = static_cast<std::uint64_t>(bytes[cursor++]);
+        value |= (piece & 0x7FU) << shift;
         if ((piece & 0x80U) == 0)
         {
-            return shift < 63 || piece <= 1;
+            if (shift < 63 || piece <= 1)
+            {
+                return value;
+            }
+            return std::nullopt;
         }
     }
-    return false;
+    return std::nullopt;
 }
 
 static bool appendU64(std::vector<std::byte> &out, std::uint64_t value)
@@ -185,19 +184,18 @@ static std::expected<void, EngineError> decodeLexicalDictionary(std::span<const 
     std::string previous;
     for (std::uint64_t index = 0; index < termCount; ++index)
     {
-        std::uint64_t length = 0;
-        if (!readVarint(bytes, {.cursor = cursor, .value = length}) || length > MAX_TEXT_BYTES ||
-            !rangeInside(cursor, length, bytes.size()))
+        const std::optional<std::uint64_t> length = readVarint(bytes, cursor);
+        if (!length || *length > MAX_TEXT_BYTES || !rangeInside(cursor, *length, bytes.size()))
         {
             return std::unexpected(EngineError::CorruptDatabase);
         }
-        std::string term(static_cast<std::size_t>(length), '\0');
-        for (std::uint64_t offset = 0; offset < length; ++offset)
+        std::string term(static_cast<std::size_t>(*length), '\0');
+        for (std::uint64_t offset = 0; offset < *length; ++offset)
         {
             term[static_cast<std::size_t>(offset)] =
                 static_cast<char>(static_cast<unsigned char>(bytes[cursor + offset]));
         }
-        cursor += length;
+        cursor += *length;
         if (!previous.empty() && !termByteLess(previous, term))
         {
             return std::unexpected(EngineError::CorruptDatabase);
@@ -221,39 +219,38 @@ static std::expected<void, EngineError> decodeLexicalPostings(std::span<const st
 {
     for (std::uint64_t line = 0; line < limits.postingLines; ++line)
     {
-        std::uint64_t unique = 0;
-        if (!readVarint(bytes, {.cursor = cursor, .value = unique}) || unique > limits.termCount)
+        const std::optional<std::uint64_t> unique = readVarint(bytes, cursor);
+        if (!unique || *unique > limits.termCount)
         {
             return std::unexpected(EngineError::CorruptDatabase);
         }
         LexicalLinePostings &row = postings[static_cast<std::size_t>(line)];
-        row.entries.reserve(static_cast<std::size_t>(unique));
+        row.entries.reserve(static_cast<std::size_t>(*unique));
         std::uint64_t previousId = 0;
         std::uint64_t lengthSum = 0;
-        for (std::uint64_t index = 0; index < unique; ++index)
+        for (std::uint64_t index = 0; index < *unique; ++index)
         {
-            std::uint64_t delta = 0;
-            std::uint64_t frequency = 0;
-            if (!readVarint(bytes, {.cursor = cursor, .value = delta}) ||
-                !readVarint(bytes, {.cursor = cursor, .value = frequency}) || frequency == 0 ||
-                delta > limits.termCount || previousId + delta >= limits.termCount || (index > 0 && delta == 0))
+            const std::optional<std::uint64_t> delta = readVarint(bytes, cursor);
+            const std::optional<std::uint64_t> frequency = readVarint(bytes, cursor);
+            if (!delta || !frequency || *frequency == 0 || *delta > limits.termCount ||
+                previousId + *delta >= limits.termCount || (index > 0 && *delta == 0))
             {
                 return std::unexpected(EngineError::CorruptDatabase);
             }
-            previousId += delta;
-            lengthSum += frequency;
+            previousId += *delta;
+            lengthSum += *frequency;
             if (lengthSum > MAX_TEXT_BYTES)
             {
                 return std::unexpected(EngineError::CorruptDatabase);
             }
-            row.entries.emplace_back(static_cast<std::uint32_t>(previousId), static_cast<std::uint32_t>(frequency));
+            row.entries.emplace_back(static_cast<std::uint32_t>(previousId), static_cast<std::uint32_t>(*frequency));
         }
-        std::uint64_t length = 0;
-        if (!readVarint(bytes, {.cursor = cursor, .value = length}) || length != lengthSum || length > MAX_TEXT_BYTES)
+        const std::optional<std::uint64_t> length = readVarint(bytes, cursor);
+        if (!length || *length != lengthSum || *length > MAX_TEXT_BYTES)
         {
             return std::unexpected(EngineError::CorruptDatabase);
         }
-        row.length = static_cast<std::uint32_t>(length);
+        row.length = static_cast<std::uint32_t>(*length);
     }
     return {};
 }
