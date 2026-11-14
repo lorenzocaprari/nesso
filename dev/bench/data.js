@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794653648085,
+  "lastUpdate": 1794660971994,
   "repoUrl": "https://github.com/lorenzocaprari/nesso",
   "entries": {
     "nesso": [
@@ -6587,6 +6587,60 @@ window.BENCHMARK_DATA = {
           {
             "name": "grep-100000-rss",
             "value": 143884288,
+            "unit": "bytes"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "caprarilorenzo5@gmail.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "committer": {
+            "email": "85455384+lorenzocaprari@users.noreply.github.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "distinct": true,
+          "id": "dada22488ed2e25bae3b8741f994ba19305148c6",
+          "message": "refactor(cli): clear pro-bounds-pointer-arithmetic hits\n\nIndex argv, environment strings, and score rows through spans and\nstring_view so the facade no longer does raw pointer arithmetic.",
+          "timestamp": "2026-11-14T13:51:40+01:00",
+          "tree_id": "f3aba826fcdaf345292becc170b323c95f5ef073",
+          "url": "https://github.com/lorenzocaprari/nesso/commit/dada22488ed2e25bae3b8741f994ba19305148c6"
+        },
+        "date": 1794660971391,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "grep-1000-wall",
+            "value": 0.15,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-1000-rss",
+            "value": 117719040,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-10000-wall",
+            "value": 0.16,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-10000-rss",
+            "value": 119717888,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-100000-wall",
+            "value": 0.35,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-100000-rss",
+            "value": 144949248,
             "unit": "bytes"
           }
         ]
