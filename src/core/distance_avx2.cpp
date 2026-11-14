@@ -10,7 +10,8 @@ namespace nesso::core::math::detail
 namespace
 {
 
-// Keep the ISA on this function so LTO cannot inline AVX2 into a generic caller.
+// Keep the ISA on this function so LTO cannot inline AVX2 into a generic
+// caller.
 #ifdef __GNUC__
 #define NESSO_TARGET_AVX2_FMA __attribute__((target("avx2,fma")))
 #else
@@ -28,6 +29,12 @@ NESSO_TARGET_AVX2_FMA float horizontalSum(__m256 value) noexcept
     return _mm_cvtss_f32(sum);
 }
 
+[[nodiscard, gnu::always_inline]] NESSO_TARGET_AVX2_FMA inline const float *floatAddr(std::span<const float> values,
+                                                                                      size_t index) noexcept
+{
+    return values.subspan(index).data();
+}
+
 } // namespace
 
 NESSO_TARGET_AVX2_FMA float dotProductAvx2Fma(std::span<const float> a, std::span<const float> b) noexcept
@@ -39,14 +46,17 @@ NESSO_TARGET_AVX2_FMA float dotProductAvx2Fma(std::span<const float> a, std::spa
     size_t index = 0;
     for (; index + 32 <= a.size(); index += 32)
     {
-        sum0 = _mm256_fmadd_ps(_mm256_loadu_ps(a.data() + index), _mm256_loadu_ps(b.data() + index), sum0);
-        sum1 = _mm256_fmadd_ps(_mm256_loadu_ps(a.data() + index + 8), _mm256_loadu_ps(b.data() + index + 8), sum1);
-        sum2 = _mm256_fmadd_ps(_mm256_loadu_ps(a.data() + index + 16), _mm256_loadu_ps(b.data() + index + 16), sum2);
-        sum3 = _mm256_fmadd_ps(_mm256_loadu_ps(a.data() + index + 24), _mm256_loadu_ps(b.data() + index + 24), sum3);
+        sum0 = _mm256_fmadd_ps(_mm256_loadu_ps(floatAddr(a, index)), _mm256_loadu_ps(floatAddr(b, index)), sum0);
+        sum1 =
+            _mm256_fmadd_ps(_mm256_loadu_ps(floatAddr(a, index + 8)), _mm256_loadu_ps(floatAddr(b, index + 8)), sum1);
+        sum2 =
+            _mm256_fmadd_ps(_mm256_loadu_ps(floatAddr(a, index + 16)), _mm256_loadu_ps(floatAddr(b, index + 16)), sum2);
+        sum3 =
+            _mm256_fmadd_ps(_mm256_loadu_ps(floatAddr(a, index + 24)), _mm256_loadu_ps(floatAddr(b, index + 24)), sum3);
     }
     for (; index + 8 <= a.size(); index += 8)
     {
-        sum0 = _mm256_fmadd_ps(_mm256_loadu_ps(a.data() + index), _mm256_loadu_ps(b.data() + index), sum0);
+        sum0 = _mm256_fmadd_ps(_mm256_loadu_ps(floatAddr(a, index)), _mm256_loadu_ps(floatAddr(b, index)), sum0);
     }
 
     sum0 = _mm256_add_ps(sum0, sum1);
@@ -68,13 +78,13 @@ NESSO_TARGET_AVX2_FMA float l2SquaredDistanceAvx2Fma(std::span<const float> a, s
     size_t index = 0;
     for (; index + 32 <= a.size(); index += 32)
     {
-        const __m256 delta0 = _mm256_sub_ps(_mm256_loadu_ps(a.data() + index), _mm256_loadu_ps(b.data() + index));
+        const __m256 delta0 = _mm256_sub_ps(_mm256_loadu_ps(floatAddr(a, index)), _mm256_loadu_ps(floatAddr(b, index)));
         const __m256 delta1 =
-            _mm256_sub_ps(_mm256_loadu_ps(a.data() + index + 8), _mm256_loadu_ps(b.data() + index + 8));
+            _mm256_sub_ps(_mm256_loadu_ps(floatAddr(a, index + 8)), _mm256_loadu_ps(floatAddr(b, index + 8)));
         const __m256 delta2 =
-            _mm256_sub_ps(_mm256_loadu_ps(a.data() + index + 16), _mm256_loadu_ps(b.data() + index + 16));
+            _mm256_sub_ps(_mm256_loadu_ps(floatAddr(a, index + 16)), _mm256_loadu_ps(floatAddr(b, index + 16)));
         const __m256 delta3 =
-            _mm256_sub_ps(_mm256_loadu_ps(a.data() + index + 24), _mm256_loadu_ps(b.data() + index + 24));
+            _mm256_sub_ps(_mm256_loadu_ps(floatAddr(a, index + 24)), _mm256_loadu_ps(floatAddr(b, index + 24)));
         sum0 = _mm256_fmadd_ps(delta0, delta0, sum0);
         sum1 = _mm256_fmadd_ps(delta1, delta1, sum1);
         sum2 = _mm256_fmadd_ps(delta2, delta2, sum2);
@@ -82,7 +92,7 @@ NESSO_TARGET_AVX2_FMA float l2SquaredDistanceAvx2Fma(std::span<const float> a, s
     }
     for (; index + 8 <= a.size(); index += 8)
     {
-        const __m256 delta = _mm256_sub_ps(_mm256_loadu_ps(a.data() + index), _mm256_loadu_ps(b.data() + index));
+        const __m256 delta = _mm256_sub_ps(_mm256_loadu_ps(floatAddr(a, index)), _mm256_loadu_ps(floatAddr(b, index)));
         sum0 = _mm256_fmadd_ps(delta, delta, sum0);
     }
 

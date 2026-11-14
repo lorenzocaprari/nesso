@@ -13,6 +13,7 @@
 #include <cmath>
 #include <cstdint>
 #include <expected>
+#include <iterator>
 #include <span>
 #include <string>
 #include <string_view>
@@ -42,8 +43,10 @@ static bool validHash(std::string_view value)
 
 static bool parseNumber(std::string_view text, std::uint32_t &value)
 {
-    const auto parsed = std::from_chars(text.data(), text.data() + text.size(), value);
-    return parsed.ec == std::errc{} && parsed.ptr == text.data() + text.size() && std::to_string(value) == text;
+    const char *const first = std::to_address(text.begin());
+    const char *const last = std::to_address(text.end());
+    const auto parsed = std::from_chars(first, last, value);
+    return parsed.ec == std::errc{} && parsed.ptr == last && std::to_string(value) == text;
 }
 std::expected<std::uint32_t, EngineError> validatePolicy(const CorpusPolicy &policy)
 {
