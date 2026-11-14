@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794664707929,
+  "lastUpdate": 1794677019725,
   "repoUrl": "https://github.com/lorenzocaprari/nesso",
   "entries": {
     "nesso": [
@@ -6695,6 +6695,60 @@ window.BENCHMARK_DATA = {
           {
             "name": "grep-100000-rss",
             "value": 145227776,
+            "unit": "bytes"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "caprarilorenzo5@gmail.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "committer": {
+            "email": "85455384+lorenzocaprari@users.noreply.github.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "distinct": true,
+          "id": "e49c6dce5509eb3934f3865b3ca674356f99928a",
+          "message": "refactor(core): clear pro-bounds-pointer-arithmetic hits\n\nReplace raw pointer offsets with span::subspan / to_address / std::next\nso SIMD loads and mmap decode stay behaviour-identical under the check.",
+          "timestamp": "2026-11-14T18:19:01+01:00",
+          "tree_id": "d0d059109e134e2b2bcfcaf1c77e4c27096112e1",
+          "url": "https://github.com/lorenzocaprari/nesso/commit/e49c6dce5509eb3934f3865b3ca674356f99928a"
+        },
+        "date": 1794677019093,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "grep-1000-wall",
+            "value": 0.14,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-1000-rss",
+            "value": 118022144,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-10000-wall",
+            "value": 0.16,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-10000-rss",
+            "value": 117207040,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-100000-wall",
+            "value": 0.36,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-100000-rss",
+            "value": 145186816,
             "unit": "bytes"
           }
         ]
