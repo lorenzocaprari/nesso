@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794660971994,
+  "lastUpdate": 1794664707929,
   "repoUrl": "https://github.com/lorenzocaprari/nesso",
   "entries": {
     "nesso": [
@@ -6641,6 +6641,60 @@ window.BENCHMARK_DATA = {
           {
             "name": "grep-100000-rss",
             "value": 144949248,
+            "unit": "bytes"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "caprarilorenzo5@gmail.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "committer": {
+            "email": "85455384+lorenzocaprari@users.noreply.github.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "distinct": true,
+          "id": "a12741e512a0628515e8025bc51af9176fcc4b94",
+          "message": "refactor(embed): clear pro-bounds-pointer-arithmetic hits\n\nPool and scan the MiniLM batch through spans so token offsets and the\nquantization window scan no longer use raw pointer arithmetic.",
+          "timestamp": "2026-11-14T14:54:33+01:00",
+          "tree_id": "d87e5c9f06ab1b7b85ec33283e53e8244a21e3a4",
+          "url": "https://github.com/lorenzocaprari/nesso/commit/a12741e512a0628515e8025bc51af9176fcc4b94"
+        },
+        "date": 1794664707244,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "grep-1000-wall",
+            "value": 0.14,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-1000-rss",
+            "value": 119783424,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-10000-wall",
+            "value": 0.14,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-10000-rss",
+            "value": 119492608,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-100000-wall",
+            "value": 0.32,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-100000-rss",
+            "value": 145227776,
             "unit": "bytes"
           }
         ]
