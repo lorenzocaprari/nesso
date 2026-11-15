@@ -78,7 +78,6 @@ Checks: >
   -llvm-else-after-return,
   -llvm-header-guard,
   -llvm-qualified-auto,
-  -misc-include-cleaner,
   -misc-use-anonymous-namespace,
   -modernize-use-trailing-return-type,
   -readability-magic-numbers,
@@ -97,9 +96,23 @@ FormatStyle: file
 CheckOptions:
   modernize-use-auto.MinTypeNameLength: '5'
   readability-identifier-naming.ClassCase: 'CamelCase'
+  readability-identifier-naming.EnumCase: 'CamelCase'
+  readability-identifier-naming.EnumConstantCase: 'CamelCase'
+  readability-identifier-naming.ConceptCase: 'CamelCase'
+  readability-identifier-naming.TypeAliasCase: 'CamelCase'
+  readability-identifier-naming.TypedefCase: 'CamelCase'
+  readability-identifier-naming.NamespaceCase: 'lower_case'
   readability-identifier-naming.VariableCase: 'camelBack'
+  readability-identifier-naming.ParameterCase: 'camelBack'
+  readability-identifier-naming.ClassMemberCase: 'camelBack'
+  readability-identifier-naming.PrivateMemberSuffix: '_'
+  readability-identifier-naming.ProtectedMemberSuffix: '_'
   readability-identifier-naming.FunctionCase: 'camelBack'
+  # Factory/compute verbs stay CamelCase so they do not clash with type names.
+  readability-identifier-naming.FunctionIgnoredRegexp: '^(Make|Get|Compute|Read|Write).*'
   readability-identifier-naming.GlobalConstantCase: 'UPPER_CASE'
+  readability-identifier-naming.MacroDefinitionCase: 'UPPER_CASE'
+  readability-identifier-naming.TypeAliasIgnoredRegexp: '^is_transparent$'
   modernize-use-concepts.AllowNullaryConcepts: true
   cppcoreguidelines-pro-type-vararg.AllowVaArgs: false
   cppcoreguidelines-pro-bounds-array-to-pointer-decay.AllowPtrToArrayDecays: false

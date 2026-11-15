@@ -1,6 +1,12 @@
 // Copyright (c) 2026 Lorenzo Caprari
 // SPDX-License-Identifier: Apache-2.0
 
+#include <cstddef>
+#include <cstdint>
+#include <expected>
+#include <filesystem>
+#include <functional>
+#include <nlohmann/json_fwd.hpp>
 #include <parser/archive_source.hpp>
 #include <parser/gzip_reader.hpp>
 #include <parser/log_chunker.hpp>
@@ -14,7 +20,10 @@
 #include <nlohmann/json.hpp>
 #include <optional>
 #include <sstream>
+#include <string>
+#include <string_view>
 #include <utility>
+#include <vector>
 
 namespace nesso::parser
 {

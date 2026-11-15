@@ -1,6 +1,7 @@
 // Copyright (c) 2026 Lorenzo Caprari
 // SPDX-License-Identifier: Apache-2.0
 
+#include "core/core_types.hpp"
 #include "corpus_detail.hpp"
 
 #include <core/bm25.hpp>
@@ -13,10 +14,11 @@
 #include <cmath>
 #include <cstdint>
 #include <expected>
-#include <iterator>
+#include <memory>
 #include <span>
 #include <string>
 #include <string_view>
+#include <system_error>
 #include <utility>
 
 namespace nesso::core::detail

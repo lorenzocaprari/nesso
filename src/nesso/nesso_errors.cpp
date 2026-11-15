@@ -1,6 +1,11 @@
 // Copyright (c) 2026 Lorenzo Caprari
 // SPDX-License-Identifier: Apache-2.0
 
+#include "core/core_types.hpp"
+#include "embed/embed_types.hpp"
+#include "parser/archive_source.hpp"
+#include "parser/log_chunker.hpp"
+#include <cstddef>
 #include <nesso/nesso.hpp>
 
 #include <nesso/error_map.hpp>

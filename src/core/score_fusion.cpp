@@ -4,11 +4,13 @@
 #include <core/score_fusion.hpp>
 
 #include <cmath>
+#include <cstddef>
+#include <span>
+#include <vector>
 
 namespace nesso::core
 {
 
-// NOLINTNEXTLINE(readability-identifier-naming)
 ZScoreStats ComputeZScoreStats(std::span<const double> values)
 {
     ZScoreStats stats;

@@ -1,11 +1,17 @@
 // Copyright (c) 2026 Lorenzo Caprari
 // SPDX-License-Identifier: Apache-2.0
 
+#include <cstddef>
+#include <expected>
+#include <filesystem>
 #include <parser/input_walk.hpp>
 
 #include <algorithm>
 #include <iterator>
+#include <span>
+#include <string>
 #include <system_error>
+#include <vector>
 
 namespace nesso::parser
 {

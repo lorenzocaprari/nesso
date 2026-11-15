@@ -1,10 +1,13 @@
 // Copyright (c) 2026 Lorenzo Caprari
 // SPDX-License-Identifier: Apache-2.0
 
+#include <filesystem>
 #include <nesso/model_paths.hpp>
 
 #include <cstdlib>
 #include <string_view>
+#include <system_error>
+#include <vector>
 
 namespace nesso
 {

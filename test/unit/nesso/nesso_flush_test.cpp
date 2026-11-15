@@ -14,6 +14,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <ranges>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -517,14 +518,14 @@ TEST_CASE("blank log lines and JSON values are not embedded or returned", "[ness
     const auto checkMatches = [&](const std::vector<nesso::TextMatch> &matches)
     {
         REQUIRE(matches.size() == 2);
-        const auto logMatch = std::find_if(matches.begin(), matches.end(),
-                                           [&](const auto &match) { return match.source == log.string(); });
+        const auto logMatch =
+            std::ranges::find_if(matches, [&](const auto &match) { return match.source == log.string(); });
         REQUIRE(logMatch != matches.end());
         CHECK(logMatch->line == 2);
         CHECK(logMatch->text == "  keep log \t");
         CHECK_FALSE(logMatch->arrayElement);
-        const auto jsonMatch = std::find_if(matches.begin(), matches.end(),
-                                            [&](const auto &match) { return match.source == json.string(); });
+        const auto jsonMatch =
+            std::ranges::find_if(matches, [&](const auto &match) { return match.source == json.string(); });
         REQUIRE(jsonMatch != matches.end());
         CHECK(jsonMatch->line == 3);
         CHECK(jsonMatch->text == "keep json");

@@ -124,7 +124,6 @@ struct EmbedProgressSpan
 embedDistinct(std::span<const std::string> texts, const nesso::embed::Embedder &embedder, ProgressReporter &progress,
               const EmbedProgressSpan &span, const LineCounts &counts);
 
-// NOLINTNEXTLINE(readability-identifier-naming)
 [[nodiscard]] std::expected<nesso::core::CorpusPolicy, Error> MakeCorpusPolicy(const nesso::embed::Embedder &embedder,
                                                                                const LineCounts &counts);
 

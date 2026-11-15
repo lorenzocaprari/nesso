@@ -1,6 +1,9 @@
 // Copyright (c) 2026 Lorenzo Caprari
 // SPDX-License-Identifier: Apache-2.0
 
+#include "core/core_types.hpp"
+#include <cstddef>
+#include <cstdint>
 #include <nesso/nesso.hpp>
 
 #include <nesso/error_map.hpp>
@@ -14,7 +17,6 @@
 #include <core/query_class.hpp>
 #include <core/score_fusion.hpp>
 #include <core/top_k.hpp>
-#include <embed/batch_plan.hpp>
 #include <embed/embedder.hpp>
 #include <embed/session_policy.hpp>
 #include <parser/log_chunker.hpp>
@@ -28,10 +30,10 @@
 #include <limits>
 #include <mutex>
 #include <optional>
-#include <ranges>
 #include <span>
 #include <string>
 #include <string_view>
+#include <system_error>
 #include <utility>
 #include <vector>
 

@@ -1,6 +1,9 @@
 // Copyright (c) 2026 Lorenzo Caprari
 // SPDX-License-Identifier: Apache-2.0
 
+#include "embed/embed_types.hpp"
+#include "embed/session_policy.hpp"
+#include "embed/wordpiece_tokenizer.hpp"
 #include <embed/amx_guard.hpp>
 #include <embed/batch_plan.hpp>
 #include <embed/inference_wave.hpp>
@@ -12,16 +15,20 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
-#include <format>
+#include <expected>
+#include <filesystem>
 #include <fstream>
 #include <functional>
+#include <ios>
 #include <memory>
+#include <onnxruntime_c_api.h>
 #include <onnxruntime_cxx_api.h>
 #include <span>
 #include <stdexcept>
 #include <string>
 #include <string_view>
 #include <utility>
+#include <vector>
 
 namespace nesso::embed
 {

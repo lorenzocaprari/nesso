@@ -6,9 +6,15 @@
 #include <algorithm>
 #include <array>
 #include <bit>
+#include <cstddef>
+#include <cstdint>
+#include <expected>
+#include <filesystem>
 #include <fstream>
+#include <ios>
 #include <iterator>
 #include <span>
+#include <string>
 #include <string_view>
 
 namespace nesso::core
@@ -135,7 +141,6 @@ class Sha256
 
 } // namespace
 
-// NOLINTNEXTLINE(readability-identifier-naming)
 Sha256Digest ComputeSha256(std::span<const std::byte> bytes)
 {
     Sha256 hash;
@@ -143,7 +148,6 @@ Sha256Digest ComputeSha256(std::span<const std::byte> bytes)
     return hash.finish();
 }
 
-// NOLINTNEXTLINE(readability-identifier-naming)
 Sha256Digest ComputeSha256(std::span<const std::span<const std::byte>> parts)
 {
     Sha256 hash;
