@@ -16,7 +16,7 @@
 namespace
 {
 
-std::vector<std::string> sampleTexts()
+std::vector<std::string> SampleTexts()
 {
     std::vector<std::string> texts;
     texts.reserve(33);
@@ -27,11 +27,11 @@ std::vector<std::string> sampleTexts()
     return texts;
 }
 
-bool modelPresent()
+bool ModelPresent()
 {
-    const std::filesystem::path modelDir{NESSO_MODELS_DIR};
-    return std::filesystem::is_regular_file(modelDir / "model.onnx") &&
-           std::filesystem::is_regular_file(modelDir / "vocab.txt");
+    const std::filesystem::path model_dir{NESSO_MODELS_DIR};
+    return std::filesystem::is_regular_file(model_dir / "model.onnx") &&
+           std::filesystem::is_regular_file(model_dir / "vocab.txt");
 }
 
 } // namespace
@@ -40,7 +40,7 @@ bool modelPresent()
 
 TEST_CASE("aarch64 intra-op widths from 2 upward match", "[session-pool][model]")
 {
-    if (!modelPresent())
+    if (!ModelPresent())
     {
 #ifdef NESSO_REQUIRE_MODEL
         FAIL("models/ not present; run scripts/fetch-model");
@@ -50,9 +50,9 @@ TEST_CASE("aarch64 intra-op widths from 2 upward match", "[session-pool][model]"
     }
 
     const std::filesystem::path modelDir{NESSO_MODELS_DIR};
-    const auto two = nesso::embed::OnnxEmbedder::createWithIntraOp(modelDir, 2);
-    const auto four = nesso::embed::OnnxEmbedder::createWithIntraOp(modelDir, 4);
-    const auto eight = nesso::embed::OnnxEmbedder::createWithIntraOp(modelDir, 8);
+    const auto two = nesso::embed::OnnxEmbedder::CreateWithIntraOp(modelDir, 2);
+    const auto four = nesso::embed::OnnxEmbedder::CreateWithIntraOp(modelDir, 4);
+    const auto eight = nesso::embed::OnnxEmbedder::CreateWithIntraOp(modelDir, 8);
     REQUIRE(two.has_value());
     REQUIRE(four.has_value());
     REQUIRE(eight.has_value());
@@ -76,7 +76,7 @@ TEST_CASE("aarch64 intra-op widths from 2 upward match", "[session-pool][model]"
     REQUIRE(budgetFour.has_value());
     REQUIRE(budgetEight.has_value());
     CHECK((*budgetOne)->policy().sessions == 1);
-    CHECK((*budgetOne)->policy().intraOpThreads == nesso::embed::intraOpThreadFloor());
+    CHECK((*budgetOne)->policy().intraOpThreads == nesso::embed::IntraOpThreadFloor());
     CHECK((*budgetTwo)->policy().sessions == 1);
     CHECK((*budgetTwo)->policy().intraOpThreads == 2);
     CHECK((*budgetFour)->policy().sessions == 1);
@@ -84,15 +84,15 @@ TEST_CASE("aarch64 intra-op widths from 2 upward match", "[session-pool][model]"
     CHECK((*budgetEight)->policy().sessions == 2);
     CHECK((*budgetEight)->policy().intraOpThreads == 4);
 
-    const auto texts = sampleTexts();
-    const auto fromTwo = (*two)->embedBatch(texts);
-    const auto fromFour = (*four)->embedBatch(texts);
-    const auto fromEight = (*eight)->embedBatch(texts);
-    const auto fromBudgetOne = (*budgetOne)->embedBatch(texts);
-    const auto fromBudgetTwo = (*budgetTwo)->embedBatch(texts);
-    const auto fromBudgetFour = (*budgetFour)->embedBatch(texts);
-    const auto fromBudgetEight = (*budgetEight)->embedBatch(texts);
-    const auto again = (*eight)->embedBatch(texts);
+    const auto texts = SampleTexts();
+    const auto fromTwo = (*two)->EmbedBatch(texts);
+    const auto fromFour = (*four)->EmbedBatch(texts);
+    const auto fromEight = (*eight)->EmbedBatch(texts);
+    const auto fromBudgetOne = (*budgetOne)->EmbedBatch(texts);
+    const auto fromBudgetTwo = (*budgetTwo)->EmbedBatch(texts);
+    const auto fromBudgetFour = (*budgetFour)->EmbedBatch(texts);
+    const auto fromBudgetEight = (*budgetEight)->EmbedBatch(texts);
+    const auto again = (*eight)->EmbedBatch(texts);
     REQUIRE(fromTwo.has_value());
     REQUIRE(fromFour.has_value());
     REQUIRE(fromEight.has_value());
@@ -115,7 +115,7 @@ TEST_CASE("aarch64 intra-op widths from 2 upward match", "[session-pool][model]"
 
 TEST_CASE("a wider intra-op pool matches one thread byte for byte", "[session-pool][model]")
 {
-    if (!modelPresent())
+    if (!ModelPresent())
     {
 #ifdef NESSO_REQUIRE_MODEL
         FAIL("models/ not present; run scripts/fetch-model");
@@ -124,64 +124,64 @@ TEST_CASE("a wider intra-op pool matches one thread byte for byte", "[session-po
 #endif
     }
 
-    const std::filesystem::path modelDir{NESSO_MODELS_DIR};
-    const auto single = nesso::embed::OnnxEmbedder::create(modelDir, 1);
-    const auto wider = nesso::embed::OnnxEmbedder::create(modelDir, 2);
-    const auto pooled = nesso::embed::OnnxEmbedder::create(modelDir, 8);
-    const auto pinnedOne = nesso::embed::OnnxEmbedder::createWithIntraOp(modelDir, 1);
-    const auto pinnedEight = nesso::embed::OnnxEmbedder::createWithIntraOp(modelDir, 8);
+    const std::filesystem::path model_dir{NESSO_MODELS_DIR};
+    const auto single = nesso::embed::OnnxEmbedder::Create(model_dir, 1);
+    const auto wider = nesso::embed::OnnxEmbedder::Create(model_dir, 2);
+    const auto pooled = nesso::embed::OnnxEmbedder::Create(model_dir, 8);
+    const auto pinned_one = nesso::embed::OnnxEmbedder::CreateWithIntraOp(model_dir, 1);
+    const auto pinned_eight = nesso::embed::OnnxEmbedder::CreateWithIntraOp(model_dir, 8);
     REQUIRE(single.has_value());
     REQUIRE(wider.has_value());
     REQUIRE(pooled.has_value());
-    REQUIRE(pinnedOne.has_value());
-    REQUIRE(pinnedEight.has_value());
-    if (!(*pooled)->policy().quantized)
+    REQUIRE(pinned_one.has_value());
+    REQUIRE(pinned_eight.has_value());
+    if (!(*pooled)->Policy().quantized)
     {
         SKIP("the model is fp32; intra-op thread count is not a second session");
     }
-    CHECK((*single)->policy().sessions == 1);
-    CHECK((*single)->sessions() == 1);
-    CHECK((*single)->policy().intraOpThreads == 1);
-    CHECK((*wider)->policy().sessions == 2);
-    CHECK((*wider)->sessions() == 2);
-    CHECK((*wider)->policy().intraOpThreads == 1);
-    CHECK_FALSE((*single)->policy().shrinkArena);
-    CHECK((*pooled)->policy().sessions == 2);
-    CHECK((*pooled)->sessions() == 2);
-    CHECK((*pooled)->policy().intraOpThreads == 4);
-    CHECK((*pooled)->policy().shrinkArena);
-    CHECK((*pinnedOne)->policy().intraOpThreads == 1);
-    CHECK((*pinnedOne)->sessions() == 1);
-    CHECK((*pinnedEight)->policy().intraOpThreads == 8);
-    CHECK((*pinnedEight)->sessions() == 1);
+    CHECK((*single)->Policy().sessions == 1);
+    CHECK((*single)->Sessions() == 1);
+    CHECK((*single)->Policy().intra_op_threads == 1);
+    CHECK((*wider)->Policy().sessions == 2);
+    CHECK((*wider)->Sessions() == 2);
+    CHECK((*wider)->Policy().intra_op_threads == 1);
+    CHECK_FALSE((*single)->Policy().shrink_arena);
+    CHECK((*pooled)->Policy().sessions == 2);
+    CHECK((*pooled)->Sessions() == 2);
+    CHECK((*pooled)->Policy().intra_op_threads == 4);
+    CHECK((*pooled)->Policy().shrink_arena);
+    CHECK((*pinned_one)->Policy().intra_op_threads == 1);
+    CHECK((*pinned_one)->Sessions() == 1);
+    CHECK((*pinned_eight)->Policy().intra_op_threads == 8);
+    CHECK((*pinned_eight)->Sessions() == 1);
 
-    const auto texts = sampleTexts();
-    const auto fromOne = (*single)->embedBatch(texts);
-    const auto fromWider = (*wider)->embedBatch(texts);
-    const auto fromPool = (*pooled)->embedBatch(texts);
-    const auto fromPinnedOne = (*pinnedOne)->embedBatch(texts);
-    const auto fromPinnedEight = (*pinnedEight)->embedBatch(texts);
-    const auto again = (*pooled)->embedBatch(texts);
-    REQUIRE(fromOne.has_value());
-    REQUIRE(fromWider.has_value());
-    REQUIRE(fromPool.has_value());
-    REQUIRE(fromPinnedOne.has_value());
-    REQUIRE(fromPinnedEight.has_value());
+    const auto texts = SampleTexts();
+    const auto from_one = (*single)->EmbedBatch(texts);
+    const auto from_wider = (*wider)->EmbedBatch(texts);
+    const auto from_pool = (*pooled)->EmbedBatch(texts);
+    const auto from_pinned_one = (*pinned_one)->EmbedBatch(texts);
+    const auto from_pinned_eight = (*pinned_eight)->EmbedBatch(texts);
+    const auto again = (*pooled)->EmbedBatch(texts);
+    REQUIRE(from_one.has_value());
+    REQUIRE(from_wider.has_value());
+    REQUIRE(from_pool.has_value());
+    REQUIRE(from_pinned_one.has_value());
+    REQUIRE(from_pinned_eight.has_value());
     REQUIRE(again.has_value());
-    REQUIRE(fromOne->size() == texts.size());
-    REQUIRE(*fromOne == *fromWider);
-    REQUIRE(*fromOne == *fromPool);
-    REQUIRE(*fromOne == *fromPinnedOne);
-    REQUIRE(*fromOne == *fromPinnedEight);
-    REQUIRE(*fromPool == *again);
-    CHECK(fromPool->front() != fromPool->back());
+    REQUIRE(from_one->size() == texts.size());
+    REQUIRE(*from_one == *from_wider);
+    REQUIRE(*from_one == *from_pool);
+    REQUIRE(*from_one == *from_pinned_one);
+    REQUIRE(*from_one == *from_pinned_eight);
+    REQUIRE(*from_pool == *again);
+    CHECK(from_pool->front() != from_pool->back());
 }
 
 #endif
 
 TEST_CASE("mixed-length batches match across session counts byte for byte", "[session-pool][model]")
 {
-    if (!modelPresent())
+    if (!ModelPresent())
     {
 #ifdef NESSO_REQUIRE_MODEL
         FAIL("models/ not present; run scripts/fetch-model");
@@ -190,13 +190,13 @@ TEST_CASE("mixed-length batches match across session counts byte for byte", "[se
 #endif
     }
 
-    const std::filesystem::path modelDir{NESSO_MODELS_DIR};
-    const auto one = nesso::embed::OnnxEmbedder::create(modelDir, 1);
-    const auto many = nesso::embed::OnnxEmbedder::create(modelDir, 8);
+    const std::filesystem::path model_dir{NESSO_MODELS_DIR};
+    const auto one = nesso::embed::OnnxEmbedder::Create(model_dir, 1);
+    const auto many = nesso::embed::OnnxEmbedder::Create(model_dir, 8);
     REQUIRE(one.has_value());
     REQUIRE(many.has_value());
-    REQUIRE((*one)->policy().quantized);
-    CHECK((*many)->sessions() > (*one)->sessions());
+    REQUIRE((*one)->Policy().quantized);
+    CHECK((*many)->Sessions() > (*one)->Sessions());
 
     std::vector<std::string> texts;
     texts.reserve(130);
@@ -211,9 +211,9 @@ TEST_CASE("mixed-length batches match across session counts byte for byte", "[se
             texts.push_back(std::string(80, 'x') + " timeout " + std::to_string(index));
         }
     }
-    const auto fromOne = (*one)->embedBatch(texts);
-    const auto fromMany = (*many)->embedBatch(texts);
-    REQUIRE(fromOne.has_value());
-    REQUIRE(fromMany.has_value());
-    REQUIRE(*fromOne == *fromMany);
+    const auto from_one = (*one)->EmbedBatch(texts);
+    const auto from_many = (*many)->EmbedBatch(texts);
+    REQUIRE(from_one.has_value());
+    REQUIRE(from_many.has_value());
+    REQUIRE(*from_one == *from_many);
 }

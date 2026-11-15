@@ -23,7 +23,7 @@
 namespace nesso
 {
 
-ErrorCause causeOf(nesso::parser::ParseError error)
+ErrorCause CauseOf(nesso::parser::ParseError error)
 {
     switch (error)
     {
@@ -48,7 +48,7 @@ ErrorCause causeOf(nesso::parser::ParseError error)
     std::unreachable();
 }
 
-ErrorCause causeOf(nesso::embed::EmbedError error)
+ErrorCause CauseOf(nesso::embed::EmbedError error)
 {
     switch (error)
     {
@@ -66,7 +66,7 @@ ErrorCause causeOf(nesso::embed::EmbedError error)
     std::unreachable();
 }
 
-ErrorCause causeOf(nesso::core::EngineError error)
+ErrorCause CauseOf(nesso::core::EngineError error)
 {
     switch (error)
     {
@@ -84,7 +84,7 @@ ErrorCause causeOf(nesso::core::EngineError error)
     std::unreachable();
 }
 
-std::string_view describe(ErrorCause cause)
+std::string_view Describe(ErrorCause cause)
 {
     switch (cause)
     {
@@ -121,7 +121,8 @@ std::string_view describe(ErrorCause cause)
     case ErrorCause::CorruptFile:
         return "the file is corrupt";
     case ErrorCause::UnsupportedCorpusVersion:
-        return "the corpus format is not supported by this nesso; re-run nesso index";
+        return "the corpus format is not supported by this nesso; re-run nesso "
+               "index";
     case ErrorCause::ModelMismatch:
         return "the corpus was built with a different model; re-run nesso index";
     case ErrorCause::SourceChanged:
@@ -142,7 +143,7 @@ std::string_view describe(ErrorCause cause)
     std::unreachable();
 }
 
-static std::optional<std::string> messageLexicalSpecial(const Error &error)
+static std::optional<std::string> MessageLexicalSpecial(const Error &error)
 {
     if (error.cause == ErrorCause::NoLexicalPostings)
     {
@@ -150,29 +151,31 @@ static std::optional<std::string> messageLexicalSpecial(const Error &error)
     }
     if (error.cause == ErrorCause::LexicalTermsMismatch)
     {
-        return std::format("Error: corpus lexical terms are version {}, this build uses version {}; "
+        return std::format("Error: corpus lexical terms are version {}, this build "
+                           "uses version {}; "
                            "re-run `nesso index`",
                            error.note.empty() ? "?" : error.note, nesso::core::LEXICAL_TERMS_VERSION);
     }
     return std::nullopt;
 }
 
-static std::string messageCorpusRead(const Error &error, std::string_view reason, const std::string &path)
+static std::string MessageCorpusRead(const Error &error, std::string_view reason, const std::string &path)
 {
-    if (const auto special = messageLexicalSpecial(error))
+    if (const auto special = MessageLexicalSpecial(error))
     {
         return *special;
     }
-    if (error.cause == ErrorCause::UnsupportedCorpusVersion && error.corpusVersion)
+    if (error.cause == ErrorCause::UnsupportedCorpusVersion && error.corpus_version)
     {
-        return std::format("Error: failed to read the corpus '{}': corpus format v{} is not supported; "
+        return std::format("Error: failed to read the corpus '{}': corpus format "
+                           "v{} is not supported; "
                            "re-run nesso index",
-                           path, *error.corpusVersion);
+                           path, *error.corpus_version);
     }
     return std::format("Error: failed to read the corpus '{}': {}", path, reason);
 }
 
-static std::string messageEmptyInput(const Error &error, std::string_view reason, const std::string &path)
+static std::string MessageEmptyInput(const Error &error, std::string_view reason, const std::string &path)
 {
     if (!error.note.empty())
     {
@@ -190,9 +193,9 @@ static std::string messageEmptyInput(const Error &error, std::string_view reason
     return std::format("nothing to search in '{}': {}", path, reason);
 }
 
-std::string message(const Error &error)
+std::string Message(const Error &error)
 {
-    const std::string_view reason = describe(error.cause);
+    const std::string_view reason = Describe(error.cause);
     const std::string path = error.path.string();
     switch (error.kind)
     {
@@ -219,31 +222,31 @@ std::string message(const Error &error)
     case ErrorKind::IndexBuild:
         return std::format("Error: failed to build the index: {}", reason);
     case ErrorKind::Search:
-        if (const auto special = messageLexicalSpecial(error))
+        if (const auto special = MessageLexicalSpecial(error))
         {
             return *special;
         }
         return std::format("Error: failed to search: {}", reason);
     case ErrorKind::CorpusRead:
-        return messageCorpusRead(error, reason, path);
+        return MessageCorpusRead(error, reason, path);
     case ErrorKind::CorpusWrite:
         return std::format("Error: failed to write the corpus '{}': {}", path, reason);
     case ErrorKind::CorpusLoad:
         return std::format("Error: failed to load the corpus: {}", reason);
     case ErrorKind::EmptyInput:
-        return messageEmptyInput(error, reason, path);
+        return MessageEmptyInput(error, reason, path);
     case ErrorKind::NoMatches:
         return {};
     }
     std::unreachable();
 }
 
-static std::string countPhrase(size_t count, std::string_view singular, std::string_view plural)
+static std::string CountPhrase(size_t count, std::string_view singular, std::string_view plural)
 {
     return std::format("{} {}", count, count == 1 ? singular : plural);
 }
 
-static std::string joinAnd(const std::vector<std::string> &parts)
+static std::string JoinAnd(const std::vector<std::string> &parts)
 {
     if (parts.size() == 1)
     {
@@ -264,9 +267,9 @@ static std::string joinAnd(const std::vector<std::string> &parts)
     return text;
 }
 
-std::string formatBundleSkipSummary(const BundleSkipSummary &summary)
+std::string FormatBundleSkipSummary(const BundleSkipSummary &summary)
 {
-    const size_t total = bundleSkipTotal(summary);
+    const size_t total = BundleSkipTotal(summary);
     if (total == 0)
     {
         return {};
@@ -274,44 +277,48 @@ std::string formatBundleSkipSummary(const BundleSkipSummary &summary)
     std::vector<std::string> parts;
     if (summary.directories > 0)
     {
-        parts.push_back(countPhrase(summary.directories, "directory", "directories"));
+        parts.push_back(CountPhrase(summary.directories, "directory", "directories"));
     }
     if (summary.symlinks > 0)
     {
-        parts.push_back(countPhrase(summary.symlinks, "symlink", "symlinks"));
+        parts.push_back(CountPhrase(summary.symlinks, "symlink", "symlinks"));
     }
     if (summary.hardlinks > 0)
     {
-        parts.push_back(countPhrase(summary.hardlinks, "hard link", "hard links"));
+        parts.push_back(CountPhrase(summary.hardlinks, "hard link", "hard links"));
     }
     if (summary.other > 0)
     {
-        parts.push_back(countPhrase(summary.other, "non-regular entry", "non-regular entries"));
+        parts.push_back(CountPhrase(summary.other, "non-regular entry", "non-regular entries"));
     }
     if (summary.binary > 0)
     {
-        parts.push_back(countPhrase(summary.binary, "binary file", "binary files"));
+        parts.push_back(CountPhrase(summary.binary, "binary file", "binary files"));
     }
-    return std::format("Skipped {} in '{}' ({}).", countPhrase(total, "entry", "entries"), summary.path,
-                       joinAnd(parts));
+    return std::format("Skipped {} in '{}' ({}).", CountPhrase(total, "entry", "entries"), summary.path,
+                       JoinAnd(parts));
 }
 
-static std::string archiveLimitNote(nesso::parser::ParseError code, const nesso::parser::ArchiveLimits &limits)
+static std::string ArchiveLimitNote(nesso::parser::ParseError code, const nesso::parser::ArchiveLimits &limits)
 {
     switch (code)
     {
     case nesso::parser::ParseError::ArchiveEntryLimit:
-        return std::format("an archive entry is larger than {} bytes; raise the limit with --archive-max-entry-bytes",
-                           limits.maxEntryBytes);
+        return std::format("an archive entry is larger than {} bytes; raise the "
+                           "limit with --archive-max-entry-bytes",
+                           limits.max_entry_bytes);
     case nesso::parser::ParseError::ArchiveTotalLimit:
-        return std::format("the archive expands past {} uncompressed bytes; raise the limit with --archive-max-bytes",
-                           limits.maxTotalBytes);
+        return std::format("the archive expands past {} uncompressed bytes; raise "
+                           "the limit with --archive-max-bytes",
+                           limits.max_total_bytes);
     case nesso::parser::ParseError::ArchiveCountLimit:
-        return std::format("the archive entry count exceeds {}; raise the limit with --archive-max-entries",
-                           limits.maxEntries);
+        return std::format("the archive entry count exceeds {}; raise the limit "
+                           "with --archive-max-entries",
+                           limits.max_entries);
     case nesso::parser::ParseError::ArchiveRatioLimit:
-        return std::format("the archive compression ratio exceeds {}; raise the limit with --archive-max-ratio",
-                           limits.maxRatio);
+        return std::format("the archive compression ratio exceeds {}; raise the "
+                           "limit with --archive-max-ratio",
+                           limits.max_ratio);
     case nesso::parser::ParseError::FileOpenFailure:
     case nesso::parser::ParseError::UnsupportedFormat:
     case nesso::parser::ParseError::BinaryFile:
@@ -323,11 +330,12 @@ static std::string archiveLimitNote(nesso::parser::ParseError code, const nesso:
     std::unreachable();
 }
 
-static std::string encryptedArchiveNote(std::string_view entry)
+static std::string EncryptedArchiveNote(std::string_view entry)
 {
     if (entry.empty())
     {
-        return "the archive is an encrypted OpenPGP file; decrypt it first (for example with gpg --decrypt)";
+        return "the archive is an encrypted OpenPGP file; decrypt it first (for "
+               "example with gpg --decrypt)";
     }
     return std::format("entry '{}' is encrypted; decrypt it first", entry);
 }
@@ -335,38 +343,38 @@ static std::string encryptedArchiveNote(std::string_view entry)
 namespace detail
 {
 
-Error makeError(ErrorKind kind, ErrorCause cause, std::filesystem::path path, LineCounts counts,
-                std::vector<BundleSkipSummary> bundleSkips)
+Error MakeError(ErrorKind kind, ErrorCause cause, std::filesystem::path path, LineCounts counts,
+                std::vector<BundleSkipSummary> bundle_skips)
 {
     return Error{.kind = kind,
                  .cause = cause,
                  .path = std::move(path),
-                 .skippedLines = counts.skipped,
-                 .emptyLines = counts.emptyLines,
-                 .malformedLines = counts.malformedLines,
-                 .missingFieldLines = counts.missingFieldLines,
-                 .truncatedLines = counts.truncated,
-                 .binaryEntries = counts.binaryEntries,
-                 .jsonField = std::move(counts.jsonField),
+                 .skipped_lines = counts.skipped,
+                 .empty_lines = counts.empty_lines,
+                 .malformed_lines = counts.malformed_lines,
+                 .missing_field_lines = counts.missing_field_lines,
+                 .truncated_lines = counts.truncated,
+                 .binary_entries = counts.binary_entries,
+                 .json_field = std::move(counts.json_field),
                  .note = {},
-                 .staleSources = {},
-                 .bundleSkips = std::move(bundleSkips),
-                 .policyMismatch = false,
-                 .corpusVersion = {}};
+                 .stale_sources = {},
+                 .bundle_skips = std::move(bundle_skips),
+                 .policy_mismatch = false,
+                 .corpus_version = {}};
 }
 
-Error parseFailure(nesso::parser::ParseError code, std::filesystem::path path, const LineCounts &counts,
-                   const nesso::parser::ArchiveLimits &limits, std::string_view encryptedEntry,
-                   std::vector<BundleSkipSummary> bundleSkips)
+Error ParseFailure(nesso::parser::ParseError code, std::filesystem::path path, const LineCounts &counts,
+                   const nesso::parser::ArchiveLimits &limits, std::string_view encrypted_entry,
+                   std::vector<BundleSkipSummary> bundle_skips)
 {
-    Error error = makeError(ErrorKind::Parse, causeOf(code), std::move(path), counts, std::move(bundleSkips));
+    Error error = MakeError(ErrorKind::Parse, CauseOf(code), std::move(path), counts, std::move(bundle_skips));
     if (code == nesso::parser::ParseError::EncryptedArchive)
     {
-        error.note = encryptedArchiveNote(encryptedEntry);
+        error.note = EncryptedArchiveNote(encrypted_entry);
     }
     else
     {
-        error.note = archiveLimitNote(code, limits);
+        error.note = ArchiveLimitNote(code, limits);
     }
     return error;
 }

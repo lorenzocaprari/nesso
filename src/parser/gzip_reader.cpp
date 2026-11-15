@@ -42,7 +42,7 @@ enum class PullStatus : std::uint8_t
     Error
 };
 
-static std::expected<void, GzipError> initGzipInflate(z_stream &stream)
+static std::expected<void, GzipError> InitGzipInflate(z_stream &stream)
 {
     // 16 selects the gzip wrapper. inflate stops at each member; the reset below
     // continues so concatenated members are one byte stream.
@@ -54,13 +54,13 @@ static std::expected<void, GzipError> initGzipInflate(z_stream &stream)
 }
 
 template <typename Pull>
-static std::expected<bool, GzipError> refillCompressedInput(Pull &pull, z_stream &stream,
+static std::expected<bool, GzipError> RefillCompressedInput(Pull &pull, z_stream &stream,
                                                             std::array<unsigned char, CHUNK_BYTES> &compressed,
-                                                            bool &inputEnded, bool finishedMember)
+                                                            bool &input_ended, bool finished_member)
 {
-    if (inputEnded)
+    if (input_ended)
     {
-        if (finishedMember)
+        if (finished_member)
         {
             return true;
         }
@@ -74,7 +74,7 @@ static std::expected<bool, GzipError> refillCompressedInput(Pull &pull, z_stream
     }
     if (pulled == PullStatus::End || count == 0)
     {
-        if (finishedMember)
+        if (finished_member)
         {
             return true;
         }
@@ -82,14 +82,14 @@ static std::expected<bool, GzipError> refillCompressedInput(Pull &pull, z_stream
     }
     if (count < compressed.size())
     {
-        inputEnded = true;
+        input_ended = true;
     }
     stream.next_in = compressed.data();
     stream.avail_in = count;
     return false;
 }
 
-static void appendInflateOutput(std::string &output, const std::array<unsigned char, CHUNK_BYTES> &plain,
+static void AppendInflateOutput(std::string &output, const std::array<unsigned char, CHUNK_BYTES> &plain,
                                 std::size_t produced)
 {
     if (produced == 0)
@@ -100,12 +100,12 @@ static void appendInflateOutput(std::string &output, const std::array<unsigned c
     output.append(reinterpret_cast<const char *>(plain.data()), produced);
 }
 
-static std::expected<void, GzipError> handleInflateStatus(z_stream &stream, int status, std::size_t produced,
-                                                          unsigned int availableBefore, bool &finishedMember)
+static std::expected<void, GzipError> HandleInflateStatus(z_stream &stream, int status, std::size_t produced,
+                                                          unsigned int available_before, bool &finished_member)
 {
     if (status == Z_STREAM_END)
     {
-        finishedMember = true;
+        finished_member = true;
         if (inflateReset(&stream) != Z_OK)
         {
             return std::unexpected(GzipError::Corrupt);
@@ -114,17 +114,17 @@ static std::expected<void, GzipError> handleInflateStatus(z_stream &stream, int 
     }
     if (status == Z_OK || status == Z_BUF_ERROR)
     {
-        if (produced == 0 && stream.avail_in == availableBefore)
+        if (produced == 0 && stream.avail_in == available_before)
         {
             return std::unexpected(GzipError::Corrupt);
         }
-        finishedMember = false;
+        finished_member = false;
         return {};
     }
     return std::unexpected(GzipError::Corrupt);
 }
 
-bool isGzipPath(const std::filesystem::path &path)
+bool IsGzipPath(const std::filesystem::path &path)
 {
     std::string extension = path.extension().string();
     for (char &character : extension)
@@ -139,10 +139,10 @@ bool isGzipPath(const std::filesystem::path &path)
 
 // `pull` fills `dest` with the next compressed bytes. `End` is a clean EOF.
 // `Error` is a read failure.
-template <typename Pull> static std::expected<std::string, GzipError> inflateGzip(Pull pull)
+template <typename Pull> static std::expected<std::string, GzipError> InflateGzip(Pull pull)
 {
     z_stream stream{};
-    if (const auto init = initGzipInflate(stream); !init)
+    if (const auto init = InitGzipInflate(stream); !init)
     {
         return std::unexpected(init.error());
     }
@@ -153,14 +153,14 @@ template <typename Pull> static std::expected<std::string, GzipError> inflateGzi
     std::array<unsigned char, CHUNK_BYTES> compressed{};
     std::array<unsigned char, CHUNK_BYTES> plain{};
     std::string output;
-    bool finishedMember = false;
-    bool inputEnded = false;
+    bool finished_member = false;
+    bool input_ended = false;
 
     while (true)
     {
         if (stream.avail_in == 0)
         {
-            const auto refill = refillCompressedInput(pull, stream, compressed, inputEnded, finishedMember);
+            const auto refill = RefillCompressedInput(pull, stream, compressed, input_ended, finished_member);
             if (!refill)
             {
                 return std::unexpected(refill.error());
@@ -173,12 +173,12 @@ template <typename Pull> static std::expected<std::string, GzipError> inflateGzi
 
         stream.next_out = plain.data();
         stream.avail_out = static_cast<unsigned int>(plain.size());
-        const unsigned int availableBefore = stream.avail_in;
+        const unsigned int available_before = stream.avail_in;
         const int status = inflate(&stream, Z_NO_FLUSH);
         const std::size_t produced = plain.size() - static_cast<std::size_t>(stream.avail_out);
-        appendInflateOutput(output, plain, produced);
+        AppendInflateOutput(output, plain, produced);
 
-        if (const auto handled = handleInflateStatus(stream, status, produced, availableBefore, finishedMember);
+        if (const auto handled = HandleInflateStatus(stream, status, produced, available_before, finished_member);
             !handled)
         {
             return std::unexpected(handled.error());
@@ -186,14 +186,14 @@ template <typename Pull> static std::expected<std::string, GzipError> inflateGzi
     }
 }
 
-std::expected<std::string, GzipError> readGzip(const std::filesystem::path &path)
+std::expected<std::string, GzipError> ReadGzip(const std::filesystem::path &path)
 {
     std::ifstream input(path, std::ios::binary);
     if (!input)
     {
         return std::unexpected(GzipError::OpenFailure);
     }
-    return inflateGzip(
+    return InflateGzip(
         [&input](unsigned char *dest, unsigned int capacity, unsigned int &count)
         {
             // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
@@ -213,10 +213,10 @@ std::expected<std::string, GzipError> readGzip(const std::filesystem::path &path
         });
 }
 
-std::expected<std::string, GzipError> readGzipBytes(std::string_view bytes)
+std::expected<std::string, GzipError> ReadGzipBytes(std::string_view bytes)
 {
     std::size_t offset = 0;
-    return inflateGzip(
+    return InflateGzip(
         [&bytes, &offset](unsigned char *dest, unsigned int capacity, unsigned int &count)
         {
             if (offset >= bytes.size())

@@ -14,7 +14,7 @@
 namespace
 {
 
-void writeBytes(const std::filesystem::path &path, std::string_view bytes)
+void WriteBytes(const std::filesystem::path &path, std::string_view bytes)
 {
     std::ofstream output(path, std::ios::binary);
     REQUIRE(output);
@@ -31,13 +31,13 @@ void writeBytes(const std::filesystem::path &path, std::string_view bytes)
 #error "NESSO_MODELS_DIR must be defined"
 #endif
 
-static std::filesystem::path modelDirOrSkip()
+static std::filesystem::path ModelDirOrSkip()
 {
-    const std::filesystem::path modelDir{NESSO_MODELS_DIR};
-    if (std::filesystem::is_regular_file(modelDir / "model.onnx") &&
-        std::filesystem::is_regular_file(modelDir / "vocab.txt"))
+    const std::filesystem::path model_dir{NESSO_MODELS_DIR};
+    if (std::filesystem::is_regular_file(model_dir / "model.onnx") &&
+        std::filesystem::is_regular_file(model_dir / "vocab.txt"))
     {
-        return modelDir;
+        return model_dir;
     }
 #ifdef NESSO_REQUIRE_MODEL
     FAIL("models/ not present; run scripts/fetch-model");
@@ -49,25 +49,26 @@ static std::filesystem::path modelDirOrSkip()
 
 TEST_CASE("Semantic grep ranks the expected log line", "[grep][integration]")
 {
-    const std::filesystem::path modelDir = modelDirOrSkip();
+    const std::filesystem::path model_dir = ModelDirOrSkip();
 
-    const std::filesystem::path logPath = std::filesystem::path(NESSO_TEST_FIXTURES) / "grep_sample.log";
-    const auto embedder = nesso::embed::OnnxEmbedder::create(modelDir);
+    const std::filesystem::path log_path = std::filesystem::path(NESSO_TEST_FIXTURES) / "grep_sample.log";
+    const auto embedder = nesso::embed::OnnxEmbedder::Create(model_dir);
     REQUIRE(embedder.has_value());
 
-    const auto chunks = nesso::parser::Chunker::fromFile(logPath);
+    const auto chunks = nesso::parser::Chunker::FromFile(log_path);
     REQUIRE(chunks.has_value());
     REQUIRE(chunks->size() == 1);
 
     std::vector<std::string> texts{(*chunks)[0].text};
-    const auto embeddings = (*embedder)->embedBatch(texts);
+    const auto embeddings = (*embedder)->EmbedBatch(texts);
     REQUIRE(embeddings.has_value());
 
-    const auto queryEmbedding = (*embedder)->embed("database connection error");
-    REQUIRE(queryEmbedding.has_value());
+    const auto query_embedding = (*embedder)->Embed("database connection error");
+    REQUIRE(query_embedding.has_value());
 
     const std::span<const float> matrix{(*embeddings)[0]};
-    const auto results = nesso::core::topK({.query = *queryEmbedding, .matrix = matrix, .dims = matrix.size(), .k = 1});
+    const auto results =
+        nesso::core::TopK({.query = *query_embedding, .matrix = matrix, .dims = matrix.size(), .k = 1});
     REQUIRE(results.has_value());
     REQUIRE(results->size() == 1);
     REQUIRE((*results)[0].index == 0);
@@ -80,35 +81,35 @@ TEST_CASE("WordPieceTokenizer rejects a bad vocab and splits punctuation", "[emb
     std::filesystem::remove_all(directory);
     std::filesystem::create_directories(directory);
 
-    const auto missing = nesso::embed::WordPieceTokenizer::fromVocabFile(directory / "missing.txt");
+    const auto missing = nesso::embed::WordPieceTokenizer::FromVocabFile(directory / "missing.txt");
     REQUIRE_FALSE(missing.has_value());
     REQUIRE(missing.error() == nesso::embed::EmbedError::VocabLoadFailure);
 
-    const auto emptyPath = directory / "empty.txt";
-    writeBytes(emptyPath, "");
-    const auto empty = nesso::embed::WordPieceTokenizer::fromVocabFile(emptyPath);
+    const auto empty_path = directory / "empty.txt";
+    WriteBytes(empty_path, "");
+    const auto empty = nesso::embed::WordPieceTokenizer::FromVocabFile(empty_path);
     REQUIRE_FALSE(empty.has_value());
     REQUIRE(empty.error() == nesso::embed::EmbedError::VocabLoadFailure);
 
-    const auto vocabPath = directory / "vocab.txt";
-    writeBytes(vocabPath, "[PAD]\n[unused0]\n[CLS]\n[SEP]\nhello\nworld\n##ing\ntesting\n[UNK]\n");
+    const auto vocab_path = directory / "vocab.txt";
+    WriteBytes(vocab_path, "[PAD]\n[unused0]\n[CLS]\n[SEP]\nhello\nworld\n##ing\ntesting\n[UNK]\n");
 
-    const auto tokenizer = nesso::embed::WordPieceTokenizer::fromVocabFile(vocabPath, 16);
+    const auto tokenizer = nesso::embed::WordPieceTokenizer::FromVocabFile(vocab_path, 16);
     REQUIRE(tokenizer.has_value());
 
-    const auto punctuated = tokenizer->encode("hello, world");
+    const auto punctuated = tokenizer->Encode("hello, world");
     REQUIRE(punctuated.has_value());
-    REQUIRE(punctuated->inputIds == std::vector<int64_t>{2, 4, 8, 5, 3});
+    REQUIRE(punctuated->input_ids == std::vector<int64_t>{2, 4, 8, 5, 3});
 
-    const auto unknown = tokenizer->encode("zzz");
+    const auto unknown = tokenizer->Encode("zzz");
     REQUIRE(unknown.has_value());
-    REQUIRE(unknown->inputIds == std::vector<int64_t>{2, 8, 3});
+    REQUIRE(unknown->input_ids == std::vector<int64_t>{2, 8, 3});
 
-    const auto shortTokenizer = nesso::embed::WordPieceTokenizer::fromVocabFile(vocabPath, 2);
-    REQUIRE(shortTokenizer.has_value());
-    const auto truncated = shortTokenizer->encode("helloing");
+    const auto short_tokenizer = nesso::embed::WordPieceTokenizer::FromVocabFile(vocab_path, 2);
+    REQUIRE(short_tokenizer.has_value());
+    const auto truncated = short_tokenizer->Encode("helloing");
     REQUIRE(truncated.has_value());
-    REQUIRE(truncated->inputIds == std::vector<int64_t>{2, 3});
+    REQUIRE(truncated->input_ids == std::vector<int64_t>{2, 3});
 
     std::filesystem::remove_all(directory);
 }

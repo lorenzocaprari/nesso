@@ -27,7 +27,7 @@ struct ClearTraceEnv
 
 TEST_CASE("NESSO_TRACE=1 emits one json line per session", "[trace]")
 {
-    const ClearTraceEnv clearEnv;
+    const ClearTraceEnv clear_env;
     unsetenv("NESSO_TRACE");
 
     {
@@ -66,11 +66,11 @@ TEST_CASE("NESSO_TRACE=1 emits one json line per session", "[trace]")
     }
 
     const std::string text = sink.str();
-    const auto parseAt = text.find("\"name\":\"parse\"");
-    const auto embedAt = text.find("\"name\":\"embed\"");
-    REQUIRE(parseAt != std::string::npos);
-    REQUIRE(embedAt != std::string::npos);
-    REQUIRE(parseAt < embedAt);
+    const auto parse_at = text.find("\"name\":\"parse\"");
+    const auto embed_at = text.find("\"name\":\"embed\"");
+    REQUIRE(parse_at != std::string::npos);
+    REQUIRE(embed_at != std::string::npos);
+    REQUIRE(parse_at < embed_at);
     REQUIRE(text.find("\"name\":\"corpus-read\"") != std::string::npos);
     REQUIRE(text.find("\"peakRssBytes\":") != std::string::npos);
     REQUIRE(std::count(text.begin(), text.end(), '\n') == 2);

@@ -38,33 +38,33 @@ inline constexpr std::uint32_t LINE_ARRAY_ELEMENT = 1U;
 inline constexpr std::uint32_t LINE_STORED_TEXT = 2U;
 inline constexpr std::uint32_t LINE_SKIPPED = 4U;
 
-[[nodiscard]] bool rangeInside(std::uint64_t offset, std::uint64_t length, std::uint64_t limit);
-[[nodiscard]] std::uint64_t alignUp(std::uint64_t value, std::uint64_t alignment);
+[[nodiscard]] bool RangeInside(std::uint64_t offset, std::uint64_t length, std::uint64_t limit);
+[[nodiscard]] std::uint64_t AlignUp(std::uint64_t value, std::uint64_t alignment);
 
-[[nodiscard]] bool writeRaw(std::ostream &output, const void *data, std::size_t size);
-[[nodiscard]] bool writeU32(std::ostream &output, std::uint32_t value);
-[[nodiscard]] bool writeU64(std::ostream &output, std::uint64_t value);
-[[nodiscard]] bool readExact(std::istream &input, void *data, std::size_t size);
-[[nodiscard]] bool readU32Stream(std::istream &input, std::uint32_t &value);
-[[nodiscard]] bool readU64Stream(std::istream &input, std::uint64_t &value);
-[[nodiscard]] bool readU32(std::span<const std::byte> bytes, std::uint64_t offset, std::uint32_t &value);
-[[nodiscard]] bool readU64(std::span<const std::byte> bytes, std::uint64_t offset, std::uint64_t &value);
-[[nodiscard]] std::string_view viewBytes(std::span<const std::byte> bytes, std::uint64_t offset, std::uint64_t length);
-[[nodiscard]] bool copyBytes(std::istream &input, std::ostream &output, std::uint64_t bytes);
-[[nodiscard]] bool writePadding(std::ostream &output, std::uint64_t count);
-[[nodiscard]] bool isZero(std::span<const std::byte> bytes, std::uint64_t begin, std::uint64_t end);
-[[nodiscard]] bool atEnd(std::istream &input);
+[[nodiscard]] bool WriteRaw(std::ostream &output, const void *data, std::size_t size);
+[[nodiscard]] bool WriteU32(std::ostream &output, std::uint32_t value);
+[[nodiscard]] bool WriteU64(std::ostream &output, std::uint64_t value);
+[[nodiscard]] bool ReadExact(std::istream &input, void *data, std::size_t size);
+[[nodiscard]] bool ReadU32Stream(std::istream &input, std::uint32_t &value);
+[[nodiscard]] bool ReadU64Stream(std::istream &input, std::uint64_t &value);
+[[nodiscard]] bool ReadU32(std::span<const std::byte> bytes, std::uint64_t offset, std::uint32_t &value);
+[[nodiscard]] bool ReadU64(std::span<const std::byte> bytes, std::uint64_t offset, std::uint64_t &value);
+[[nodiscard]] std::string_view ViewBytes(std::span<const std::byte> bytes, std::uint64_t offset, std::uint64_t length);
+[[nodiscard]] bool CopyBytes(std::istream &input, std::ostream &output, std::uint64_t bytes);
+[[nodiscard]] bool WritePadding(std::ostream &output, std::uint64_t count);
+[[nodiscard]] bool IsZero(std::span<const std::byte> bytes, std::uint64_t begin, std::uint64_t end);
+[[nodiscard]] bool AtEnd(std::istream &input);
 
-[[nodiscard]] std::expected<std::uint32_t, EngineError> validatePolicy(const CorpusPolicy &policy);
-[[nodiscard]] LexicalStatus lexicalStatusOf(bool hasLexical, const CorpusPolicy &policy);
-[[nodiscard]] std::expected<void, EngineError> validateVector(std::span<const float> embedding,
+[[nodiscard]] std::expected<std::uint32_t, EngineError> ValidatePolicy(const CorpusPolicy &policy);
+[[nodiscard]] LexicalStatus LexicalStatusOf(bool has_lexical, const CorpusPolicy &policy);
+[[nodiscard]] std::expected<void, EngineError> ValidateVector(std::span<const float> embedding,
                                                               std::uint32_t dimensions);
-[[nodiscard]] std::string serializePolicy(const CorpusPolicy &policy);
-[[nodiscard]] std::expected<CorpusPolicy, EngineError> parsePolicy(std::string_view text);
+[[nodiscard]] std::string SerializePolicy(const CorpusPolicy &policy);
+[[nodiscard]] std::expected<CorpusPolicy, EngineError> ParsePolicy(std::string_view text);
 
-[[nodiscard]] std::vector<std::byte> encodeLexicalSection(std::span<const std::vector<std::string>> lineTerms);
+[[nodiscard]] std::vector<std::byte> EncodeLexicalSection(std::span<const std::vector<std::string>> line_terms);
 [[nodiscard]] std::expected<void, EngineError>
-decodeLexicalSection(std::span<const std::byte> bytes, std::uint64_t lineCount, std::vector<std::string> &ownedTerms,
+DecodeLexicalSection(std::span<const std::byte> bytes, std::uint64_t line_count, std::vector<std::string> &owned_terms,
                      std::vector<std::string_view> &dictionary, std::vector<LexicalLinePostings> &postings);
 
 } // namespace nesso::core::detail

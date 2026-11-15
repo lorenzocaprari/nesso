@@ -41,7 +41,7 @@ class TempDir
 
     ~TempDir() { std::filesystem::remove_all(path_); }
 
-    [[nodiscard]] const std::filesystem::path &path() const { return path_; }
+    [[nodiscard]] const std::filesystem::path &Path() const { return path_; }
 
   private:
     std::filesystem::path path_;
@@ -54,7 +54,7 @@ class FixedEmbedder final : public nesso::embed::Embedder
 
     [[nodiscard]] std::expected<nesso::embed::EmbedderIdentity, nesso::embed::EmbedError> identity() const override
     {
-        return testEmbedderIdentity();
+        return TestEmbedderIdentity();
     }
 
     [[nodiscard]] std::expected<std::vector<float>, nesso::embed::EmbedError> embed(std::string_view) const override
@@ -63,7 +63,7 @@ class FixedEmbedder final : public nesso::embed::Embedder
     }
 
     [[nodiscard]] std::expected<std::vector<std::vector<float>>, nesso::embed::EmbedError>
-    embedBatch(std::span<const std::string> texts, ProgressCallback progress) const override
+    EmbedBatch(std::span<const std::string> texts, ProgressCallback progress) const override
     {
         std::vector<std::vector<float>> rows;
         rows.reserve(texts.size());
@@ -85,11 +85,11 @@ class FixedEmbedder final : public nesso::embed::Embedder
     }
 };
 
-void writeLog(const std::filesystem::path &path, size_t uniqueLines)
+void WriteLog(const std::filesystem::path &path, size_t unique_lines)
 {
     std::ofstream output(path);
     REQUIRE(output);
-    for (size_t index = 0; index < uniqueLines; ++index)
+    for (size_t index = 0; index < unique_lines; ++index)
     {
         output << "database connection " << index << '\n';
     }
@@ -100,7 +100,7 @@ void writeLog(const std::filesystem::path &path, size_t uniqueLines)
     REQUIRE(output);
 }
 
-std::vector<char> readBytes(const std::filesystem::path &path)
+std::vector<char> ReadBytes(const std::filesystem::path &path)
 {
     std::ifstream input(path, std::ios::binary);
     REQUIRE(input);
@@ -114,12 +114,12 @@ struct Seen
     std::uint32_t bits = 0;
     std::string text;
     std::uint32_t occurrences = 0;
-    bool arrayElement = false;
+    bool array_element = false;
 
     bool operator==(const Seen &) const = default;
 };
 
-std::vector<Seen> freeze(const nesso::TextResults &results)
+std::vector<Seen> Freeze(const nesso::TextResults &results)
 {
     std::vector<Seen> seen;
     seen.reserve(results.matches.size());
@@ -130,14 +130,14 @@ std::vector<Seen> freeze(const nesso::TextResults &results)
                             .bits = std::bit_cast<std::uint32_t>(match.score),
                             .text = match.text,
                             .occurrences = match.occurrences,
-                            .arrayElement = match.arrayElement});
+                            .array_element = match.array_element});
     }
     return seen;
 }
 
-nesso::Nesso app(size_t threads)
+nesso::Nesso App(size_t threads)
 {
-    return nesso::Nesso{nesso::Config{.modelDir = {}, .threads = threads}, std::make_unique<FixedEmbedder>()};
+    return nesso::Nesso{nesso::Config{.model_dir = {}, .threads = threads}, std::make_unique<FixedEmbedder>()};
 }
 
 } // namespace
@@ -145,66 +145,66 @@ nesso::Nesso app(size_t threads)
 TEST_CASE("search rankings match across thread counts and corpus bytes do not change", "[nesso][text][Unit]")
 {
     const TempDir dir{"nesso_scan_threads"};
-    const size_t uniqueLines = nesso::core::PARALLEL_MIN_ROWS + 5;
-    const auto log = dir.path() / "app.log";
-    writeLog(log, uniqueLines);
+    const size_t unique_lines = nesso::core::PARALLEL_MIN_ROWS + 5;
+    const auto log = dir.Path() / "app.log";
+    WriteLog(log, unique_lines);
 
     const std::array<size_t, 6> budgets{1, 2, 3, 4, 7, 0};
     std::vector<std::vector<char>> corpora;
     corpora.reserve(budgets.size());
     for (const size_t threads : budgets)
     {
-        const auto corpus = dir.path() / ("corpus-" + std::to_string(threads) + ".nesso");
-        const auto indexed = app(threads).index({.files = {log}, .output = corpus});
+        const auto corpus = dir.Path() / ("corpus-" + std::to_string(threads) + ".nesso");
+        const auto indexed = App(threads).Index({.files = {log}, .output = corpus});
         REQUIRE(indexed.has_value());
-        corpora.push_back(readBytes(corpus));
+        corpora.push_back(ReadBytes(corpus));
     }
     for (const std::vector<char> &corpus : corpora)
     {
         CHECK(corpus == corpora.front());
     }
 
-    const auto corpus = dir.path() / "corpus-1.nesso";
-    const std::array<size_t, 4> limits{1, 8, uniqueLines, uniqueLines + 10};
+    const auto corpus = dir.Path() / "corpus-1.nesso";
+    const std::array<size_t, 4> limits{1, 8, unique_lines, unique_lines + 10};
     for (const size_t limit : limits)
     {
-        const auto serial = app(1).search(
-            {.query = "database connection", .index = corpus, .topK = limit, .mode = nesso::SearchMode::Dense});
+        const auto serial = App(1).Search(
+            {.query = "database connection", .index = corpus, .top_k = limit, .mode = nesso::SearchMode::Dense});
         REQUIRE(serial.has_value());
         REQUIRE_FALSE(serial->matches.empty());
-        const std::vector<Seen> expected = freeze(*serial);
+        const std::vector<Seen> expected = Freeze(*serial);
         for (const size_t threads : budgets)
         {
-            const auto ranked = app(threads).search(
-                {.query = "database connection", .index = corpus, .topK = limit, .mode = nesso::SearchMode::Dense});
+            const auto ranked = App(threads).Search(
+                {.query = "database connection", .index = corpus, .top_k = limit, .mode = nesso::SearchMode::Dense});
             REQUIRE(ranked.has_value());
-            CHECK(freeze(*ranked) == expected);
+            CHECK(Freeze(*ranked) == expected);
         }
-        const auto grepped = app(4).grep(
-            {.query = "database connection", .files = {log}, .topK = limit, .mode = nesso::SearchMode::Dense});
+        const auto grepped = App(4).Grep(
+            {.query = "database connection", .files = {log}, .top_k = limit, .mode = nesso::SearchMode::Dense});
         REQUIRE(grepped.has_value());
-        CHECK(freeze(*grepped) == expected);
+        CHECK(Freeze(*grepped) == expected);
     }
 
-    const auto zeroA = app(1).search({.query = "database connection", .index = corpus, .topK = 0});
-    const auto zeroB = app(4).search({.query = "database connection", .index = corpus, .topK = 0});
-    REQUIRE_FALSE(zeroA.has_value());
-    REQUIRE_FALSE(zeroB.has_value());
-    CHECK(zeroA.error().kind == zeroB.error().kind);
+    const auto zero_a = App(1).Search({.query = "database connection", .index = corpus, .top_k = 0});
+    const auto zero_b = App(4).Search({.query = "database connection", .index = corpus, .top_k = 0});
+    REQUIRE_FALSE(zero_a.has_value());
+    REQUIRE_FALSE(zero_b.has_value());
+    CHECK(zero_a.error().kind == zero_b.error().kind);
 
-    const auto smallLog = dir.path() / "small.log";
-    writeLog(smallLog, 12);
-    const auto smallCorpus = dir.path() / "small.nesso";
-    REQUIRE(app(1).index({.files = {smallLog}, .output = smallCorpus}).has_value());
-    const auto smallSerial = app(1).search(
-        {.query = "database connection", .index = smallCorpus, .topK = 6, .mode = nesso::SearchMode::Dense});
-    const auto smallParallel = app(7).search(
-        {.query = "database connection", .index = smallCorpus, .topK = 6, .mode = nesso::SearchMode::Dense});
-    REQUIRE(smallSerial.has_value());
-    REQUIRE(smallParallel.has_value());
-    CHECK(freeze(*smallParallel) == freeze(*smallSerial));
-    const auto smallGrep =
-        app(3).grep({.query = "database connection", .files = {smallLog}, .topK = 6, .mode = nesso::SearchMode::Dense});
-    REQUIRE(smallGrep.has_value());
-    CHECK(freeze(*smallGrep) == freeze(*smallSerial));
+    const auto small_log = dir.Path() / "small.log";
+    WriteLog(small_log, 12);
+    const auto small_corpus = dir.Path() / "small.nesso";
+    REQUIRE(App(1).Index({.files = {small_log}, .output = small_corpus}).has_value());
+    const auto small_serial = App(1).Search(
+        {.query = "database connection", .index = small_corpus, .top_k = 6, .mode = nesso::SearchMode::Dense});
+    const auto small_parallel = App(7).Search(
+        {.query = "database connection", .index = small_corpus, .top_k = 6, .mode = nesso::SearchMode::Dense});
+    REQUIRE(small_serial.has_value());
+    REQUIRE(small_parallel.has_value());
+    CHECK(Freeze(*small_parallel) == Freeze(*small_serial));
+    const auto small_grep = App(3).Grep(
+        {.query = "database connection", .files = {small_log}, .top_k = 6, .mode = nesso::SearchMode::Dense});
+    REQUIRE(small_grep.has_value());
+    CHECK(Freeze(*small_grep) == Freeze(*small_serial));
 }

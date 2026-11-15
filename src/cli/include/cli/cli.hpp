@@ -9,10 +9,11 @@
 namespace nesso::cli
 {
 
-/// Runs one request through the facade and renders the outcome. Returns the process exit code.
-[[nodiscard]] int execute(const Nesso &nesso, const GrepRequest &request);
-[[nodiscard]] int execute(const Nesso &nesso, const IndexRequest &request);
-[[nodiscard]] int execute(const Nesso &nesso, const SearchRequest &request);
+/// Runs one request through the facade and renders the outcome. Returns the
+/// process exit code.
+[[nodiscard]] int Execute(const Nesso &nesso, const GrepRequest &request);
+[[nodiscard]] int Execute(const Nesso &nesso, const IndexRequest &request);
+[[nodiscard]] int Execute(const Nesso &nesso, const SearchRequest &request);
 
 } // namespace nesso::cli
 

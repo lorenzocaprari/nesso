@@ -30,7 +30,7 @@ struct HitOrder
 {
     bool operator()(const Hit &left, const Hit &right) const
     {
-        return rankBefore(left.score, left.index, right.score, right.index);
+        return RankBefore(left.score, left.index, right.score, right.index);
     }
 };
 
@@ -43,14 +43,14 @@ class Job
     Job(Job &&) = delete;
     Job &operator=(Job &&) = delete;
 
-    ~Job() { requestStop(); }
+    ~Job() { RequestStop(); }
 
-    void start()
+    void Start()
     {
-        thread_ = std::jthread([this] { workerLoop(); });
+        thread_ = std::jthread([this] { WorkerLoop(); });
     }
 
-    void requestStop()
+    void RequestStop()
     {
         {
             const std::scoped_lock lock(mutex_);
@@ -59,10 +59,10 @@ class Job
         cv_.notify_all();
     }
 
-    void publish(void (*rowFn)(void *, size_t, size_t), void *context, size_t begin, size_t end)
+    void Publish(void (*row_fn)(void *, size_t, size_t), void *context, size_t begin, size_t end)
     {
         const std::scoped_lock lock(mutex_);
-        fn_ = rowFn;
+        fn_ = row_fn;
         context_ = context;
         begin_ = begin;
         end_ = end;
@@ -70,7 +70,7 @@ class Job
         cv_.notify_all();
     }
 
-    void wait()
+    void Wait()
     {
         std::unique_lock lock(mutex_);
         const uint64_t epoch = epoch_;
@@ -78,7 +78,7 @@ class Job
     }
 
   private:
-    void workerLoop()
+    void WorkerLoop()
     {
         uint64_t seen = 0;
         std::unique_lock lock(mutex_);
@@ -94,7 +94,8 @@ class Job
             const size_t begin = begin_;
             const size_t end = end_;
             lock.unlock();
-            // fn_ stays fixed until this worker marks finished_ and the publisher's wait returns.
+            // fn_ stays fixed until this worker marks finished_ and the publisher's
+            // wait returns.
             fn_(context, begin, end);
             lock.lock();
             finished_ = seen;
@@ -127,23 +128,23 @@ class Pool
     {
         for (const std::unique_ptr<Job> &job : jobs_)
         {
-            job->requestStop();
+            job->RequestStop();
         }
         jobs_.clear();
     }
 
-    std::mutex &mutex() { return mutex_; }
+    std::mutex &Mutex() { return mutex_; }
 
     Job &GetJob(size_t index) { return *jobs_[index]; }
 
-    bool ensure(size_t background)
+    bool Ensure(size_t background)
     {
         try
         {
             while (jobs_.size() < background)
             {
                 auto job = std::make_unique<Job>();
-                job->start();
+                job->Start();
                 jobs_.push_back(std::move(job));
             }
             return true;
@@ -168,27 +169,27 @@ struct Range
 class MergedHits
 {
   public:
-    void merge(std::vector<Hit> local)
+    void Merge(std::vector<Hit> local)
     {
         const std::scoped_lock lock(mutex_);
         hits_.insert(hits_.end(), local.begin(), local.end());
     }
 
-    void noteError(size_t row, EngineError error)
+    void NoteError(size_t row, EngineError error)
     {
         const std::scoped_lock lock(mutex_);
-        if (row < errorAt_)
+        if (row < error_at_)
         {
             error_ = error;
-            errorAt_ = row;
+            error_at_ = row;
         }
     }
 
-    [[nodiscard]] const std::optional<EngineError> &error() const { return error_; }
+    [[nodiscard]] const std::optional<EngineError> &Error() const { return error_; }
 
-    std::vector<Hit> finish(size_t topK)
+    std::vector<Hit> Finish(size_t top_k)
     {
-        detail::selectTopKInPlace(hits_, topK, HitOrder{});
+        detail::SelectTopKInPlace(hits_, top_k, HitOrder{});
         return std::move(hits_);
     }
 
@@ -196,7 +197,7 @@ class MergedHits
     std::mutex mutex_;
     std::vector<Hit> hits_;
     std::optional<EngineError> error_;
-    size_t errorAt_ = std::numeric_limits<size_t>::max();
+    size_t error_at_ = std::numeric_limits<size_t>::max();
 };
 
 class TopScan
@@ -207,7 +208,7 @@ class TopScan
     {
     }
 
-    void run(size_t begin, size_t end)
+    void Run(size_t begin, size_t end)
     {
         std::vector<Hit> local;
         if (end > begin)
@@ -218,10 +219,10 @@ class TopScan
         for (size_t row = begin; row < end; ++row)
         {
             const std::span<const float> stored = matrix_.subspan(row * dims_, dims_);
-            const auto score = math::DistanceMetrics::dotProduct(query_, stored);
+            const auto score = math::DistanceMetrics::DotProduct(query_, stored);
             if (!score)
             {
-                merged_.noteError(row, score.error());
+                merged_.NoteError(row, score.error());
                 return;
             }
             const Hit hit{.index = static_cast<uint64_t>(row), .score = *score};
@@ -237,12 +238,12 @@ class TopScan
                 std::ranges::push_heap(local, better);
             }
         }
-        merged_.merge(std::move(local));
+        merged_.Merge(std::move(local));
     }
 
-    [[nodiscard]] const std::optional<EngineError> &error() const { return merged_.error(); }
+    [[nodiscard]] const std::optional<EngineError> &Error() const { return merged_.Error(); }
 
-    std::vector<Hit> finish(size_t topK) { return merged_.finish(topK); }
+    std::vector<Hit> Finish(size_t top_k) { return merged_.Finish(top_k); }
 
   private:
     std::span<const float> query_;
@@ -255,12 +256,12 @@ class TopScan
 class RankScan
 {
   public:
-    RankScan(float (*score)(void *, size_t), bool (*keep)(void *, size_t), void *context, size_t topK)
-        : score_(score), keep_(keep), context_(context), k_(topK)
+    RankScan(float (*score)(void *, size_t), bool (*keep)(void *, size_t), void *context, size_t top_k)
+        : score_(score), keep_(keep), context_(context), k_(top_k)
     {
     }
 
-    void run(size_t begin, size_t end)
+    void Run(size_t begin, size_t end)
     {
         std::vector<Hit> local;
         if (end > begin)
@@ -287,10 +288,10 @@ class RankScan
                 std::ranges::push_heap(local, better);
             }
         }
-        merged_.merge(std::move(local));
+        merged_.Merge(std::move(local));
     }
 
-    std::vector<Hit> finish(size_t topK) { return merged_.finish(topK); }
+    std::vector<Hit> Finish(size_t top_k) { return merged_.Finish(top_k); }
 
   private:
     float (*score_)(void *, size_t) = nullptr;
@@ -312,7 +313,7 @@ class WaitGuard
     {
         for (size_t index = 0; index < background_; ++index)
         {
-            team_->GetJob(index).wait();
+            team_->GetJob(index).Wait();
         }
     }
 
@@ -329,7 +330,7 @@ static Pool &GetPool()
     return instance;
 }
 
-static std::vector<Range> splitRows(size_t rows, size_t workers)
+static std::vector<Range> SplitRows(size_t rows, size_t workers)
 {
     std::vector<Range> ranges;
     ranges.reserve(workers);
@@ -345,53 +346,53 @@ static std::vector<Range> splitRows(size_t rows, size_t workers)
     return ranges;
 }
 
-static void runTopChunk(void *raw, size_t begin, size_t end) { static_cast<TopScan *>(raw)->run(begin, end); }
+static void RunTopChunk(void *raw, size_t begin, size_t end) { static_cast<TopScan *>(raw)->Run(begin, end); }
 
-static void runRankChunk(void *raw, size_t begin, size_t end) { static_cast<RankScan *>(raw)->run(begin, end); }
+static void RunRankChunk(void *raw, size_t begin, size_t end) { static_cast<RankScan *>(raw)->Run(begin, end); }
 
 namespace detail
 {
 
-void parallelRows(size_t threads, size_t rows, void (*rowFn)(void *context, size_t begin, size_t end), void *context)
+void ParallelRows(size_t threads, size_t rows, void (*row_fn)(void *context, size_t begin, size_t end), void *context)
 {
-    if (rowFn == nullptr)
+    if (row_fn == nullptr)
     {
         return;
     }
     if (rows == 0 || threads <= 1 || rows < PARALLEL_MIN_ROWS)
     {
-        rowFn(context, 0, rows);
+        row_fn(context, 0, rows);
         return;
     }
 
     const size_t width = std::min({rows, threads, PARALLEL_MAX_THREADS});
     if (width <= 1)
     {
-        rowFn(context, 0, rows);
+        row_fn(context, 0, rows);
         return;
     }
 
     Pool &team = GetPool();
-    const std::scoped_lock poolLock(team.mutex());
-    if (!team.ensure(width - 1))
+    const std::scoped_lock pool_lock(team.Mutex());
+    if (!team.Ensure(width - 1))
     {
-        rowFn(context, 0, rows);
+        row_fn(context, 0, rows);
         return;
     }
 
-    const std::vector<Range> ranges = splitRows(rows, width);
+    const std::vector<Range> ranges = SplitRows(rows, width);
     const WaitGuard guard(team, width - 1);
 
     for (size_t index = 1; index < width; ++index)
     {
-        team.GetJob(index - 1).publish(rowFn, context, ranges[index].begin, ranges[index].end);
+        team.GetJob(index - 1).Publish(row_fn, context, ranges[index].begin, ranges[index].end);
     }
-    rowFn(context, ranges[0].begin, ranges[0].end);
+    row_fn(context, ranges[0].begin, ranges[0].end);
 }
 
 } // namespace detail
 
-std::expected<std::vector<Hit>, EngineError> topK(const TopKRequest &request)
+std::expected<std::vector<Hit>, EngineError> TopK(const TopKRequest &request)
 {
     if (request.k == 0 || request.matrix.empty())
     {
@@ -411,23 +412,23 @@ std::expected<std::vector<Hit>, EngineError> topK(const TopKRequest &request)
     }
 
     TopScan scan(request);
-    detail::parallelRows(request.threads, request.matrix.size() / request.dims, runTopChunk, &scan);
-    if (scan.error())
+    detail::ParallelRows(request.threads, request.matrix.size() / request.dims, RunTopChunk, &scan);
+    if (scan.Error())
     {
-        return std::unexpected(*scan.error());
+        return std::unexpected(*scan.Error());
     }
-    return scan.finish(request.k);
+    return scan.Finish(request.k);
 }
 
-std::vector<Hit> rankTop(const RankTopRequest &request)
+std::vector<Hit> RankTop(const RankTopRequest &request)
 {
     if (request.k == 0 || request.count == 0 || request.score == nullptr || request.keep == nullptr)
     {
         return {};
     }
     RankScan scan(request.score, request.keep, request.context, request.k);
-    detail::parallelRows(request.threads, request.count, runRankChunk, &scan);
-    return scan.finish(request.k);
+    detail::ParallelRows(request.threads, request.count, RunRankChunk, &scan);
+    return scan.Finish(request.k);
 }
 
 } // namespace nesso::core

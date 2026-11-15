@@ -15,7 +15,7 @@
 namespace
 {
 
-std::vector<std::string_view> viewsOf(const std::vector<std::string> &lines)
+std::vector<std::string_view> ViewsOf(const std::vector<std::string> &lines)
 {
     std::vector<std::string_view> views;
     views.reserve(lines.size());
@@ -26,7 +26,7 @@ std::vector<std::string_view> viewsOf(const std::vector<std::string> &lines)
     return views;
 }
 
-std::string plainToken(std::size_t index)
+std::string PlainToken(std::size_t index)
 {
     // A non-hex letter plus base-26 keeps the token off the mask rules.
     std::string token = "w";
@@ -47,36 +47,36 @@ TEST_CASE("identical lines collapse to one distinct text", "[dedup]")
     std::vector<std::uint32_t> ids;
     for (const std::string &line : lines)
     {
-        ids.push_back(index.add(line));
+        ids.push_back(index.Add(line));
     }
 
-    CHECK(index.pending().size() == 1);
-    CHECK(index.pending().front() == "repeat me");
-    CHECK(index.occurrences(0) == 6);
+    CHECK(index.Pending().size() == 1);
+    CHECK(index.Pending().front() == "repeat me");
+    CHECK(index.Occurrences(0) == 6);
     CHECK(ids == std::vector<std::uint32_t>(6, 0));
 
-    const std::vector<std::uint32_t> counts = nesso::core::occurrenceCounts(viewsOf(lines));
+    const std::vector<std::uint32_t> counts = nesso::core::OccurrenceCounts(ViewsOf(lines));
     CHECK(counts == std::vector<std::uint32_t>(6, 6));
-    CHECK(nesso::core::occurrenceCounts(viewsOf(lines)) == counts);
+    CHECK(nesso::core::OccurrenceCounts(ViewsOf(lines)) == counts);
 }
 
 TEST_CASE("distinct ids follow first occurrence", "[dedup]")
 {
     const std::vector<std::string> lines{"beta", "alpha", "beta"};
     nesso::core::DistinctIndex index;
-    CHECK(index.add(lines[0]) == 0);
-    CHECK(index.add(lines[1]) == 1);
-    CHECK(index.add(lines[2]) == 0);
-    CHECK(index.pending().size() == 2);
-    CHECK(index.pending()[0] == "beta");
-    CHECK(index.pending()[1] == "alpha");
-    CHECK(index.occurrences(0) == 2);
-    CHECK(index.occurrences(1) == 1);
-    index.clearPending();
-    CHECK(index.pending().empty());
-    CHECK(index.add("beta") == 0);
-    CHECK(index.pending().empty());
-    CHECK(index.occurrences(0) == 3);
+    CHECK(index.Add(lines[0]) == 0);
+    CHECK(index.Add(lines[1]) == 1);
+    CHECK(index.Add(lines[2]) == 0);
+    CHECK(index.Pending().size() == 2);
+    CHECK(index.Pending()[0] == "beta");
+    CHECK(index.Pending()[1] == "alpha");
+    CHECK(index.Occurrences(0) == 2);
+    CHECK(index.Occurrences(1) == 1);
+    index.ClearPending();
+    CHECK(index.Pending().empty());
+    CHECK(index.Add("beta") == 0);
+    CHECK(index.Pending().empty());
+    CHECK(index.Occurrences(0) == 3);
 }
 
 TEST_CASE("expanded distinct scores match the search oracle", "[dedup]")
@@ -87,20 +87,20 @@ TEST_CASE("expanded distinct scores match the search oracle", "[dedup]")
     ids.reserve(lines.size());
     for (const std::string &line : lines)
     {
-        ids.push_back(index.add(line));
+        ids.push_back(index.Add(line));
     }
-    REQUIRE(index.pending().size() == 3);
-    REQUIRE(index.pending()[0] == "beta");
-    REQUIRE(index.pending()[1] == "alpha");
-    REQUIRE(index.pending()[2] == "gamma");
+    REQUIRE(index.Pending().size() == 3);
+    REQUIRE(index.Pending()[0] == "beta");
+    REQUIRE(index.Pending()[1] == "alpha");
+    REQUIRE(index.Pending()[2] == "gamma");
 
-    const std::vector<float> scoreById{0.2F, 0.9F, 0.4F};
-    const std::vector<std::uint32_t> counts = nesso::core::occurrenceCounts(viewsOf(lines));
+    const std::vector<float> score_by_id{0.2F, 0.9F, 0.4F};
+    const std::vector<std::uint32_t> counts = nesso::core::OccurrenceCounts(ViewsOf(lines));
     std::vector<float> matrix(lines.size());
     for (size_t line = 0; line < lines.size(); ++line)
     {
-        matrix[line] = scoreById[ids[line]];
-        CHECK(counts[line] == index.occurrences(ids[line]));
+        matrix[line] = score_by_id[ids[line]];
+        CHECK(counts[line] == index.Occurrences(ids[line]));
         CHECK(counts[line] >= 1);
     }
     CHECK(matrix[0] == matrix[2]);
@@ -112,7 +112,7 @@ TEST_CASE("expanded distinct scores match the search oracle", "[dedup]")
 
     const std::array<float, 1> query{1.F};
     constexpr size_t top = 4;
-    const auto ranked = nesso::core::topK({.query = query, .matrix = matrix, .dims = 1, .k = top});
+    const auto ranked = nesso::core::TopK({.query = query, .matrix = matrix, .dims = 1, .k = top});
     REQUIRE(ranked.has_value());
 
     struct Row
@@ -148,29 +148,29 @@ TEST_CASE("expanded distinct scores match the search oracle", "[dedup]")
 TEST_CASE("a repeated text that spans two windows stays one id", "[dedup]")
 {
     nesso::core::DistinctIndex index;
-    index.reserve(nesso::embed::BATCH_WINDOW + 2);
+    index.Reserve(nesso::embed::BATCH_WINDOW + 2);
     std::vector<std::string> embedded;
     const auto flush = [&]()
     {
-        embedded.insert(embedded.end(), index.pending().begin(), index.pending().end());
-        index.clearPending();
+        embedded.insert(embedded.end(), index.Pending().begin(), index.Pending().end());
+        index.ClearPending();
     };
 
-    CHECK(index.add("shared") == 0);
+    CHECK(index.Add("shared") == 0);
     for (size_t line = 1; line < nesso::embed::BATCH_WINDOW; ++line)
     {
-        CHECK(index.add(plainToken(line)) == static_cast<std::uint32_t>(line));
-        if (index.pending().size() == nesso::embed::BATCH_WINDOW)
+        CHECK(index.Add(PlainToken(line)) == static_cast<std::uint32_t>(line));
+        if (index.Pending().size() == nesso::embed::BATCH_WINDOW)
         {
             flush();
         }
     }
-    CHECK(index.pending().empty());
-    CHECK(index.add("shared") == 0);
-    CHECK(index.pending().empty());
-    CHECK(index.occurrences(0) == 2);
-    CHECK(index.add("fresh") == static_cast<std::uint32_t>(nesso::embed::BATCH_WINDOW));
-    CHECK(index.pending().size() == 1);
+    CHECK(index.Pending().empty());
+    CHECK(index.Add("shared") == 0);
+    CHECK(index.Pending().empty());
+    CHECK(index.Occurrences(0) == 2);
+    CHECK(index.Add("fresh") == static_cast<std::uint32_t>(nesso::embed::BATCH_WINDOW));
+    CHECK(index.Pending().size() == 1);
     flush();
 
     CHECK(std::count(embedded.begin(), embedded.end(), "shared") == 1);
@@ -181,26 +181,26 @@ TEST_CASE("a repeated text that spans two windows stays one id", "[dedup]")
 TEST_CASE("masked keys collapse to the first raw line", "[dedup]")
 {
     nesso::core::DistinctIndex index;
-    CHECK(index.add("block blk_10 done") == 0);
-    CHECK(index.add("block blk_20 done") == 0);
-    CHECK(index.add("block blk_-3 done") == 0);
-    CHECK(index.pending().size() == 1);
-    CHECK(index.pending().front() == "block blk_10 done");
-    CHECK(index.text(0) == "block blk_10 done");
-    CHECK(index.occurrences(0) == 3);
-    CHECK(index.add("http2 ready") == 1);
-    CHECK(index.add("sha256 ready") == 2);
-    CHECK(index.pending()[1] == "http2 ready");
-    CHECK(index.pending()[2] == "sha256 ready");
+    CHECK(index.Add("block blk_10 done") == 0);
+    CHECK(index.Add("block blk_20 done") == 0);
+    CHECK(index.Add("block blk_-3 done") == 0);
+    CHECK(index.Pending().size() == 1);
+    CHECK(index.Pending().front() == "block blk_10 done");
+    CHECK(index.Text(0) == "block blk_10 done");
+    CHECK(index.Occurrences(0) == 3);
+    CHECK(index.Add("http2 ready") == 1);
+    CHECK(index.Add("sha256 ready") == 2);
+    CHECK(index.Pending()[1] == "http2 ready");
+    CHECK(index.Pending()[2] == "sha256 ready");
 
     const std::vector<std::string> lines{"block blk_20 done", "block blk_10 done", "sunny beach"};
-    const std::vector<std::uint32_t> counts = nesso::core::occurrenceCounts(viewsOf(lines));
+    const std::vector<std::uint32_t> counts = nesso::core::OccurrenceCounts(ViewsOf(lines));
     CHECK(counts == std::vector<std::uint32_t>{2, 2, 1});
-    CHECK(nesso::core::occurrenceCounts(viewsOf(lines)) == counts);
+    CHECK(nesso::core::OccurrenceCounts(ViewsOf(lines)) == counts);
 }
 
 TEST_CASE("occurrence counts of an empty input are empty", "[dedup]")
 {
     const std::vector<std::string_view> none;
-    CHECK(nesso::core::occurrenceCounts(none).empty());
+    CHECK(nesso::core::OccurrenceCounts(none).empty());
 }

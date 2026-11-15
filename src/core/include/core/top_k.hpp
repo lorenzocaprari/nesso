@@ -25,20 +25,20 @@ struct Hit
 
 /// Strict weak order for ranking: higher score first, ties by lower index.
 /// Non-NaN scores rank before NaN; two NaNs break by index. ±0.0 compare equal.
-[[nodiscard]] inline bool rankBefore(float leftScore, uint64_t leftIndex, float rightScore,
-                                     uint64_t rightIndex) noexcept
+[[nodiscard]] inline bool RankBefore(float left_score, uint64_t left_index, float right_score,
+                                     uint64_t right_index) noexcept
 {
-    const bool leftNan = std::isnan(leftScore);
-    const bool rightNan = std::isnan(rightScore);
-    if (leftNan != rightNan)
+    const bool left_nan = std::isnan(left_score);
+    const bool right_nan = std::isnan(right_score);
+    if (left_nan != right_nan)
     {
-        return !leftNan;
+        return !left_nan;
     }
-    if (leftNan)
+    if (left_nan)
     {
-        return leftIndex < rightIndex;
+        return left_index < right_index;
     }
-    return leftScore != rightScore ? leftScore > rightScore : leftIndex < rightIndex;
+    return left_score != right_score ? left_score > right_score : left_index < right_index;
 }
 
 /// Row count below which a scan stays on the calling thread.
@@ -51,18 +51,18 @@ namespace detail
 {
 
 template <typename ResultT, typename Compare>
-void selectTopKInPlace(std::vector<ResultT> &results, size_t topK, Compare compare)
+void SelectTopKInPlace(std::vector<ResultT> &results, size_t top_k, Compare compare)
 {
-    if (topK == 0 || results.empty())
+    if (top_k == 0 || results.empty())
     {
         results.clear();
         return;
     }
 
-    const size_t resultCount = std::min(topK, results.size());
-    std::partial_sort(results.begin(), results.begin() + static_cast<std::ptrdiff_t>(resultCount), results.end(),
+    const size_t result_count = std::min(top_k, results.size());
+    std::partial_sort(results.begin(), results.begin() + static_cast<std::ptrdiff_t>(result_count), results.end(),
                       compare);
-    results.resize(resultCount);
+    results.resize(result_count);
 }
 
 /// Runs `rowFn(context, begin, end)` on contiguous pieces of `[0, rows)`.
@@ -70,8 +70,9 @@ void selectTopKInPlace(std::vector<ResultT> &results, size_t topK, Compare compa
 /// `threads` counts the caller. One piece when `threads <= 1`, `rows` is below
 /// `PARALLEL_MIN_ROWS`, or a worker cannot be started. The pool is process-wide
 /// and grows to the widest budget seen, capped at `PARALLEL_MAX_THREADS`, so a
-/// later scan does not spawn threads again. `rowFn` must not call `parallelRows`.
-void parallelRows(size_t threads, size_t rows, void (*rowFn)(void *context, size_t begin, size_t end), void *context);
+/// later scan does not spawn threads again. `rowFn` must not call
+/// `ParallelRows`.
+void ParallelRows(size_t threads, size_t rows, void (*row_fn)(void *context, size_t begin, size_t end), void *context);
 
 } // namespace detail
 
@@ -86,13 +87,14 @@ struct TopKRequest
 };
 
 /// Highest dot-product rows of a row-major `matrix` (`rows * dims` floats).
-/// Text for those rows is the caller's job: a hit carries only `index` and `score`.
+/// Text for those rows is the caller's job: a hit carries only `index` and
+/// `score`.
 ///
 /// `threads` is the CPU budget, including the caller. Each worker scores a
 /// contiguous row chunk and keeps a private top k. The chunks merge by score
 /// descending, then ascending index. A budget of one, or a short matrix, stays
 /// on the caller and produces the same hits.
-[[nodiscard]] std::expected<std::vector<Hit>, EngineError> topK(const TopKRequest &request);
+[[nodiscard]] std::expected<std::vector<Hit>, EngineError> TopK(const TopKRequest &request);
 
 /// Inputs for an exact top-k scan over `count` indices.
 struct RankTopRequest
@@ -107,10 +109,10 @@ struct RankTopRequest
 
 /// Exact top k over `count` indices.
 ///
-/// `keep` is consulted first. `score` runs once for each kept index. Chunks keep
-/// a private top k and merge by score descending, then ascending index. `threads`
-/// follows the same cutoff as `topK`.
-[[nodiscard]] std::vector<Hit> rankTop(const RankTopRequest &request);
+/// `keep` is consulted first. `score` runs once for each kept index. Chunks
+/// keep a private top k and merge by score descending, then ascending index.
+/// `threads` follows the same cutoff as `TopK`.
+[[nodiscard]] std::vector<Hit> RankTop(const RankTopRequest &request);
 
 } // namespace nesso::core
 

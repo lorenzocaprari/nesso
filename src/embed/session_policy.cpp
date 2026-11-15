@@ -26,20 +26,20 @@
 namespace nesso::embed
 {
 
-static size_t atLeastOne(size_t count) { return count == 0 ? 1 : count; }
+static size_t AtLeastOne(size_t count) { return count == 0 ? 1 : count; }
 
-static std::uintmax_t physicalMemoryBytes()
+static std::uintmax_t PhysicalMemoryBytes()
 {
     const auto pages = sysconf(_SC_PHYS_PAGES);
-    const auto pageSize = sysconf(_SC_PAGESIZE);
-    if (pages <= 0 || pageSize <= 0)
+    const auto page_size = sysconf(_SC_PAGESIZE);
+    if (pages <= 0 || page_size <= 0)
     {
         return 0;
     }
-    return static_cast<std::uintmax_t>(pages) * static_cast<std::uintmax_t>(pageSize);
+    return static_cast<std::uintmax_t>(pages) * static_cast<std::uintmax_t>(page_size);
 }
 
-std::uintmax_t memAvailableBytes(std::istream &meminfo)
+std::uintmax_t MemAvailableBytes(std::istream &meminfo)
 {
     constexpr std::string_view key = "MemAvailable:";
     std::string line;
@@ -62,7 +62,7 @@ std::uintmax_t memAvailableBytes(std::istream &meminfo)
     return 0;
 }
 
-static std::string_view trim(std::string_view text)
+static std::string_view Trim(std::string_view text)
 {
     while (!text.empty() && (text.front() == ' ' || text.front() == '\t'))
     {
@@ -75,7 +75,7 @@ static std::string_view trim(std::string_view text)
     return text;
 }
 
-static bool parseBoundedInt(std::string_view text, int &value)
+static bool ParseBoundedInt(std::string_view text, int &value)
 {
     if (text.empty())
     {
@@ -95,9 +95,9 @@ static bool parseBoundedInt(std::string_view text, int &value)
 }
 
 // "0-3,5,8-9". An empty or malformed list is ignored by the caller.
-static std::optional<std::set<int>> parseCpuList(std::string_view text)
+static std::optional<std::set<int>> ParseCpuList(std::string_view text)
 {
-    text = trim(text);
+    text = Trim(text);
     if (text.empty())
     {
         return std::nullopt;
@@ -112,9 +112,9 @@ static std::optional<std::set<int>> parseCpuList(std::string_view text)
         const std::size_t dash = token.find('-');
         int first = 0;
         int last = 0;
-        const bool one = dash == std::string_view::npos && parseBoundedInt(token, first);
-        const bool range = dash != std::string_view::npos && parseBoundedInt(token.substr(0, dash), first) &&
-                           parseBoundedInt(token.substr(dash + 1), last);
+        const bool one = dash == std::string_view::npos && ParseBoundedInt(token, first);
+        const bool range = dash != std::string_view::npos && ParseBoundedInt(token.substr(0, dash), first) &&
+                           ParseBoundedInt(token.substr(dash + 1), last);
         if (!one && !range)
         {
             return std::nullopt;
@@ -142,26 +142,26 @@ static std::optional<std::set<int>> parseCpuList(std::string_view text)
 
 // cpu.max is "quota period" microseconds, or "max period". A positive quota
 // below one period is one CPU. nullopt means this file sets no limit.
-static std::optional<size_t> parseCpuMax(std::string_view text)
+static std::optional<size_t> ParseCpuMax(std::string_view text)
 {
-    text = trim(text);
+    text = Trim(text);
     const std::size_t gap = text.find_first_of(" \t");
     if (gap == std::string_view::npos || gap == 0)
     {
         return std::nullopt;
     }
-    const std::string_view quotaText = text.substr(0, gap);
+    const std::string_view quota_text = text.substr(0, gap);
     int period = 0;
-    if (quotaText == "max" || !parseBoundedInt(trim(text.substr(gap)), period) || period <= 0)
+    if (quota_text == "max" || !ParseBoundedInt(Trim(text.substr(gap)), period) || period <= 0)
     {
         return std::nullopt;
     }
-    if (quotaText == "0")
+    if (quota_text == "0")
     {
         return 0;
     }
     int quota = 0;
-    if (!parseBoundedInt(quotaText, quota) || quota < 0)
+    if (!ParseBoundedInt(quota_text, quota) || quota < 0)
     {
         return std::nullopt;
     }
@@ -169,9 +169,9 @@ static std::optional<size_t> parseCpuMax(std::string_view text)
     return static_cast<size_t>(cpus == 0 ? 1 : cpus);
 }
 
-static std::optional<std::set<int>> allowedFromStatus(const std::filesystem::path &statusPath)
+static std::optional<std::set<int>> AllowedFromStatus(const std::filesystem::path &status_path)
 {
-    std::ifstream status(statusPath);
+    std::ifstream status(status_path);
     if (!status)
     {
         return std::nullopt;
@@ -182,13 +182,13 @@ static std::optional<std::set<int>> allowedFromStatus(const std::filesystem::pat
     {
         if (line.starts_with(key))
         {
-            return parseCpuList(line.substr(key.size()));
+            return ParseCpuList(line.substr(key.size()));
         }
     }
     return std::nullopt;
 }
 
-static bool controllerIsCpu(std::string_view controllers)
+static bool ControllerIsCpu(std::string_view controllers)
 {
     std::size_t cursor = 0;
     while (cursor <= controllers.size())
@@ -209,18 +209,18 @@ static bool controllerIsCpu(std::string_view controllers)
     return false;
 }
 
-static std::optional<size_t> tightestQuota(const std::filesystem::path &root, std::filesystem::path relative,
-                                           const char *fileName)
+static std::optional<size_t> TightestQuota(const std::filesystem::path &root, std::filesystem::path relative,
+                                           const char *file_name)
 {
     std::optional<size_t> tightest;
     while (true)
     {
-        const std::filesystem::path file = relative.empty() ? root / fileName : root / relative / fileName;
+        const std::filesystem::path file = relative.empty() ? root / file_name : root / relative / file_name;
         std::ifstream input(file);
         std::string line;
         if (input && std::getline(input, line))
         {
-            if (const std::optional<size_t> parsed = parseCpuMax(line))
+            if (const std::optional<size_t> parsed = ParseCpuMax(line))
             {
                 tightest = tightest ? std::min(*tightest, *parsed) : parsed;
             }
@@ -234,7 +234,7 @@ static std::optional<size_t> tightestQuota(const std::filesystem::path &root, st
     return tightest;
 }
 
-static std::string_view stripSlash(std::string_view path)
+static std::string_view StripSlash(std::string_view path)
 {
     while (path.starts_with('/'))
     {
@@ -243,20 +243,20 @@ static std::string_view stripSlash(std::string_view path)
     return path;
 }
 
-static void minQuota(std::optional<size_t> &tightest, size_t parsed)
+static void MinQuota(std::optional<size_t> &tightest, size_t parsed)
 {
     tightest = tightest ? std::min(*tightest, parsed) : std::optional<size_t>{parsed};
 }
 
 struct CgroupCpuPaths
 {
-    std::optional<std::filesystem::path> v2Path;
-    std::optional<std::filesystem::path> v1Path;
+    std::optional<std::filesystem::path> v2_path;
+    std::optional<std::filesystem::path> v1_path;
 };
 
-static std::optional<CgroupCpuPaths> readCgroupCpuPaths(const std::filesystem::path &procRoot)
+static std::optional<CgroupCpuPaths> ReadCgroupCpuPaths(const std::filesystem::path &proc_root)
 {
-    std::ifstream cgroup(procRoot / "self/cgroup");
+    std::ifstream cgroup(proc_root / "self/cgroup");
     if (!cgroup)
     {
         return std::nullopt;
@@ -267,7 +267,7 @@ static std::optional<CgroupCpuPaths> readCgroupCpuPaths(const std::filesystem::p
     {
         if (line.starts_with("0::"))
         {
-            paths.v2Path = std::filesystem::path{std::string{stripSlash(line.substr(3))}};
+            paths.v2_path = std::filesystem::path{std::string{StripSlash(line.substr(3))}};
             continue;
         }
         const std::size_t first = line.find(':');
@@ -276,9 +276,9 @@ static std::optional<CgroupCpuPaths> readCgroupCpuPaths(const std::filesystem::p
         {
             continue;
         }
-        if (controllerIsCpu(line.substr(first + 1, second - first - 1)))
+        if (ControllerIsCpu(line.substr(first + 1, second - first - 1)))
         {
-            paths.v1Path = std::filesystem::path{std::string{stripSlash(line.substr(second + 1))}};
+            paths.v1_path = std::filesystem::path{std::string{StripSlash(line.substr(second + 1))}};
         }
     }
     return paths;
@@ -286,30 +286,31 @@ static std::optional<CgroupCpuPaths> readCgroupCpuPaths(const std::filesystem::p
 
 struct CgroupV1Walk
 {
-    std::filesystem::path cgroupRoot;
+    std::filesystem::path cgroup_root;
     std::filesystem::path relative;
 };
 
-static std::optional<size_t> tightestV1Quota(const CgroupV1Walk &walk)
+static std::optional<size_t> TightestV1Quota(const CgroupV1Walk &walk)
 {
-    // v1 stores the quota and the period in two files. Rejoin them into the cpu.max shape.
+    // v1 stores the quota and the period in two files. Rejoin them into the
+    // cpu.max shape.
     std::optional<size_t> tightest;
-    const std::filesystem::path controller = walk.cgroupRoot / "cpu";
+    const std::filesystem::path controller = walk.cgroup_root / "cpu";
     std::filesystem::path relative = walk.relative;
     while (true)
     {
         const std::filesystem::path directory = relative.empty() ? controller : controller / relative;
-        std::ifstream quotaFile(directory / "cpu.cfs_quota_us");
-        std::ifstream periodFile(directory / "cpu.cfs_period_us");
+        std::ifstream quota_file(directory / "cpu.cfs_quota_us");
+        std::ifstream period_file(directory / "cpu.cfs_period_us");
         std::string quota;
         std::string period;
-        if (quotaFile && periodFile && std::getline(quotaFile, quota) && std::getline(periodFile, period))
+        if (quota_file && period_file && std::getline(quota_file, quota) && std::getline(period_file, period))
         {
-            const std::string quotaText = trim(quota) == "-1" ? std::string{"max"} : std::string{trim(quota)};
-            const std::string joined = quotaText + " " + std::string{trim(period)};
-            if (const std::optional<size_t> parsed = parseCpuMax(joined))
+            const std::string quota_text = Trim(quota) == "-1" ? std::string{"max"} : std::string{Trim(quota)};
+            const std::string joined = quota_text + " " + std::string{Trim(period)};
+            if (const std::optional<size_t> parsed = ParseCpuMax(joined))
             {
-                minQuota(tightest, *parsed);
+                MinQuota(tightest, *parsed);
             }
         }
         if (relative.empty())
@@ -323,38 +324,38 @@ static std::optional<size_t> tightestV1Quota(const CgroupV1Walk &walk)
 
 struct ProcCgroupRoots
 {
-    std::filesystem::path procRoot;
-    std::filesystem::path cgroupRoot;
+    std::filesystem::path proc_root;
+    std::filesystem::path cgroup_root;
 };
 
-static std::optional<size_t> cgroupCpuLimit(const ProcCgroupRoots &roots)
+static std::optional<size_t> CgroupCpuLimit(const ProcCgroupRoots &roots)
 {
-    const std::optional<CgroupCpuPaths> paths = readCgroupCpuPaths(roots.procRoot);
+    const std::optional<CgroupCpuPaths> paths = ReadCgroupCpuPaths(roots.proc_root);
     if (!paths)
     {
         return std::nullopt;
     }
     std::optional<size_t> tightest;
-    if (paths->v2Path)
+    if (paths->v2_path)
     {
-        tightest = tightestQuota(roots.cgroupRoot, *paths->v2Path, "cpu.max");
+        tightest = TightestQuota(roots.cgroup_root, *paths->v2_path, "cpu.max");
     }
-    if (paths->v1Path)
+    if (paths->v1_path)
     {
-        if (const std::optional<size_t> v1Quota =
-                tightestV1Quota({.cgroupRoot = roots.cgroupRoot, .relative = *paths->v1Path}))
+        if (const std::optional<size_t> v1_quota =
+                TightestV1Quota({.cgroup_root = roots.cgroup_root, .relative = *paths->v1_path}))
         {
-            minQuota(tightest, *v1Quota);
+            MinQuota(tightest, *v1_quota);
         }
     }
     return tightest;
 }
 
-static size_t countPhysicalCores(const std::filesystem::path &cpuDir, const std::optional<std::set<int>> &allowed)
+static size_t CountPhysicalCores(const std::filesystem::path &cpu_dir, const std::optional<std::set<int>> &allowed)
 {
     std::set<std::pair<int, int>> cores;
     std::error_code error;
-    for (const std::filesystem::directory_entry &entry : std::filesystem::directory_iterator(cpuDir, error))
+    for (const std::filesystem::directory_entry &entry : std::filesystem::directory_iterator(cpu_dir, error))
     {
         const std::string name = entry.path().filename().string();
         if (name.size() < 4 || !name.starts_with("cpu"))
@@ -365,84 +366,84 @@ static size_t countPhysicalCores(const std::filesystem::path &cpuDir, const std:
         {
             continue;
         }
-        int cpuIndex = 0;
-        if (!parseBoundedInt(name.substr(3), cpuIndex))
+        int cpu_index = 0;
+        if (!ParseBoundedInt(name.substr(3), cpu_index))
         {
             continue;
         }
-        if (allowed && !allowed->contains(cpuIndex))
+        if (allowed && !allowed->contains(cpu_index))
         {
             continue;
         }
-        std::ifstream packageFile(entry.path() / "topology/physical_package_id");
-        std::ifstream coreFile(entry.path() / "topology/core_id");
-        int packageId = 0;
-        int coreId = 0;
-        if (!(packageFile >> packageId) || !(coreFile >> coreId))
+        std::ifstream package_file(entry.path() / "topology/physical_package_id");
+        std::ifstream core_file(entry.path() / "topology/core_id");
+        int package_id = 0;
+        int core_id = 0;
+        if (!(package_file >> package_id) || !(core_file >> core_id))
         {
             continue;
         }
-        cores.emplace(packageId, coreId);
+        cores.emplace(package_id, core_id);
     }
     return cores.size();
 }
 
-MachineResources readMachine(const MachineFsRoots &roots)
+MachineResources ReadMachine(const MachineFsRoots &roots)
 {
     MachineResources machine;
-    machine.logicalThreads = atLeastOne(std::thread::hardware_concurrency());
-    std::ifstream meminfo(roots.procRoot / "meminfo");
-    machine.memoryLimitBytes = meminfo ? memAvailableBytes(meminfo) : 0;
-    if (machine.memoryLimitBytes == 0)
+    machine.logical_threads = AtLeastOne(std::thread::hardware_concurrency());
+    std::ifstream meminfo(roots.proc_root / "meminfo");
+    machine.memory_limit_bytes = meminfo ? MemAvailableBytes(meminfo) : 0;
+    if (machine.memory_limit_bytes == 0)
     {
-        machine.memoryLimitBytes = physicalMemoryBytes();
+        machine.memory_limit_bytes = PhysicalMemoryBytes();
     }
-    const std::optional<std::set<int>> allowed = allowedFromStatus(roots.procRoot / "self/status");
-    size_t cores = countPhysicalCores(roots.sysRoot / "devices/system/cpu", allowed);
+    const std::optional<std::set<int>> allowed = AllowedFromStatus(roots.proc_root / "self/status");
+    size_t cores = CountPhysicalCores(roots.sys_root / "devices/system/cpu", allowed);
     if (cores == 0)
     {
-        cores = allowed ? allowed->size() : machine.logicalThreads;
+        cores = allowed ? allowed->size() : machine.logical_threads;
     }
     if (const std::optional<size_t> quota =
-            cgroupCpuLimit({.procRoot = roots.procRoot, .cgroupRoot = roots.cgroupRoot}))
+            CgroupCpuLimit({.proc_root = roots.proc_root, .cgroup_root = roots.cgroup_root}))
     {
         cores = std::min(cores, *quota);
     }
-    machine.physicalCores = atLeastOne(cores);
+    machine.physical_cores = AtLeastOne(cores);
     return machine;
 }
 
-SessionPolicy MakeSessionPolicy(bool quantized, size_t requestedThreads, const MachineResources &machine)
+SessionPolicy MakeSessionPolicy(bool quantized, size_t requested_threads, const MachineResources &machine)
 {
-    const size_t logical = atLeastOne(machine.logicalThreads);
+    const size_t logical = AtLeastOne(machine.logical_threads);
     if (!quantized)
     {
-        const size_t picked = requestedThreads == 0 ? logical : requestedThreads;
-        const size_t intra = std::max(picked, static_cast<size_t>(intraOpThreadFloor()));
+        const size_t picked = requested_threads == 0 ? logical : requested_threads;
+        const size_t intra = std::max(picked, static_cast<size_t>(IntraOpThreadFloor()));
         return SessionPolicy{.quantized = false,
                              .sessions = 1,
-                             .intraOpThreads = nesso::platform::narrowCast<int>(intra),
-                             .memoryCap = 0,
-                             .shrinkArena = true};
+                             .intra_op_threads = nesso::platform::NarrowCast<int>(intra),
+                             .memory_cap = 0,
+                             .shrink_arena = true};
     }
 
-    const size_t budget = requestedThreads == 0 ? atLeastOne(machine.physicalCores) : requestedThreads;
-    const bool arm64 = intraOpThreadFloor() > 1;
+    const size_t budget = requested_threads == 0 ? AtLeastOne(machine.physical_cores) : requested_threads;
+    const bool arm64 = IntraOpThreadFloor() > 1;
     const bool narrow = !arm64 && budget <= INT8_NARROW_BUDGET;
-    const std::uintmax_t perSession = narrow ? INT8_NARROW_SESSION_BYTES : INT8_SESSION_BYTES;
+    const std::uintmax_t per_session = narrow ? INT8_NARROW_SESSION_BYTES : INT8_SESSION_BYTES;
     // Leave half of the available memory for the rest of the process.
-    size_t memoryCap = 0;
-    if (machine.memoryLimitBytes > 0)
+    size_t memory_cap = 0;
+    if (machine.memory_limit_bytes > 0)
     {
-        const std::uintmax_t fit = std::max<std::uintmax_t>((machine.memoryLimitBytes / 2) / perSession, 1);
-        memoryCap = static_cast<size_t>(std::min<std::uintmax_t>(fit, std::numeric_limits<size_t>::max()));
+        const std::uintmax_t fit = std::max<std::uintmax_t>((machine.memory_limit_bytes / 2) / per_session, 1);
+        memory_cap = static_cast<size_t>(std::min<std::uintmax_t>(fit, std::numeric_limits<size_t>::max()));
     }
     size_t intra = 1;
     size_t sessions = 1;
     bool shrink = true;
     if (arm64)
     {
-        intra = std::max(std::min(INT8_INTRA_OP_MAX, budget), static_cast<size_t>(intraOpThreadFloor()));
+        intra = std::max(std::min(INT8_INTRA_OP_MAX, budget), static_cast<size_t>(IntraOpThreadFloor()));
         sessions = std::max<size_t>(1, budget / intra);
     }
     else if (narrow)
@@ -456,44 +457,46 @@ SessionPolicy MakeSessionPolicy(bool quantized, size_t requestedThreads, const M
         intra = std::min(INT8_INTRA_OP_MAX, budget / 2);
         sessions = std::max<size_t>(1, budget / intra);
     }
-    if (requestedThreads == 0 && memoryCap > 0)
+    if (requested_threads == 0 && memory_cap > 0)
     {
-        sessions = std::min(sessions, memoryCap);
+        sessions = std::min(sessions, memory_cap);
     }
     return SessionPolicy{.quantized = true,
                          .sessions = sessions,
-                         .intraOpThreads = nesso::platform::narrowCast<int>(intra),
-                         .memoryCap = memoryCap,
-                         .shrinkArena = shrink};
+                         .intra_op_threads = nesso::platform::NarrowCast<int>(intra),
+                         .memory_cap = memory_cap,
+                         .shrink_arena = shrink};
 }
 
-std::string sessionPolicyText(size_t requestedThreads, const MachineResources &machine)
+std::string SessionPolicyText(size_t requested_threads, const MachineResources &machine)
 {
-    const SessionPolicy quantized = MakeSessionPolicy(true, requestedThreads, machine);
-    const SessionPolicy floating = MakeSessionPolicy(false, requestedThreads, machine);
-    const char *sessionWord = quantized.sessions == 1 ? "session" : "sessions";
-    const char *threadWord = quantized.intraOpThreads == 1 ? "thread" : "threads";
-    std::string text = quantized.intraOpThreads == 1
-                           ? std::format("int8: {} single-thread {}", quantized.sessions, sessionWord)
-                           : std::format("int8: {} {}, {} intra-op {}", quantized.sessions, sessionWord,
-                                         quantized.intraOpThreads, threadWord);
-    if (quantized.memoryCap > 0)
+    const SessionPolicy quantized = MakeSessionPolicy(true, requested_threads, machine);
+    const SessionPolicy floating = MakeSessionPolicy(false, requested_threads, machine);
+    const char *session_word = quantized.sessions == 1 ? "session" : "sessions";
+    const char *thread_word = quantized.intra_op_threads == 1 ? "thread" : "threads";
+    std::string text = quantized.intra_op_threads == 1
+                           ? std::format("int8: {} single-thread {}", quantized.sessions, session_word)
+                           : std::format("int8: {} {}, {} intra-op {}", quantized.sessions, session_word,
+                                         quantized.intra_op_threads, thread_word);
+    if (quantized.memory_cap > 0)
     {
-        text += std::format(" (estimated memory cap {})", quantized.memoryCap);
+        text += std::format(" (estimated memory cap {})", quantized.memory_cap);
     }
-    const char *fpThreadWord = floating.intraOpThreads == 1 ? "thread" : "threads";
-    text += std::format("\nfp32: {} session, {} intra-op {}", floating.sessions, floating.intraOpThreads, fpThreadWord);
+    const char *fp_thread_word = floating.intra_op_threads == 1 ? "thread" : "threads";
+    text +=
+        std::format("\nfp32: {} session, {} intra-op {}", floating.sessions, floating.intra_op_threads, fp_thread_word);
     return text;
 }
 
-std::string overrideWarning(const SessionPolicy &policy, size_t requestedThreads)
+std::string OverrideWarning(const SessionPolicy &policy, size_t requested_threads)
 {
-    if (!policy.quantized || requestedThreads == 0 || policy.memoryCap == 0 || policy.sessions <= policy.memoryCap)
+    if (!policy.quantized || requested_threads == 0 || policy.memory_cap == 0 || policy.sessions <= policy.memory_cap)
     {
         return {};
     }
-    return std::format("Warning: {} int8 sessions exceed the estimated memory limit of {}; continuing with {}.",
-                       policy.sessions, policy.memoryCap, policy.sessions);
+    return std::format("Warning: {} int8 sessions exceed the estimated memory "
+                       "limit of {}; continuing with {}.",
+                       policy.sessions, policy.memory_cap, policy.sessions);
 }
 
 } // namespace nesso::embed

@@ -37,7 +37,7 @@ class TempDir
     TempDir &operator=(TempDir &&) = delete;
     ~TempDir() { std::filesystem::remove_all(path_); }
 
-    [[nodiscard]] const std::filesystem::path &path() const { return path_; }
+    [[nodiscard]] const std::filesystem::path &Path() const { return path_; }
 
   private:
     std::filesystem::path path_;
@@ -61,7 +61,7 @@ class CinGuard
     std::streambuf *previous_;
 };
 
-void writeFile(const std::filesystem::path &path, std::string_view text)
+void WriteFile(const std::filesystem::path &path, std::string_view text)
 {
     std::ofstream output(path);
     REQUIRE(output);
@@ -76,7 +76,7 @@ class ScriptedEmbedder final : public nesso::embed::Embedder
 
     [[nodiscard]] std::expected<nesso::embed::EmbedderIdentity, nesso::embed::EmbedError> identity() const override
     {
-        return testEmbedderIdentity();
+        return TestEmbedderIdentity();
     }
 
     [[nodiscard]] std::expected<std::vector<float>, nesso::embed::EmbedError> embed(std::string_view) const override
@@ -85,7 +85,7 @@ class ScriptedEmbedder final : public nesso::embed::Embedder
     }
 
     [[nodiscard]] std::expected<std::vector<std::vector<float>>, nesso::embed::EmbedError>
-    embedBatch(std::span<const std::string> texts, ProgressCallback) const override
+    EmbedBatch(std::span<const std::string> texts, ProgressCallback) const override
     {
         std::vector<std::vector<float>> rows;
         rows.reserve(texts.size());
@@ -115,29 +115,29 @@ class HashEmbedder final : public nesso::embed::Embedder
 
     [[nodiscard]] std::expected<nesso::embed::EmbedderIdentity, nesso::embed::EmbedError> identity() const override
     {
-        return testEmbedderIdentity();
+        return TestEmbedderIdentity();
     }
 
     [[nodiscard]] std::expected<std::vector<float>, nesso::embed::EmbedError>
     embed(std::string_view text) const override
     {
-        return hashed(text);
+        return Hashed(text);
     }
 
     [[nodiscard]] std::expected<std::vector<std::vector<float>>, nesso::embed::EmbedError>
-    embedBatch(std::span<const std::string> texts, ProgressCallback) const override
+    EmbedBatch(std::span<const std::string> texts, ProgressCallback) const override
     {
         std::vector<std::vector<float>> rows;
         rows.reserve(texts.size());
         for (const std::string &text : texts)
         {
-            rows.push_back(hashed(text));
+            rows.push_back(Hashed(text));
         }
         return rows;
     }
 
   private:
-    [[nodiscard]] static std::vector<float> hashed(std::string_view text)
+    [[nodiscard]] static std::vector<float> Hashed(std::string_view text)
     {
         std::uint32_t state = 2166136261u;
         for (const char character : text)
@@ -157,9 +157,9 @@ class HashEmbedder final : public nesso::embed::Embedder
     }
 };
 
-nesso::Nesso scriptedApp() { return nesso::Nesso{nesso::Config{}, std::make_unique<ScriptedEmbedder>()}; }
+nesso::Nesso ScriptedApp() { return nesso::Nesso{nesso::Config{}, std::make_unique<ScriptedEmbedder>()}; }
 
-const nesso::TextMatch *matchAtLine(const nesso::TextResults &results, std::uint64_t line)
+const nesso::TextMatch *MatchAtLine(const nesso::TextResults &results, std::uint64_t line)
 {
     for (const nesso::TextMatch &match : results.matches)
     {
@@ -171,26 +171,26 @@ const nesso::TextMatch *matchAtLine(const nesso::TextResults &results, std::uint
     return nullptr;
 }
 
-void requireSameRow(const nesso::TextMatch &left, const nesso::TextMatch &right)
+void RequireSameRow(const nesso::TextMatch &left, const nesso::TextMatch &right)
 {
     REQUIRE(left.line == right.line);
     REQUIRE(left.score == right.score);
     REQUIRE(left.text == right.text);
-    REQUIRE(left.arrayElement == right.arrayElement);
+    REQUIRE(left.array_element == right.array_element);
     REQUIRE(left.occurrences == right.occurrences);
     REQUIRE(left.mode == right.mode);
     REQUIRE(left.dense == right.dense);
     REQUIRE(left.lexical == right.lexical);
 }
 
-void requireSameResults(const nesso::TextResults &left, const nesso::TextResults &right)
+void RequireSameResults(const nesso::TextResults &left, const nesso::TextResults &right)
 {
     REQUIRE(left.matches.size() == right.matches.size());
-    CHECK(left.lexicalFallback == right.lexicalFallback);
+    CHECK(left.lexical_fallback == right.lexical_fallback);
     CHECK(left.grouped == right.grouped);
     for (std::size_t index = 0; index < left.matches.size(); ++index)
     {
-        requireSameRow(left.matches[index], right.matches[index]);
+        RequireSameRow(left.matches[index], right.matches[index]);
         CHECK(left.matches[index].source == right.matches[index].source);
     }
 }
@@ -200,11 +200,11 @@ void requireSameResults(const nesso::TextResults &left, const nesso::TextResults
 TEST_CASE("dense --group keeps one row per key and -k counts groups", "[nesso][text]")
 {
     const TempDir dir{"nesso_group_dense"};
-    const auto log = dir.path() / "app.log";
-    writeFile(log, "same 1\nsame 2\nsame 3\nother 1\n");
-    const nesso::Nesso app = scriptedApp();
+    const auto log = dir.Path() / "app.log";
+    WriteFile(log, "same 1\nsame 2\nsame 3\nother 1\n");
+    const nesso::Nesso app = ScriptedApp();
 
-    const auto lines = app.grep({.query = "same", .files = {log}, .topK = 2, .mode = nesso::SearchMode::Dense});
+    const auto lines = app.Grep({.query = "same", .files = {log}, .top_k = 2, .mode = nesso::SearchMode::Dense});
     REQUIRE(lines.has_value());
     CHECK_FALSE(lines->grouped);
     REQUIRE(lines->matches.size() == 2);
@@ -212,7 +212,7 @@ TEST_CASE("dense --group keeps one row per key and -k counts groups", "[nesso][t
     CHECK(lines->matches[1].text == "same 2");
 
     const auto grouped =
-        app.grep({.query = "same", .files = {log}, .topK = 2, .mode = nesso::SearchMode::Dense, .group = true});
+        app.Grep({.query = "same", .files = {log}, .top_k = 2, .mode = nesso::SearchMode::Dense, .group = true});
     REQUIRE(grouped.has_value());
     CHECK(grouped->grouped);
     REQUIRE(grouped->matches.size() == 2);
@@ -227,16 +227,16 @@ TEST_CASE("dense --group keeps one row per key and -k counts groups", "[nesso][t
     CHECK(grouped->matches[1].line == 4);
     CHECK(grouped->matches[1].occurrences == 1);
 
-    writeFile(log, "user 10 note\nuser 20 note\nBEST unique line\n");
+    WriteFile(log, "user 10 note\nuser 20 note\nBEST unique line\n");
     const auto best =
-        app.grep({.query = "same", .files = {log}, .topK = 1, .mode = nesso::SearchMode::Dense, .group = true});
+        app.Grep({.query = "same", .files = {log}, .top_k = 1, .mode = nesso::SearchMode::Dense, .group = true});
     REQUIRE(best.has_value());
     REQUIRE(best->matches.size() == 1);
     CHECK(best->matches[0].text == "BEST unique line");
     CHECK(best->matches[0].score == 1.0F);
 
     const auto two =
-        app.grep({.query = "same", .files = {log}, .topK = 2, .mode = nesso::SearchMode::Dense, .group = true});
+        app.Grep({.query = "same", .files = {log}, .top_k = 2, .mode = nesso::SearchMode::Dense, .group = true});
     REQUIRE(two.has_value());
     REQUIRE(two->matches.size() == 2);
     CHECK(two->matches[0].text == "BEST unique line");
@@ -249,18 +249,18 @@ TEST_CASE("dense --group keeps one row per key and -k counts groups", "[nesso][t
 TEST_CASE("lexical --group shows the first raw line and the best member score", "[nesso][text]")
 {
     const TempDir dir{"nesso_group_lexical"};
-    const auto log = dir.path() / "app.log";
-    writeFile(log, "user 10 note\nuser 20 note\n");
-    const nesso::Nesso app = scriptedApp();
+    const auto log = dir.Path() / "app.log";
+    WriteFile(log, "user 10 note\nuser 20 note\n");
+    const nesso::Nesso app = ScriptedApp();
 
-    const nesso::GrepRequest ungrouped{.query = "20", .files = {log}, .topK = 5, .mode = nesso::SearchMode::Lexical};
-    const auto lines = app.grep(ungrouped);
+    const nesso::GrepRequest ungrouped{.query = "20", .files = {log}, .top_k = 5, .mode = nesso::SearchMode::Lexical};
+    const auto lines = app.Grep(ungrouped);
     REQUIRE(lines.has_value());
     REQUIRE(lines->matches.size() == 1);
     CHECK(lines->matches[0].line == 2);
 
     const auto grouped =
-        app.grep({.query = "20", .files = {log}, .topK = 5, .mode = nesso::SearchMode::Lexical, .group = true});
+        app.Grep({.query = "20", .files = {log}, .top_k = 5, .mode = nesso::SearchMode::Lexical, .group = true});
     REQUIRE(grouped.has_value());
     REQUIRE(grouped->matches.size() == 1);
     CHECK(grouped->matches[0].text == "user 10 note");
@@ -271,60 +271,60 @@ TEST_CASE("lexical --group shows the first raw line and the best member score", 
     CHECK_FALSE(grouped->matches[0].dense.has_value());
     CHECK(grouped->matches[0].mode == "lexical");
 
-    writeFile(log, "user 10 note\nnode 20 up\nuser 20 note\n");
+    WriteFile(log, "user 10 note\nnode 20 up\nuser 20 note\n");
     const auto ties =
-        app.grep({.query = "20", .files = {log}, .topK = 5, .mode = nesso::SearchMode::Lexical, .group = true});
+        app.Grep({.query = "20", .files = {log}, .top_k = 5, .mode = nesso::SearchMode::Lexical, .group = true});
     REQUIRE(ties.has_value());
     REQUIRE(ties->matches.size() == 2);
     CHECK(ties->matches[0].mode == "lexical");
     CHECK(ties->matches[1].mode == "lexical");
-    const bool userFirst = ties->matches[0].text == "user 10 note";
-    CHECK((userFirst || ties->matches[0].text == "node 20 up"));
+    const bool user_first = ties->matches[0].text == "user 10 note";
+    CHECK((user_first || ties->matches[0].text == "node 20 up"));
     CHECK(ties->matches[0].score >= ties->matches[1].score);
 
-    std::string longHit = "BEST";
+    std::string long_hit = "BEST";
     for (int repeat = 0; repeat < 16; ++repeat)
     {
-        longHit += " zz";
+        long_hit += " zz";
     }
-    longHit.push_back('\n');
-    writeFile(log, std::string{"best\n"} + longHit);
-    const auto flat = app.grep({.query = "BEST", .files = {log}, .topK = 5, .mode = nesso::SearchMode::Lexical});
+    long_hit.push_back('\n');
+    WriteFile(log, std::string{"best\n"} + long_hit);
+    const auto flat = app.Grep({.query = "BEST", .files = {log}, .top_k = 5, .mode = nesso::SearchMode::Lexical});
     const auto tier =
-        app.grep({.query = "BEST", .files = {log}, .topK = 5, .mode = nesso::SearchMode::Lexical, .group = true});
+        app.Grep({.query = "BEST", .files = {log}, .top_k = 5, .mode = nesso::SearchMode::Lexical, .group = true});
     REQUIRE(flat.has_value());
     REQUIRE(tier.has_value());
     REQUIRE(flat->matches.size() == 2);
     REQUIRE(tier->matches.size() == 2);
-    const nesso::TextMatch *shortLine = matchAtLine(*flat, 1);
-    const nesso::TextMatch *longLine = matchAtLine(*flat, 2);
-    REQUIRE(shortLine != nullptr);
-    REQUIRE(longLine != nullptr);
-    REQUIRE(shortLine->score > longLine->score);
-    CHECK(tier->matches[0].text == longLine->text);
-    CHECK(tier->matches[0].score == longLine->score);
+    const nesso::TextMatch *short_line = MatchAtLine(*flat, 1);
+    const nesso::TextMatch *long_line = MatchAtLine(*flat, 2);
+    REQUIRE(short_line != nullptr);
+    REQUIRE(long_line != nullptr);
+    REQUIRE(short_line->score > long_line->score);
+    CHECK(tier->matches[0].text == long_line->text);
+    CHECK(tier->matches[0].score == long_line->score);
     CHECK(tier->matches[0].line == 2);
     CHECK(tier->matches[1].text == "best");
-    CHECK(tier->matches[1].score == shortLine->score);
+    CHECK(tier->matches[1].score == short_line->score);
 }
 
 TEST_CASE("hybrid and auto --group use the effective mode score", "[nesso][text]")
 {
     const TempDir dir{"nesso_group_hybrid"};
-    const auto log = dir.path() / "app.log";
-    writeFile(log, "user 10 note\nuser 20 note\n");
-    const nesso::Nesso app = scriptedApp();
+    const auto log = dir.Path() / "app.log";
+    WriteFile(log, "user 10 note\nuser 20 note\n");
+    const nesso::Nesso app = ScriptedApp();
 
-    const auto lines = app.grep({.query = "20", .files = {log}, .topK = 5, .mode = nesso::SearchMode::Hybrid});
+    const auto lines = app.Grep({.query = "20", .files = {log}, .top_k = 5, .mode = nesso::SearchMode::Hybrid});
     REQUIRE(lines.has_value());
-    const nesso::TextMatch *first = matchAtLine(*lines, 1);
-    const nesso::TextMatch *second = matchAtLine(*lines, 2);
+    const nesso::TextMatch *first = MatchAtLine(*lines, 1);
+    const nesso::TextMatch *second = MatchAtLine(*lines, 2);
     REQUIRE(first != nullptr);
     REQUIRE(second != nullptr);
     REQUIRE(second->score != first->score);
 
     const auto grouped =
-        app.grep({.query = "20", .files = {log}, .topK = 5, .mode = nesso::SearchMode::Hybrid, .group = true});
+        app.Grep({.query = "20", .files = {log}, .top_k = 5, .mode = nesso::SearchMode::Hybrid, .group = true});
     REQUIRE(grouped.has_value());
     REQUIRE(grouped->matches.size() == 1);
     CHECK(grouped->matches[0].text == "user 10 note");
@@ -336,20 +336,20 @@ TEST_CASE("hybrid and auto --group use the effective mode score", "[nesso][text]
     CHECK(grouped->matches[0].mode == "hybrid");
 
     const auto natural =
-        app.grep({.query = "note", .files = {log}, .topK = 5, .mode = nesso::SearchMode::Auto, .group = true});
+        app.Grep({.query = "note", .files = {log}, .top_k = 5, .mode = nesso::SearchMode::Auto, .group = true});
     REQUIRE(natural.has_value());
     REQUIRE_FALSE(natural->matches.empty());
     CHECK(natural->matches[0].mode == "hybrid");
 
-    writeFile(log, "request failed for blk_111111111111 today\n"
+    WriteFile(log, "request failed for blk_111111111111 today\n"
                    "request failed for blk_38865049064139660 today\n");
-    const auto identifierLines =
-        app.grep({.query = "blk_38865049064139660", .files = {log}, .topK = 5, .mode = nesso::SearchMode::Auto});
-    const auto identifier = app.grep(
-        {.query = "blk_38865049064139660", .files = {log}, .topK = 5, .mode = nesso::SearchMode::Auto, .group = true});
-    REQUIRE(identifierLines.has_value());
+    const auto identifier_lines =
+        app.Grep({.query = "blk_38865049064139660", .files = {log}, .top_k = 5, .mode = nesso::SearchMode::Auto});
+    const auto identifier = app.Grep(
+        {.query = "blk_38865049064139660", .files = {log}, .top_k = 5, .mode = nesso::SearchMode::Auto, .group = true});
+    REQUIRE(identifier_lines.has_value());
     REQUIRE(identifier.has_value());
-    const nesso::TextMatch *hit = matchAtLine(*identifierLines, 2);
+    const nesso::TextMatch *hit = MatchAtLine(*identifier_lines, 2);
     REQUIRE(hit != nullptr);
     REQUIRE(identifier->matches.size() == 1);
     CHECK(identifier->matches[0].mode == "lexical");
@@ -357,68 +357,70 @@ TEST_CASE("hybrid and auto --group use the effective mode score", "[nesso][text]
     CHECK(identifier->matches[0].occurrences == 2);
     CHECK(identifier->matches[0].score == hit->score);
     CHECK(identifier->matches[0].lexical == hit->lexical);
-    CHECK_FALSE(identifier->lexicalFallback);
+    CHECK_FALSE(identifier->lexical_fallback);
 
-    writeFile(log, "plain words here\nmore plain words\n");
-    const auto fallback = app.grep(
-        {.query = "zzzznotpresent99", .files = {log}, .topK = 5, .mode = nesso::SearchMode::Lexical, .group = true});
+    WriteFile(log, "plain words here\nmore plain words\n");
+    const auto fallback = app.Grep(
+        {.query = "zzzznotpresent99", .files = {log}, .top_k = 5, .mode = nesso::SearchMode::Lexical, .group = true});
     REQUIRE(fallback.has_value());
-    CHECK(fallback->lexicalFallback);
+    CHECK(fallback->lexical_fallback);
     REQUIRE(fallback->matches.size() == 2);
     CHECK(fallback->matches[0].mode == "hybrid");
     CHECK(fallback->matches[1].mode == "hybrid");
 }
 
-TEST_CASE("search --group matches grep and keeps the first line when a source is missing", "[nesso][text]")
+TEST_CASE("search --group matches grep and keeps the first line when a source "
+          "is missing",
+          "[nesso][text]")
 {
     const TempDir dir{"nesso_group_search"};
-    const auto log = dir.path() / "app.log";
-    writeFile(log, "user 10 note\nuser 20 note\nBEST unique line\n");
-    const nesso::Nesso app = scriptedApp();
-    const auto indexed = app.index({.files = {log}, .output = dir.path() / "corpus.nesso"});
+    const auto log = dir.Path() / "app.log";
+    WriteFile(log, "user 10 note\nuser 20 note\nBEST unique line\n");
+    const nesso::Nesso app = ScriptedApp();
+    const auto indexed = app.Index({.files = {log}, .output = dir.Path() / "corpus.nesso"});
     REQUIRE(indexed.has_value());
 
     const auto grepped =
-        app.grep({.query = "20", .files = {log}, .topK = 5, .mode = nesso::SearchMode::Hybrid, .group = true});
-    const auto searched = app.search({.query = "20",
-                                      .index = dir.path() / "corpus.nesso",
-                                      .topK = 5,
+        app.Grep({.query = "20", .files = {log}, .top_k = 5, .mode = nesso::SearchMode::Hybrid, .group = true});
+    const auto searched = app.Search({.query = "20",
+                                      .index = dir.Path() / "corpus.nesso",
+                                      .top_k = 5,
                                       .mode = nesso::SearchMode::Hybrid,
                                       .group = true});
     REQUIRE(grepped.has_value());
     REQUIRE(searched.has_value());
     REQUIRE(grepped->matches.size() == 2);
     REQUIRE(searched->matches.size() == 2);
-    const nesso::TextMatch *grepUser = nullptr;
-    const nesso::TextMatch *searchUser = nullptr;
+    const nesso::TextMatch *grep_user = nullptr;
+    const nesso::TextMatch *search_user = nullptr;
     for (const nesso::TextMatch &match : grepped->matches)
     {
         if (match.text == "user 10 note")
         {
-            grepUser = &match;
+            grep_user = &match;
         }
     }
     for (const nesso::TextMatch &match : searched->matches)
     {
         if (match.text == "user 10 note")
         {
-            searchUser = &match;
+            search_user = &match;
         }
     }
-    REQUIRE(grepUser != nullptr);
-    REQUIRE(searchUser != nullptr);
+    REQUIRE(grep_user != nullptr);
+    REQUIRE(search_user != nullptr);
     CHECK(searched->grouped);
-    CHECK(searchUser->text == grepUser->text);
-    CHECK(searchUser->line == 1);
-    CHECK(searchUser->score == grepUser->score);
-    CHECK(searchUser->lexical == grepUser->lexical);
-    CHECK(searchUser->dense == grepUser->dense);
-    CHECK(searchUser->occurrences == 2);
-    CHECK(searchUser->mode == "hybrid");
+    CHECK(search_user->text == grep_user->text);
+    CHECK(search_user->line == 1);
+    CHECK(search_user->score == grep_user->score);
+    CHECK(search_user->lexical == grep_user->lexical);
+    CHECK(search_user->dense == grep_user->dense);
+    CHECK(search_user->occurrences == 2);
+    CHECK(search_user->mode == "hybrid");
 
-    const auto lexical = app.search({.query = "20",
-                                     .index = dir.path() / "corpus.nesso",
-                                     .topK = 1,
+    const auto lexical = app.Search({.query = "20",
+                                     .index = dir.Path() / "corpus.nesso",
+                                     .top_k = 1,
                                      .mode = nesso::SearchMode::Lexical,
                                      .group = true});
     REQUIRE(lexical.has_value());
@@ -427,9 +429,9 @@ TEST_CASE("search --group matches grep and keeps the first line when a source is
     CHECK(lexical->matches[0].occurrences == 2);
     CHECK(lexical->matches[0].mode == "lexical");
 
-    const auto dense = app.search({.query = "note",
-                                   .index = dir.path() / "corpus.nesso",
-                                   .topK = 5,
+    const auto dense = app.Search({.query = "note",
+                                   .index = dir.Path() / "corpus.nesso",
+                                   .top_k = 5,
                                    .mode = nesso::SearchMode::Dense,
                                    .group = true});
     REQUIRE(dense.has_value());
@@ -439,12 +441,12 @@ TEST_CASE("search --group matches grep and keeps the first line when a source is
     CHECK(dense->matches[1].text == "user 10 note");
     CHECK(dense->matches[1].occurrences == 2);
 
-    writeFile(log, "kept 10\n\nkept 20\n");
-    const auto blankIndex = app.index({.files = {log}, .output = dir.path() / "blank.nesso"});
-    REQUIRE(blankIndex.has_value());
-    const auto blank = app.search({.query = "kept",
-                                   .index = dir.path() / "blank.nesso",
-                                   .topK = 5,
+    WriteFile(log, "kept 10\n\nkept 20\n");
+    const auto blank_index = app.Index({.files = {log}, .output = dir.Path() / "blank.nesso"});
+    REQUIRE(blank_index.has_value());
+    const auto blank = app.Search({.query = "kept",
+                                   .index = dir.Path() / "blank.nesso",
+                                   .top_k = 5,
                                    .mode = nesso::SearchMode::Dense,
                                    .group = true});
     REQUIRE(blank.has_value());
@@ -453,30 +455,30 @@ TEST_CASE("search --group matches grep and keeps the first line when a source is
     CHECK(blank->matches[0].occurrences == 2);
 
     std::filesystem::remove(log);
-    const auto missing = app.search({.query = "20",
-                                     .index = dir.path() / "corpus.nesso",
-                                     .topK = 5,
+    const auto missing = app.Search({.query = "20",
+                                     .index = dir.Path() / "corpus.nesso",
+                                     .top_k = 5,
                                      .mode = nesso::SearchMode::Lexical,
                                      .group = true});
     REQUIRE(missing.has_value());
     REQUIRE(missing->matches.size() == 1);
     CHECK(missing->matches[0].text == "user 10 note");
     CHECK(missing->matches[0].occurrences == 2);
-    CHECK_FALSE(missing->staleSources.empty());
+    CHECK_FALSE(missing->stale_sources.empty());
 
-    const auto first = dir.path() / "a.log";
-    const auto second = dir.path() / "b.log";
-    writeFile(first, "same 1\n");
-    writeFile(second, "same 2\n");
-    const auto multiIndex = app.index({.files = {first, second}, .output = dir.path() / "multi.nesso"});
-    REQUIRE(multiIndex.has_value());
-    const auto multi = app.search({.query = "same",
-                                   .index = dir.path() / "multi.nesso",
-                                   .topK = 5,
+    const auto first = dir.Path() / "a.log";
+    const auto second = dir.Path() / "b.log";
+    WriteFile(first, "same 1\n");
+    WriteFile(second, "same 2\n");
+    const auto multi_index = app.Index({.files = {first, second}, .output = dir.Path() / "multi.nesso"});
+    REQUIRE(multi_index.has_value());
+    const auto multi = app.Search({.query = "same",
+                                   .index = dir.Path() / "multi.nesso",
+                                   .top_k = 5,
                                    .mode = nesso::SearchMode::Dense,
                                    .group = true});
     REQUIRE(multi.has_value());
-    CHECK(multi->multipleSources);
+    CHECK(multi->multiple_sources);
     REQUIRE(multi->matches.size() == 1);
     CHECK(multi->matches[0].source == first.string());
     CHECK(multi->matches[0].text == "same 1");
@@ -484,25 +486,25 @@ TEST_CASE("search --group matches grep and keeps the first line when a source is
 
     std::stringstream input{"user 10 note\nuser 20 note\n"};
     const CinGuard guard{input};
-    const auto stdinIndex = app.index({.files = {"-"}, .output = dir.path() / "stdin.nesso"});
-    REQUIRE(stdinIndex.has_value());
-    const auto stdinSearch = app.search({.query = "20",
-                                         .index = dir.path() / "stdin.nesso",
-                                         .topK = 5,
-                                         .mode = nesso::SearchMode::Lexical,
-                                         .group = true});
-    REQUIRE(stdinSearch.has_value());
-    REQUIRE(stdinSearch->matches.size() == 1);
-    CHECK(stdinSearch->matches[0].source == "-");
-    CHECK(stdinSearch->matches[0].text == "user 10 note");
-    CHECK(stdinSearch->matches[0].occurrences == 2);
-    CHECK(stdinSearch->matches[0].mode == "lexical");
+    const auto stdin_index = app.Index({.files = {"-"}, .output = dir.Path() / "stdin.nesso"});
+    REQUIRE(stdin_index.has_value());
+    const auto stdin_search = app.Search({.query = "20",
+                                          .index = dir.Path() / "stdin.nesso",
+                                          .top_k = 5,
+                                          .mode = nesso::SearchMode::Lexical,
+                                          .group = true});
+    REQUIRE(stdin_search.has_value());
+    REQUIRE(stdin_search->matches.size() == 1);
+    CHECK(stdin_search->matches[0].source == "-");
+    CHECK(stdin_search->matches[0].text == "user 10 note");
+    CHECK(stdin_search->matches[0].occurrences == 2);
+    CHECK(stdin_search->matches[0].mode == "lexical");
 }
 
 TEST_CASE("grouped grep and search stay byte-identical across thread counts", "[nesso][text]")
 {
     const TempDir dir{"nesso_group_threads"};
-    const auto log = dir.path() / "rows.log";
+    const auto log = dir.Path() / "rows.log";
     {
         std::ofstream output(log);
         REQUIRE(output);
@@ -514,10 +516,10 @@ TEST_CASE("grouped grep and search stay byte-identical across thread counts", "[
         REQUIRE(output);
     }
 
-    nesso::Config indexerConfig;
-    indexerConfig.threads = 1;
-    nesso::Nesso indexer{indexerConfig, std::make_unique<HashEmbedder>()};
-    const auto indexed = indexer.index({.files = {log}, .output = dir.path() / "corpus.nesso"});
+    nesso::Config indexer_config;
+    indexer_config.threads = 1;
+    nesso::Nesso indexer{indexer_config, std::make_unique<HashEmbedder>()};
+    const auto indexed = indexer.Index({.files = {log}, .output = dir.Path() / "corpus.nesso"});
     REQUIRE(indexed.has_value());
 
     const nesso::SearchMode modes[] = {nesso::SearchMode::Auto, nesso::SearchMode::Hybrid, nesso::SearchMode::Dense,
@@ -534,24 +536,24 @@ TEST_CASE("grouped grep and search stay byte-identical across thread counts", "[
                 nesso::Config config;
                 config.threads = budget;
                 nesso::Nesso app{config, std::make_unique<HashEmbedder>()};
-                const auto grepResult =
-                    app.grep({.query = "event", .files = {log}, .topK = 5000, .mode = mode, .group = group});
-                const auto searchResult = app.search({.query = "event",
-                                                      .index = dir.path() / "corpus.nesso",
-                                                      .topK = 5000,
-                                                      .mode = mode,
-                                                      .group = group});
-                REQUIRE(grepResult.has_value());
-                REQUIRE(searchResult.has_value());
-                CHECK(grepResult->grouped == group);
-                CHECK(searchResult->grouped == group);
-                grepped.push_back(*grepResult);
-                searched.push_back(*searchResult);
+                const auto grep_result =
+                    app.Grep({.query = "event", .files = {log}, .top_k = 5000, .mode = mode, .group = group});
+                const auto search_result = app.Search({.query = "event",
+                                                       .index = dir.Path() / "corpus.nesso",
+                                                       .top_k = 5000,
+                                                       .mode = mode,
+                                                       .group = group});
+                REQUIRE(grep_result.has_value());
+                REQUIRE(search_result.has_value());
+                CHECK(grep_result->grouped == group);
+                CHECK(search_result->grouped == group);
+                grepped.push_back(*grep_result);
+                searched.push_back(*search_result);
             }
-            requireSameResults(grepped[0], grepped[1]);
-            requireSameResults(grepped[0], grepped[2]);
-            requireSameResults(searched[0], searched[1]);
-            requireSameResults(searched[0], searched[2]);
+            RequireSameResults(grepped[0], grepped[1]);
+            RequireSameResults(grepped[0], grepped[2]);
+            RequireSameResults(searched[0], searched[1]);
+            RequireSameResults(searched[0], searched[2]);
         }
     }
 }

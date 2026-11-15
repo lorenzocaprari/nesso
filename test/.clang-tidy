@@ -53,4 +53,4 @@ Checks: >
   -readability-use-concise-preprocessor-directives
 
 CheckOptions:
-  readability-identifier-naming.FunctionIgnoredRegexp: '^(LLVMFuzzerTestOneInput|Make|Get|Compute|Read|Write|Parse).*'
+  readability-identifier-naming.FunctionIgnoredRegexp: '^(main|LLVMFuzzerTestOneInput|swap|hash)$'

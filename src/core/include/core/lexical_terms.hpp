@@ -35,7 +35,7 @@ inline constexpr std::string_view LEXICAL_TERMS_VERSION{"v1"};
 ///
 /// Order is left to right. Duplicates are kept, one entry per occurrence, so
 /// the result is a multiset: `a-a` is `a`, `a`, `a-a`.
-[[nodiscard]] std::vector<std::string> lexicalTerms(std::string_view text);
+[[nodiscard]] std::vector<std::string> LexicalTerms(std::string_view text);
 
 } // namespace nesso::core
 

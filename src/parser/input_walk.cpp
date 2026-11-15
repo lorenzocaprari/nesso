@@ -16,30 +16,32 @@
 namespace nesso::parser
 {
 
-// char may be signed. Order by unsigned bytes so a byte above 0x7F does not sort first.
-static bool pathBytesLess(const std::filesystem::path &left, const std::filesystem::path &right)
+// char may be signed. Order by unsigned bytes so a byte above 0x7F does not
+// sort first.
+static bool PathBytesLess(const std::filesystem::path &left, const std::filesystem::path &right)
 {
-    const std::string &leftBytes = left.native();
-    const std::string &rightBytes = right.native();
-    const std::size_t count = std::min(leftBytes.size(), rightBytes.size());
+    const std::string &left_bytes = left.native();
+    const std::string &right_bytes = right.native();
+    const std::size_t count = std::min(left_bytes.size(), right_bytes.size());
     for (std::size_t index = 0; index < count; ++index)
     {
-        const auto leftByte = static_cast<unsigned char>(leftBytes[index]);
-        const auto rightByte = static_cast<unsigned char>(rightBytes[index]);
-        if (leftByte != rightByte)
+        const auto left_byte = static_cast<unsigned char>(left_bytes[index]);
+        const auto right_byte = static_cast<unsigned char>(right_bytes[index]);
+        if (left_byte != right_byte)
         {
-            return leftByte < rightByte;
+            return left_byte < right_byte;
         }
     }
-    return leftBytes.size() < rightBytes.size();
+    return left_bytes.size() < right_bytes.size();
 }
 
 static std::expected<std::vector<std::filesystem::path>, InputWalkError>
-walkDirectory(const std::filesystem::path &root)
+WalkDirectory(const std::filesystem::path &root)
 {
     std::vector<std::filesystem::path> files;
     std::error_code error;
-    // directory_options::none does not follow directory symlinks, so a link cycle cannot loop.
+    // directory_options::none does not follow directory symlinks, so a link cycle
+    // cannot loop.
     std::filesystem::recursive_directory_iterator cursor(root, std::filesystem::directory_options::none, error);
     if (error)
     {
@@ -76,12 +78,12 @@ walkDirectory(const std::filesystem::path &root)
             return std::unexpected(InputWalkError{.path = current});
         }
     }
-    std::ranges::sort(files, pathBytesLess);
+    std::ranges::sort(files, PathBytesLess);
     return files;
 }
 
 std::expected<std::vector<std::filesystem::path>, InputWalkError>
-expandInputs(std::span<const std::filesystem::path> inputs)
+ExpandInputs(std::span<const std::filesystem::path> inputs)
 {
     std::vector<std::filesystem::path> files;
     for (const std::filesystem::path &input : inputs)
@@ -98,7 +100,7 @@ expandInputs(std::span<const std::filesystem::path> inputs)
             {
                 return std::unexpected(InputWalkError{.path = input});
             }
-            auto walked = walkDirectory(input);
+            auto walked = WalkDirectory(input);
             if (!walked)
             {
                 return std::unexpected(walked.error());

@@ -38,7 +38,7 @@
 namespace nesso
 {
 
-static std::string modelLoadNote(const std::vector<std::filesystem::path> &tried)
+static std::string ModelLoadNote(const std::vector<std::filesystem::path> &tried)
 {
     std::string text = "Tried";
     for (size_t index = 0; index < tried.size(); ++index)
@@ -66,10 +66,10 @@ struct FileStamp
     std::uintmax_t device = 0;
     std::uintmax_t inode = 0;
     std::intmax_t size = 0;
-    std::intmax_t modifiedSeconds = 0;
-    std::intmax_t modifiedNanoseconds = 0;
-    std::intmax_t changedSeconds = 0;
-    std::intmax_t changedNanoseconds = 0;
+    std::intmax_t modified_seconds = 0;
+    std::intmax_t modified_nanoseconds = 0;
+    std::intmax_t changed_seconds = 0;
+    std::intmax_t changed_nanoseconds = 0;
 
     friend bool operator==(const FileStamp &, const FileStamp &) = default;
 };
@@ -84,10 +84,10 @@ static std::optional<FileStamp> ReadFileStamp(const std::filesystem::path &path)
     return FileStamp{.device = static_cast<std::uintmax_t>(status.st_dev),
                      .inode = static_cast<std::uintmax_t>(status.st_ino),
                      .size = static_cast<std::intmax_t>(status.st_size),
-                     .modifiedSeconds = static_cast<std::intmax_t>(status.st_mtim.tv_sec),
-                     .modifiedNanoseconds = static_cast<std::intmax_t>(status.st_mtim.tv_nsec),
-                     .changedSeconds = static_cast<std::intmax_t>(status.st_ctim.tv_sec),
-                     .changedNanoseconds = static_cast<std::intmax_t>(status.st_ctim.tv_nsec)};
+                     .modified_seconds = static_cast<std::intmax_t>(status.st_mtim.tv_sec),
+                     .modified_nanoseconds = static_cast<std::intmax_t>(status.st_mtim.tv_nsec),
+                     .changed_seconds = static_cast<std::intmax_t>(status.st_ctim.tv_sec),
+                     .changed_nanoseconds = static_cast<std::intmax_t>(status.st_ctim.tv_nsec)};
 }
 
 namespace
@@ -101,10 +101,10 @@ class OnnxBoundEmbedder final : public nesso::embed::Embedder
         std::optional<FileStamp> vocab;
     };
 
-    OnnxBoundEmbedder(std::unique_ptr<nesso::embed::OnnxEmbedder> inner, const std::filesystem::path &modelDir,
+    OnnxBoundEmbedder(std::unique_ptr<nesso::embed::OnnxEmbedder> inner, const std::filesystem::path &model_dir,
                       const ModelFileStamps &stamps)
-        : inner_(std::move(inner)), modelPath_(modelDir / "model.onnx"), vocabPath_(modelDir / "vocab.txt"),
-          modelStamp_(stamps.model), vocabStamp_(stamps.vocab)
+        : inner_(std::move(inner)), model_path_(model_dir / "model.onnx"), vocab_path_(model_dir / "vocab.txt"),
+          model_stamp_(stamps.model), vocab_stamp_(stamps.vocab)
     {
     }
 
@@ -114,7 +114,7 @@ class OnnxBoundEmbedder final : public nesso::embed::Embedder
     OnnxBoundEmbedder &operator=(OnnxBoundEmbedder &&) = delete;
     ~OnnxBoundEmbedder() override = default;
 
-    [[nodiscard]] size_t sessions() const noexcept override { return inner_->sessions(); }
+    [[nodiscard]] size_t sessions() const noexcept override { return inner_->Sessions(); }
 
     [[nodiscard]] std::expected<nesso::embed::EmbedderIdentity, nesso::embed::EmbedError> identity() const override
     {
@@ -122,22 +122,22 @@ class OnnxBoundEmbedder final : public nesso::embed::Embedder
         {
             return *identity_;
         }
-        if (!modelStamp_ || !vocabStamp_ || ReadFileStamp(modelPath_) != modelStamp_ ||
-            ReadFileStamp(vocabPath_) != vocabStamp_)
+        if (!model_stamp_ || !vocab_stamp_ || ReadFileStamp(model_path_) != model_stamp_ ||
+            ReadFileStamp(vocab_path_) != vocab_stamp_)
         {
             return std::unexpected(nesso::embed::EmbedError::ModelLoadFailure);
         }
-        const auto modelHash = nesso::core::sha256File(modelPath_);
-        const auto vocabHash = nesso::core::sha256File(vocabPath_);
-        if (!modelHash || !vocabHash || ReadFileStamp(modelPath_) != modelStamp_ ||
-            ReadFileStamp(vocabPath_) != vocabStamp_)
+        const auto model_hash = nesso::core::Sha256File(model_path_);
+        const auto vocab_hash = nesso::core::Sha256File(vocab_path_);
+        if (!model_hash || !vocab_hash || ReadFileStamp(model_path_) != model_stamp_ ||
+            ReadFileStamp(vocab_path_) != vocab_stamp_)
         {
             return std::unexpected(nesso::embed::EmbedError::ModelLoadFailure);
         }
-        identity_ = nesso::embed::EmbedderIdentity{.modelId = std::string{nesso::embed::MINILM_MODEL_ID},
-                                                   .modelSha256 = nesso::core::hexSha256(*modelHash),
-                                                   .vocabSha256 = nesso::core::hexSha256(*vocabHash),
-                                                   .quantized = inner_->policy().quantized,
+        identity_ = nesso::embed::EmbedderIdentity{.model_id = std::string{nesso::embed::MINILM_MODEL_ID},
+                                                   .model_sha256 = nesso::core::HexSha256(*model_hash),
+                                                   .vocab_sha256 = nesso::core::HexSha256(*vocab_hash),
+                                                   .quantized = inner_->Policy().quantized,
                                                    .dimensions = nesso::embed::MINILM_EMBEDDING_DIMENSIONS};
         return *identity_;
     }
@@ -145,21 +145,21 @@ class OnnxBoundEmbedder final : public nesso::embed::Embedder
     [[nodiscard]] std::expected<std::vector<float>, nesso::embed::EmbedError>
     embed(std::string_view text) const override
     {
-        return inner_->embed(text);
+        return inner_->Embed(text);
     }
 
     [[nodiscard]] std::expected<std::vector<std::vector<float>>, nesso::embed::EmbedError>
-    embedBatch(std::span<const std::string> texts, ProgressCallback progress) const override
+    EmbedBatch(std::span<const std::string> texts, ProgressCallback progress) const override
     {
-        return inner_->embedBatch(texts, std::move(progress));
+        return inner_->EmbedBatch(texts, std::move(progress));
     }
 
   private:
     std::unique_ptr<nesso::embed::OnnxEmbedder> inner_;
-    std::filesystem::path modelPath_;
-    std::filesystem::path vocabPath_;
-    std::optional<FileStamp> modelStamp_;
-    std::optional<FileStamp> vocabStamp_;
+    std::filesystem::path model_path_;
+    std::filesystem::path vocab_path_;
+    std::optional<FileStamp> model_stamp_;
+    std::optional<FileStamp> vocab_stamp_;
     mutable std::optional<nesso::embed::EmbedderIdentity> identity_;
 };
 
@@ -178,51 +178,52 @@ Nesso::Nesso(Nesso &&) noexcept = default;
 
 Nesso &Nesso::operator=(Nesso &&) noexcept = default;
 
-std::expected<const nesso::embed::Embedder *, Error> Nesso::embedder() const
+std::expected<const nesso::embed::Embedder *, Error> Nesso::Embedder() const
 {
     if (!embedder_)
     {
         std::vector<std::filesystem::path> tried;
-        std::filesystem::path modelDir;
-        if (config_.modelDir.has_value())
+        std::filesystem::path model_dir;
+        if (config_.model_dir.has_value())
         {
-            modelDir = *config_.modelDir;
-            tried.push_back(modelDir);
+            model_dir = *config_.model_dir;
+            tried.push_back(model_dir);
         }
         else
         {
-            tried = modelDirCandidates();
-            modelDir = resolveDefaultModelDir();
+            tried = ModelDirCandidates();
+            model_dir = ResolveDefaultModelDir();
         }
-        auto modelStamp = ReadFileStamp(modelDir / "model.onnx");
-        auto vocabStamp = ReadFileStamp(modelDir / "vocab.txt");
-        auto created = nesso::embed::OnnxEmbedder::create(modelDir, config_.threads);
+        auto model_stamp = ReadFileStamp(model_dir / "model.onnx");
+        auto vocab_stamp = ReadFileStamp(model_dir / "vocab.txt");
+        auto created = nesso::embed::OnnxEmbedder::Create(model_dir, config_.threads);
         if (!created)
         {
             Error error{.kind = ErrorKind::EmbedderLoad,
-                        .cause = causeOf(created.error()),
-                        .path = modelDir,
+                        .cause = CauseOf(created.error()),
+                        .path = model_dir,
                         .note = {},
-                        .staleSources = {},
-                        .bundleSkips = {},
-                        .policyMismatch = false,
-                        .corpusVersion = {}};
-            error.note = modelLoadNote(tried);
+                        .stale_sources = {},
+                        .bundle_skips = {},
+                        .policy_mismatch = false,
+                        .corpus_version = {}};
+            error.note = ModelLoadNote(tried);
             return std::unexpected(std::move(error));
         }
-        if (const std::string warning = nesso::embed::overrideWarning((*created)->policy(), config_.threads);
+        if (const std::string warning = nesso::embed::OverrideWarning((*created)->Policy(), config_.threads);
             !warning.empty())
         {
             std::println(stderr, "{}", warning);
         }
-        if (ReadFileStamp(modelDir / "model.onnx") != modelStamp || ReadFileStamp(modelDir / "vocab.txt") != vocabStamp)
+        if (ReadFileStamp(model_dir / "model.onnx") != model_stamp ||
+            ReadFileStamp(model_dir / "vocab.txt") != vocab_stamp)
         {
-            modelStamp.reset();
-            vocabStamp.reset();
+            model_stamp.reset();
+            vocab_stamp.reset();
         }
         embedder_ = std::make_unique<OnnxBoundEmbedder>(
-            std::move(*created), modelDir,
-            OnnxBoundEmbedder::ModelFileStamps{.model = modelStamp, .vocab = vocabStamp});
+            std::move(*created), model_dir,
+            OnnxBoundEmbedder::ModelFileStamps{.model = model_stamp, .vocab = vocab_stamp});
     }
     return embedder_.get();
 }
@@ -230,25 +231,25 @@ std::expected<const nesso::embed::Embedder *, Error> Nesso::embedder() const
 namespace detail
 {
 
-size_t streamBatch() { return nesso::embed::BATCH_WINDOW; }
+size_t StreamBatch() { return nesso::embed::BATCH_WINDOW; }
 
 std::expected<std::vector<std::vector<float>>, Error>
-embedDistinct(std::span<const std::string> texts, const nesso::embed::Embedder &embedder, ProgressReporter &progress,
+EmbedDistinct(std::span<const std::string> texts, const nesso::embed::Embedder &embedder, ProgressReporter &progress,
               const EmbedProgressSpan &span, const LineCounts &counts)
 {
     const size_t distinct = texts.size();
-    auto embeddings = embedder.embedBatch(
-        texts, [&progress, span, distinct](size_t batchCompleted, size_t)
-        { progress.update(span.linesBefore + (span.linesInFlush * batchCompleted / distinct), span.total); });
+    auto embeddings = embedder.EmbedBatch(
+        texts, [&progress, span, distinct](size_t batch_completed, size_t)
+        { progress.Update(span.lines_before + (span.lines_in_flush * batch_completed / distinct), span.total); });
     if (!embeddings)
     {
-        return std::unexpected(makeError(ErrorKind::Embed, causeOf(embeddings.error()), {}, counts));
+        return std::unexpected(MakeError(ErrorKind::Embed, CauseOf(embeddings.error()), {}, counts));
     }
     if (embeddings->size() != distinct)
     {
-        return textFailure(ErrorKind::Embed, nesso::core::EngineError::MismatchedDimensions, counts);
+        return TextFailure(ErrorKind::Embed, nesso::core::EngineError::MismatchedDimensions, counts);
     }
-    progress.update(span.linesBefore + span.linesInFlush, span.total);
+    progress.Update(span.lines_before + span.lines_in_flush, span.total);
     return std::move(*embeddings);
 }
 
@@ -258,8 +259,9 @@ std::expected<nesso::core::CorpusPolicy, Error> MakeCorpusPolicy(const nesso::em
     const auto identity = embedder.identity();
     if (!identity)
     {
-        Error error = makeError(ErrorKind::EmbedderLoad, causeOf(identity.error()), {}, counts);
-        error.note = "Could not fingerprint the loaded model and vocabulary, or they changed; reload them and retry.";
+        Error error = MakeError(ErrorKind::EmbedderLoad, CauseOf(identity.error()), {}, counts);
+        error.note = "Could not fingerprint the loaded model and vocabulary, or "
+                     "they changed; reload them and retry.";
         return std::unexpected(std::move(error));
     }
     return nesso::core::CorpusPolicy{
@@ -270,15 +272,15 @@ std::expected<nesso::core::CorpusPolicy, Error> MakeCorpusPolicy(const nesso::em
         {"dimensions", std::to_string(identity->dimensions)},
         {"lexical.terms", std::string{nesso::core::LEXICAL_TERMS_VERSION}},
         {"mask", "template-v1"},
-        {"model.id", identity->modelId},
+        {"model.id", identity->model_id},
         {"model.quantization", identity->quantized ? "int8" : "fp32"},
-        {"model.sha256", identity->modelSha256},
+        {"model.sha256", identity->model_sha256},
         {"tokens.max", std::to_string(nesso::embed::DEFAULT_MAX_SEQUENCE_LENGTH)},
         {"truncate", std::format("{}-codepoints", MAX_LINE_LENGTH)},
-        {"vocab.sha256", identity->vocabSha256}};
+        {"vocab.sha256", identity->vocab_sha256}};
 }
 
-std::string_view effectiveModeName(EffectiveMode mode) noexcept
+std::string_view EffectiveModeName(EffectiveMode mode) noexcept
 {
     switch (mode)
     {
@@ -292,7 +294,7 @@ std::string_view effectiveModeName(EffectiveMode mode) noexcept
     std::unreachable();
 }
 
-EffectiveMode resolveEffectiveMode(SearchMode requested, nesso::core::QueryClass queryClass) noexcept
+EffectiveMode ResolveEffectiveMode(SearchMode requested, nesso::core::QueryClass query_class) noexcept
 {
     switch (requested)
     {
@@ -303,12 +305,12 @@ EffectiveMode resolveEffectiveMode(SearchMode requested, nesso::core::QueryClass
     case SearchMode::Lexical:
         return EffectiveMode::Lexical;
     case SearchMode::Auto:
-        return queryClass == nesso::core::QueryClass::Identifier ? EffectiveMode::Lexical : EffectiveMode::Hybrid;
+        return query_class == nesso::core::QueryClass::Identifier ? EffectiveMode::Lexical : EffectiveMode::Hybrid;
     }
     std::unreachable();
 }
 
-std::vector<std::string_view> queryTermViews(const std::vector<std::string> &terms)
+std::vector<std::string_view> QueryTermViews(const std::vector<std::string> &terms)
 {
     std::vector<std::string_view> views;
     views.reserve(terms.size());
@@ -319,9 +321,9 @@ std::vector<std::string_view> queryTermViews(const std::vector<std::string> &ter
     return views;
 }
 
-bool betterHit(float leftScore, uint64_t leftIndex, float rightScore, uint64_t rightIndex) noexcept
+bool BetterHit(float left_score, uint64_t left_index, float right_score, uint64_t right_index) noexcept
 {
-    return nesso::core::rankBefore(leftScore, leftIndex, rightScore, rightIndex);
+    return nesso::core::RankBefore(left_score, left_index, right_score, right_index);
 }
 
 } // namespace detail

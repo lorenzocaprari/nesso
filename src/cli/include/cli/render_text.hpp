@@ -11,7 +11,7 @@ namespace nesso::cli
 {
 
 /// Escapes control characters and invalid UTF-8 bytes for safe terminal output.
-[[nodiscard]] std::string escapeTerminalControls(std::string_view text);
+[[nodiscard]] std::string EscapeTerminalControls(std::string_view text);
 
 } // namespace nesso::cli
 

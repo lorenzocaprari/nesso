@@ -11,7 +11,8 @@
 namespace nesso::core
 {
 
-/// Fixed block size for ordinal z-score sums ([ADR 0011](docs/adr/0011-hybrid-search-and-identifier-routing.md)).
+/// Fixed block size for ordinal z-score sums ([ADR
+/// 0011](docs/adr/0011-hybrid-search-and-identifier-routing.md)).
 inline constexpr std::size_t ZSCORE_BLOCK = 4096;
 
 /// Dense fusion weight for hybrid scoring.
@@ -31,15 +32,15 @@ struct ZScoreStats
 [[nodiscard]] ZScoreStats ComputeZScoreStats(std::span<const double> values);
 
 /// `(value - mean) / deviation`, or `0` when `deviation` is 0.
-[[nodiscard]] double zScore(double value, const ZScoreStats &stats) noexcept;
+[[nodiscard]] double ZScore(double value, const ZScoreStats &stats) noexcept;
 
 /// `HYBRID_DENSE_WEIGHT * z(dense) + HYBRID_LEXICAL_WEIGHT * z(bm25)`, then
 /// `static_cast<float>`. Callers sort on that float.
-[[nodiscard]] float fuseHybridScore(double dense, double bm25, const ZScoreStats &denseStats,
-                                    const ZScoreStats &bm25Stats) noexcept;
+[[nodiscard]] float FuseHybridScore(double dense, double bm25, const ZScoreStats &dense_stats,
+                                    const ZScoreStats &bm25_stats) noexcept;
 
 /// One fused float per aligned dense/bm25 pair. Lengths must match.
-[[nodiscard]] std::vector<float> fuseHybridScores(std::span<const double> dense, std::span<const double> bm25);
+[[nodiscard]] std::vector<float> FuseHybridScores(std::span<const double> dense, std::span<const double> bm25);
 
 } // namespace nesso::core
 

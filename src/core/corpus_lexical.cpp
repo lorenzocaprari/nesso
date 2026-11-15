@@ -24,22 +24,22 @@
 namespace nesso::core::detail
 {
 
-static bool termByteLess(std::string_view left, std::string_view right) noexcept
+static bool TermByteLess(std::string_view left, std::string_view right) noexcept
 {
     const std::size_t count = left.size() < right.size() ? left.size() : right.size();
     for (std::size_t index = 0; index < count; ++index)
     {
-        const auto leftByte = static_cast<unsigned char>(left[index]);
-        const auto rightByte = static_cast<unsigned char>(right[index]);
-        if (leftByte != rightByte)
+        const auto left_byte = static_cast<unsigned char>(left[index]);
+        const auto right_byte = static_cast<unsigned char>(right[index]);
+        if (left_byte != right_byte)
         {
-            return leftByte < rightByte;
+            return left_byte < right_byte;
         }
     }
     return left.size() < right.size();
 }
 
-static bool appendVarint(std::vector<std::byte> &out, std::uint64_t value)
+static bool AppendVarint(std::vector<std::byte> &out, std::uint64_t value)
 {
     while (value >= 0x80)
     {
@@ -50,7 +50,7 @@ static bool appendVarint(std::vector<std::byte> &out, std::uint64_t value)
     return true;
 }
 
-static std::optional<std::uint64_t> readVarint(std::span<const std::byte> bytes, std::uint64_t &cursor)
+static std::optional<std::uint64_t> ReadVarint(std::span<const std::byte> bytes, std::uint64_t &cursor)
 {
     std::uint64_t value = 0;
     for (unsigned shift = 0; shift < 64; shift += 7)
@@ -73,7 +73,7 @@ static std::optional<std::uint64_t> readVarint(std::span<const std::byte> bytes,
     return std::nullopt;
 }
 
-static bool appendU64(std::vector<std::byte> &out, std::uint64_t value)
+static bool AppendU64(std::vector<std::byte> &out, std::uint64_t value)
 {
     std::array<std::byte, sizeof(value)> raw{};
     std::memcpy(raw.data(), &value, sizeof(value));
@@ -81,9 +81,9 @@ static bool appendU64(std::vector<std::byte> &out, std::uint64_t value)
     return true;
 }
 
-static bool readU64At(std::span<const std::byte> bytes, std::uint64_t &cursor, std::uint64_t &value)
+static bool ReadU64At(std::span<const std::byte> bytes, std::uint64_t &cursor, std::uint64_t &value)
 {
-    if (!rangeInside(cursor, sizeof(value), bytes.size()))
+    if (!RangeInside(cursor, sizeof(value), bytes.size()))
     {
         return false;
     }
@@ -91,11 +91,11 @@ static bool readU64At(std::span<const std::byte> bytes, std::uint64_t &cursor, s
     cursor += sizeof(value);
     return true;
 }
-static std::vector<std::string> buildLexicalDictionary(std::span<const std::vector<std::string>> lineTerms)
+static std::vector<std::string> BuildLexicalDictionary(std::span<const std::vector<std::string>> line_terms)
 {
     std::vector<std::string> dictionary;
     std::unordered_set<std::string> seen;
-    for (const std::vector<std::string> &terms : lineTerms)
+    for (const std::vector<std::string> &terms : line_terms)
     {
         for (const std::string &term : terms)
         {
@@ -105,11 +105,11 @@ static std::vector<std::string> buildLexicalDictionary(std::span<const std::vect
             }
         }
     }
-    std::ranges::sort(dictionary, termByteLess);
+    std::ranges::sort(dictionary, TermByteLess);
     return dictionary;
 }
 
-static std::unordered_map<std::string, std::uint32_t> lexicalTermIds(std::span<const std::string> dictionary)
+static std::unordered_map<std::string, std::uint32_t> LexicalTermIds(std::span<const std::string> dictionary)
 {
     std::unordered_map<std::string, std::uint32_t> ids;
     ids.reserve(dictionary.size());
@@ -120,11 +120,11 @@ static std::unordered_map<std::string, std::uint32_t> lexicalTermIds(std::span<c
     return ids;
 }
 
-static void appendLexicalDictionaryBytes(std::vector<std::byte> &out, std::span<const std::string> dictionary)
+static void AppendLexicalDictionaryBytes(std::vector<std::byte> &out, std::span<const std::string> dictionary)
 {
     for (const std::string &term : dictionary)
     {
-        appendVarint(out, term.size());
+        AppendVarint(out, term.size());
         for (const char byte : term)
         {
             out.push_back(static_cast<std::byte>(static_cast<unsigned char>(byte)));
@@ -132,7 +132,7 @@ static void appendLexicalDictionaryBytes(std::vector<std::byte> &out, std::span<
     }
 }
 
-static void appendLexicalLinePostings(std::vector<std::byte> &out, std::span<const std::string> terms,
+static void AppendLexicalLinePostings(std::vector<std::byte> &out, std::span<const std::string> terms,
                                       const std::unordered_map<std::string, std::uint32_t> &ids)
 {
     std::unordered_map<std::uint32_t, std::uint32_t> counts;
@@ -148,45 +148,45 @@ static void appendLexicalLinePostings(std::vector<std::byte> &out, std::span<con
         entries.emplace_back(termId, frequency);
     }
     std::ranges::sort(entries, [](const auto &left, const auto &right) { return left.first < right.first; });
-    appendVarint(out, entries.size());
+    AppendVarint(out, entries.size());
     std::uint32_t previous = 0;
     for (const auto &[termId, frequency] : entries)
     {
-        appendVarint(out, static_cast<std::uint64_t>(termId) - previous);
-        appendVarint(out, frequency);
+        AppendVarint(out, static_cast<std::uint64_t>(termId) - previous);
+        AppendVarint(out, frequency);
         previous = termId;
     }
-    appendVarint(out, terms.size());
+    AppendVarint(out, terms.size());
 }
 
-std::vector<std::byte> encodeLexicalSection(std::span<const std::vector<std::string>> lineTerms)
+std::vector<std::byte> EncodeLexicalSection(std::span<const std::vector<std::string>> line_terms)
 {
-    const std::vector<std::string> dictionary = buildLexicalDictionary(lineTerms);
-    const std::unordered_map<std::string, std::uint32_t> ids = lexicalTermIds(dictionary);
+    const std::vector<std::string> dictionary = BuildLexicalDictionary(line_terms);
+    const std::unordered_map<std::string, std::uint32_t> ids = LexicalTermIds(dictionary);
 
     std::vector<std::byte> out;
     out.reserve(16 + (dictionary.size() * 8));
-    appendU64(out, dictionary.size());
-    appendU64(out, lineTerms.size());
-    appendLexicalDictionaryBytes(out, dictionary);
-    for (const std::vector<std::string> &terms : lineTerms)
+    AppendU64(out, dictionary.size());
+    AppendU64(out, line_terms.size());
+    AppendLexicalDictionaryBytes(out, dictionary);
+    for (const std::vector<std::string> &terms : line_terms)
     {
-        appendLexicalLinePostings(out, terms, ids);
+        AppendLexicalLinePostings(out, terms, ids);
     }
     return out;
 }
-static std::expected<void, EngineError> decodeLexicalDictionary(std::span<const std::byte> bytes, std::uint64_t &cursor,
-                                                                std::uint64_t termCount,
-                                                                std::vector<std::string> &ownedTerms,
+static std::expected<void, EngineError> DecodeLexicalDictionary(std::span<const std::byte> bytes, std::uint64_t &cursor,
+                                                                std::uint64_t term_count,
+                                                                std::vector<std::string> &owned_terms,
                                                                 std::vector<std::string_view> &dictionary)
 {
-    ownedTerms.reserve(static_cast<std::size_t>(termCount));
-    dictionary.reserve(static_cast<std::size_t>(termCount));
+    owned_terms.reserve(static_cast<std::size_t>(term_count));
+    dictionary.reserve(static_cast<std::size_t>(term_count));
     std::string previous;
-    for (std::uint64_t index = 0; index < termCount; ++index)
+    for (std::uint64_t index = 0; index < term_count; ++index)
     {
-        const std::optional<std::uint64_t> length = readVarint(bytes, cursor);
-        if (!length || *length > MAX_TEXT_BYTES || !rangeInside(cursor, *length, bytes.size()))
+        const std::optional<std::uint64_t> length = ReadVarint(bytes, cursor);
+        if (!length || *length > MAX_TEXT_BYTES || !RangeInside(cursor, *length, bytes.size()))
         {
             return std::unexpected(EngineError::CorruptDatabase);
         }
@@ -197,57 +197,57 @@ static std::expected<void, EngineError> decodeLexicalDictionary(std::span<const 
                 static_cast<char>(static_cast<unsigned char>(bytes[cursor + offset]));
         }
         cursor += *length;
-        if (!previous.empty() && !termByteLess(previous, term))
+        if (!previous.empty() && !TermByteLess(previous, term))
         {
             return std::unexpected(EngineError::CorruptDatabase);
         }
         previous = term;
-        ownedTerms.push_back(std::move(term));
-        dictionary.emplace_back(ownedTerms.back());
+        owned_terms.push_back(std::move(term));
+        dictionary.emplace_back(owned_terms.back());
     }
     return {};
 }
 
 struct LexicalPostingLimits
 {
-    std::uint64_t termCount = 0;
-    std::uint64_t postingLines = 0;
+    std::uint64_t term_count = 0;
+    std::uint64_t posting_lines = 0;
 };
 
-static std::expected<void, EngineError> decodeLexicalPostings(std::span<const std::byte> bytes, std::uint64_t &cursor,
+static std::expected<void, EngineError> DecodeLexicalPostings(std::span<const std::byte> bytes, std::uint64_t &cursor,
                                                               const LexicalPostingLimits &limits,
                                                               std::vector<LexicalLinePostings> &postings)
 {
-    for (std::uint64_t line = 0; line < limits.postingLines; ++line)
+    for (std::uint64_t line = 0; line < limits.posting_lines; ++line)
     {
-        const std::optional<std::uint64_t> unique = readVarint(bytes, cursor);
-        if (!unique || *unique > limits.termCount)
+        const std::optional<std::uint64_t> unique = ReadVarint(bytes, cursor);
+        if (!unique || *unique > limits.term_count)
         {
             return std::unexpected(EngineError::CorruptDatabase);
         }
         LexicalLinePostings &row = postings[static_cast<std::size_t>(line)];
         row.entries.reserve(static_cast<std::size_t>(*unique));
-        std::uint64_t previousId = 0;
-        std::uint64_t lengthSum = 0;
+        std::uint64_t previous_id = 0;
+        std::uint64_t length_sum = 0;
         for (std::uint64_t index = 0; index < *unique; ++index)
         {
-            const std::optional<std::uint64_t> delta = readVarint(bytes, cursor);
-            const std::optional<std::uint64_t> frequency = readVarint(bytes, cursor);
-            if (!delta || !frequency || *frequency == 0 || *delta > limits.termCount ||
-                previousId + *delta >= limits.termCount || (index > 0 && *delta == 0))
+            const std::optional<std::uint64_t> delta = ReadVarint(bytes, cursor);
+            const std::optional<std::uint64_t> frequency = ReadVarint(bytes, cursor);
+            if (!delta || !frequency || *frequency == 0 || *delta > limits.term_count ||
+                previous_id + *delta >= limits.term_count || (index > 0 && *delta == 0))
             {
                 return std::unexpected(EngineError::CorruptDatabase);
             }
-            previousId += *delta;
-            lengthSum += *frequency;
-            if (lengthSum > MAX_TEXT_BYTES)
+            previous_id += *delta;
+            length_sum += *frequency;
+            if (length_sum > MAX_TEXT_BYTES)
             {
                 return std::unexpected(EngineError::CorruptDatabase);
             }
-            row.entries.emplace_back(static_cast<std::uint32_t>(previousId), static_cast<std::uint32_t>(*frequency));
+            row.entries.emplace_back(static_cast<std::uint32_t>(previous_id), static_cast<std::uint32_t>(*frequency));
         }
-        const std::optional<std::uint64_t> length = readVarint(bytes, cursor);
-        if (!length || *length != lengthSum || *length > MAX_TEXT_BYTES)
+        const std::optional<std::uint64_t> length = ReadVarint(bytes, cursor);
+        if (!length || *length != length_sum || *length > MAX_TEXT_BYTES)
         {
             return std::unexpected(EngineError::CorruptDatabase);
         }
@@ -256,29 +256,29 @@ static std::expected<void, EngineError> decodeLexicalPostings(std::span<const st
     return {};
 }
 
-std::expected<void, EngineError> decodeLexicalSection(std::span<const std::byte> bytes, std::uint64_t lineCount,
-                                                      std::vector<std::string> &ownedTerms,
+std::expected<void, EngineError> DecodeLexicalSection(std::span<const std::byte> bytes, std::uint64_t line_count,
+                                                      std::vector<std::string> &owned_terms,
                                                       std::vector<std::string_view> &dictionary,
                                                       std::vector<LexicalLinePostings> &postings)
 {
     std::uint64_t cursor = 0;
-    std::uint64_t termCount = 0;
-    std::uint64_t postingLines = 0;
-    if (!readU64At(bytes, cursor, termCount) || !readU64At(bytes, cursor, postingLines) ||
-        termCount > MAX_LEXICAL_TERMS || postingLines != lineCount)
+    std::uint64_t term_count = 0;
+    std::uint64_t posting_lines = 0;
+    if (!ReadU64At(bytes, cursor, term_count) || !ReadU64At(bytes, cursor, posting_lines) ||
+        term_count > MAX_LEXICAL_TERMS || posting_lines != line_count)
     {
         return std::unexpected(EngineError::CorruptDatabase);
     }
-    ownedTerms.clear();
+    owned_terms.clear();
     dictionary.clear();
     postings.clear();
-    if (const auto decoded = decodeLexicalDictionary(bytes, cursor, termCount, ownedTerms, dictionary); !decoded)
+    if (const auto decoded = DecodeLexicalDictionary(bytes, cursor, term_count, owned_terms, dictionary); !decoded)
     {
         return std::unexpected(decoded.error());
     }
-    postings.resize(static_cast<std::size_t>(postingLines));
+    postings.resize(static_cast<std::size_t>(posting_lines));
     if (const auto decoded =
-            decodeLexicalPostings(bytes, cursor, {.termCount = termCount, .postingLines = postingLines}, postings);
+            DecodeLexicalPostings(bytes, cursor, {.term_count = term_count, .posting_lines = posting_lines}, postings);
         !decoded)
     {
         return std::unexpected(decoded.error());

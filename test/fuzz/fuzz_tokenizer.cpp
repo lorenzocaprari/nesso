@@ -16,7 +16,7 @@ namespace
 
 constexpr std::size_t MAX_ENCODE_BYTES = 65536;
 
-std::string bytesFrom(const std::uint8_t *data, std::size_t size)
+std::string BytesFrom(const std::uint8_t *data, std::size_t size)
 {
     if (data == nullptr || size == 0)
     {
@@ -29,39 +29,39 @@ std::string bytesFrom(const std::uint8_t *data, std::size_t size)
 
 extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t *data, std::size_t size)
 {
-    const std::string bytes = bytesFrom(data, size);
-    const auto inputPath =
+    const std::string bytes = BytesFrom(data, size);
+    const auto input_path =
         std::filesystem::temp_directory_path() / ("nesso-fuzz-input-" + std::to_string(::getpid()) + ".txt");
     {
-        std::ofstream out(inputPath, std::ios::binary | std::ios::trunc);
+        std::ofstream out(input_path, std::ios::binary | std::ios::trunc);
         out.write(bytes.data(), static_cast<std::streamsize>(bytes.size()));
     }
 
-    if (auto loaded = nesso::embed::WordPieceTokenizer::fromVocabFile(inputPath))
+    if (auto loaded = nesso::embed::WordPieceTokenizer::FromVocabFile(input_path))
     {
-        static_cast<void>(loaded->encode("the quick brown fox"));
+        static_cast<void>(loaded->Encode("the quick brown fox"));
     }
 
-    const auto vocabPath =
+    const auto vocab_path =
         std::filesystem::temp_directory_path() / ("nesso-fuzz-vocab-" + std::to_string(::getpid()) + ".txt");
     {
-        std::ofstream vocab(vocabPath, std::ios::trunc);
+        std::ofstream vocab(vocab_path, std::ios::trunc);
         vocab << "[CLS]\n[SEP]\n[UNK]\nhello\nworld\n##ing\n";
     }
 
-    if (auto tok = nesso::embed::WordPieceTokenizer::fromVocabFile(vocabPath))
+    if (auto tok = nesso::embed::WordPieceTokenizer::FromVocabFile(vocab_path))
     {
         std::string capped = bytes;
         if (capped.size() > MAX_ENCODE_BYTES)
         {
             capped.resize(MAX_ENCODE_BYTES);
         }
-        static_cast<void>(tok->encode(capped));
+        static_cast<void>(tok->Encode(capped));
     }
 
     std::error_code ec;
-    std::filesystem::remove(inputPath, ec);
-    std::filesystem::remove(vocabPath, ec);
+    std::filesystem::remove(input_path, ec);
+    std::filesystem::remove(vocab_path, ec);
     return 0;
 }
 

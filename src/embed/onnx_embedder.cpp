@@ -35,37 +35,37 @@ namespace nesso::embed
 
 struct HiddenShape
 {
-    size_t sequenceLength = 0;
-    size_t hiddenSize = 0;
+    size_t sequence_length = 0;
+    size_t hidden_size = 0;
 };
 
-static std::vector<float> meanPoolAndNormalize(std::span<const float> hiddenStates,
-                                               std::span<const int64_t> attentionMask, const HiddenShape &shape)
+static std::vector<float> MeanPoolAndNormalize(std::span<const float> hidden_states,
+                                               std::span<const int64_t> attention_mask, const HiddenShape &shape)
 {
-    std::vector<float> pooled(shape.hiddenSize, 0.0F);
-    size_t activeTokens = 0;
-    for (size_t token = 0; token < shape.sequenceLength; ++token)
+    std::vector<float> pooled(shape.hidden_size, 0.0F);
+    size_t active_tokens = 0;
+    for (size_t token = 0; token < shape.sequence_length; ++token)
     {
-        if (attentionMask[token] == 0)
+        if (attention_mask[token] == 0)
         {
             continue;
         }
-        ++activeTokens;
-        const std::span<const float> tokenVector = hiddenStates.subspan(token * shape.hiddenSize, shape.hiddenSize);
-        for (size_t dim = 0; dim < shape.hiddenSize; ++dim)
+        ++active_tokens;
+        const std::span<const float> token_vector = hidden_states.subspan(token * shape.hidden_size, shape.hidden_size);
+        for (size_t dim = 0; dim < shape.hidden_size; ++dim)
         {
-            pooled[dim] += tokenVector[dim];
+            pooled[dim] += token_vector[dim];
         }
     }
 
-    if (activeTokens == 0)
+    if (active_tokens == 0)
     {
         return pooled;
     }
 
     for (float &value : pooled)
     {
-        value /= static_cast<float>(activeTokens);
+        value /= static_cast<float>(active_tokens);
     }
 
     float norm = 0.0F;
@@ -86,9 +86,9 @@ static std::vector<float> meanPoolAndNormalize(std::span<const float> hiddenStat
 
 struct ModelIo
 {
-    std::string inputIds;
-    std::string attentionMask;
-    std::string tokenTypeIds;
+    std::string input_ids;
+    std::string attention_mask;
+    std::string token_type_ids;
     std::string output;
 };
 
@@ -97,39 +97,39 @@ struct ModelIo
 // ASan for the 22 MiB int8 MiniLM. grep, index, and search each load the model,
 // so that copy dominated the Debug BDD suite. The overlap keeps a marker that
 // straddles two reads.
-static bool modelIsQuantized(const std::filesystem::path &modelPath)
+static bool ModelIsQuantized(const std::filesystem::path &model_path)
 {
-    constexpr std::string_view kMatMulInteger = "MatMulInteger";
-    constexpr std::string_view kDynamicQuantizeLinear = "DynamicQuantizeLinear";
-    constexpr std::size_t kOverlap = kDynamicQuantizeLinear.size() - 1;
-    constexpr std::size_t kChunk = std::size_t{64} * std::size_t{1024};
+    constexpr std::string_view k_mat_mul_integer = "MatMulInteger";
+    constexpr std::string_view k_dynamic_quantize_linear = "DynamicQuantizeLinear";
+    constexpr std::size_t k_overlap = k_dynamic_quantize_linear.size() - 1;
+    constexpr std::size_t k_chunk = std::size_t{64} * std::size_t{1024};
 
-    std::ifstream input(modelPath, std::ios::binary);
-    std::array<char, kOverlap + kChunk> buffer{};
+    std::ifstream input(model_path, std::ios::binary);
+    std::array<char, k_overlap + k_chunk> buffer{};
     const std::span<char> storage{buffer};
     std::size_t kept = 0;
     while (input)
     {
-        input.read(storage.subspan(kept).data(), static_cast<std::streamsize>(kChunk));
+        input.read(storage.subspan(kept).data(), static_cast<std::streamsize>(k_chunk));
         const auto got = static_cast<std::size_t>(input.gcount());
         const std::string_view window(storage.data(), kept + got);
-        if (window.find(kMatMulInteger) != std::string_view::npos ||
-            window.find(kDynamicQuantizeLinear) != std::string_view::npos)
+        if (window.find(k_mat_mul_integer) != std::string_view::npos ||
+            window.find(k_dynamic_quantize_linear) != std::string_view::npos)
         {
             return true;
         }
-        if (got < kChunk)
+        if (got < k_chunk)
         {
             return false;
         }
-        const std::span<char> overlap = storage.subspan(window.size() - kOverlap, kOverlap);
-        std::memmove(storage.data(), overlap.data(), kOverlap);
-        kept = kOverlap;
+        const std::span<char> overlap = storage.subspan(window.size() - k_overlap, k_overlap);
+        std::memmove(storage.data(), overlap.data(), k_overlap);
+        kept = k_overlap;
     }
     return false;
 }
 
-static Ort::SessionOptions makeSessionOptions(int intraOpThreads)
+static Ort::SessionOptions MakeSessionOptions(int intra_op_threads)
 {
     Ort::SessionOptions options;
     // Inter-op parallelism finishes graph nodes in an arbitrary order, so two
@@ -137,7 +137,7 @@ static Ort::SessionOptions makeSessionOptions(int intraOpThreads)
     // size keeps the GEMM reduction order stable.
     options.SetExecutionMode(ORT_SEQUENTIAL);
     options.SetInterOpNumThreads(1);
-    options.SetIntraOpNumThreads(intraOpThreads < 1 ? 1 : intraOpThreads);
+    options.SetIntraOpNumThreads(intra_op_threads < 1 ? 1 : intra_op_threads);
     options.SetGraphOptimizationLevel(ORT_ENABLE_ALL);
     // ORT 1.18 U8S8 quantized GEMM overflows on AVX2 and on AVX-512 without
     // VNNI. The garbage depends on how the GEMM is tiled, which is why the
@@ -152,92 +152,92 @@ static Ort::SessionOptions makeSessionOptions(int intraOpThreads)
 // before the first environment and session. A false result means the filter
 // was not installed or tile permission was already granted, so the int8 model
 // may use the AMX kernel. That case is one stderr line. A refusal stays quiet.
-static Ort::Env makeEnv()
+static Ort::Env MakeEnv()
 {
-    reportAmxGuard(denyAmxTiles(), stderr);
+    ReportAmxGuard(DenyAmxTiles(), stderr);
     return Ort::Env{ORT_LOGGING_LEVEL_WARNING, "nesso-embed"};
 }
 
-static ModelIo readModelIo(Ort::Session &session)
+static ModelIo ReadModelIo(Ort::Session &session)
 {
     const Ort::AllocatorWithDefaultOptions allocator;
-    ModelIo modelIo;
+    ModelIo model_io;
     for (size_t index = 0; index < session.GetInputCount(); ++index)
     {
         const auto allocated = session.GetInputNameAllocated(index, allocator);
         const std::string name = allocated.get();
         if (name == "input_ids")
         {
-            modelIo.inputIds = name;
+            model_io.input_ids = name;
         }
         else if (name == "attention_mask")
         {
-            modelIo.attentionMask = name;
+            model_io.attention_mask = name;
         }
         else if (name == "token_type_ids")
         {
-            modelIo.tokenTypeIds = name;
+            model_io.token_type_ids = name;
         }
     }
-    if (modelIo.inputIds.empty() || modelIo.attentionMask.empty() || modelIo.tokenTypeIds.empty() ||
+    if (model_io.input_ids.empty() || model_io.attention_mask.empty() || model_io.token_type_ids.empty() ||
         session.GetOutputCount() < 1)
     {
         throw std::runtime_error("model is missing input_ids, attention_mask, "
                                  "token_type_ids, or an output");
     }
 
-    const auto outputName = session.GetOutputNameAllocated(0, allocator);
-    modelIo.output = outputName.get();
+    const auto output_name = session.GetOutputNameAllocated(0, allocator);
+    model_io.output = output_name.get();
 
     const auto shape = session.GetOutputTypeInfo(0).GetTensorTypeAndShapeInfo().GetShape();
     if (shape.size() != 3 || std::cmp_not_equal(shape[2], MINILM_EMBEDDING_DIMENSIONS))
     {
         throw std::runtime_error("model hidden size is not 384");
     }
-    return modelIo;
+    return model_io;
 }
 
 class OnnxEmbedder::SessionImpl
 {
   public:
-    SessionImpl(const std::filesystem::path &modelPath, size_t requestedThreads);
-    SessionImpl(const std::filesystem::path &modelPath, const SessionPolicy &policy);
+    SessionImpl(const std::filesystem::path &model_path, size_t requested_threads);
+    SessionImpl(const std::filesystem::path &model_path, const SessionPolicy &policy);
 
-    [[nodiscard]] const SessionPolicy &policy() const noexcept { return policy_; }
+    [[nodiscard]] const SessionPolicy &Policy() const noexcept { return policy_; }
 
     [[nodiscard]] std::expected<std::vector<std::vector<float>>, EmbedError>
-    inferAll(std::span<const TokenizedInput> encoded, const std::function<void(size_t)> &onCompleted);
+    InferAll(std::span<const TokenizedInput> encoded, const std::function<void(size_t)> &on_completed);
 
   private:
     [[nodiscard]] std::expected<std::vector<std::vector<float>>, EmbedError>
-    infer(Ort::Session &session, std::span<const TokenizedInput> encoded, std::span<const size_t> indices) const;
+    Infer(Ort::Session &session, std::span<const TokenizedInput> encoded, std::span<const size_t> indices) const;
 
-    Ort::Env env_ = makeEnv();
+    Ort::Env env_ = MakeEnv();
     std::vector<std::unique_ptr<Ort::Session>> sessions_;
     ModelIo io_;
     SessionPolicy policy_{};
 };
 
-OnnxEmbedder::SessionImpl::SessionImpl(const std::filesystem::path &modelPath, size_t requestedThreads)
-    : SessionImpl(modelPath, MakeSessionPolicy(modelIsQuantized(modelPath), requestedThreads, readMachine()))
+OnnxEmbedder::SessionImpl::SessionImpl(const std::filesystem::path &model_path, size_t requested_threads)
+    : SessionImpl(model_path, MakeSessionPolicy(ModelIsQuantized(model_path), requested_threads, ReadMachine()))
 {
 }
 
-OnnxEmbedder::SessionImpl::SessionImpl(const std::filesystem::path &modelPath, const SessionPolicy &policy)
+OnnxEmbedder::SessionImpl::SessionImpl(const std::filesystem::path &model_path, const SessionPolicy &policy)
     : policy_(policy)
 {
-    const Ort::SessionOptions options = makeSessionOptions(policy_.intraOpThreads);
-    const std::string path = modelPath.string();
+    const Ort::SessionOptions options = MakeSessionOptions(policy_.intra_op_threads);
+    const std::string path = model_path.string();
     sessions_.reserve(policy_.sessions);
     for (size_t index = 0; index < policy_.sessions; ++index)
     {
         sessions_.push_back(std::make_unique<Ort::Session>(env_, path.c_str(), options));
     }
-    io_ = readModelIo(*sessions_.front());
+    io_ = ReadModelIo(*sessions_.front());
 }
 
 std::expected<std::vector<std::vector<float>>, EmbedError>
-OnnxEmbedder::SessionImpl::infer(Ort::Session &session, std::span<const TokenizedInput> encoded,
+OnnxEmbedder::SessionImpl::Infer(Ort::Session &session, std::span<const TokenizedInput> encoded,
                                  std::span<const size_t> indices) const
 {
     if (indices.empty())
@@ -245,48 +245,50 @@ OnnxEmbedder::SessionImpl::infer(Ort::Session &session, std::span<const Tokenize
         return std::unexpected(EmbedError::InvalidInput);
     }
 
-    size_t paddedLength = 0;
+    size_t padded_length = 0;
     for (const size_t index : indices)
     {
-        paddedLength = std::max(paddedLength, encoded[index].inputIds.size());
+        padded_length = std::max(padded_length, encoded[index].input_ids.size());
     }
-    if (paddedLength == 0)
+    if (padded_length == 0)
     {
         return std::unexpected(EmbedError::InferenceFailure);
     }
 
-    const size_t batchSize = indices.size();
-    std::vector<int64_t> flatInputIds(batchSize * paddedLength, 0);
-    std::vector<int64_t> flatAttentionMask(batchSize * paddedLength, 0);
-    std::vector<int64_t> flatTokenTypeIds(batchSize * paddedLength, 0);
-    for (size_t batchIndex = 0; batchIndex < batchSize; ++batchIndex)
+    const size_t batch_size = indices.size();
+    std::vector<int64_t> flat_input_ids(batch_size * padded_length, 0);
+    std::vector<int64_t> flat_attention_mask(batch_size * padded_length, 0);
+    std::vector<int64_t> flat_token_type_ids(batch_size * padded_length, 0);
+    for (size_t batch_index = 0; batch_index < batch_size; ++batch_index)
     {
-        const TokenizedInput &item = encoded[indices[batchIndex]];
-        for (size_t token = 0; token < item.inputIds.size(); ++token)
+        const TokenizedInput &item = encoded[indices[batch_index]];
+        for (size_t token = 0; token < item.input_ids.size(); ++token)
         {
-            const size_t offset = (batchIndex * paddedLength) + token;
-            flatInputIds[offset] = item.inputIds[token];
-            flatAttentionMask[offset] = item.attentionMask[token];
-            flatTokenTypeIds[offset] = item.tokenTypeIds[token];
+            const size_t offset = (batch_index * padded_length) + token;
+            flat_input_ids[offset] = item.input_ids[token];
+            flat_attention_mask[offset] = item.attention_mask[token];
+            flat_token_type_ids[offset] = item.token_type_ids[token];
         }
     }
 
     try
     {
-        const Ort::MemoryInfo memoryInfo = Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault);
-        const std::array<int64_t, 2> inputShape{static_cast<int64_t>(batchSize), static_cast<int64_t>(paddedLength)};
-        auto inputIdsTensor = Ort::Value::CreateTensor<int64_t>(memoryInfo, flatInputIds.data(), flatInputIds.size(),
-                                                                inputShape.data(), inputShape.size());
-        auto attentionMaskTensor = Ort::Value::CreateTensor<int64_t>(
-            memoryInfo, flatAttentionMask.data(), flatAttentionMask.size(), inputShape.data(), inputShape.size());
-        auto tokenTypeIdsTensor = Ort::Value::CreateTensor<int64_t>(
-            memoryInfo, flatTokenTypeIds.data(), flatTokenTypeIds.size(), inputShape.data(), inputShape.size());
+        const Ort::MemoryInfo memory_info = Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault);
+        const std::array<int64_t, 2> input_shape{static_cast<int64_t>(batch_size), static_cast<int64_t>(padded_length)};
+        auto input_ids_tensor = Ort::Value::CreateTensor<int64_t>(
+            memory_info, flat_input_ids.data(), flat_input_ids.size(), input_shape.data(), input_shape.size());
+        auto attention_mask_tensor =
+            Ort::Value::CreateTensor<int64_t>(memory_info, flat_attention_mask.data(), flat_attention_mask.size(),
+                                              input_shape.data(), input_shape.size());
+        auto token_type_ids_tensor =
+            Ort::Value::CreateTensor<int64_t>(memory_info, flat_token_type_ids.data(), flat_token_type_ids.size(),
+                                              input_shape.data(), input_shape.size());
 
-        const std::array<const char *, 3> inputNames{io_.inputIds.c_str(), io_.attentionMask.c_str(),
-                                                     io_.tokenTypeIds.c_str()};
-        const std::array<const char *, 1> outputNames{io_.output.c_str()};
-        std::array<Ort::Value, 3> inputs{std::move(inputIdsTensor), std::move(attentionMaskTensor),
-                                         std::move(tokenTypeIdsTensor)};
+        const std::array<const char *, 3> input_names{io_.input_ids.c_str(), io_.attention_mask.c_str(),
+                                                      io_.token_type_ids.c_str()};
+        const std::array<const char *, 1> output_names{io_.output.c_str()};
+        std::array<Ort::Value, 3> inputs{std::move(input_ids_tensor), std::move(attention_mask_tensor),
+                                         std::move(token_type_ids_tensor)};
 
         // Wide int8 sessions and fp32 shrink the CPU arena after this Run. The
         // arena stays enabled: shrinkage is refused when it is disabled. x86
@@ -294,17 +296,17 @@ OnnxEmbedder::SessionImpl::infer(Ort::Session &session, std::span<const Tokenize
         // A null run-options pointer is what a budget of 4 or less passes; it
         // cannot take a config entry.
         std::vector<Ort::Value> outputs;
-        if (policy_.shrinkArena)
+        if (policy_.shrink_arena)
         {
-            Ort::RunOptions runOptions;
-            runOptions.AddConfigEntry("memory.enable_memory_arena_shrinkage", "cpu:0");
-            outputs = session.Run(runOptions, inputNames.data(), inputs.data(), inputs.size(), outputNames.data(),
-                                  outputNames.size());
+            Ort::RunOptions run_options;
+            run_options.AddConfigEntry("memory.enable_memory_arena_shrinkage", "cpu:0");
+            outputs = session.Run(run_options, input_names.data(), inputs.data(), inputs.size(), output_names.data(),
+                                  output_names.size());
         }
         else
         {
-            outputs = session.Run(Ort::RunOptions{nullptr}, inputNames.data(), inputs.data(), inputs.size(),
-                                  outputNames.data(), outputNames.size());
+            outputs = session.Run(Ort::RunOptions{nullptr}, input_names.data(), inputs.data(), inputs.size(),
+                                  output_names.data(), output_names.size());
         }
         if (outputs.empty())
         {
@@ -312,24 +314,24 @@ OnnxEmbedder::SessionImpl::infer(Ort::Session &session, std::span<const Tokenize
         }
 
         const auto &output = outputs.front();
-        const auto *hiddenStates = output.GetTensorData<float>();
-        const auto outputShape = output.GetTensorTypeAndShapeInfo().GetShape();
-        if (!matchesMiniLmHiddenStatesShape(outputShape, batchSize, paddedLength))
+        const auto *hidden_states = output.GetTensorData<float>();
+        const auto output_shape = output.GetTensorTypeAndShapeInfo().GetShape();
+        if (!MatchesMiniLmHiddenStatesShape(output_shape, batch_size, padded_length))
         {
             return std::unexpected(EmbedError::InferenceFailure);
         }
-        const std::size_t rowWidth = paddedLength * MINILM_EMBEDDING_DIMENSIONS;
-        const std::span<const float> hidden{hiddenStates, batchSize * rowWidth};
-        const std::span<const int64_t> attention{flatAttentionMask};
+        const std::size_t row_width = padded_length * MINILM_EMBEDDING_DIMENSIONS;
+        const std::span<const float> hidden{hidden_states, batch_size * row_width};
+        const std::span<const int64_t> attention{flat_attention_mask};
 
         std::vector<std::vector<float>> embeddings;
-        embeddings.reserve(batchSize);
-        for (size_t batchIndex = 0; batchIndex < batchSize; ++batchIndex)
+        embeddings.reserve(batch_size);
+        for (size_t batch_index = 0; batch_index < batch_size; ++batch_index)
         {
             embeddings.push_back(
-                meanPoolAndNormalize(hidden.subspan(batchIndex * rowWidth, rowWidth),
-                                     attention.subspan(batchIndex * paddedLength, paddedLength),
-                                     {.sequenceLength = paddedLength, .hiddenSize = MINILM_EMBEDDING_DIMENSIONS}));
+                MeanPoolAndNormalize(hidden.subspan(batch_index * row_width, row_width),
+                                     attention.subspan(batch_index * padded_length, padded_length),
+                                     {.sequence_length = padded_length, .hidden_size = MINILM_EMBEDDING_DIMENSIONS}));
         }
         return embeddings;
     }
@@ -339,12 +341,12 @@ OnnxEmbedder::SessionImpl::infer(Ort::Session &session, std::span<const Tokenize
     }
 }
 
-static std::expected<void, EmbedError> reportWaveProgress(std::span<const SlotResult> parts, size_t waveStart,
-                                                          size_t waveBatches,
-                                                          const std::function<void(size_t)> &onCompleted)
+static std::expected<void, EmbedError> ReportWaveProgress(std::span<const SlotResult> parts, size_t wave_start,
+                                                          size_t wave_batches,
+                                                          const std::function<void(size_t)> &on_completed)
 {
     size_t completed = 0;
-    for (size_t index = 0; index < waveStart + waveBatches; ++index)
+    for (size_t index = 0; index < wave_start + wave_batches; ++index)
     {
         if (!parts[index])
         {
@@ -353,115 +355,115 @@ static std::expected<void, EmbedError> reportWaveProgress(std::span<const SlotRe
         completed += parts[index]->size();
         // A wave runs several batches at once. Report each one so
         // progress still advances by a batch.
-        if (index >= waveStart)
+        if (index >= wave_start)
         {
-            onCompleted(completed);
+            on_completed(completed);
         }
     }
     return {};
 }
 
-static void storeWaveParts(const BatchWave &wave, std::vector<SlotResult> &waveOutcome, std::vector<SlotResult> &parts)
+static void StoreWaveParts(const BatchWave &wave, std::vector<SlotResult> &wave_outcome, std::vector<SlotResult> &parts)
 {
-    for (std::size_t slot = 0; slot < wave.batchIndices.size(); ++slot)
+    for (std::size_t slot = 0; slot < wave.batch_indices.size(); ++slot)
     {
-        parts[wave.batchIndices[slot]] = std::move(waveOutcome[slot]);
+        parts[wave.batch_indices[slot]] = std::move(wave_outcome[slot]);
     }
 }
 
 std::expected<std::vector<std::vector<float>>, EmbedError>
-OnnxEmbedder::SessionImpl::inferAll(std::span<const TokenizedInput> encoded,
-                                    const std::function<void(size_t)> &onCompleted)
+OnnxEmbedder::SessionImpl::InferAll(std::span<const TokenizedInput> encoded,
+                                    const std::function<void(size_t)> &on_completed)
 {
     if (encoded.empty())
     {
         return std::unexpected(EmbedError::InvalidInput);
     }
 
-    std::vector<size_t> tokenCounts;
-    tokenCounts.reserve(encoded.size());
+    std::vector<size_t> token_counts;
+    token_counts.reserve(encoded.size());
     for (const TokenizedInput &item : encoded)
     {
-        tokenCounts.push_back(item.inputIds.size());
+        token_counts.push_back(item.input_ids.size());
     }
-    const BatchPlan plan = planBatches(tokenCounts);
+    const BatchPlan plan = PlanBatches(token_counts);
     std::vector<SlotResult> parts(plan.batches.size());
-    const std::vector<BatchWave> waves = batchWaves(plan.batches.size(), sessions_.size());
-    size_t waveStart = 0;
+    const std::vector<BatchWave> waves = BatchWaves(plan.batches.size(), sessions_.size());
+    size_t wave_start = 0;
     for (const BatchWave &wave : waves)
     {
-        auto waveOutcome =
-            runInferenceWave(wave.batchIndices.size(),
+        auto wave_outcome =
+            RunInferenceWave(wave.batch_indices.size(),
                              [this, &wave, encoded, &plan](std::size_t slot)
                              {
-                                 const std::size_t batchIndex = wave.batchIndices[slot];
-                                 return infer(*sessions_[slot], encoded, plan.batches[batchIndex].indices);
+                                 const std::size_t batch_index = wave.batch_indices[slot];
+                                 return Infer(*sessions_[slot], encoded, plan.batches[batch_index].indices);
                              });
-        if (!waveOutcome)
+        if (!wave_outcome)
         {
-            return std::unexpected(waveOutcome.error());
+            return std::unexpected(wave_outcome.error());
         }
-        storeWaveParts(wave, *waveOutcome, parts);
-        if (onCompleted)
+        StoreWaveParts(wave, *wave_outcome, parts);
+        if (on_completed)
         {
-            if (const auto reported = reportWaveProgress(parts, waveStart, wave.batchIndices.size(), onCompleted);
+            if (const auto reported = ReportWaveProgress(parts, wave_start, wave.batch_indices.size(), on_completed);
                 !reported)
             {
                 return std::unexpected(reported.error());
             }
         }
-        waveStart += wave.batchIndices.size();
+        wave_start += wave.batch_indices.size();
     }
 
-    std::vector<std::vector<float>> planOrder;
-    planOrder.reserve(encoded.size());
+    std::vector<std::vector<float>> plan_order;
+    plan_order.reserve(encoded.size());
     for (const auto &part : parts)
     {
         if (!part)
         {
             return std::unexpected(part.error());
         }
-        planOrder.insert(planOrder.end(), part->begin(), part->end());
+        plan_order.insert(plan_order.end(), part->begin(), part->end());
     }
-    return scatter(plan, std::move(planOrder));
+    return Scatter(plan, std::move(plan_order));
 }
 
-OnnxEmbedder::OnnxEmbedder(WordPieceTokenizer tokenizer, const std::filesystem::path &modelPath, size_t threads)
-    : OnnxEmbedder(std::move(tokenizer), modelPath,
-                   MakeSessionPolicy(modelIsQuantized(modelPath), threads, readMachine()))
+OnnxEmbedder::OnnxEmbedder(WordPieceTokenizer tokenizer, const std::filesystem::path &model_path, size_t threads)
+    : OnnxEmbedder(std::move(tokenizer), model_path,
+                   MakeSessionPolicy(ModelIsQuantized(model_path), threads, ReadMachine()))
 {
 }
 
-OnnxEmbedder::OnnxEmbedder(WordPieceTokenizer tokenizer, const std::filesystem::path &modelPath,
+OnnxEmbedder::OnnxEmbedder(WordPieceTokenizer tokenizer, const std::filesystem::path &model_path,
                            const SessionPolicy &policy)
-    : session_(std::make_unique<SessionImpl>(modelPath, policy)), tokenizer_(std::move(tokenizer)),
-      policy_(session_->policy())
+    : session_(std::make_unique<SessionImpl>(model_path, policy)), tokenizer_(std::move(tokenizer)),
+      policy_(session_->Policy())
 {
 }
 
-void OnnxEmbedder::prepareEmbedderEnv()
+void OnnxEmbedder::PrepareEmbedderEnv()
 {
-    const Ort::Env env = makeEnv();
+    const Ort::Env env = MakeEnv();
     static_cast<void>(env);
 }
 
-const SessionPolicy &OnnxEmbedder::policy() const noexcept { return policy_; }
+const SessionPolicy &OnnxEmbedder::Policy() const noexcept { return policy_; }
 
-size_t OnnxEmbedder::sessions() const noexcept { return policy_.sessions; }
+size_t OnnxEmbedder::Sessions() const noexcept { return policy_.sessions; }
 
 OnnxEmbedder::~OnnxEmbedder() = default;
 
-std::expected<std::unique_ptr<OnnxEmbedder>, EmbedError> OnnxEmbedder::create(const std::filesystem::path &modelDir,
+std::expected<std::unique_ptr<OnnxEmbedder>, EmbedError> OnnxEmbedder::Create(const std::filesystem::path &model_dir,
                                                                               size_t threads)
 {
-    const auto vocabPath = modelDir / "vocab.txt";
-    const auto modelPath = modelDir / "model.onnx";
-    if (!std::filesystem::exists(vocabPath) || !std::filesystem::exists(modelPath))
+    const auto vocab_path = model_dir / "vocab.txt";
+    const auto model_path = model_dir / "model.onnx";
+    if (!std::filesystem::exists(vocab_path) || !std::filesystem::exists(model_path))
     {
         return std::unexpected(EmbedError::ModelLoadFailure);
     }
 
-    auto tokenizer = WordPieceTokenizer::fromVocabFile(vocabPath);
+    auto tokenizer = WordPieceTokenizer::FromVocabFile(vocab_path);
     if (!tokenizer)
     {
         return std::unexpected(tokenizer.error());
@@ -469,7 +471,7 @@ std::expected<std::unique_ptr<OnnxEmbedder>, EmbedError> OnnxEmbedder::create(co
 
     try
     {
-        return std::make_unique<OnnxEmbedder>(std::move(*tokenizer), modelPath, threads);
+        return std::make_unique<OnnxEmbedder>(std::move(*tokenizer), model_path, threads);
     }
     catch (...)
     {
@@ -478,30 +480,30 @@ std::expected<std::unique_ptr<OnnxEmbedder>, EmbedError> OnnxEmbedder::create(co
 }
 
 std::expected<std::unique_ptr<OnnxEmbedder>, EmbedError>
-OnnxEmbedder::createWithIntraOp(const std::filesystem::path &modelDir, int intraOpThreads)
+OnnxEmbedder::CreateWithIntraOp(const std::filesystem::path &model_dir, int intra_op_threads)
 {
-    const auto vocabPath = modelDir / "vocab.txt";
-    const auto modelPath = modelDir / "model.onnx";
-    if (!std::filesystem::exists(vocabPath) || !std::filesystem::exists(modelPath))
+    const auto vocab_path = model_dir / "vocab.txt";
+    const auto model_path = model_dir / "model.onnx";
+    if (!std::filesystem::exists(vocab_path) || !std::filesystem::exists(model_path))
     {
         return std::unexpected(EmbedError::ModelLoadFailure);
     }
 
-    auto tokenizer = WordPieceTokenizer::fromVocabFile(vocabPath);
+    auto tokenizer = WordPieceTokenizer::FromVocabFile(vocab_path);
     if (!tokenizer)
     {
         return std::unexpected(tokenizer.error());
     }
 
-    const int width = std::max(intraOpThreads, intraOpThreadFloor());
-    const SessionPolicy policy{.quantized = modelIsQuantized(modelPath),
+    const int width = std::max(intra_op_threads, IntraOpThreadFloor());
+    const SessionPolicy policy{.quantized = ModelIsQuantized(model_path),
                                .sessions = 1,
-                               .intraOpThreads = width,
-                               .memoryCap = 0,
-                               .shrinkArena = width > 1};
+                               .intra_op_threads = width,
+                               .memory_cap = 0,
+                               .shrink_arena = width > 1};
     try
     {
-        return std::unique_ptr<OnnxEmbedder>(new OnnxEmbedder(std::move(*tokenizer), modelPath, policy));
+        return std::unique_ptr<OnnxEmbedder>(new OnnxEmbedder(std::move(*tokenizer), model_path, policy));
     }
     catch (...)
     {
@@ -509,23 +511,23 @@ OnnxEmbedder::createWithIntraOp(const std::filesystem::path &modelDir, int intra
     }
 }
 
-std::expected<std::vector<float>, EmbedError> OnnxEmbedder::embed(std::string_view text) const
+std::expected<std::vector<float>, EmbedError> OnnxEmbedder::Embed(std::string_view text) const
 {
     const std::string owned{text};
     const std::array<std::string, 1> batch{owned};
-    const auto batchResult = embedBatch(batch);
-    if (!batchResult || batchResult->empty())
+    const auto batch_result = EmbedBatch(batch);
+    if (!batch_result || batch_result->empty())
     {
-        if (!batchResult)
+        if (!batch_result)
         {
-            return std::unexpected(batchResult.error());
+            return std::unexpected(batch_result.error());
         }
         return std::unexpected(EmbedError::InferenceFailure);
     }
-    return batchResult->front();
+    return batch_result->front();
 }
 
-std::expected<std::vector<std::vector<float>>, EmbedError> OnnxEmbedder::embedBatch(std::span<const std::string> texts,
+std::expected<std::vector<std::vector<float>>, EmbedError> OnnxEmbedder::EmbedBatch(std::span<const std::string> texts,
                                                                                     ProgressCallback progress) const
 {
     if (texts.empty())
@@ -533,19 +535,19 @@ std::expected<std::vector<std::vector<float>>, EmbedError> OnnxEmbedder::embedBa
         return std::unexpected(EmbedError::InvalidInput);
     }
 
-    std::vector<TokenizedInput> encodedBatch;
-    encodedBatch.reserve(texts.size());
+    std::vector<TokenizedInput> encoded_batch;
+    encoded_batch.reserve(texts.size());
     for (const std::string &text : texts)
     {
-        auto encoded = tokenizer_.encode(text);
+        auto encoded = tokenizer_.Encode(text);
         if (!encoded)
         {
             return std::unexpected(encoded.error());
         }
-        encodedBatch.push_back(std::move(*encoded));
+        encoded_batch.push_back(std::move(*encoded));
     }
 
-    return session_->inferAll(encodedBatch,
+    return session_->InferAll(encoded_batch,
                               [&progress, total = texts.size()](size_t completed)
                               {
                                   if (progress)

@@ -32,9 +32,9 @@ class MappedFile
     MappedFile(MappedFile &&other) noexcept;
     MappedFile &operator=(MappedFile &&other) noexcept;
 
-    [[nodiscard]] static std::expected<MappedFile, FileError> open(const std::filesystem::path &path);
+    [[nodiscard]] static std::expected<MappedFile, FileError> Open(const std::filesystem::path &path);
 
-    [[nodiscard]] std::span<const std::byte> bytes() const noexcept;
+    [[nodiscard]] std::span<const std::byte> Bytes() const noexcept;
 
   private:
     std::byte *data_ = nullptr;
@@ -42,11 +42,11 @@ class MappedFile
 };
 
 /// Replaces `destination` with `source`. `source` is removed on success.
-[[nodiscard]] std::expected<void, FileError> replaceFileAtomically(const std::filesystem::path &source,
+[[nodiscard]] std::expected<void, FileError> ReplaceFileAtomically(const std::filesystem::path &source,
                                                                    const std::filesystem::path &destination);
 
 /// Peak resident set size in bytes, from getrusage. Zero when the query fails.
-[[nodiscard]] std::int64_t peakResidentBytes() noexcept;
+[[nodiscard]] std::int64_t PeakResidentBytes() noexcept;
 
 } // namespace nesso::platform
 

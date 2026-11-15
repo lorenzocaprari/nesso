@@ -15,7 +15,7 @@
 namespace
 {
 
-std::string bytesFrom(const std::uint8_t *data, std::size_t size)
+std::string BytesFrom(const std::uint8_t *data, std::size_t size)
 {
     if (data == nullptr || size == 0)
     {
@@ -28,7 +28,7 @@ std::string bytesFrom(const std::uint8_t *data, std::size_t size)
 
 extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t *data, std::size_t size)
 {
-    const std::string bytes = bytesFrom(data, size);
+    const std::string bytes = BytesFrom(data, size);
     volatile std::size_t sink = bytes.size();
     const auto dir = std::filesystem::temp_directory_path() / ("nesso-fuzz-archive-" + std::to_string(::getpid()));
     std::error_code ec;
@@ -40,7 +40,7 @@ extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t *data, std::size_t size
         std::ofstream out(path, std::ios::binary | std::ios::trunc);
         out.write(bytes.data(), static_cast<std::streamsize>(bytes.size()));
         out.close();
-        const auto read = nesso::parser::readArchive(path, {},
+        const auto read = nesso::parser::ReadArchive(path, {},
                                                      [&sink](std::string_view member, std::string_view body)
                                                      {
                                                          sink += member.size();

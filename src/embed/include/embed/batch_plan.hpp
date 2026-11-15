@@ -18,7 +18,8 @@ inline constexpr size_t BATCH_WINDOW = 1024;
 /// Maximum texts in one padded ONNX run.
 inline constexpr size_t BATCH_MAX_TEXTS = 32;
 
-/// Padded-token budget of one ONNX run. The newest text in ascending order sets the length.
+/// Padded-token budget of one ONNX run. The newest text in ascending order sets
+/// the length.
 inline constexpr size_t BATCH_TOKEN_BUDGET = 1024;
 
 /// Indices into the caller's span, in packed order.
@@ -32,34 +33,38 @@ struct BatchPlan
     std::vector<PlannedBatch> batches;
 };
 
-/// One wave. `batchIndices[slot]` runs on session `slot`. Membership comes from the plan.
+/// One wave. `batchIndices[slot]` runs on session `slot`. Membership comes from
+/// the plan.
 struct BatchWave
 {
-    std::vector<size_t> batchIndices;
+    std::vector<size_t> batch_indices;
 };
 
-/// Split into windows of `BATCH_WINDOW`, sort each by token count then input ordinal, and cut.
-/// A text that does not fit starts the next run. A single text is always its own run.
-[[nodiscard]] BatchPlan planBatches(std::span<const size_t> tokenCounts);
+/// Split into windows of `BATCH_WINDOW`, sort each by token count then input
+/// ordinal, and cut. A text that does not fit starts the next run. A single
+/// text is always its own run.
+[[nodiscard]] BatchPlan PlanBatches(std::span<const size_t> token_counts);
 
-/// Wave width is `sessions`. Batch order is unchanged. `sessions` of 0 yields no waves.
-[[nodiscard]] std::vector<BatchWave> batchWaves(size_t batchCount, size_t sessions);
+/// Wave width is `sessions`. Batch order is unchanged. `sessions` of 0 yields
+/// no waves.
+[[nodiscard]] std::vector<BatchWave> BatchWaves(size_t batch_count, size_t sessions);
 
 /// Input index of each embedding in execution order.
-[[nodiscard]] std::vector<size_t> executionOrder(const BatchPlan &plan);
+[[nodiscard]] std::vector<size_t> ExecutionOrder(const BatchPlan &plan);
 
-/// Move plan-order values back to input order. A size mismatch returns an empty vector.
-template <typename T> [[nodiscard]] std::vector<T> scatter(const BatchPlan &plan, std::vector<T> planOrder)
+/// Move plan-order values back to input order. A size mismatch returns an empty
+/// vector.
+template <typename T> [[nodiscard]] std::vector<T> Scatter(const BatchPlan &plan, std::vector<T> plan_order)
 {
-    const std::vector<size_t> order = executionOrder(plan);
-    if (planOrder.size() != order.size())
+    const std::vector<size_t> order = ExecutionOrder(plan);
+    if (plan_order.size() != order.size())
     {
         return {};
     }
     std::vector<T> restored(order.size());
     for (size_t position = 0; position < order.size(); ++position)
     {
-        restored[order[position]] = std::move(planOrder[position]);
+        restored[order[position]] = std::move(plan_order[position]);
     }
     return restored;
 }

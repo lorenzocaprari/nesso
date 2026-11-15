@@ -20,7 +20,7 @@ using namespace nesso::core;
 namespace
 {
 
-std::vector<float> pack(std::initializer_list<std::span<const float>> rows)
+std::vector<float> Pack(std::initializer_list<std::span<const float>> rows)
 {
     std::vector<float> matrix;
     for (const std::span<const float> row : rows)
@@ -32,14 +32,14 @@ std::vector<float> pack(std::initializer_list<std::span<const float>> rows)
 
 } // namespace
 
-TEST_CASE("topK ranks rows by dot product", "[topK][core][Unit]")
+TEST_CASE("TopK ranks rows by dot product", "[TopK][core][Unit]")
 {
     const std::array<float, 3> alpha{1.0F, 0.0F, 0.0F};
     const std::array<float, 3> beta{0.0F, 1.0F, 0.0F};
     const std::array<float, 3> gamma{0.7F, 0.7F, 0.0F};
-    const auto matrix = pack({alpha, beta, gamma});
+    const auto matrix = Pack({alpha, beta, gamma});
 
-    const auto results = topK({.query = std::array<float, 3>{0.6F, 0.8F, 0.0F}, .matrix = matrix, .dims = 3, .k = 2});
+    const auto results = TopK({.query = std::array<float, 3>{0.6F, 0.8F, 0.0F}, .matrix = matrix, .dims = 3, .k = 2});
     REQUIRE(results.has_value());
     REQUIRE(results->size() == 2);
     REQUIRE((*results)[0].index == 2);
@@ -47,12 +47,12 @@ TEST_CASE("topK ranks rows by dot product", "[topK][core][Unit]")
     REQUIRE((*results)[0].score > (*results)[1].score);
 }
 
-TEST_CASE("topK breaks score ties by ascending index", "[topK][core][Unit]")
+TEST_CASE("TopK breaks score ties by ascending index", "[TopK][core][Unit]")
 {
     const std::array<float, 3> row{1.0F, 0.0F, 0.0F};
-    const auto matrix = pack({row, row});
+    const auto matrix = Pack({row, row});
 
-    const auto results = topK({.query = row, .matrix = matrix, .dims = 3, .k = 2});
+    const auto results = TopK({.query = row, .matrix = matrix, .dims = 3, .k = 2});
     REQUIRE(results.has_value());
     REQUIRE(results->size() == 2);
     REQUIRE((*results)[0].index == 0);
@@ -60,73 +60,73 @@ TEST_CASE("topK breaks score ties by ascending index", "[topK][core][Unit]")
     REQUIRE((*results)[0].score == Catch::Approx(1.0F));
 }
 
-TEST_CASE("topK rejects a query whose width differs from the matrix", "[topK][core][Unit]")
+TEST_CASE("TopK rejects a query whose width differs from the matrix", "[TopK][core][Unit]")
 {
     const std::array<float, 3> row{1.0F, 0.0F, 0.0F};
     const auto results =
-        topK({.query = std::array<float, 2>{1.0F, 0.0F}, .matrix = std::span<const float>{row}, .dims = 3, .k = 1});
+        TopK({.query = std::array<float, 2>{1.0F, 0.0F}, .matrix = std::span<const float>{row}, .dims = 3, .k = 1});
     REQUIRE_FALSE(results.has_value());
     REQUIRE(results.error() == EngineError::MismatchedDimensions);
 }
 
-TEST_CASE("topK clamps k to the row count", "[topK][core][Unit]")
+TEST_CASE("TopK clamps k to the row count", "[TopK][core][Unit]")
 {
     const std::array<float, 2> row{1.0F, 0.0F};
-    const auto results = topK({.query = row, .matrix = std::span<const float>{row}, .dims = 2, .k = 10});
+    const auto results = TopK({.query = row, .matrix = std::span<const float>{row}, .dims = 2, .k = 10});
     REQUIRE(results.has_value());
     REQUIRE(results->size() == 1);
 }
 
-TEST_CASE("topK returns no hits for an empty matrix or zero k", "[topK][core][Unit]")
+TEST_CASE("TopK returns no hits for an empty matrix or zero k", "[TopK][core][Unit]")
 {
     const std::array<float, 3> query{1.0F, 0.0F, 0.0F};
-    const auto empty = topK({.query = query, .matrix = {}, .dims = 3, .k = 1});
+    const auto empty = TopK({.query = query, .matrix = {}, .dims = 3, .k = 1});
     REQUIRE(empty.has_value());
     REQUIRE(empty->empty());
 
-    const auto zeroK = topK({.query = query, .matrix = query, .dims = 3, .k = 0});
-    REQUIRE(zeroK.has_value());
-    REQUIRE(zeroK->empty());
+    const auto zero_k = TopK({.query = query, .matrix = query, .dims = 3, .k = 0});
+    REQUIRE(zero_k.has_value());
+    REQUIRE(zero_k->empty());
 }
 
-TEST_CASE("topK rejects a zero-width or ragged matrix", "[topK][core][Unit]")
+TEST_CASE("TopK rejects a zero-width or ragged matrix", "[TopK][core][Unit]")
 {
     const std::array<float, 3> row{1.0F, 0.0F, 0.0F};
-    const auto zeroWidth = topK({.query = std::span<const float>{}, .matrix = row, .dims = 0, .k = 1});
-    REQUIRE_FALSE(zeroWidth.has_value());
-    REQUIRE(zeroWidth.error() == EngineError::DatabaseNotInitialized);
+    const auto zero_width = TopK({.query = std::span<const float>{}, .matrix = row, .dims = 0, .k = 1});
+    REQUIRE_FALSE(zero_width.has_value());
+    REQUIRE(zero_width.error() == EngineError::DatabaseNotInitialized);
 
-    const auto ragged = topK({.query = std::array<float, 2>{1.0F, 0.0F}, .matrix = row, .dims = 2, .k = 1});
+    const auto ragged = TopK({.query = std::array<float, 2>{1.0F, 0.0F}, .matrix = row, .dims = 2, .k = 1});
     REQUIRE_FALSE(ragged.has_value());
     REQUIRE(ragged.error() == EngineError::CorruptDatabase);
 }
 
-std::uint32_t scoreBits(float score) { return std::bit_cast<std::uint32_t>(score); }
+std::uint32_t ScoreBits(float score) { return std::bit_cast<std::uint32_t>(score); }
 
-void requireSameHits(const std::vector<Hit> &actual, const std::vector<Hit> &expected)
+void RequireSameHits(const std::vector<Hit> &actual, const std::vector<Hit> &expected)
 {
     REQUIRE(actual.size() == expected.size());
     for (size_t index = 0; index < actual.size(); ++index)
     {
         CHECK(actual[index].index == expected[index].index);
-        CHECK(scoreBits(actual[index].score) == scoreBits(expected[index].score));
+        CHECK(ScoreBits(actual[index].score) == ScoreBits(expected[index].score));
     }
 }
 
-std::vector<Hit> oracleTop(std::span<const float> query, std::span<const float> matrix, size_t dims, size_t k)
+std::vector<Hit> OracleTop(std::span<const float> query, std::span<const float> matrix, size_t dims, size_t k)
 {
     std::vector<Hit> hits;
     const size_t rows = matrix.size() / dims;
     hits.reserve(rows);
     for (size_t row = 0; row < rows; ++row)
     {
-        const auto score = math::DistanceMetrics::dotProduct(query, matrix.subspan(row * dims, dims));
+        const auto score = math::DistanceMetrics::DotProduct(query, matrix.subspan(row * dims, dims));
         REQUIRE(score.has_value());
         hits.push_back(Hit{.index = static_cast<uint64_t>(row), .score = *score});
     }
     const auto better = [](const Hit &left, const Hit &right)
-    { return rankBefore(left.score, left.index, right.score, right.index); };
-    detail::selectTopKInPlace(hits, k, better);
+    { return RankBefore(left.score, left.index, right.score, right.index); };
+    detail::SelectTopKInPlace(hits, k, better);
     return hits;
 }
 
@@ -136,16 +136,16 @@ struct CollectedRanges
     std::vector<std::pair<size_t, size_t>> ranges;
 };
 
-void recordRange(void *raw, size_t begin, size_t end)
+void RecordRange(void *raw, size_t begin, size_t end)
 {
     auto *collected = static_cast<CollectedRanges *>(raw);
     std::lock_guard lock(collected->mutex);
     collected->ranges.emplace_back(begin, end);
 }
 
-void requireContiguousChunks(std::vector<std::pair<size_t, size_t>> ranges, size_t rows, size_t expectedChunks)
+void RequireContiguousChunks(std::vector<std::pair<size_t, size_t>> ranges, size_t rows, size_t expected_chunks)
 {
-    REQUIRE(ranges.size() == expectedChunks);
+    REQUIRE(ranges.size() == expected_chunks);
     std::ranges::sort(ranges);
     REQUIRE(ranges.front().first == 0);
     REQUIRE(ranges.back().second == rows);
@@ -163,44 +163,44 @@ void requireContiguousChunks(std::vector<std::pair<size_t, size_t>> ranges, size
         longest = std::max(longest, length);
     }
     CHECK(longest - shortest <= 1);
-    if (expectedChunks > 1)
+    if (expected_chunks > 1)
     {
         CHECK(shortest > 0);
     }
 }
 
-TEST_CASE("parallelRows covers a long range with uneven contiguous chunks", "[topK][core][Unit]")
+TEST_CASE("ParallelRows covers a long range with uneven contiguous chunks", "[TopK][core][Unit]")
 {
     const size_t rows = PARALLEL_MIN_ROWS + 1;
     for (const size_t threads : {size_t{2}, size_t{3}, size_t{4}, size_t{7}})
     {
         CollectedRanges collected;
-        detail::parallelRows(threads, rows, recordRange, &collected);
-        requireContiguousChunks(collected.ranges, rows, threads);
+        detail::ParallelRows(threads, rows, RecordRange, &collected);
+        RequireContiguousChunks(collected.ranges, rows, threads);
     }
 
     CollectedRanges capped;
-    detail::parallelRows(PARALLEL_MAX_THREADS + 9, rows, recordRange, &capped);
-    requireContiguousChunks(capped.ranges, rows, std::min(PARALLEL_MAX_THREADS, rows));
+    detail::ParallelRows(PARALLEL_MAX_THREADS + 9, rows, RecordRange, &capped);
+    RequireContiguousChunks(capped.ranges, rows, std::min(PARALLEL_MAX_THREADS, rows));
 
     CollectedRanges small;
-    detail::parallelRows(7, 17, recordRange, &small);
-    requireContiguousChunks(small.ranges, 17, 1);
+    detail::ParallelRows(7, 17, RecordRange, &small);
+    RequireContiguousChunks(small.ranges, 17, 1);
 
     CollectedRanges serial;
-    detail::parallelRows(1, rows, recordRange, &serial);
-    requireContiguousChunks(serial.ranges, rows, 1);
+    detail::ParallelRows(1, rows, RecordRange, &serial);
+    RequireContiguousChunks(serial.ranges, rows, 1);
 
     CollectedRanges unset;
-    detail::parallelRows(0, rows, recordRange, &unset);
-    requireContiguousChunks(unset.ranges, rows, 1);
+    detail::ParallelRows(0, rows, RecordRange, &unset);
+    RequireContiguousChunks(unset.ranges, rows, 1);
 
     CollectedRanges empty;
-    detail::parallelRows(4, 0, recordRange, &empty);
-    requireContiguousChunks(empty.ranges, 0, 1);
+    detail::ParallelRows(4, 0, RecordRange, &empty);
+    RequireContiguousChunks(empty.ranges, 0, 1);
 }
 
-TEST_CASE("topK at several thread counts matches the single-thread hit list", "[topK][core][Unit]")
+TEST_CASE("TopK at several thread counts matches the single-thread hit list", "[TopK][core][Unit]")
 {
     constexpr size_t dims = 8;
     const size_t rows = PARALLEL_MIN_ROWS + 1;
@@ -225,16 +225,16 @@ TEST_CASE("topK at several thread counts matches the single-thread hit list", "[
     {
         for (const size_t k : limits)
         {
-            const auto variedHits = topK({.query = query, .matrix = varied, .dims = dims, .k = k, .threads = threads});
-            const auto tiedHits = topK({.query = query, .matrix = tied, .dims = dims, .k = k, .threads = threads});
-            REQUIRE(variedHits.has_value());
-            REQUIRE(tiedHits.has_value());
-            requireSameHits(*variedHits, oracleTop(query, varied, dims, k));
-            requireSameHits(*tiedHits, oracleTop(query, tied, dims, k));
+            const auto varied_hits = TopK({.query = query, .matrix = varied, .dims = dims, .k = k, .threads = threads});
+            const auto tied_hits = TopK({.query = query, .matrix = tied, .dims = dims, .k = k, .threads = threads});
+            REQUIRE(varied_hits.has_value());
+            REQUIRE(tied_hits.has_value());
+            RequireSameHits(*varied_hits, OracleTop(query, varied, dims, k));
+            RequireSameHits(*tied_hits, OracleTop(query, tied, dims, k));
         }
-        const auto again = topK({.query = query, .matrix = varied, .dims = dims, .k = 5, .threads = threads});
+        const auto again = TopK({.query = query, .matrix = varied, .dims = dims, .k = 5, .threads = threads});
         REQUIRE(again.has_value());
-        requireSameHits(*again, oracleTop(query, varied, dims, 5));
+        RequireSameHits(*again, OracleTop(query, varied, dims, 5));
     }
 
     std::vector<float> small(17 * dims, 0.0F);
@@ -246,20 +246,20 @@ TEST_CASE("topK at several thread counts matches the single-thread hit list", "[
     {
         for (const size_t k : {size_t{1}, size_t{3}, size_t{17}, size_t{40}})
         {
-            const auto hits = topK({.query = query, .matrix = small, .dims = dims, .k = k, .threads = threads});
+            const auto hits = TopK({.query = query, .matrix = small, .dims = dims, .k = k, .threads = threads});
             REQUIRE(hits.has_value());
-            requireSameHits(*hits, oracleTop(query, small, dims, k));
+            RequireSameHits(*hits, OracleTop(query, small, dims, k));
         }
     }
 
-    const auto empty = topK({.query = query, .matrix = {}, .dims = dims, .k = 3, .threads = 4});
+    const auto empty = TopK({.query = query, .matrix = {}, .dims = dims, .k = 3, .threads = 4});
     REQUIRE(empty.has_value());
     REQUIRE(empty->empty());
-    const auto zeroK = topK({.query = query, .matrix = varied, .dims = dims, .k = 0, .threads = 7});
-    REQUIRE(zeroK.has_value());
-    REQUIRE(zeroK->empty());
+    const auto zero_k = TopK({.query = query, .matrix = varied, .dims = dims, .k = 0, .threads = 7});
+    REQUIRE(zero_k.has_value());
+    REQUIRE(zero_k->empty());
     const auto mismatch =
-        topK({.query = std::array<float, 2>{1.0F, 0.0F}, .matrix = varied, .dims = dims, .k = 1, .threads = 4});
+        TopK({.query = std::array<float, 2>{1.0F, 0.0F}, .matrix = varied, .dims = dims, .k = 1, .threads = 4});
     REQUIRE_FALSE(mismatch.has_value());
     REQUIRE(mismatch.error() == EngineError::MismatchedDimensions);
 }
@@ -269,15 +269,15 @@ struct RankContext
     const std::vector<float> *scores = nullptr;
 };
 
-float contextScore(void *raw, size_t index) { return (*static_cast<const RankContext *>(raw)->scores)[index]; }
+float ContextScore(void *raw, size_t index) { return (*static_cast<const RankContext *>(raw)->scores)[index]; }
 
-bool contextKeep(void *raw, size_t index)
+bool ContextKeep(void *raw, size_t index)
 {
     static_cast<void>(raw);
     return index % 5U != 0U;
 }
 
-TEST_CASE("rankTop keeps skipped rows out and matches a full sort", "[topK][core][Unit]")
+TEST_CASE("RankTop keeps skipped rows out and matches a full sort", "[TopK][core][Unit]")
 {
     const size_t count = PARALLEL_MIN_ROWS + 1;
     std::vector<float> scores(count);
@@ -289,56 +289,56 @@ TEST_CASE("rankTop keeps skipped rows out and matches a full sort", "[topK][core
     std::vector<Hit> expected;
     for (size_t index = 0; index < count; ++index)
     {
-        if (!contextKeep(&context, index))
+        if (!ContextKeep(&context, index))
         {
             continue;
         }
         expected.push_back(Hit{.index = static_cast<uint64_t>(index), .score = scores[index]});
     }
     const auto better = [](const Hit &left, const Hit &right)
-    { return rankBefore(left.score, left.index, right.score, right.index); };
+    { return RankBefore(left.score, left.index, right.score, right.index); };
 
     for (const size_t threads : {size_t{1}, size_t{2}, size_t{3}, size_t{4}, size_t{7}})
     {
         for (const size_t k : {size_t{1}, size_t{8}, count / 3, count, count + 2})
         {
             std::vector<Hit> wanted = expected;
-            detail::selectTopKInPlace(wanted, k, better);
-            const auto actual = rankTop({.count = count,
+            detail::SelectTopKInPlace(wanted, k, better);
+            const auto actual = RankTop({.count = count,
                                          .k = k,
                                          .threads = threads,
-                                         .score = contextScore,
-                                         .keep = contextKeep,
+                                         .score = ContextScore,
+                                         .keep = ContextKeep,
                                          .context = &context});
-            requireSameHits(actual, wanted);
+            RequireSameHits(actual, wanted);
         }
     }
 
     REQUIRE(
-        rankTop({.count = count, .k = 0, .threads = 4, .score = contextScore, .keep = contextKeep, .context = &context})
+        RankTop({.count = count, .k = 0, .threads = 4, .score = ContextScore, .keep = ContextKeep, .context = &context})
             .empty());
-    REQUIRE(rankTop({.count = 0, .k = 3, .threads = 4, .score = contextScore, .keep = contextKeep, .context = &context})
+    REQUIRE(RankTop({.count = 0, .k = 3, .threads = 4, .score = ContextScore, .keep = ContextKeep, .context = &context})
                 .empty());
 }
 
-TEST_CASE("selectTopKInPlace clears on empty or zero k", "[topK][core][Unit]")
+TEST_CASE("SelectTopKInPlace clears on empty or zero k", "[TopK][core][Unit]")
 {
-    const auto byScore = [](const Hit &left, const Hit &right) { return left.score > right.score; };
+    const auto by_score = [](const Hit &left, const Hit &right) { return left.score > right.score; };
 
     std::vector<Hit> results{{.index = 0, .score = 1.0F}};
-    detail::selectTopKInPlace(results, 0, byScore);
+    detail::SelectTopKInPlace(results, 0, by_score);
     REQUIRE(results.empty());
 
     std::vector<Hit> empty;
-    detail::selectTopKInPlace(empty, 1, byScore);
+    detail::SelectTopKInPlace(empty, 1, by_score);
     REQUIRE(empty.empty());
 }
 
-TEST_CASE("rankBefore is a strict weak ordering including NaN and signed zero", "[topK][core][Unit]")
+TEST_CASE("RankBefore is a strict weak ordering including NaN and signed zero", "[TopK][core][Unit]")
 {
     const float nan = std::numeric_limits<float>::quiet_NaN();
-    const float posInf = std::numeric_limits<float>::infinity();
-    const float negInf = -std::numeric_limits<float>::infinity();
+    const float pos_inf = std::numeric_limits<float>::infinity();
+    const float neg_inf = -std::numeric_limits<float>::infinity();
     const std::array<Hit, 12> values{{
         {.index = 0, .score = 2.0F},
         {.index = 1, .score = 2.0F},
@@ -346,8 +346,8 @@ TEST_CASE("rankBefore is a strict weak ordering including NaN and signed zero", 
         {.index = 2, .score = 0.0F},
         {.index = 3, .score = -0.0F},
         {.index = 4, .score = -1.0F},
-        {.index = 5, .score = posInf},
-        {.index = 6, .score = negInf},
+        {.index = 5, .score = pos_inf},
+        {.index = 6, .score = neg_inf},
         {.index = 7, .score = nan},
         {.index = 8, .score = nan},
         {.index = 1, .score = -0.0F},
@@ -355,7 +355,7 @@ TEST_CASE("rankBefore is a strict weak ordering including NaN and signed zero", 
     }};
 
     const auto before = [](const Hit &left, const Hit &right)
-    { return rankBefore(left.score, left.index, right.score, right.index); };
+    { return RankBefore(left.score, left.index, right.score, right.index); };
 
     for (const Hit &value : values)
     {
@@ -407,39 +407,39 @@ TEST_CASE("rankBefore is a strict weak ordering including NaN and signed zero", 
     }
 }
 
-TEST_CASE("rankBefore orders signed zeros by index", "[topK][core][Unit]")
+TEST_CASE("RankBefore orders signed zeros by index", "[TopK][core][Unit]")
 {
-    REQUIRE(rankBefore(-0.0F, 1, 0.0F, 2));
-    REQUIRE_FALSE(rankBefore(0.0F, 2, -0.0F, 1));
-    REQUIRE(rankBefore(0.0F, 0, -0.0F, 1));
-    REQUIRE_FALSE(rankBefore(-0.0F, 1, 0.0F, 0));
+    REQUIRE(RankBefore(-0.0F, 1, 0.0F, 2));
+    REQUIRE_FALSE(RankBefore(0.0F, 2, -0.0F, 1));
+    REQUIRE(RankBefore(0.0F, 0, -0.0F, 1));
+    REQUIRE_FALSE(RankBefore(-0.0F, 1, 0.0F, 0));
 }
 
-TEST_CASE("selectTopKInPlace places NaN scores last", "[topK][core][Unit]")
+TEST_CASE("SelectTopKInPlace places NaN scores last", "[TopK][core][Unit]")
 {
     const float nan = std::numeric_limits<float>::quiet_NaN();
     const auto better = [](const Hit &left, const Hit &right)
-    { return rankBefore(left.score, left.index, right.score, right.index); };
+    { return RankBefore(left.score, left.index, right.score, right.index); };
 
     std::vector<Hit> mixed{{.index = 0, .score = nan},
                            {.index = 1, .score = 1.0F},
                            {.index = 2, .score = nan},
                            {.index = 3, .score = 3.0F},
                            {.index = 4, .score = 2.0F}};
-    std::vector<Hit> finiteOnly{{.index = 1, .score = 1.0F}, {.index = 3, .score = 3.0F}, {.index = 4, .score = 2.0F}};
+    std::vector<Hit> finite_only{{.index = 1, .score = 1.0F}, {.index = 3, .score = 3.0F}, {.index = 4, .score = 2.0F}};
 
-    detail::selectTopKInPlace(finiteOnly, 3, better);
-    detail::selectTopKInPlace(mixed, 5, better);
+    detail::SelectTopKInPlace(finite_only, 3, better);
+    detail::SelectTopKInPlace(mixed, 5, better);
 
     REQUIRE(mixed.size() == 5);
-    requireSameHits(std::vector<Hit>(mixed.begin(), mixed.begin() + 3), finiteOnly);
+    RequireSameHits(std::vector<Hit>(mixed.begin(), mixed.begin() + 3), finite_only);
     REQUIRE(std::isnan(mixed[3].score));
     REQUIRE(std::isnan(mixed[4].score));
     REQUIRE(mixed[3].index == 0);
     REQUIRE(mixed[4].index == 2);
 }
 
-TEST_CASE("rankTop with NaN scores matches single and multi-thread results", "[topK][core][Unit]")
+TEST_CASE("RankTop with NaN scores matches single and multi-thread results", "[TopK][core][Unit]")
 {
     const float nan = std::numeric_limits<float>::quiet_NaN();
     const size_t count = PARALLEL_MIN_ROWS + 3;
@@ -450,37 +450,37 @@ TEST_CASE("rankTop with NaN scores matches single and multi-thread results", "[t
         scores[index] = index % 100U == 0U ? static_cast<float>(index % 11U) : nan;
     }
     RankContext context{.scores = &scores};
-    const auto keepAll = [](void *, size_t) { return true; };
+    const auto keep_all = [](void *, size_t) { return true; };
     constexpr size_t k = 20;
 
-    std::vector<Hit> finiteOnly;
+    std::vector<Hit> finite_only;
     for (size_t index = 0; index < count; ++index)
     {
         if (!std::isnan(scores[index]))
         {
-            finiteOnly.push_back(Hit{.index = static_cast<uint64_t>(index), .score = scores[index]});
+            finite_only.push_back(Hit{.index = static_cast<uint64_t>(index), .score = scores[index]});
         }
     }
     const auto better = [](const Hit &left, const Hit &right)
-    { return rankBefore(left.score, left.index, right.score, right.index); };
-    detail::selectTopKInPlace(finiteOnly, k, better);
+    { return RankBefore(left.score, left.index, right.score, right.index); };
+    detail::SelectTopKInPlace(finite_only, k, better);
 
     const auto single =
-        rankTop({.count = count, .k = k, .threads = 1, .score = contextScore, .keep = keepAll, .context = &context});
+        RankTop({.count = count, .k = k, .threads = 1, .score = ContextScore, .keep = keep_all, .context = &context});
     const auto multi =
-        rankTop({.count = count, .k = k, .threads = 4, .score = contextScore, .keep = keepAll, .context = &context});
-    requireSameHits(single, multi);
+        RankTop({.count = count, .k = k, .threads = 4, .score = ContextScore, .keep = keep_all, .context = &context});
+    RequireSameHits(single, multi);
     REQUIRE(single.size() == k);
-    REQUIRE(finiteOnly.size() < k);
-    requireSameHits(std::vector<Hit>(single.begin(), single.begin() + static_cast<std::ptrdiff_t>(finiteOnly.size())),
-                    finiteOnly);
-    for (size_t index = finiteOnly.size(); index < single.size(); ++index)
+    REQUIRE(finite_only.size() < k);
+    RequireSameHits(std::vector<Hit>(single.begin(), single.begin() + static_cast<std::ptrdiff_t>(finite_only.size())),
+                    finite_only);
+    for (size_t index = finite_only.size(); index < single.size(); ++index)
     {
         REQUIRE(std::isnan(single[index].score));
     }
 }
 
-TEST_CASE("topK with NaN rows places them last and matches across threads", "[topK][core][Unit]")
+TEST_CASE("TopK with NaN rows places them last and matches across threads", "[TopK][core][Unit]")
 {
     const float nan = std::numeric_limits<float>::quiet_NaN();
     constexpr size_t dims = 1;
@@ -493,28 +493,29 @@ TEST_CASE("topK with NaN rows places them last and matches across threads", "[to
     const std::array<float, 1> query{1.0F};
     constexpr size_t k = 20;
 
-    const auto single = topK({.query = query, .matrix = matrix, .dims = dims, .k = k, .threads = 1});
-    const auto multi = topK({.query = query, .matrix = matrix, .dims = dims, .k = k, .threads = 4});
+    const auto single = TopK({.query = query, .matrix = matrix, .dims = dims, .k = k, .threads = 1});
+    const auto multi = TopK({.query = query, .matrix = matrix, .dims = dims, .k = k, .threads = 4});
     REQUIRE(single.has_value());
     REQUIRE(multi.has_value());
-    requireSameHits(*single, *multi);
+    RequireSameHits(*single, *multi);
     REQUIRE(single->size() == k);
 
-    std::vector<Hit> finiteOnly;
+    std::vector<Hit> finite_only;
     for (size_t row = 0; row < rows; ++row)
     {
         if (!std::isnan(matrix[row]))
         {
-            finiteOnly.push_back(Hit{.index = static_cast<uint64_t>(row), .score = matrix[row]});
+            finite_only.push_back(Hit{.index = static_cast<uint64_t>(row), .score = matrix[row]});
         }
     }
     const auto better = [](const Hit &left, const Hit &right)
-    { return rankBefore(left.score, left.index, right.score, right.index); };
-    detail::selectTopKInPlace(finiteOnly, k, better);
-    REQUIRE(finiteOnly.size() < k);
-    requireSameHits(std::vector<Hit>(single->begin(), single->begin() + static_cast<std::ptrdiff_t>(finiteOnly.size())),
-                    finiteOnly);
-    for (size_t index = finiteOnly.size(); index < single->size(); ++index)
+    { return RankBefore(left.score, left.index, right.score, right.index); };
+    detail::SelectTopKInPlace(finite_only, k, better);
+    REQUIRE(finite_only.size() < k);
+    RequireSameHits(
+        std::vector<Hit>(single->begin(), single->begin() + static_cast<std::ptrdiff_t>(finite_only.size())),
+        finite_only);
+    for (size_t index = finite_only.size(); index < single->size(); ++index)
     {
         REQUIRE(std::isnan((*single)[index].score));
     }

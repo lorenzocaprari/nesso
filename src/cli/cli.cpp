@@ -20,12 +20,12 @@
 namespace nesso::cli
 {
 
-static std::string countPhrase(size_t count, std::string_view singular, std::string_view plural)
+static std::string CountPhrase(size_t count, std::string_view singular, std::string_view plural)
 {
     return std::format("{} {}", count, count == 1 ? singular : plural);
 }
 
-static std::string joinAnd(const std::vector<std::string> &parts)
+static std::string JoinAnd(const std::vector<std::string> &parts)
 {
     if (parts.size() == 1)
     {
@@ -48,49 +48,49 @@ static std::string joinAnd(const std::vector<std::string> &parts)
 
 struct LineReport
 {
-    size_t emptyLines = 0;
-    size_t malformedLines = 0;
-    size_t missingFieldLines = 0;
-    size_t truncatedLines = 0;
-    std::string_view jsonField = "message";
-    std::vector<BundleSkipSummary> bundleSkips;
+    size_t empty_lines = 0;
+    size_t malformed_lines = 0;
+    size_t missing_field_lines = 0;
+    size_t truncated_lines = 0;
+    std::string_view json_field = "message";
+    std::vector<BundleSkipSummary> bundle_skips;
 };
 
-static void renderLineCounts(const LineReport &lines)
+static void RenderLineCounts(const LineReport &lines)
 {
     std::vector<std::string> parts;
-    if (lines.emptyLines > 0)
+    if (lines.empty_lines > 0)
     {
-        parts.push_back(countPhrase(lines.emptyLines, "empty line", "empty lines"));
+        parts.push_back(CountPhrase(lines.empty_lines, "empty line", "empty lines"));
     }
-    if (lines.malformedLines > 0)
+    if (lines.malformed_lines > 0)
     {
-        parts.push_back(countPhrase(lines.malformedLines, "malformed line", "malformed lines"));
+        parts.push_back(CountPhrase(lines.malformed_lines, "malformed line", "malformed lines"));
     }
-    if (lines.missingFieldLines > 0)
+    if (lines.missing_field_lines > 0)
     {
-        const std::string_view noun = lines.missingFieldLines == 1 ? "line missing" : "lines missing";
-        parts.push_back(std::format("{} {} the \"{}\" field", lines.missingFieldLines, noun, lines.jsonField));
+        const std::string_view noun = lines.missing_field_lines == 1 ? "line missing" : "lines missing";
+        parts.push_back(std::format("{} {} the \"{}\" field", lines.missing_field_lines, noun, lines.json_field));
     }
     if (!parts.empty())
     {
-        std::println(std::cerr, "Skipped {}.", joinAnd(parts));
+        std::println(std::cerr, "Skipped {}.", JoinAnd(parts));
     }
-    for (const BundleSkipSummary &summary : lines.bundleSkips)
+    for (const BundleSkipSummary &summary : lines.bundle_skips)
     {
-        const std::string text = formatBundleSkipSummary(summary);
+        const std::string text = FormatBundleSkipSummary(summary);
         if (!text.empty())
         {
             std::println(std::cerr, "{}", text);
         }
     }
-    if (lines.truncatedLines > 0)
+    if (lines.truncated_lines > 0)
     {
-        std::println(std::cerr, "Truncated {}.", countPhrase(lines.truncatedLines, "line", "lines"));
+        std::println(std::cerr, "Truncated {}.", CountPhrase(lines.truncated_lines, "line", "lines"));
     }
 }
 
-static void renderStaleSources(const std::vector<StaleSource> &sources)
+static void RenderStaleSources(const std::vector<StaleSource> &sources)
 {
     for (const StaleSource &source : sources)
     {
@@ -107,114 +107,116 @@ static void renderStaleSources(const std::vector<StaleSource> &sources)
     }
 }
 
-static void renderPolicyWarning(bool mismatch)
+static void RenderPolicyWarning(bool mismatch)
 {
     if (mismatch)
     {
-        std::println(std::cerr, "Warning: corpus indexing policy differs from this nesso; search results may differ.");
+        std::println(std::cerr, "Warning: corpus indexing policy differs from this "
+                                "nesso; search results may differ.");
     }
 }
 
 static LineReport MakeLineReport(const TextResults &results)
 {
-    return {.emptyLines = results.emptyLines,
-            .malformedLines = results.malformedLines,
-            .missingFieldLines = results.missingFieldLines,
-            .truncatedLines = results.truncatedLines,
-            .jsonField = results.jsonField,
-            .bundleSkips = results.bundleSkips};
+    return {.empty_lines = results.empty_lines,
+            .malformed_lines = results.malformed_lines,
+            .missing_field_lines = results.missing_field_lines,
+            .truncated_lines = results.truncated_lines,
+            .json_field = results.json_field,
+            .bundle_skips = results.bundle_skips};
 }
 
 static LineReport MakeLineReport(const IndexSummary &summary)
 {
-    return {.emptyLines = summary.emptyLines,
-            .malformedLines = summary.malformedLines,
-            .missingFieldLines = summary.missingFieldLines,
-            .truncatedLines = summary.truncatedLines,
-            .jsonField = summary.jsonField,
-            .bundleSkips = summary.bundleSkips};
+    return {.empty_lines = summary.empty_lines,
+            .malformed_lines = summary.malformed_lines,
+            .missing_field_lines = summary.missing_field_lines,
+            .truncated_lines = summary.truncated_lines,
+            .json_field = summary.json_field,
+            .bundle_skips = summary.bundle_skips};
 }
 
 static LineReport MakeLineReport(const Error &error)
 {
-    return {.emptyLines = error.emptyLines,
-            .malformedLines = error.malformedLines,
-            .missingFieldLines = error.missingFieldLines,
-            .truncatedLines = error.truncatedLines,
-            .jsonField = error.jsonField,
-            .bundleSkips = error.bundleSkips};
+    return {.empty_lines = error.empty_lines,
+            .malformed_lines = error.malformed_lines,
+            .missing_field_lines = error.missing_field_lines,
+            .truncated_lines = error.truncated_lines,
+            .json_field = error.json_field,
+            .bundle_skips = error.bundle_skips};
 }
 
-static int renderText(const TextResults &results)
+static int RenderText(const TextResults &results)
 {
     for (const TextMatch &match : results.matches)
     {
-        const char *place = match.arrayElement ? "element" : "line";
-        // Archive labels are `bundle:entry`. A single member still prints that label.
+        const char *place = match.array_element ? "element" : "line";
+        // Archive labels are `bundle:entry`. A single member still prints that
+        // label.
         const bool prefixed =
-            results.multipleSources || match.source == "-" || match.source.find(':') != std::string::npos;
+            results.multiple_sources || match.source == "-" || match.source.find(':') != std::string::npos;
         if (!results.grouped)
         {
             if (prefixed)
             {
-                std::println("{}:{} {}: {:.4f}: {}", escapeTerminalControls(match.source), place, match.line,
-                             match.score, escapeTerminalControls(match.text));
+                std::println("{}:{} {}: {:.4f}: {}", EscapeTerminalControls(match.source), place, match.line,
+                             match.score, EscapeTerminalControls(match.text));
             }
             else
             {
-                std::println("{} {}: {:.4f}: {}", place, match.line, match.score, escapeTerminalControls(match.text));
+                std::println("{} {}: {:.4f}: {}", place, match.line, match.score, EscapeTerminalControls(match.text));
             }
             continue;
         }
         if (prefixed)
         {
-            std::println("{}:{} {} ({}): {:.4f}: {}", escapeTerminalControls(match.source), place, match.line,
-                         match.occurrences, match.score, escapeTerminalControls(match.text));
+            std::println("{}:{} {} ({}): {:.4f}: {}", EscapeTerminalControls(match.source), place, match.line,
+                         match.occurrences, match.score, EscapeTerminalControls(match.text));
         }
         else
         {
             std::println("{} {} ({}): {:.4f}: {}", place, match.line, match.occurrences, match.score,
-                         escapeTerminalControls(match.text));
+                         EscapeTerminalControls(match.text));
         }
     }
     return 0;
 }
 
-static int renderJson(const TextResults &results)
+static int RenderJson(const TextResults &results)
 {
     for (size_t index = 0; index < results.matches.size(); ++index)
     {
-        std::println("{}", renderMatchJson(results.matches[index], index + 1));
+        std::println("{}", RenderMatchJson(results.matches[index], index + 1));
     }
     return 0;
 }
 
-static int render(const TextResults &results, bool json)
+static int Render(const TextResults &results, bool json)
 {
-    renderLineCounts(MakeLineReport(results));
-    renderPolicyWarning(results.policyMismatch);
-    renderStaleSources(results.staleSources);
-    if (results.lexicalFallback)
+    RenderLineCounts(MakeLineReport(results));
+    RenderPolicyWarning(results.policy_mismatch);
+    RenderStaleSources(results.stale_sources);
+    if (results.lexical_fallback)
     {
         std::println(std::cerr, "Warning: no lexical match for the query; using hybrid");
     }
-    bool writeThrew = false;
+    bool write_threw = false;
     try
     {
         if (json)
         {
-            renderJson(results);
+            RenderJson(results);
         }
         else
         {
-            renderText(results);
+            RenderText(results);
         }
     }
     catch (const std::system_error &)
     {
-        writeThrew = true;
+        write_threw = true;
     }
-    if (writeThrew || stdoutWriteFailed(stdout))
+    if (write_threw || StdoutWriteFailed(stdout))
     {
         std::println(std::cerr, "Error: failed to write results");
         return 2;
@@ -222,27 +224,27 @@ static int render(const TextResults &results, bool json)
     return 0;
 }
 
-static int render(const IndexSummary &summary, const IndexRequest &request)
+static int Render(const IndexSummary &summary, const IndexRequest &request)
 {
-    renderLineCounts(MakeLineReport(summary));
+    RenderLineCounts(MakeLineReport(summary));
     std::println(std::cerr, "Indexed {} chunks into '{}'.", summary.chunks, request.output.string());
     return 0;
 }
 
-static int renderError(const Error &error, int status)
+static int RenderError(const Error &error, int status)
 {
-    const std::string text = message(error);
+    const std::string text = Message(error);
     if (!text.empty())
     {
         std::println(std::cerr, "{}", text);
     }
-    renderLineCounts(MakeLineReport(error));
-    renderPolicyWarning(error.policyMismatch);
-    renderStaleSources(error.staleSources);
+    RenderLineCounts(MakeLineReport(error));
+    RenderPolicyWarning(error.policy_mismatch);
+    RenderStaleSources(error.stale_sources);
     return status;
 }
 
-static int failureStatus(const Error &error)
+static int FailureStatus(const Error &error)
 {
     if (error.kind == ErrorKind::EmptyInput || error.kind == ErrorKind::NoMatches)
     {
@@ -252,27 +254,27 @@ static int failureStatus(const Error &error)
 }
 
 template <typename Result, typename... Context>
-static int report(const std::expected<Result, Error> &outcome, int failureStatus, const Context &...context)
+static int Report(const std::expected<Result, Error> &outcome, int failure_status, const Context &...context)
 {
-    return outcome ? render(*outcome, context...) : renderError(outcome.error(), failureStatus);
+    return outcome ? Render(*outcome, context...) : RenderError(outcome.error(), failure_status);
 }
 
-int execute(const Nesso &nesso, const GrepRequest &request)
+int Execute(const Nesso &nesso, const GrepRequest &request)
 {
-    const auto outcome = nesso.grep(request);
-    return outcome ? render(*outcome, request.json) : renderError(outcome.error(), failureStatus(outcome.error()));
+    const auto outcome = nesso.Grep(request);
+    return outcome ? Render(*outcome, request.json) : RenderError(outcome.error(), FailureStatus(outcome.error()));
 }
 
-int execute(const Nesso &nesso, const IndexRequest &request)
+int Execute(const Nesso &nesso, const IndexRequest &request)
 {
-    const auto outcome = nesso.index(request);
-    return report(outcome, outcome ? 0 : failureStatus(outcome.error()), request);
+    const auto outcome = nesso.Index(request);
+    return Report(outcome, outcome ? 0 : FailureStatus(outcome.error()), request);
 }
 
-int execute(const Nesso &nesso, const SearchRequest &request)
+int Execute(const Nesso &nesso, const SearchRequest &request)
 {
-    const auto outcome = nesso.search(request);
-    return outcome ? render(*outcome, request.json) : renderError(outcome.error(), failureStatus(outcome.error()));
+    const auto outcome = nesso.Search(request);
+    return outcome ? Render(*outcome, request.json) : RenderError(outcome.error(), FailureStatus(outcome.error()));
 }
 
 } // namespace nesso::cli

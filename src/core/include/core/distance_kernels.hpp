@@ -16,17 +16,17 @@ enum class DistanceKernel : uint8_t
     Avx2Fma
 };
 
-[[nodiscard]] DistanceKernel selectedKernel() noexcept;
+[[nodiscard]] DistanceKernel SelectedKernel() noexcept;
 
-[[nodiscard]] float dotProductKernel(DistanceKernel kernel, std::span<const float> a,
+[[nodiscard]] float DotProductKernel(DistanceKernel kernel, std::span<const float> a,
                                      std::span<const float> b) noexcept;
 
-[[nodiscard]] float l2SquaredDistanceKernel(DistanceKernel kernel, std::span<const float> a,
+[[nodiscard]] float L2SquaredDistanceKernel(DistanceKernel kernel, std::span<const float> a,
                                             std::span<const float> b) noexcept;
 
-[[nodiscard]] float dotProductAvx2Fma(std::span<const float> a, std::span<const float> b) noexcept;
+[[nodiscard]] float DotProductAvx2Fma(std::span<const float> a, std::span<const float> b) noexcept;
 
-[[nodiscard]] float l2SquaredDistanceAvx2Fma(std::span<const float> a, std::span<const float> b) noexcept;
+[[nodiscard]] float L2SquaredDistanceAvx2Fma(std::span<const float> a, std::span<const float> b) noexcept;
 
 } // namespace nesso::core::math::detail
 

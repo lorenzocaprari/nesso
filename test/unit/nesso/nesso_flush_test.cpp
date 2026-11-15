@@ -42,13 +42,13 @@ class TempDir
     TempDir &operator=(TempDir &&) = delete;
     ~TempDir() { std::filesystem::remove_all(path_); }
 
-    [[nodiscard]] const std::filesystem::path &path() const { return path_; }
+    [[nodiscard]] const std::filesystem::path &Path() const { return path_; }
 
   private:
     std::filesystem::path path_;
 };
 
-std::string letterSuffix(std::size_t index)
+std::string LetterSuffix(std::size_t index)
 {
     std::string suffix;
     do
@@ -59,13 +59,13 @@ std::string letterSuffix(std::size_t index)
     return suffix;
 }
 
-void writeLines(const std::filesystem::path &path, size_t count, std::string_view tag)
+void WriteLines(const std::filesystem::path &path, size_t count, std::string_view tag)
 {
     std::ofstream output(path);
     REQUIRE(output);
     for (size_t index = 0; index < count; ++index)
     {
-        output << tag << '-' << letterSuffix(index) << " database connection\n";
+        output << tag << '-' << LetterSuffix(index) << " database connection\n";
     }
     REQUIRE(output);
 }
@@ -79,7 +79,7 @@ class RecordingEmbedder final : public nesso::embed::Embedder
 
     [[nodiscard]] std::expected<nesso::embed::EmbedderIdentity, nesso::embed::EmbedError> identity() const override
     {
-        return testEmbedderIdentity();
+        return TestEmbedderIdentity();
     }
 
     [[nodiscard]] std::expected<std::vector<float>, nesso::embed::EmbedError> embed(std::string_view) const override
@@ -88,16 +88,16 @@ class RecordingEmbedder final : public nesso::embed::Embedder
     }
 
     [[nodiscard]] std::expected<std::vector<std::vector<float>>, nesso::embed::EmbedError>
-    embedBatch(std::span<const std::string> texts, ProgressCallback) const override
+    EmbedBatch(std::span<const std::string> texts, ProgressCallback) const override
     {
         batches_.push_back(texts.size());
         seen_.insert(seen_.end(), texts.begin(), texts.end());
         return std::vector<std::vector<float>>(texts.size(), std::vector<float>{1.F, 0.F, 0.F, 0.F});
     }
 
-    [[nodiscard]] const std::vector<size_t> &batches() const { return batches_; }
+    [[nodiscard]] const std::vector<size_t> &Batches() const { return batches_; }
 
-    [[nodiscard]] const std::vector<std::string> &seen() const { return seen_; }
+    [[nodiscard]] const std::vector<std::string> &Seen() const { return seen_; }
 
   private:
     size_t sessions_;
@@ -124,7 +124,7 @@ class FallibleEmbedder final : public nesso::embed::Embedder
 
     [[nodiscard]] std::expected<nesso::embed::EmbedderIdentity, nesso::embed::EmbedError> identity() const override
     {
-        return testEmbedderIdentity();
+        return TestEmbedderIdentity();
     }
 
     [[nodiscard]] std::expected<std::vector<float>, nesso::embed::EmbedError> embed(std::string_view) const override
@@ -141,7 +141,7 @@ class FallibleEmbedder final : public nesso::embed::Embedder
     }
 
     [[nodiscard]] std::expected<std::vector<std::vector<float>>, nesso::embed::EmbedError>
-    embedBatch(std::span<const std::string> texts, ProgressCallback progress) const override
+    EmbedBatch(std::span<const std::string> texts, ProgressCallback progress) const override
     {
         if (progress)
         {
@@ -166,12 +166,12 @@ class FallibleEmbedder final : public nesso::embed::Embedder
     BatchBehavior batch_;
 };
 
-nesso::Nesso fallibleApp(BatchBehavior batch)
+nesso::Nesso FallibleApp(BatchBehavior batch)
 {
     return nesso::Nesso{nesso::Config{}, std::make_unique<FallibleEmbedder>(batch)};
 }
 
-void requireKind(const std::expected<nesso::TextResults, nesso::Error> &result, nesso::ErrorKind kind,
+void RequireKind(const std::expected<nesso::TextResults, nesso::Error> &result, nesso::ErrorKind kind,
                  nesso::ErrorCause cause)
 {
     REQUIRE_FALSE(result.has_value());
@@ -179,7 +179,7 @@ void requireKind(const std::expected<nesso::TextResults, nesso::Error> &result, 
     CHECK(result.error().cause == cause);
 }
 
-void requireIndexKind(const std::expected<nesso::IndexSummary, nesso::Error> &result, nesso::ErrorKind kind,
+void RequireIndexKind(const std::expected<nesso::IndexSummary, nesso::Error> &result, nesso::ErrorKind kind,
                       nesso::ErrorCause cause)
 {
     REQUIRE_FALSE(result.has_value());
@@ -210,137 +210,137 @@ class CinGuard
 TEST_CASE("zero sessions flush every line in one batch", "[nesso][text]")
 {
     const TempDir dir{"nesso_flush_zero_sessions"};
-    const auto log = dir.path() / "tail.log";
-    writeLines(log, 10, "delta");
+    const auto log = dir.Path() / "tail.log";
+    WriteLines(log, 10, "delta");
     auto embedder = std::make_unique<RecordingEmbedder>(0);
     const RecordingEmbedder *recorder = embedder.get();
     const nesso::Nesso app{nesso::Config{}, std::move(embedder)};
-    REQUIRE(app.index({.files = {log}, .output = dir.path() / "zero.nesso"}).has_value());
-    REQUIRE(recorder->batches().size() == 1);
-    CHECK(recorder->batches().front() == 10);
+    REQUIRE(app.Index({.files = {log}, .output = dir.Path() / "zero.nesso"}).has_value());
+    REQUIRE(recorder->Batches().size() == 1);
+    CHECK(recorder->Batches().front() == 10);
 }
 
 TEST_CASE("an exact batch leaves the final flush empty", "[nesso][text]")
 {
     const TempDir dir{"nesso_flush_exact_batch"};
-    const auto log = dir.path() / "exact.log";
-    writeLines(log, nesso::embed::BATCH_WINDOW, "epsilon");
+    const auto log = dir.Path() / "exact.log";
+    WriteLines(log, nesso::embed::BATCH_WINDOW, "epsilon");
     auto embedder = std::make_unique<RecordingEmbedder>(1);
     const RecordingEmbedder *recorder = embedder.get();
     const nesso::Nesso app{nesso::Config{}, std::move(embedder)};
-    REQUIRE(app.index({.files = {log}, .output = dir.path() / "exact.nesso"}).has_value());
-    CHECK(recorder->batches() == std::vector<size_t>{nesso::embed::BATCH_WINDOW});
-    REQUIRE(app.grep({.query = "database", .files = {log}}).has_value());
-    CHECK(recorder->batches().size() == 2);
+    REQUIRE(app.Index({.files = {log}, .output = dir.Path() / "exact.nesso"}).has_value());
+    CHECK(recorder->Batches() == std::vector<size_t>{nesso::embed::BATCH_WINDOW});
+    REQUIRE(app.Grep({.query = "database", .files = {log}}).has_value());
+    CHECK(recorder->Batches().size() == 2);
 }
 
 TEST_CASE("index flushes a fixed window for every session count", "[nesso][text]")
 {
     const TempDir dir{"nesso_flush_window"};
-    const auto log = dir.path() / "window.log";
+    const auto log = dir.Path() / "window.log";
     constexpr size_t total = nesso::embed::BATCH_WINDOW + 1;
-    writeLines(log, total, "window");
-    auto singleEmbedder = std::make_unique<RecordingEmbedder>(1);
-    auto multiEmbedder = std::make_unique<RecordingEmbedder>(3);
-    const RecordingEmbedder *single = singleEmbedder.get();
-    const RecordingEmbedder *multi = multiEmbedder.get();
-    const nesso::Nesso singleApp{nesso::Config{}, std::move(singleEmbedder)};
-    const nesso::Nesso multiApp{nesso::Config{}, std::move(multiEmbedder)};
-    REQUIRE(singleApp.index({.files = {log}, .output = dir.path() / "single.nesso"}).has_value());
-    REQUIRE(multiApp.index({.files = {log}, .output = dir.path() / "multi.nesso"}).has_value());
+    WriteLines(log, total, "window");
+    auto single_embedder = std::make_unique<RecordingEmbedder>(1);
+    auto multi_embedder = std::make_unique<RecordingEmbedder>(3);
+    const RecordingEmbedder *single = single_embedder.get();
+    const RecordingEmbedder *multi = multi_embedder.get();
+    const nesso::Nesso single_app{nesso::Config{}, std::move(single_embedder)};
+    const nesso::Nesso multi_app{nesso::Config{}, std::move(multi_embedder)};
+    REQUIRE(single_app.Index({.files = {log}, .output = dir.Path() / "single.nesso"}).has_value());
+    REQUIRE(multi_app.Index({.files = {log}, .output = dir.Path() / "multi.nesso"}).has_value());
     const std::vector<size_t> expected{nesso::embed::BATCH_WINDOW, 1};
-    CHECK(single->batches() == expected);
-    CHECK(multi->batches() == expected);
+    CHECK(single->Batches() == expected);
+    CHECK(multi->Batches() == expected);
 }
 
 TEST_CASE("a full window reports the embed error and stops", "[nesso][text]")
 {
     const TempDir dir{"nesso_flush_window_error"};
-    const auto log = dir.path() / "full.log";
-    writeLines(log, nesso::embed::BATCH_WINDOW + 3, "gamma");
-    const nesso::Nesso app = fallibleApp(BatchBehavior::Error);
-    requireKind(app.grep({.query = "database", .files = {log}}), nesso::ErrorKind::Embed, nesso::ErrorCause::Inference);
-    requireIndexKind(app.index({.files = {log}, .output = dir.path() / "err.nesso"}), nesso::ErrorKind::Embed,
+    const auto log = dir.Path() / "full.log";
+    WriteLines(log, nesso::embed::BATCH_WINDOW + 3, "gamma");
+    const nesso::Nesso app = FallibleApp(BatchBehavior::Error);
+    RequireKind(app.Grep({.query = "database", .files = {log}}), nesso::ErrorKind::Embed, nesso::ErrorCause::Inference);
+    RequireIndexKind(app.Index({.files = {log}, .output = dir.Path() / "err.nesso"}), nesso::ErrorKind::Embed,
                      nesso::ErrorCause::Inference);
 }
 
 TEST_CASE("a flush reports an embedder error", "[nesso][text]")
 {
     const TempDir dir{"nesso_flush_error"};
-    const auto full = dir.path() / "full.log";
-    const auto tail = dir.path() / "tail.log";
-    writeLines(full, 40, "gamma");
-    writeLines(tail, 10, "delta");
-    const nesso::Nesso app = fallibleApp(BatchBehavior::Error);
-    requireKind(app.grep({.query = "database", .files = {full}}), nesso::ErrorKind::Embed,
+    const auto full = dir.Path() / "full.log";
+    const auto tail = dir.Path() / "tail.log";
+    WriteLines(full, 40, "gamma");
+    WriteLines(tail, 10, "delta");
+    const nesso::Nesso app = FallibleApp(BatchBehavior::Error);
+    RequireKind(app.Grep({.query = "database", .files = {full}}), nesso::ErrorKind::Embed,
                 nesso::ErrorCause::Inference);
-    requireIndexKind(app.index({.files = {full}, .output = dir.path() / "err.nesso"}), nesso::ErrorKind::Embed,
+    RequireIndexKind(app.Index({.files = {full}, .output = dir.Path() / "err.nesso"}), nesso::ErrorKind::Embed,
                      nesso::ErrorCause::Inference);
-    requireKind(app.grep({.query = "database", .files = {tail}}), nesso::ErrorKind::Embed,
+    RequireKind(app.Grep({.query = "database", .files = {tail}}), nesso::ErrorKind::Embed,
                 nesso::ErrorCause::Inference);
-    requireIndexKind(app.index({.files = {tail}, .output = dir.path() / "tail.nesso"}), nesso::ErrorKind::Embed,
+    RequireIndexKind(app.Index({.files = {tail}, .output = dir.Path() / "tail.nesso"}), nesso::ErrorKind::Embed,
                      nesso::ErrorCause::Inference);
 }
 
 TEST_CASE("a short batch is a dimension mismatch", "[nesso][text]")
 {
     const TempDir dir{"nesso_flush_short_batch"};
-    const auto log = dir.path() / "tail.log";
-    writeLines(log, 10, "delta");
-    const nesso::Nesso app = fallibleApp(BatchBehavior::Short);
-    requireKind(app.grep({.query = "database", .files = {log}}), nesso::ErrorKind::Embed,
+    const auto log = dir.Path() / "tail.log";
+    WriteLines(log, 10, "delta");
+    const nesso::Nesso app = FallibleApp(BatchBehavior::Short);
+    RequireKind(app.Grep({.query = "database", .files = {log}}), nesso::ErrorKind::Embed,
                 nesso::ErrorCause::MismatchedDimensions);
-    requireIndexKind(app.index({.files = {log}, .output = dir.path() / "short.nesso"}), nesso::ErrorKind::Embed,
+    RequireIndexKind(app.Index({.files = {log}, .output = dir.Path() / "short.nesso"}), nesso::ErrorKind::Embed,
                      nesso::ErrorCause::MismatchedDimensions);
 }
 
 TEST_CASE("a narrow vector fails the score", "[nesso][text]")
 {
     const TempDir dir{"nesso_flush_narrow"};
-    const auto log = dir.path() / "tail.log";
-    writeLines(log, 10, "delta");
-    const nesso::Nesso app = fallibleApp(BatchBehavior::Narrow);
-    requireKind(app.grep({.query = "database", .files = {log}}), nesso::ErrorKind::Search,
+    const auto log = dir.Path() / "tail.log";
+    WriteLines(log, 10, "delta");
+    const nesso::Nesso app = FallibleApp(BatchBehavior::Narrow);
+    RequireKind(app.Grep({.query = "database", .files = {log}}), nesso::ErrorKind::Search,
                 nesso::ErrorCause::MismatchedDimensions);
 }
 
 TEST_CASE("a query embed error is reported", "[nesso][text]")
 {
     const TempDir dir{"nesso_flush_query_error"};
-    const auto log = dir.path() / "tail.log";
-    writeLines(log, 10, "delta");
-    const nesso::Nesso app = fallibleApp(BatchBehavior::QueryError);
-    requireKind(app.grep({.query = "database", .files = {log}}), nesso::ErrorKind::QueryEmbed,
+    const auto log = dir.Path() / "tail.log";
+    WriteLines(log, 10, "delta");
+    const nesso::Nesso app = FallibleApp(BatchBehavior::QueryError);
+    RequireKind(app.Grep({.query = "database", .files = {log}}), nesso::ErrorKind::QueryEmbed,
                 nesso::ErrorCause::Inference);
 }
 
 TEST_CASE("a query embed exception leaves grep", "[nesso][text]")
 {
     const TempDir dir{"nesso_flush_query_throw"};
-    const auto log = dir.path() / "tail.log";
-    writeLines(log, 10, "delta");
-    const nesso::Nesso app = fallibleApp(BatchBehavior::QueryThrow);
-    REQUIRE_THROWS_AS(app.grep({.query = "database", .files = {log}}), std::runtime_error);
+    const auto log = dir.Path() / "tail.log";
+    WriteLines(log, 10, "delta");
+    const nesso::Nesso app = FallibleApp(BatchBehavior::QueryThrow);
+    REQUIRE_THROWS_AS(app.Grep({.query = "database", .files = {log}}), std::runtime_error);
 }
 
 TEST_CASE("a batch embed exception leaves the flush", "[nesso][text]")
 {
     const TempDir dir{"nesso_flush_batch_throw"};
-    const auto full = dir.path() / "full.log";
-    const auto tail = dir.path() / "tail.log";
-    writeLines(full, 40, "gamma");
-    writeLines(tail, 10, "delta");
-    const nesso::Nesso app = fallibleApp(BatchBehavior::Throw);
-    REQUIRE_THROWS_AS(app.grep({.query = "database", .files = {full}}), std::runtime_error);
-    REQUIRE_THROWS_AS(app.index({.files = {full}, .output = dir.path() / "throw.nesso"}), std::runtime_error);
-    REQUIRE_THROWS_AS(app.grep({.query = "database", .files = {tail}}), std::runtime_error);
-    REQUIRE_THROWS_AS(app.index({.files = {tail}, .output = dir.path() / "tail-throw.nesso"}), std::runtime_error);
+    const auto full = dir.Path() / "full.log";
+    const auto tail = dir.Path() / "tail.log";
+    WriteLines(full, 40, "gamma");
+    WriteLines(tail, 10, "delta");
+    const nesso::Nesso app = FallibleApp(BatchBehavior::Throw);
+    REQUIRE_THROWS_AS(app.Grep({.query = "database", .files = {full}}), std::runtime_error);
+    REQUIRE_THROWS_AS(app.Index({.files = {full}, .output = dir.Path() / "throw.nesso"}), std::runtime_error);
+    REQUIRE_THROWS_AS(app.Grep({.query = "database", .files = {tail}}), std::runtime_error);
+    REQUIRE_THROWS_AS(app.Index({.files = {tail}, .output = dir.Path() / "tail-throw.nesso"}), std::runtime_error);
 }
 
 TEST_CASE("identical lines produce one embed call", "[nesso][text]")
 {
     const TempDir dir{"nesso_dedup_identical"};
-    const auto log = dir.path() / "same.log";
+    const auto log = dir.Path() / "same.log";
     {
         std::ofstream output(log);
         REQUIRE(output);
@@ -354,13 +354,13 @@ TEST_CASE("identical lines produce one embed call", "[nesso][text]")
     auto embedder = std::make_unique<RecordingEmbedder>(1);
     const RecordingEmbedder *recorder = embedder.get();
     const nesso::Nesso app{nesso::Config{}, std::move(embedder)};
-    const auto indexed = app.index({.files = {log}, .output = dir.path() / "same.nesso"});
+    const auto indexed = app.Index({.files = {log}, .output = dir.Path() / "same.nesso"});
     REQUIRE(indexed.has_value());
     CHECK(indexed->chunks == 8);
-    CHECK(recorder->batches() == std::vector<size_t>{1});
-    CHECK(recorder->seen() == std::vector<std::string>{"repeat me"});
+    CHECK(recorder->Batches() == std::vector<size_t>{1});
+    CHECK(recorder->Seen() == std::vector<std::string>{"repeat me"});
 
-    const auto grepped = app.grep({.query = "repeat", .files = {log}, .topK = 8});
+    const auto grepped = app.Grep({.query = "repeat", .files = {log}, .top_k = 8});
     REQUIRE(grepped.has_value());
     REQUIRE(grepped->matches.size() == 8);
     for (size_t index = 0; index < grepped->matches.size(); ++index)
@@ -370,9 +370,9 @@ TEST_CASE("identical lines produce one embed call", "[nesso][text]")
         CHECK(grepped->matches[index].occurrences == 8);
         CHECK(grepped->matches[index].score == grepped->matches.front().score);
     }
-    CHECK(recorder->batches() == std::vector<size_t>{1, 1});
+    CHECK(recorder->Batches() == std::vector<size_t>{1, 1});
 
-    const auto searched = app.search({.query = "repeat", .index = dir.path() / "same.nesso", .topK = 8});
+    const auto searched = app.Search({.query = "repeat", .index = dir.Path() / "same.nesso", .top_k = 8});
     REQUIRE(searched.has_value());
     REQUIRE(searched->matches.size() == 8);
     for (const nesso::TextMatch &match : searched->matches)
@@ -384,7 +384,7 @@ TEST_CASE("identical lines produce one embed call", "[nesso][text]")
 TEST_CASE("a duplicate group spanning two windows is embedded once", "[nesso][text]")
 {
     const TempDir dir{"nesso_dedup_window"};
-    const auto log = dir.path() / "window.log";
+    const auto log = dir.Path() / "window.log";
     const size_t total = nesso::embed::BATCH_WINDOW + 2;
     {
         std::ofstream output(log);
@@ -392,7 +392,7 @@ TEST_CASE("a duplicate group spanning two windows is embedded once", "[nesso][te
         output << "shared\n";
         for (size_t index = 1; index < nesso::embed::BATCH_WINDOW; ++index)
         {
-            output << letterSuffix(index) << '\n';
+            output << LetterSuffix(index) << '\n';
         }
         output << "shared\n";
         output << "fresh\n";
@@ -402,40 +402,40 @@ TEST_CASE("a duplicate group spanning two windows is embedded once", "[nesso][te
     auto embedder = std::make_unique<RecordingEmbedder>(2);
     const RecordingEmbedder *recorder = embedder.get();
     const nesso::Nesso app{nesso::Config{}, std::move(embedder)};
-    const auto indexed = app.index({.files = {log}, .output = dir.path() / "window.nesso"});
+    const auto indexed = app.Index({.files = {log}, .output = dir.Path() / "window.nesso"});
     REQUIRE(indexed.has_value());
     CHECK(indexed->chunks == total);
-    CHECK(recorder->batches() == std::vector<size_t>{nesso::embed::BATCH_WINDOW, 1});
-    CHECK(std::count(recorder->seen().begin(), recorder->seen().end(), "shared") == 1);
-    CHECK(std::find(recorder->seen().begin(), recorder->seen().end(), "fresh") != recorder->seen().end());
+    CHECK(recorder->Batches() == std::vector<size_t>{nesso::embed::BATCH_WINDOW, 1});
+    CHECK(std::count(recorder->Seen().begin(), recorder->Seen().end(), "shared") == 1);
+    CHECK(std::find(recorder->Seen().begin(), recorder->Seen().end(), "fresh") != recorder->Seen().end());
 
-    const auto tail = dir.path() / "tail.log";
+    const auto tail = dir.Path() / "tail.log";
     {
         std::ofstream output(tail);
         REQUIRE(output);
         for (size_t index = 0; index < nesso::embed::BATCH_WINDOW; ++index)
         {
-            output << "row" << letterSuffix(index) << '\n';
+            output << "row" << LetterSuffix(index) << '\n';
         }
-        output << "row" << letterSuffix(0) << '\n';
+        output << "row" << LetterSuffix(0) << '\n';
         REQUIRE(output);
     }
-    auto tailEmbedder = std::make_unique<RecordingEmbedder>(1);
-    const RecordingEmbedder *tailRecorder = tailEmbedder.get();
-    const nesso::Nesso tailApp{nesso::Config{}, std::move(tailEmbedder)};
-    const auto tailIndexed = tailApp.index({.files = {tail}, .output = dir.path() / "tail.nesso"});
-    REQUIRE(tailIndexed.has_value());
-    CHECK(tailIndexed->chunks == nesso::embed::BATCH_WINDOW + 1);
-    CHECK(tailRecorder->batches() == std::vector<size_t>{nesso::embed::BATCH_WINDOW});
-    CHECK(std::count(tailRecorder->seen().begin(), tailRecorder->seen().end(), "rowa") == 1);
-    const auto stored = nesso::core::readCorpusFile(dir.path() / "tail.nesso");
+    auto tail_embedder = std::make_unique<RecordingEmbedder>(1);
+    const RecordingEmbedder *tail_recorder = tail_embedder.get();
+    const nesso::Nesso tail_app{nesso::Config{}, std::move(tail_embedder)};
+    const auto tail_indexed = tail_app.Index({.files = {tail}, .output = dir.Path() / "tail.nesso"});
+    REQUIRE(tail_indexed.has_value());
+    CHECK(tail_indexed->chunks == nesso::embed::BATCH_WINDOW + 1);
+    CHECK(tail_recorder->Batches() == std::vector<size_t>{nesso::embed::BATCH_WINDOW});
+    CHECK(std::count(tail_recorder->Seen().begin(), tail_recorder->Seen().end(), "rowa") == 1);
+    const auto stored = nesso::core::ReadCorpusFile(dir.Path() / "tail.nesso");
     REQUIRE(stored.has_value());
     REQUIRE(stored->size() == nesso::embed::BATCH_WINDOW + 1);
     CHECK(stored->front().chunk.text == "rowa");
     CHECK(stored->back().chunk.text == "rowa");
     CHECK(stored->front().embedding == stored->back().embedding);
 
-    const auto grepped = app.grep({.query = "shared", .files = {log}, .topK = total});
+    const auto grepped = app.Grep({.query = "shared", .files = {log}, .top_k = total});
     REQUIRE(grepped.has_value());
     REQUIRE(grepped->matches.size() == total);
     size_t shared = 0;
@@ -462,14 +462,14 @@ TEST_CASE("a duplicate group spanning two windows is embedded once", "[nesso][te
 TEST_CASE("duplicates after a full window are written without another embed", "[nesso][text]")
 {
     const TempDir dir{"nesso_dedup_tail_window"};
-    const auto log = dir.path() / "tail-window.log";
+    const auto log = dir.Path() / "tail-window.log";
     const size_t total = nesso::embed::BATCH_WINDOW * 2;
     {
         std::ofstream output(log);
         REQUIRE(output);
         for (size_t index = 0; index < nesso::embed::BATCH_WINDOW; ++index)
         {
-            output << "row" << letterSuffix(index) << '\n';
+            output << "row" << LetterSuffix(index) << '\n';
         }
         for (size_t index = 0; index < nesso::embed::BATCH_WINDOW; ++index)
         {
@@ -481,12 +481,12 @@ TEST_CASE("duplicates after a full window are written without another embed", "[
     auto embedder = std::make_unique<RecordingEmbedder>(1);
     const RecordingEmbedder *recorder = embedder.get();
     const nesso::Nesso app{nesso::Config{}, std::move(embedder)};
-    const auto indexed = app.index({.files = {log}, .output = dir.path() / "tail-window.nesso"});
+    const auto indexed = app.Index({.files = {log}, .output = dir.Path() / "tail-window.nesso"});
     REQUIRE(indexed.has_value());
     CHECK(indexed->chunks == total);
-    CHECK(recorder->batches() == std::vector<size_t>{nesso::embed::BATCH_WINDOW});
-    CHECK(std::count(recorder->seen().begin(), recorder->seen().end(), "rowa") == 1);
-    const auto stored = nesso::core::readCorpusFile(dir.path() / "tail-window.nesso");
+    CHECK(recorder->Batches() == std::vector<size_t>{nesso::embed::BATCH_WINDOW});
+    CHECK(std::count(recorder->Seen().begin(), recorder->Seen().end(), "rowa") == 1);
+    const auto stored = nesso::core::ReadCorpusFile(dir.Path() / "tail-window.nesso");
     REQUIRE(stored.has_value());
     REQUIRE(stored->size() == total);
     CHECK(stored->front().chunk.text == "rowa");
@@ -497,8 +497,8 @@ TEST_CASE("duplicates after a full window are written without another embed", "[
 TEST_CASE("blank log lines and JSON values are not embedded or returned", "[nesso][text]")
 {
     const TempDir dir{"nesso_blank_records"};
-    const auto log = dir.path() / "lines.log";
-    const auto json = dir.path() / "values.json";
+    const auto log = dir.Path() / "lines.log";
+    const auto json = dir.Path() / "values.json";
     {
         std::ofstream output(log, std::ios::binary);
         REQUIRE(output);
@@ -515,47 +515,47 @@ TEST_CASE("blank log lines and JSON values are not embedded or returned", "[ness
     auto embedder = std::make_unique<RecordingEmbedder>(1);
     const RecordingEmbedder *recorder = embedder.get();
     const nesso::Nesso app{nesso::Config{}, std::move(embedder)};
-    const auto checkMatches = [&](const std::vector<nesso::TextMatch> &matches)
+    const auto check_matches = [&](const std::vector<nesso::TextMatch> &matches)
     {
         REQUIRE(matches.size() == 2);
-        const auto logMatch =
+        const auto log_match =
             std::ranges::find_if(matches, [&](const auto &match) { return match.source == log.string(); });
-        REQUIRE(logMatch != matches.end());
-        CHECK(logMatch->line == 2);
-        CHECK(logMatch->text == "  keep log \t");
-        CHECK_FALSE(logMatch->arrayElement);
-        const auto jsonMatch =
+        REQUIRE(log_match != matches.end());
+        CHECK(log_match->line == 2);
+        CHECK(log_match->text == "  keep log \t");
+        CHECK_FALSE(log_match->array_element);
+        const auto json_match =
             std::ranges::find_if(matches, [&](const auto &match) { return match.source == json.string(); });
-        REQUIRE(jsonMatch != matches.end());
-        CHECK(jsonMatch->line == 3);
-        CHECK(jsonMatch->text == "keep json");
-        CHECK(jsonMatch->arrayElement);
+        REQUIRE(json_match != matches.end());
+        CHECK(json_match->line == 3);
+        CHECK(json_match->text == "keep json");
+        CHECK(json_match->array_element);
     };
 
-    const auto grepped = app.grep({.query = "keep", .files = {log, json}, .topK = 8});
+    const auto grepped = app.Grep({.query = "keep", .files = {log, json}, .top_k = 8});
     REQUIRE(grepped.has_value());
-    CHECK(grepped->skippedLines == 4);
-    CHECK(grepped->emptyLines == 4);
-    checkMatches(grepped->matches);
-    CHECK(recorder->seen().size() == 2);
-    CHECK(std::count(recorder->seen().begin(), recorder->seen().end(), "  keep log \t") == 1);
-    CHECK(std::count(recorder->seen().begin(), recorder->seen().end(), "keep json") == 1);
+    CHECK(grepped->skipped_lines == 4);
+    CHECK(grepped->empty_lines == 4);
+    check_matches(grepped->matches);
+    CHECK(recorder->Seen().size() == 2);
+    CHECK(std::count(recorder->Seen().begin(), recorder->Seen().end(), "  keep log \t") == 1);
+    CHECK(std::count(recorder->Seen().begin(), recorder->Seen().end(), "keep json") == 1);
 
-    const auto corpus = dir.path() / "records.nesso";
-    const auto indexed = app.index({.files = {log, json}, .output = corpus});
+    const auto corpus = dir.Path() / "records.nesso";
+    const auto indexed = app.Index({.files = {log, json}, .output = corpus});
     REQUIRE(indexed.has_value());
     CHECK(indexed->chunks == 2);
-    CHECK(indexed->skippedLines == 4);
-    CHECK(indexed->emptyLines == 4);
-    CHECK(recorder->seen().size() == 4);
-    CHECK(std::count(recorder->seen().begin(), recorder->seen().end(), "  keep log \t") == 2);
-    CHECK(std::count(recorder->seen().begin(), recorder->seen().end(), "keep json") == 2);
-    const auto searched = app.search({.query = "keep", .index = corpus, .topK = 8});
+    CHECK(indexed->skipped_lines == 4);
+    CHECK(indexed->empty_lines == 4);
+    CHECK(recorder->Seen().size() == 4);
+    CHECK(std::count(recorder->Seen().begin(), recorder->Seen().end(), "  keep log \t") == 2);
+    CHECK(std::count(recorder->Seen().begin(), recorder->Seen().end(), "keep json") == 2);
+    const auto searched = app.Search({.query = "keep", .index = corpus, .top_k = 8});
     REQUIRE(searched.has_value());
-    checkMatches(searched->matches);
+    check_matches(searched->matches);
 
-    const auto blank = dir.path() / "blank.log";
-    const auto existing = dir.path() / "existing.nesso";
+    const auto blank = dir.Path() / "blank.log";
+    const auto existing = dir.Path() / "existing.nesso";
     {
         std::ofstream output(blank, std::ios::binary);
         REQUIRE(output);
@@ -568,22 +568,22 @@ TEST_CASE("blank log lines and JSON values are not embedded or returned", "[ness
         output << "preserve";
         REQUIRE(output);
     }
-    const auto emptyGrep = app.grep({.query = "keep", .files = {blank}});
-    REQUIRE_FALSE(emptyGrep.has_value());
-    CHECK(emptyGrep.error().kind == nesso::ErrorKind::EmptyInput);
-    CHECK(emptyGrep.error().cause == nesso::ErrorCause::NothingIndexable);
-    CHECK(emptyGrep.error().emptyLines == 2);
-    const auto emptyIndex = app.index({.files = {blank}, .output = existing});
-    REQUIRE_FALSE(emptyIndex.has_value());
-    CHECK(emptyIndex.error().kind == nesso::ErrorKind::EmptyInput);
-    CHECK(emptyIndex.error().cause == nesso::ErrorCause::NothingIndexable);
-    CHECK(emptyIndex.error().emptyLines == 2);
+    const auto empty_grep = app.Grep({.query = "keep", .files = {blank}});
+    REQUIRE_FALSE(empty_grep.has_value());
+    CHECK(empty_grep.error().kind == nesso::ErrorKind::EmptyInput);
+    CHECK(empty_grep.error().cause == nesso::ErrorCause::NothingIndexable);
+    CHECK(empty_grep.error().empty_lines == 2);
+    const auto empty_index = app.Index({.files = {blank}, .output = existing});
+    REQUIRE_FALSE(empty_index.has_value());
+    CHECK(empty_index.error().kind == nesso::ErrorKind::EmptyInput);
+    CHECK(empty_index.error().cause == nesso::ErrorCause::NothingIndexable);
+    CHECK(empty_index.error().empty_lines == 2);
     std::ifstream preserved(existing, std::ios::binary);
     REQUIRE(preserved);
     std::string content;
     std::getline(preserved, content);
     CHECK(content == "preserve");
-    CHECK(recorder->seen().size() == 4);
+    CHECK(recorder->Seen().size() == 4);
 }
 
 TEST_CASE("stdin duplicates are embedded once", "[nesso][text]")
@@ -594,10 +594,10 @@ TEST_CASE("stdin duplicates are embedded once", "[nesso][text]")
     auto embedder = std::make_unique<RecordingEmbedder>(1);
     const RecordingEmbedder *recorder = embedder.get();
     const nesso::Nesso app{nesso::Config{}, std::move(embedder)};
-    const auto grepped = app.grep({.query = "same", .files = {"-"}, .topK = 2});
+    const auto grepped = app.Grep({.query = "same", .files = {"-"}, .top_k = 2});
     REQUIRE(grepped.has_value());
-    CHECK(recorder->batches() == std::vector<size_t>{1});
-    CHECK(recorder->seen() == std::vector<std::string>{"same"});
+    CHECK(recorder->Batches() == std::vector<size_t>{1});
+    CHECK(recorder->Seen() == std::vector<std::string>{"same"});
     REQUIRE(grepped->matches.size() == 2);
     CHECK(grepped->matches[0].source == "-");
     CHECK(grepped->matches[0].line == 1);
@@ -607,17 +607,17 @@ TEST_CASE("stdin duplicates are embedded once", "[nesso][text]")
     CHECK(grepped->matches[0].score == grepped->matches[1].score);
 
     std::stringstream again{"same\nsame\n"};
-    const CinGuard indexGuard{again};
-    const auto indexed = app.index({.files = {"-"}, .output = dir.path() / "stdin.nesso"});
+    const CinGuard index_guard{again};
+    const auto indexed = app.Index({.files = {"-"}, .output = dir.Path() / "stdin.nesso"});
     REQUIRE(indexed.has_value());
     CHECK(indexed->chunks == 2);
-    CHECK(recorder->batches().back() == 1);
+    CHECK(recorder->Batches().back() == 1);
 }
 
 TEST_CASE("lines that differ by a masked id are embedded once", "[nesso][text]")
 {
     const TempDir dir{"nesso_dedup_masked"};
-    const auto log = dir.path() / "blocks.log";
+    const auto log = dir.Path() / "blocks.log";
     {
         std::ofstream output(log);
         REQUIRE(output);
@@ -630,22 +630,23 @@ TEST_CASE("lines that differ by a masked id are embedded once", "[nesso][text]")
     auto embedder = std::make_unique<RecordingEmbedder>(1);
     const RecordingEmbedder *recorder = embedder.get();
     const nesso::Nesso app{nesso::Config{}, std::move(embedder)};
-    const auto indexed = app.index({.files = {log}, .output = dir.path() / "blocks.nesso"});
+    const auto indexed = app.Index({.files = {log}, .output = dir.Path() / "blocks.nesso"});
     REQUIRE(indexed.has_value());
     CHECK(indexed->chunks == 3);
-    CHECK(recorder->seen() == std::vector<std::string>{"block blk_10 done"});
+    CHECK(recorder->Seen() == std::vector<std::string>{"block blk_10 done"});
 
-    const auto stored = nesso::core::readCorpusFile(dir.path() / "blocks.nesso");
+    const auto stored = nesso::core::ReadCorpusFile(dir.Path() / "blocks.nesso");
     REQUIRE(stored.has_value());
     REQUIRE(stored->size() == 3);
-    // File sources have no storedText; readCorpusFile falls back to the distinct first raw line.
+    // File sources have no storedText; ReadCorpusFile falls back to the distinct
+    // first raw line.
     CHECK(stored->at(0).chunk.text == "block blk_10 done");
     CHECK(stored->at(1).chunk.text == "block blk_10 done");
     CHECK(stored->at(2).chunk.text == "block blk_10 done");
     CHECK(stored->at(0).embedding == stored->at(1).embedding);
     CHECK(stored->at(1).embedding == stored->at(2).embedding);
 
-    const auto grepped = app.grep({.query = "block", .files = {log}, .topK = 3, .mode = nesso::SearchMode::Dense});
+    const auto grepped = app.Grep({.query = "block", .files = {log}, .top_k = 3, .mode = nesso::SearchMode::Dense});
     REQUIRE(grepped.has_value());
     REQUIRE(grepped->matches.size() == 3);
     CHECK(grepped->matches[0].text == "block blk_10 done");
@@ -657,8 +658,8 @@ TEST_CASE("lines that differ by a masked id are embedded once", "[nesso][text]")
         CHECK(match.score == grepped->matches.front().score);
     }
 
-    const auto searched = app.search(
-        {.query = "block", .index = dir.path() / "blocks.nesso", .topK = 3, .mode = nesso::SearchMode::Dense});
+    const auto searched = app.Search(
+        {.query = "block", .index = dir.Path() / "blocks.nesso", .top_k = 3, .mode = nesso::SearchMode::Dense});
     REQUIRE(searched.has_value());
     REQUIRE(searched->matches.size() == 3);
     CHECK(searched->matches[0].text == "block blk_10 done");
@@ -670,7 +671,7 @@ TEST_CASE("lines that differ by a masked id are embedded once", "[nesso][text]")
     }
 }
 
-void writeBytes(const std::filesystem::path &path, std::string_view bytes)
+void WriteBytes(const std::filesystem::path &path, std::string_view bytes)
 {
     std::filesystem::create_directories(path.parent_path());
     std::ofstream output(path, std::ios::binary);
@@ -679,7 +680,7 @@ void writeBytes(const std::filesystem::path &path, std::string_view bytes)
     REQUIRE(output);
 }
 
-std::string unhex(std::string_view hex)
+std::string Unhex(std::string_view hex)
 {
     std::string out;
     out.reserve(hex.size() / 2);
@@ -709,18 +710,18 @@ std::string unhex(std::string_view hex)
 TEST_CASE("directories are read in unsigned path order", "[nesso][text]")
 {
     const TempDir dir{"nesso_dir_order"};
-    const auto root = dir.path() / "logs";
-    writeBytes(root / "b.log", "beta database\n");
-    writeBytes(root / "nested" / "c.log", "gamma database\n");
-    writeBytes(root / "a.log", "alpha database\n");
+    const auto root = dir.Path() / "logs";
+    WriteBytes(root / "b.log", "beta database\n");
+    WriteBytes(root / "nested" / "c.log", "gamma database\n");
+    WriteBytes(root / "a.log", "alpha database\n");
     auto embedder = std::make_unique<RecordingEmbedder>(1);
     const RecordingEmbedder *recorder = embedder.get();
     const nesso::Nesso app{nesso::Config{}, std::move(embedder)};
-    const auto indexed = app.index({.files = {root}, .output = dir.path() / "logs.nesso"});
+    const auto indexed = app.Index({.files = {root}, .output = dir.Path() / "logs.nesso"});
     REQUIRE(indexed.has_value());
-    CHECK(recorder->seen() == std::vector<std::string>{"alpha database", "beta database", "gamma database"});
+    CHECK(recorder->Seen() == std::vector<std::string>{"alpha database", "beta database", "gamma database"});
 
-    const auto grepped = app.grep({.query = "database", .files = {root}});
+    const auto grepped = app.Grep({.query = "database", .files = {root}});
     REQUIRE(grepped.has_value());
     REQUIRE(grepped->matches.size() == 3);
 }
@@ -728,57 +729,56 @@ TEST_CASE("directories are read in unsigned path order", "[nesso][text]")
 TEST_CASE("a gzip input is stored with its line text", "[nesso][text]")
 {
     const TempDir dir{"nesso_gzip_index"};
-    const auto path = dir.path() / "app.log.gz";
-    writeBytes(
-        path,
-        unhex("1f8b0800f722f26a02ff4b492c494c4a2c4e5548cecfcb4b4d2ec9cccf53284a4d2b2d4e4de10200e756bf4f1c000000"));
+    const auto path = dir.Path() / "app.log.gz";
+    WriteBytes(path, Unhex("1f8b0800f722f26a02ff4b492c494c4a2c4e5548cecfcb4b4d2ec"
+                           "9cccf53284a4d2b2d4e4de10200e756bf4f1c000000"));
     auto embedder = std::make_unique<RecordingEmbedder>(1);
     const nesso::Nesso app{nesso::Config{}, std::move(embedder)};
-    const auto corpus = dir.path() / "app.nesso";
-    REQUIRE(app.index({.files = {path}, .output = corpus}).has_value());
-    const auto mapped = nesso::core::mapCorpusFile(corpus);
+    const auto corpus = dir.Path() / "app.nesso";
+    REQUIRE(app.Index({.files = {path}, .output = corpus}).has_value());
+    const auto mapped = nesso::core::MapCorpusFile(corpus);
     REQUIRE(mapped);
-    REQUIRE(mapped->sources().size() == 1);
-    CHECK(mapped->sources()[0].storedOnly);
-    CHECK_FALSE(mapped->sources()[0].tracked);
+    REQUIRE(mapped->Sources().size() == 1);
+    CHECK(mapped->Sources()[0].stored_only);
+    CHECK_FALSE(mapped->Sources()[0].tracked);
     bool found = false;
-    for (const nesso::core::CorpusLine &line : mapped->lines())
+    for (const nesso::core::CorpusLine &line : mapped->Lines())
     {
-        if (line.storedText && *line.storedText == "database connection refused")
+        if (line.stored_text && *line.stored_text == "database connection refused")
         {
             found = true;
         }
     }
     CHECK(found);
 
-    const auto searched = app.search({.query = "database", .index = corpus, .mode = nesso::SearchMode::Dense});
+    const auto searched = app.Search({.query = "database", .index = corpus, .mode = nesso::SearchMode::Dense});
     REQUIRE(searched.has_value());
     REQUIRE_FALSE(searched->matches.empty());
     CHECK(searched->matches.front().text == "database connection refused");
-    CHECK(searched->staleSources.empty());
+    CHECK(searched->stale_sources.empty());
 }
 
 TEST_CASE("a truncated gzip fails the parse", "[nesso][text]")
 {
     const TempDir dir{"nesso_gzip_bad"};
-    const auto path = dir.path() / "bad.gz";
-    writeBytes(path, std::string{"\x1f\x8b\x08\x00", 4});
-    const nesso::Nesso app = fallibleApp(BatchBehavior::Error);
-    const auto indexed = app.index({.files = {path}, .output = dir.path() / "bad.nesso"});
+    const auto path = dir.Path() / "bad.gz";
+    WriteBytes(path, std::string{"\x1f\x8b\x08\x00", 4});
+    const nesso::Nesso app = FallibleApp(BatchBehavior::Error);
+    const auto indexed = app.Index({.files = {path}, .output = dir.Path() / "bad.nesso"});
     REQUIRE_FALSE(indexed);
     CHECK(indexed.error().kind == nesso::ErrorKind::Parse);
     CHECK(indexed.error().cause == nesso::ErrorCause::CorruptGzip);
-    CHECK(nesso::message(indexed.error()).find("truncated or corrupt") != std::string::npos);
+    CHECK(nesso::Message(indexed.error()).find("truncated or corrupt") != std::string::npos);
 }
 
 TEST_CASE("a dangling symlink inside a directory fails the walk", "[nesso][text]")
 {
     const TempDir dir{"nesso_dir_dangling"};
-    const auto root = dir.path() / "logs";
+    const auto root = dir.Path() / "logs";
     std::filesystem::create_directories(root);
     std::filesystem::create_symlink(root / "missing.log", root / "link.log");
     const nesso::Nesso app{nesso::Config{}, std::make_unique<RecordingEmbedder>(1)};
-    const auto indexed = app.index({.files = {root}, .output = dir.path() / "logs.nesso"});
+    const auto indexed = app.Index({.files = {root}, .output = dir.Path() / "logs.nesso"});
     REQUIRE_FALSE(indexed);
     CHECK(indexed.error().kind == nesso::ErrorKind::Parse);
     CHECK(indexed.error().cause == nesso::ErrorCause::FileOpen);

@@ -15,25 +15,25 @@ class CosineSimilarity
 {
   public:
     template <SupportedScalar T>
-    [[nodiscard]] static std::expected<T, EngineError> calculate(std::span<const T> a, std::span<const T> b) noexcept;
+    [[nodiscard]] static std::expected<T, EngineError> Calculate(std::span<const T> a, std::span<const T> b) noexcept;
 };
 
 class DistanceMetrics
 {
   public:
     template <SupportedScalar T>
-    [[nodiscard]] static std::expected<T, EngineError> dotProduct(std::span<const T> a, std::span<const T> b) noexcept;
+    [[nodiscard]] static std::expected<T, EngineError> DotProduct(std::span<const T> a, std::span<const T> b) noexcept;
 
     template <SupportedScalar T>
-    [[nodiscard]] static std::expected<T, EngineError> l2SquaredDistance(std::span<const T> a,
+    [[nodiscard]] static std::expected<T, EngineError> L2SquaredDistance(std::span<const T> a,
                                                                          std::span<const T> b) noexcept;
 };
 
 namespace detail
 {
-template <SupportedScalar T> [[nodiscard]] T dotProductScalar(std::span<const T> a, std::span<const T> b) noexcept;
+template <SupportedScalar T> [[nodiscard]] T DotProductScalar(std::span<const T> a, std::span<const T> b) noexcept;
 template <SupportedScalar T>
-[[nodiscard]] T l2SquaredDistanceScalar(std::span<const T> a, std::span<const T> b) noexcept;
+[[nodiscard]] T L2SquaredDistanceScalar(std::span<const T> a, std::span<const T> b) noexcept;
 } // namespace detail
 
 } // namespace nesso::core::math

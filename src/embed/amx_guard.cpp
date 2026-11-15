@@ -24,13 +24,14 @@
 namespace nesso::embed
 {
 
-void reportAmxGuard(bool guardInEffect, std::FILE *err)
+void ReportAmxGuard(bool guard_in_effect, std::FILE *err)
 {
-    if (guardInEffect)
+    if (guard_in_effect)
     {
         return;
     }
-    std::println(err, "Warning: the AMX guard is not in effect; the int8 model may use the AMX kernel");
+    std::println(err, "Warning: the AMX guard is not in effect; the int8 model "
+                      "may use the AMX kernel");
 }
 
 #if defined(__linux__) && defined(__x86_64__)
@@ -45,7 +46,7 @@ static constexpr std::uint64_t GET_TILE_PERMISSION = 0x1022;
 static constexpr std::uint32_t REQUEST_TILE_PERMISSION = 0x1023;
 static constexpr std::uint64_t TILE_DATA_FEATURE = 18;
 
-static bool tilePermissionGranted()
+static bool TilePermissionGranted()
 {
     // mask stays 0 when the kernel predates the call.
     std::uint64_t mask = 0;
@@ -54,7 +55,7 @@ static bool tilePermissionGranted()
     return (mask & (std::uint64_t{1} << TILE_DATA_FEATURE)) != 0;
 }
 
-static bool installRefusal()
+static bool InstallRefusal()
 {
     // Return EPERM for arch_prctl(ARCH_REQ_XCOMP_PERM, ...) and allow every
     // other call. TSYNC applies the filter to threads that already exist.
@@ -78,15 +79,15 @@ static bool installRefusal()
     return syscall(SYS_seccomp, SECCOMP_SET_MODE_FILTER, SECCOMP_FILTER_FLAG_TSYNC, &fprog) == 0;
 }
 
-bool denyAmxTiles()
+bool DenyAmxTiles()
 {
-    static const bool denied = !tilePermissionGranted() && installRefusal();
-    return denied;
+    static const bool DENIED = !TilePermissionGranted() && InstallRefusal();
+    return DENIED;
 }
 
 #else
 
-bool denyAmxTiles() { return true; }
+bool DenyAmxTiles() { return true; }
 
 #endif
 

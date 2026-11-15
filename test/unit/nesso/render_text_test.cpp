@@ -16,7 +16,7 @@ TEST_CASE("terminal text escapes ASCII controls", "[text][terminal]")
     input.push_back('\x07');
     input.push_back('\x7F');
 
-    CHECK(nesso::cli::escapeTerminalControls(input) == "plain\\x00\\x09\\x0D\\x1B[2J\\x07\\x7F");
+    CHECK(nesso::cli::EscapeTerminalControls(input) == "plain\\x00\\x09\\x0D\\x1B[2J\\x07\\x7F");
 }
 
 TEST_CASE("terminal text escapes C1 controls and invalid UTF-8", "[text][terminal]")
@@ -29,5 +29,5 @@ TEST_CASE("terminal text escapes C1 controls and invalid UTF-8", "[text][termina
     input.push_back('\x9B');
     input.append("\xC0\x80");
 
-    CHECK(nesso::cli::escapeTerminalControls(input) == "c1:\\u009B,valid:\xC3\xA9,invalid:\\x9B\\xC0\\x80");
+    CHECK(nesso::cli::EscapeTerminalControls(input) == "c1:\\u009B,valid:\xC3\xA9,invalid:\\x9B\\xC0\\x80");
 }

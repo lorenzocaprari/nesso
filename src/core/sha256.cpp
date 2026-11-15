@@ -35,9 +35,9 @@ constexpr std::array<std::uint32_t, 64> ROUND_CONSTANTS{
 class Sha256
 {
   public:
-    void update(std::span<const std::byte> bytes)
+    void Update(std::span<const std::byte> bytes)
     {
-        totalBytes_ += bytes.size();
+        total_bytes_ += bytes.size();
         while (!bytes.empty())
         {
             const std::size_t count = std::min(bytes.size(), buffer_.size() - buffered_);
@@ -46,21 +46,21 @@ class Sha256
             bytes = bytes.subspan(count);
             if (buffered_ == buffer_.size())
             {
-                transform(buffer_);
+                Transform(buffer_);
                 buffered_ = 0;
             }
         }
     }
 
-    [[nodiscard]] Sha256Digest finish()
+    [[nodiscard]] Sha256Digest Finish()
     {
-        const std::uint64_t bits = totalBytes_ * 8U;
+        const std::uint64_t bits = total_bytes_ * 8U;
         const auto buffer = std::span{buffer_};
         buffer[buffered_++] = std::byte{0x80};
         if (buffered_ > 56)
         {
             std::ranges::fill(buffer.subspan(buffered_), std::byte{0});
-            transform(buffer_);
+            Transform(buffer_);
             buffered_ = 0;
         }
         std::ranges::fill(buffer.subspan(buffered_, 56 - buffered_), std::byte{0});
@@ -68,23 +68,23 @@ class Sha256
         {
             buffer[56 + index] = static_cast<std::byte>(bits >> ((7U - index) * 8U));
         }
-        transform(buffer_);
+        Transform(buffer_);
 
         Sha256Digest digest{};
-        const auto digestBytes = std::span{digest};
-        const auto stateWords = std::span{state_};
+        const auto digest_bytes = std::span{digest};
+        const auto state_words = std::span{state_};
         for (std::size_t index = 0; index < state_.size(); ++index)
         {
             for (std::size_t byte = 0; byte < 4; ++byte)
             {
-                digestBytes[(index * 4) + byte] = static_cast<std::uint8_t>(stateWords[index] >> ((3U - byte) * 8U));
+                digest_bytes[(index * 4) + byte] = static_cast<std::uint8_t>(state_words[index] >> ((3U - byte) * 8U));
             }
         }
         return digest;
     }
 
   private:
-    void transform(std::span<const std::byte, 64> block)
+    void Transform(std::span<const std::byte, 64> block)
     {
         std::array<std::uint32_t, 64> words{};
         const auto schedule = std::span{words};
@@ -124,18 +124,18 @@ class Sha256
             a = temp1 + temp2;
         }
         const std::array<std::uint32_t, 8> result{a, b, c, d, e, f, g, h};
-        const auto stateWords = std::span{state_};
-        const auto resultWords = std::span{result};
+        const auto state_words = std::span{state_};
+        const auto result_words = std::span{result};
         for (std::size_t index = 0; index < state_.size(); ++index)
         {
-            stateWords[index] += resultWords[index];
+            state_words[index] += result_words[index];
         }
     }
 
     std::array<std::uint32_t, 8> state_{0x6a09e667U, 0xbb67ae85U, 0x3c6ef372U, 0xa54ff53aU,
                                         0x510e527fU, 0x9b05688cU, 0x1f83d9abU, 0x5be0cd19U};
     std::array<std::byte, 64> buffer_{};
-    std::uint64_t totalBytes_ = 0;
+    std::uint64_t total_bytes_ = 0;
     std::size_t buffered_ = 0;
 };
 
@@ -144,8 +144,8 @@ class Sha256
 Sha256Digest ComputeSha256(std::span<const std::byte> bytes)
 {
     Sha256 hash;
-    hash.update(bytes);
-    return hash.finish();
+    hash.Update(bytes);
+    return hash.Finish();
 }
 
 Sha256Digest ComputeSha256(std::span<const std::span<const std::byte>> parts)
@@ -153,12 +153,12 @@ Sha256Digest ComputeSha256(std::span<const std::span<const std::byte>> parts)
     Sha256 hash;
     for (const std::span<const std::byte> part : parts)
     {
-        hash.update(part);
+        hash.Update(part);
     }
-    return hash.finish();
+    return hash.Finish();
 }
 
-std::expected<Sha256Digest, HashError> sha256File(const std::filesystem::path &path)
+std::expected<Sha256Digest, HashError> Sha256File(const std::filesystem::path &path)
 {
     std::ifstream input(path, std::ios::binary);
     if (!input)
@@ -171,16 +171,16 @@ std::expected<Sha256Digest, HashError> sha256File(const std::filesystem::path &p
     {
         input.read(buffer.data(), static_cast<std::streamsize>(buffer.size()));
         const auto count = static_cast<std::size_t>(input.gcount());
-        hash.update(std::as_bytes(std::span{buffer}.first(count)));
+        hash.Update(std::as_bytes(std::span{buffer}.first(count)));
     }
     if (input.bad() || !input.eof())
     {
         return std::unexpected(HashError::ReadFailure);
     }
-    return hash.finish();
+    return hash.Finish();
 }
 
-std::string hexSha256(const Sha256Digest &digest)
+std::string HexSha256(const Sha256Digest &digest)
 {
     constexpr std::string_view digits = "0123456789abcdef";
     std::string result;
