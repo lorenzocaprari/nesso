@@ -41,7 +41,6 @@ Checks: >
   -cppcoreguidelines-noexcept-move-operations,
   -cppcoreguidelines-noexcept-swap,
   -cppcoreguidelines-non-private-member-variables-in-classes,
-  -cppcoreguidelines-owning-memory,
   -cppcoreguidelines-use-default-member-init,
   -google-readability-braces-around-statements,
   -google-readability-function-size,
