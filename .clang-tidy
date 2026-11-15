@@ -51,8 +51,7 @@ Checks: >
   -misc-include-cleaner,
   -misc-use-anonymous-namespace,
   -modernize-use-trailing-return-type,
-  -readability-magic-numbers,
-  -clang-diagnostic-error
+  -readability-magic-numbers
 
 WarningsAsErrors: '*'
 
