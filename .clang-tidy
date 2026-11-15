@@ -54,7 +54,6 @@ Checks: >
   -misc-use-anonymous-namespace,
   -modernize-use-trailing-return-type,
   -performance-unnecessary-value-param,
-  -readability-convert-member-functions-to-static,
   -readability-magic-numbers,
   -clang-diagnostic-error
 
