@@ -1,0 +1,60 @@
+#!/usr/bin/env bash
+# Fast local path: clang-tidy only the lines changed vs the merge base.
+# Full-tree gate remains scripts/clang-tidy (CI).
+set -euo pipefail
+
+PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$PROJECT_ROOT"
+
+if [ -n "${NESSO_CLANG_TIDY_BUILD_DIR:-}" ]; then
+    BUILD_DIR="$NESSO_CLANG_TIDY_BUILD_DIR"
+elif [ -f "$PROJECT_ROOT/build/Release/compile_commands.json" ]; then
+    BUILD_DIR="$PROJECT_ROOT/build/Release"
+elif [ -f "$PROJECT_ROOT/build/Debug/compile_commands.json" ]; then
+    BUILD_DIR="$PROJECT_ROOT/build/Debug"
+else
+    echo "clang-tidy-diff: compile_commands.json not found." >&2
+    echo "Build once, or set NESSO_CLANG_TIDY_BUILD_DIR to a directory that has it." >&2
+    exit 1
+fi
+
+if [ ! -f "$BUILD_DIR/compile_commands.json" ]; then
+    echo "clang-tidy-diff: missing $BUILD_DIR/compile_commands.json" >&2
+    exit 1
+fi
+
+DIFF_BIN=""
+for candidate in clang-tidy-diff-21.py clang-tidy-diff.py; do
+    if command -v "$candidate" &> /dev/null; then
+        DIFF_BIN="$candidate"
+        break
+    fi
+done
+if [ -z "$DIFF_BIN" ]; then
+    echo "clang-tidy-diff: clang-tidy-diff-21.py not found in PATH." >&2
+    exit 1
+fi
+
+BASE_REF="${NESSO_CLANG_TIDY_DIFF_BASE:-origin/main}"
+if ! git rev-parse --verify "$BASE_REF" &> /dev/null; then
+    echo "clang-tidy-diff: base ref '$BASE_REF' not found (fetch it, or set NESSO_CLANG_TIDY_DIFF_BASE)." >&2
+    exit 1
+fi
+
+# Same GCC-only flag strip as scripts/clang-tidy so Clang's driver accepts the DB.
+sed -i \
+  -e 's/ -fmodules-ts//g' \
+  -e 's/ -fmodule-mapper=[^ ]*//g' \
+  -e 's/ -fdeps-format=[^ ]*//g' \
+  -e 's/ -Wduplicated-cond//g' \
+  -e 's/ -Wduplicated-branches//g' \
+  -e 's/ -Wlogical-op//g' \
+  -e 's/ -Wuseless-cast//g' \
+  "$BUILD_DIR/compile_commands.json"
+
+echo "clang-tidy-diff: build=$BUILD_DIR base=$BASE_REF tool=$DIFF_BIN"
+# -quiet keeps the gate readable; exit non-zero on warnings because WarningsAsErrors is '*'.
+git diff -U0 "$BASE_REF"...HEAD -- 'src/' 'test/' | \
+  "$DIFF_BIN" -p1 -j"$(nproc)" -path "$BUILD_DIR" -quiet
+
+echo "clang-tidy-diff: check completed."

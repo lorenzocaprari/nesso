@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- `scripts/clang-tidy` accepts `NESSO_CLANG_TIDY_BUILD_DIR` for an alternate compile database (optional Clang-parity pass). `scripts/clang-tidy-diff` runs clang-tidy only on the diff against `the main remote-tracking branch` (or `NESSO_CLANG_TIDY_DIFF_BASE`); CI keeps the full-tree gate.
+
 ### Added
 
 - [docs/quick-start.md](docs/quick-start.md) is a support-engineer path for installing nesso and grepping a sosreport or tarball in place, including encrypted, limit, and skipped-entry messages.
