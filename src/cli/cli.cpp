@@ -115,7 +115,6 @@ static void renderPolicyWarning(bool mismatch)
     }
 }
 
-// NOLINTNEXTLINE(readability-identifier-naming)
 static LineReport MakeLineReport(const TextResults &results)
 {
     return {.emptyLines = results.emptyLines,
@@ -126,7 +125,6 @@ static LineReport MakeLineReport(const TextResults &results)
             .bundleSkips = results.bundleSkips};
 }
 
-// NOLINTNEXTLINE(readability-identifier-naming)
 static LineReport MakeLineReport(const IndexSummary &summary)
 {
     return {.emptyLines = summary.emptyLines,
@@ -137,7 +135,6 @@ static LineReport MakeLineReport(const IndexSummary &summary)
             .bundleSkips = summary.bundleSkips};
 }
 
-// NOLINTNEXTLINE(readability-identifier-naming)
 static LineReport MakeLineReport(const Error &error)
 {
     return {.emptyLines = error.emptyLines,

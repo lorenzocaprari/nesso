@@ -182,7 +182,6 @@ namespace nesso::core
 
 static_assert(std::endian::native == std::endian::little);
 
-// NOLINTNEXTLINE(readability-identifier-naming)
 CorpusChecksum ComputeCorpusChecksum(std::span<const std::byte> file)
 {
     constexpr std::array<std::byte, CORPUS_CHECKSUM_BYTES> zeros{};

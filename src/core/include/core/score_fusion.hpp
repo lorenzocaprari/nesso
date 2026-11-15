@@ -28,7 +28,6 @@ struct ZScoreStats
     double deviation = 0.0;
 };
 
-// NOLINTNEXTLINE(readability-identifier-naming)
 [[nodiscard]] ZScoreStats ComputeZScoreStats(std::span<const double> values);
 
 /// `(value - mean) / deviation`, or `0` when `deviation` is 0.

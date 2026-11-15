@@ -134,7 +134,6 @@ class Pool
 
     std::mutex &mutex() { return mutex_; }
 
-    // NOLINTNEXTLINE(readability-identifier-naming)
     Job &GetJob(size_t index) { return *jobs_[index]; }
 
     bool ensure(size_t background)
@@ -324,7 +323,6 @@ class WaitGuard
 
 } // namespace
 
-// NOLINTNEXTLINE(readability-identifier-naming)
 static Pool &GetPool()
 {
     static Pool instance;

@@ -412,7 +412,6 @@ MachineResources readMachine(const MachineFsRoots &roots)
     return machine;
 }
 
-// NOLINTNEXTLINE(readability-identifier-naming)
 SessionPolicy MakeSessionPolicy(bool quantized, size_t requestedThreads, const MachineResources &machine)
 {
     const size_t logical = atLeastOne(machine.logicalThreads);
