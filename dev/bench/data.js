@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794705168765,
+  "lastUpdate": 1794705963932,
   "repoUrl": "https://github.com/lorenzocaprari/nesso",
   "entries": {
     "nesso": [
@@ -7230,6 +7230,60 @@ window.BENCHMARK_DATA = {
           {
             "name": "grep-100000-wall",
             "value": 0.33,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-100000-rss",
+            "value": 144789504,
+            "unit": "bytes"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "caprarilorenzo5@gmail.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "committer": {
+            "email": "85455384+lorenzocaprari@users.noreply.github.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "distinct": true,
+          "id": "d29777da1279f4eb782ec947a1c37fb62cb442cb",
+          "message": "ci(clang-tidy): enable misc-no-recursion\n\nsrc/ already measured at 0 hits for this check; turn it on.",
+          "timestamp": "2026-11-15T02:09:47+01:00",
+          "tree_id": "05c53dc76d7a87489b1ed181ad1e8b4dada5b373",
+          "url": "https://github.com/lorenzocaprari/nesso/commit/d29777da1279f4eb782ec947a1c37fb62cb442cb"
+        },
+        "date": 1794705962995,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "grep-1000-wall",
+            "value": 1.25,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-1000-rss",
+            "value": 117383168,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-10000-wall",
+            "value": 1.22,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-10000-rss",
+            "value": 118263808,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-100000-wall",
+            "value": 1.45,
             "unit": "seconds"
           },
           {
