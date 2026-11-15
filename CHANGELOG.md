@@ -13,6 +13,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `readability-identifier-naming` covers enums, namespaces, parameters, members, macros, and type aliases. Factory/compute helpers matching `Make|Get|Compute|Read|Write` stay CamelCase via `FunctionIgnoredRegexp`; temporary `readability-identifier-naming` NOLINT directives are removed.
 - `misc-include-cleaner` is enabled. Translation units under `src/` include the headers they use directly.
 - `scripts/clang-tidy` analyzes `test/` as well as `src/`. [`test/.clang-tidy`](test/.clang-tidy) inherits the root profile and disables Catch2/fuzz-oriented noise while keeping the production gate on `src/`.
+- `portability-restrict-system-includes` uses a comma-separated inventory of allowed system and third-party angle includes under `src/` and `test/` instead of `*`.
+- Pipeline `clang-tidy` configures with `clang-26` and checks that `compile_commands.json` names `clang++-21`, so the analyzer compile DB matches the Clang build lane.
+- [`test/.clang-tidy`](test/.clang-tidy) disables `misc-include-cleaner` (Catch2 macros are not a direct use of `catch_all.hpp`).
 
 ### Added
 

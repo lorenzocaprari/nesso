@@ -316,9 +316,10 @@ jobs:
       - name: Install Dependencies (Conan)
         run: |
           conan profile detect --force
+          # clang-26 compile DB for analyzer parity with the Clang build lane.
           # --no-remote: use only packages baked into nesso-build-env (avoid
           # ConanCenter recipe drift rebuilding Boost/ORT).
-          conan install . -pr:h ./conan/profiles/gcc-26 -pr:b default --lockfile=conan.lock --build=missing --no-remote $CONAN_WERROR_ARGS
+          conan install . -pr:h ./conan/profiles/clang-26 -pr:b default --lockfile=conan.lock --build=missing --no-remote $CONAN_WERROR_ARGS
 
       - name: Configure
         run: |
@@ -326,6 +327,7 @@ jobs:
             -DCMAKE_TOOLCHAIN_FILE=build/Release/generators/conan_toolchain.cmake \
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+          grep -q 'clang++-21' build/Release/compile_commands.json
 
       - name: Run Clang-Tidy
         run: bash scripts/clang-tidy

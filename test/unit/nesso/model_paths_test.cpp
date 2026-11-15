@@ -60,21 +60,21 @@ class EnvGuard
         bool present = false;
     };
 
-    Slot nessoModelDir;
-    Slot xdgDataHome;
-    Slot home;
+    Slot nessoModelDir_;
+    Slot xdgDataHome_;
+    Slot home_;
 
     Slot &GetSlot(const char *key)
     {
         if (std::string_view(key) == "NESSO_MODEL_DIR")
         {
-            return nessoModelDir;
+            return nessoModelDir_;
         }
         if (std::string_view(key) == "XDG_DATA_HOME")
         {
-            return xdgDataHome;
+            return xdgDataHome_;
         }
-        return home;
+        return home_;
     }
 
     void snapshot(const char *key)

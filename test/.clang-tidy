@@ -2,6 +2,7 @@
 # (Catch2 macros, short fixture names, binary/corpus bytes, fuzz C APIs, getenv).
 # bugprone-unused-return-value: Catch2 *_THROWS_AS discards std::expected returns.
 # bugprone-unchecked-optional-access: Catch2 REQUIRE is not a recognized assertion.
+# misc-include-cleaner: Catch2 macros do not count as a direct use of catch_all.hpp.
 InheritParentConfig: true
 Checks: >
   -bugprone-easily-swappable-parameters,
@@ -24,6 +25,7 @@ Checks: >
   -hicpp-signed-bitwise,
   -llvm-prefer-static-over-anonymous-namespace,
   -misc-const-correctness,
+  -misc-include-cleaner,
   -misc-non-private-member-variables-in-classes,
   -misc-use-internal-linkage,
   -modernize-avoid-c-arrays,
