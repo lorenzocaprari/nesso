@@ -49,7 +49,6 @@ Checks: >
   -llvm-header-guard,
   -llvm-qualified-auto,
   -misc-include-cleaner,
-  -misc-no-recursion,
   -misc-use-anonymous-namespace,
   -modernize-use-trailing-return-type,
   -performance-unnecessary-value-param,
