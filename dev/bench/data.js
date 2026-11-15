@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794738027014,
+  "lastUpdate": 1794772850416,
   "repoUrl": "https://github.com/lorenzocaprari/nesso",
   "entries": {
     "nesso": [
@@ -7451,6 +7451,60 @@ window.BENCHMARK_DATA = {
           {
             "name": "grep-100000-rss",
             "value": 145256448,
+            "unit": "bytes"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "caprarilorenzo5@gmail.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "committer": {
+            "email": "85455384+lorenzocaprari@users.noreply.github.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "distinct": true,
+          "id": "8835ceb6682d271f0869bd685169832931879d33",
+          "message": "ci(clang-tidy): analyze test translation units\n\nExtend scripts/clang-tidy to src/ and test/, with a test/.clang-tidy\noverlay that inherits the root gate and drops Catch2/fuzz noise\n(including modernize-use-ranges, which mis-suggests std::ranges::iota).",
+          "timestamp": "2026-11-15T20:52:15+01:00",
+          "tree_id": "50639563639e50d4297756489b7f7713b8f91cd7",
+          "url": "https://github.com/lorenzocaprari/nesso/commit/8835ceb6682d271f0869bd685169832931879d33"
+        },
+        "date": 1794772849660,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "grep-1000-wall",
+            "value": 0.12,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-1000-rss",
+            "value": 118149120,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-10000-wall",
+            "value": 0.13,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-10000-rss",
+            "value": 117788672,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-100000-wall",
+            "value": 0.3,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-100000-rss",
+            "value": 145596416,
             "unit": "bytes"
           }
         ]
