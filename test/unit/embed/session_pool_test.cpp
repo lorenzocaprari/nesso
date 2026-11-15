@@ -49,66 +49,66 @@ TEST_CASE("aarch64 intra-op widths from 2 upward match", "[session-pool][model]"
 #endif
     }
 
-    const std::filesystem::path modelDir{NESSO_MODELS_DIR};
-    const auto two = nesso::embed::OnnxEmbedder::CreateWithIntraOp(modelDir, 2);
-    const auto four = nesso::embed::OnnxEmbedder::CreateWithIntraOp(modelDir, 4);
-    const auto eight = nesso::embed::OnnxEmbedder::CreateWithIntraOp(modelDir, 8);
+    const std::filesystem::path model_dir{NESSO_MODELS_DIR};
+    const auto two = nesso::embed::OnnxEmbedder::CreateWithIntraOp(model_dir, 2);
+    const auto four = nesso::embed::OnnxEmbedder::CreateWithIntraOp(model_dir, 4);
+    const auto eight = nesso::embed::OnnxEmbedder::CreateWithIntraOp(model_dir, 8);
     REQUIRE(two.has_value());
     REQUIRE(four.has_value());
     REQUIRE(eight.has_value());
-    if (!(*two)->policy().quantized)
+    if (!(*two)->Policy().quantized)
     {
         SKIP("the model is fp32; intra-op thread count is not a second session");
     }
-    CHECK((*two)->policy().intraOpThreads == 2);
-    CHECK((*four)->policy().intraOpThreads == 4);
-    CHECK((*eight)->policy().intraOpThreads == 8);
-    CHECK((*two)->sessions() == 1);
-    CHECK((*four)->sessions() == 1);
-    CHECK((*eight)->sessions() == 1);
+    CHECK((*two)->Policy().intra_op_threads == 2);
+    CHECK((*four)->Policy().intra_op_threads == 4);
+    CHECK((*eight)->Policy().intra_op_threads == 8);
+    CHECK((*two)->Sessions() == 1);
+    CHECK((*four)->Sessions() == 1);
+    CHECK((*eight)->Sessions() == 1);
 
-    const auto budgetOne = nesso::embed::OnnxEmbedder::create(modelDir, 1);
-    const auto budgetTwo = nesso::embed::OnnxEmbedder::create(modelDir, 2);
-    const auto budgetFour = nesso::embed::OnnxEmbedder::create(modelDir, 4);
-    const auto budgetEight = nesso::embed::OnnxEmbedder::create(modelDir, 8);
-    REQUIRE(budgetOne.has_value());
-    REQUIRE(budgetTwo.has_value());
-    REQUIRE(budgetFour.has_value());
-    REQUIRE(budgetEight.has_value());
-    CHECK((*budgetOne)->policy().sessions == 1);
-    CHECK((*budgetOne)->policy().intraOpThreads == nesso::embed::IntraOpThreadFloor());
-    CHECK((*budgetTwo)->policy().sessions == 1);
-    CHECK((*budgetTwo)->policy().intraOpThreads == 2);
-    CHECK((*budgetFour)->policy().sessions == 1);
-    CHECK((*budgetFour)->policy().intraOpThreads == 4);
-    CHECK((*budgetEight)->policy().sessions == 2);
-    CHECK((*budgetEight)->policy().intraOpThreads == 4);
+    const auto budget_one = nesso::embed::OnnxEmbedder::Create(model_dir, 1);
+    const auto budget_two = nesso::embed::OnnxEmbedder::Create(model_dir, 2);
+    const auto budget_four = nesso::embed::OnnxEmbedder::Create(model_dir, 4);
+    const auto budget_eight = nesso::embed::OnnxEmbedder::Create(model_dir, 8);
+    REQUIRE(budget_one.has_value());
+    REQUIRE(budget_two.has_value());
+    REQUIRE(budget_four.has_value());
+    REQUIRE(budget_eight.has_value());
+    CHECK((*budget_one)->Policy().sessions == 1);
+    CHECK((*budget_one)->Policy().intra_op_threads == nesso::embed::IntraOpThreadFloor());
+    CHECK((*budget_two)->Policy().sessions == 1);
+    CHECK((*budget_two)->Policy().intra_op_threads == 2);
+    CHECK((*budget_four)->Policy().sessions == 1);
+    CHECK((*budget_four)->Policy().intra_op_threads == 4);
+    CHECK((*budget_eight)->Policy().sessions == 2);
+    CHECK((*budget_eight)->Policy().intra_op_threads == 4);
 
     const auto texts = SampleTexts();
-    const auto fromTwo = (*two)->EmbedBatch(texts);
-    const auto fromFour = (*four)->EmbedBatch(texts);
-    const auto fromEight = (*eight)->EmbedBatch(texts);
-    const auto fromBudgetOne = (*budgetOne)->EmbedBatch(texts);
-    const auto fromBudgetTwo = (*budgetTwo)->EmbedBatch(texts);
-    const auto fromBudgetFour = (*budgetFour)->EmbedBatch(texts);
-    const auto fromBudgetEight = (*budgetEight)->EmbedBatch(texts);
+    const auto from_two = (*two)->EmbedBatch(texts);
+    const auto from_four = (*four)->EmbedBatch(texts);
+    const auto from_eight = (*eight)->EmbedBatch(texts);
+    const auto from_budget_one = (*budget_one)->EmbedBatch(texts);
+    const auto from_budget_two = (*budget_two)->EmbedBatch(texts);
+    const auto from_budget_four = (*budget_four)->EmbedBatch(texts);
+    const auto from_budget_eight = (*budget_eight)->EmbedBatch(texts);
     const auto again = (*eight)->EmbedBatch(texts);
-    REQUIRE(fromTwo.has_value());
-    REQUIRE(fromFour.has_value());
-    REQUIRE(fromEight.has_value());
-    REQUIRE(fromBudgetOne.has_value());
-    REQUIRE(fromBudgetTwo.has_value());
-    REQUIRE(fromBudgetFour.has_value());
-    REQUIRE(fromBudgetEight.has_value());
+    REQUIRE(from_two.has_value());
+    REQUIRE(from_four.has_value());
+    REQUIRE(from_eight.has_value());
+    REQUIRE(from_budget_one.has_value());
+    REQUIRE(from_budget_two.has_value());
+    REQUIRE(from_budget_four.has_value());
+    REQUIRE(from_budget_eight.has_value());
     REQUIRE(again.has_value());
-    REQUIRE(*fromTwo == *fromFour);
-    REQUIRE(*fromTwo == *fromEight);
-    REQUIRE(*fromTwo == *fromBudgetOne);
-    REQUIRE(*fromTwo == *fromBudgetTwo);
-    REQUIRE(*fromTwo == *fromBudgetFour);
-    REQUIRE(*fromTwo == *fromBudgetEight);
-    REQUIRE(*fromEight == *again);
-    CHECK(fromEight->front() != fromEight->back());
+    REQUIRE(*from_two == *from_four);
+    REQUIRE(*from_two == *from_eight);
+    REQUIRE(*from_two == *from_budget_one);
+    REQUIRE(*from_two == *from_budget_two);
+    REQUIRE(*from_two == *from_budget_four);
+    REQUIRE(*from_two == *from_budget_eight);
+    REQUIRE(*from_eight == *again);
+    CHECK(from_eight->front() != from_eight->back());
 }
 
 #else

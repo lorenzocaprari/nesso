@@ -139,21 +139,21 @@ TEST_CASE("int8 splits a cpu budget into sessions and intra-op threads", "[sessi
     const auto at = [&](size_t budget) { return nesso::embed::MakeSessionPolicy(true, budget, wide); };
 #ifdef __aarch64__
     CHECK(nesso::embed::MakeSessionPolicy(true, 0, four).sessions == 1);
-    CHECK(nesso::embed::MakeSessionPolicy(true, 0, four).intraOpThreads == 4);
-    CHECK(nesso::embed::MakeSessionPolicy(true, 0, four).shrinkArena);
+    CHECK(nesso::embed::MakeSessionPolicy(true, 0, four).intra_op_threads == 4);
+    CHECK(nesso::embed::MakeSessionPolicy(true, 0, four).shrink_arena);
     CHECK(nesso::embed::MakeSessionPolicy(true, 0, six).sessions == 1);
-    CHECK(nesso::embed::MakeSessionPolicy(true, 0, six).intraOpThreads == 4);
+    CHECK(nesso::embed::MakeSessionPolicy(true, 0, six).intra_op_threads == 4);
     CHECK(at(1).sessions == 1);
-    CHECK(at(1).intraOpThreads == 2);
-    CHECK(at(1).shrinkArena);
+    CHECK(at(1).intra_op_threads == 2);
+    CHECK(at(1).shrink_arena);
     CHECK(at(2).sessions == 1);
-    CHECK(at(2).intraOpThreads == 2);
+    CHECK(at(2).intra_op_threads == 2);
     CHECK(at(4).sessions == 1);
-    CHECK(at(4).intraOpThreads == 4);
+    CHECK(at(4).intra_op_threads == 4);
     CHECK(at(5).sessions == 1);
-    CHECK(at(5).intraOpThreads == 4);
+    CHECK(at(5).intra_op_threads == 4);
     CHECK(at(6).sessions == 1);
-    CHECK(at(6).intraOpThreads == 4);
+    CHECK(at(6).intra_op_threads == 4);
 #else
     CHECK(nesso::embed::MakeSessionPolicy(true, 0, four).sessions == 4);
     CHECK(nesso::embed::MakeSessionPolicy(true, 0, four).intra_op_threads == 1);
@@ -218,7 +218,7 @@ TEST_CASE("an unknown memory limit leaves the derived session count", "[session-
     const SessionPolicy policy = nesso::embed::MakeSessionPolicy(true, 0, machine);
 #ifdef __aarch64__
     CHECK(policy.sessions == 1);
-    CHECK(policy.intraOpThreads == 4);
+    CHECK(policy.intra_op_threads == 4);
 #else
     CHECK(policy.sessions == 2);
     CHECK(policy.intra_op_threads == 3);
