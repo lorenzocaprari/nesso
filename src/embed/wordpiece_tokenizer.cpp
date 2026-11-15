@@ -1,14 +1,21 @@
 // Copyright (c) 2026 Lorenzo Caprari
 // SPDX-License-Identifier: Apache-2.0
 
+#include "embed/embed_types.hpp"
+#include <cstddef>
 #include <embed/wordpiece_tokenizer.hpp>
 
-#include <algorithm>
-#include <array>
 #include <cstdint>
+#include <expected>
+#include <filesystem>
 #include <fstream>
 #include <optional>
 #include <span>
+#include <string>
+#include <string_view>
+#include <unordered_map>
+#include <utility>
+#include <vector>
 
 namespace nesso::embed
 {

@@ -1,12 +1,16 @@
 // Copyright (c) 2026 Lorenzo Caprari
 // SPDX-License-Identifier: Apache-2.0
 
+#include "embed/embed_types.hpp"
 #include <embed/inference_wave.hpp>
 
 #include <cstddef>
+#include <expected>
+#include <functional>
 #include <new>
 #include <system_error>
 #include <thread>
+#include <vector>
 
 namespace nesso::embed
 {

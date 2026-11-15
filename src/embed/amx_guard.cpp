@@ -4,6 +4,8 @@
 #include <embed/amx_guard.hpp>
 
 #include <cstdio>
+#include <linux/bpf_common.h>
+#include <linux/prctl.h>
 #include <print>
 
 #if defined(__linux__) && defined(__x86_64__)

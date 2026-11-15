@@ -6,9 +6,15 @@
 #include <algorithm>
 #include <array>
 #include <bit>
+#include <cstddef>
+#include <cstdint>
+#include <expected>
+#include <filesystem>
 #include <fstream>
+#include <ios>
 #include <iterator>
 #include <span>
+#include <string>
 #include <string_view>
 
 namespace nesso::core

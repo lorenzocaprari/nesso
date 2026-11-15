@@ -14,7 +14,7 @@
 namespace
 {
 
-constexpr std::size_t kMaxEncodeBytes = 65536;
+constexpr std::size_t MAX_ENCODE_BYTES = 65536;
 
 std::string bytesFrom(const std::uint8_t *data, std::size_t size)
 {
@@ -52,9 +52,9 @@ extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t *data, std::size_t size
     if (auto tok = nesso::embed::WordPieceTokenizer::fromVocabFile(vocabPath))
     {
         std::string capped = bytes;
-        if (capped.size() > kMaxEncodeBytes)
+        if (capped.size() > MAX_ENCODE_BYTES)
         {
-            capped.resize(kMaxEncodeBytes);
+            capped.resize(MAX_ENCODE_BYTES);
         }
         static_cast<void>(tok->encode(capped));
     }

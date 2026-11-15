@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <cstddef>
 #include <numeric>
+#include <ranges>
 #include <span>
 #include <vector>
 
