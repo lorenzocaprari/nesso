@@ -41,11 +41,12 @@ if ! git rev-parse --verify "$BASE_REF" &> /dev/null; then
     exit 1
 fi
 
-# Same GCC-only flag strip as scripts/clang-tidy so Clang's driver accepts the DB.
+# Same compile-DB scrub as scripts/clang-tidy so Clang's driver accepts the DB.
 sed -i \
   -e 's/ -fmodules-ts//g' \
   -e 's/ -fmodule-mapper=[^ ]*//g' \
   -e 's/ -fdeps-format=[^ ]*//g' \
+  -e 's/ @[^ ]*\.modmap//g' \
   -e 's/ -Wduplicated-cond//g' \
   -e 's/ -Wduplicated-branches//g' \
   -e 's/ -Wlogical-op//g' \

@@ -25,12 +25,14 @@ fi
 
 echo "clang-tidy: using build directory: $BUILD_DIR"
 
-# GCC module flags and the GCC-only nesso_options warnings are not Clang options.
-# clang-tidy reports those as errors and stops. The GCC build still passes them.
+# Drop flags the Clang driver rejects, and Clang @*.modmap response files that
+# only exist after a real build (configure-only DBs reference them otherwise).
+# The GCC build still passes the -W* options; nesso sets SCAN_FOR_MODULES off.
 sed -i \
   -e 's/ -fmodules-ts//g' \
   -e 's/ -fmodule-mapper=[^ ]*//g' \
   -e 's/ -fdeps-format=[^ ]*//g' \
+  -e 's/ @[^ ]*\.modmap//g' \
   -e 's/ -Wduplicated-cond//g' \
   -e 's/ -Wduplicated-branches//g' \
   -e 's/ -Wlogical-op//g' \

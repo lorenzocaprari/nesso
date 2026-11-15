@@ -14,7 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `misc-include-cleaner` is enabled. Translation units under `src/` include the headers they use directly.
 - `scripts/clang-tidy` analyzes `test/` as well as `src/`. [`test/.clang-tidy`](test/.clang-tidy) inherits the root profile and disables Catch2/fuzz-oriented noise while keeping the production gate on `src/`.
 - `portability-restrict-system-includes` uses a comma-separated inventory of allowed system and third-party angle includes under `src/` and `test/` instead of `*`.
-- Pipeline `clang-tidy` configures with `clang-26` and checks that `compile_commands.json` names `clang++-21`, so the analyzer compile DB matches the Clang build lane.
+- Pipeline `clang-tidy` configures with `clang-26` and checks that `compile_commands.json` names `clang++-21`, so the analyzer compile DB matches the Clang build lane. `CMAKE_CXX_SCAN_FOR_MODULES` stays off even without ccache, and `scripts/clang-tidy` strips `@*.modmap` args so a configure-only Clang compile DB is usable.
 - [`test/.clang-tidy`](test/.clang-tidy) disables `misc-include-cleaner` (Catch2 macros are not a direct use of `catch_all.hpp`).
 
 ### Added
