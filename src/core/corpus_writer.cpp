@@ -31,7 +31,36 @@
 namespace nesso::core
 {
 
-using namespace detail;
+using detail::alignUp;
+using detail::atEnd;
+using detail::copyBytes;
+using detail::encodeLexicalSection;
+using detail::HEADER_BYTES;
+using detail::LINE_ARRAY_ELEMENT;
+using detail::LINE_RECORD_BYTES;
+using detail::LINE_SKIPPED;
+using detail::LINE_STORED_TEXT;
+using detail::MAGIC;
+using detail::MAX_DISTINCT;
+using detail::MAX_LEXICAL_BYTES;
+using detail::MAX_LINES;
+using detail::MAX_SOURCES;
+using detail::MAX_TEXT_BYTES;
+using detail::rangeInside;
+using detail::readExact;
+using detail::readU32Stream;
+using detail::readU64Stream;
+using detail::serializePolicy;
+using detail::SOURCE_RECORD_BYTES;
+using detail::SOURCE_STORED_ONLY;
+using detail::SOURCE_TRACKED;
+using detail::TEXT_RECORD_BYTES;
+using detail::validatePolicy;
+using detail::validateVector;
+using detail::writePadding;
+using detail::writeRaw;
+using detail::writeU32;
+using detail::writeU64;
 
 struct SpillFile
 {
