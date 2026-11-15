@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794773413479,
+  "lastUpdate": 1794776973218,
   "repoUrl": "https://github.com/lorenzocaprari/nesso",
   "entries": {
     "nesso": [
@@ -7559,6 +7559,60 @@ window.BENCHMARK_DATA = {
           {
             "name": "grep-100000-rss",
             "value": 145776640,
+            "unit": "bytes"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "85455384+lorenzocaprari@users.noreply.github.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "3a0f914f13c384eecd9fa593a85ebbdf630a2c4e",
+          "message": "ci(clang-tidy): allowlist system includes and use clang-26 compile DB (#287)\n\n* ci(clang-tidy): allowlist system includes and use clang-26 compile DB\n\n* ci(clang-tidy): drop Clang @*.modmap from configure-only compile DBs",
+          "timestamp": "2026-11-15T22:05:28+01:00",
+          "tree_id": "44bd20c594cd9d472da3dba7eaae0c289b3266b6",
+          "url": "https://github.com/lorenzocaprari/nesso/commit/3a0f914f13c384eecd9fa593a85ebbdf630a2c4e"
+        },
+        "date": 1794776972615,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "grep-1000-wall",
+            "value": 0.12,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-1000-rss",
+            "value": 117641216,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-10000-wall",
+            "value": 0.13,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-10000-rss",
+            "value": 117985280,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-100000-wall",
+            "value": 0.28,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-100000-rss",
+            "value": 144986112,
             "unit": "bytes"
           }
         ]
