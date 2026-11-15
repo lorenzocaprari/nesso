@@ -37,12 +37,16 @@ sed -i \
   -e 's/ -Wuseless-cast//g' \
   "$BUILD_DIR/compile_commands.json"
 
+# HeaderFilterRegex already covers (src|include|test). Analyze first-party
+# translation units under both trees; Catch2 headers stay out via SystemHeaders.
+FILE_REGEX='(src|test)/.*'
+
 if command -v run-clang-tidy &> /dev/null; then
     echo "clang-tidy: running parallel analysis with run-clang-tidy..."
-    run-clang-tidy -p "$BUILD_DIR" -j"$(nproc)" "src/.*"
+    run-clang-tidy -p "$BUILD_DIR" -j"$(nproc)" "$FILE_REGEX"
 else
     echo "clang-tidy: run-clang-tidy not found, falling back to xargs..."
-    find "$PROJECT_ROOT/src" -type f \( -name "*.cpp" -o -name "*.cc" -o -name "*.cxx" \) -print0 | \
+    find "$PROJECT_ROOT/src" "$PROJECT_ROOT/test" -type f \( -name "*.cpp" -o -name "*.cc" -o -name "*.cxx" \) -print0 | \
     xargs -0 -P "$(nproc)" -I {} clang-tidy -p "$BUILD_DIR" --quiet {}
 fi
 

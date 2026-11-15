@@ -66,7 +66,6 @@ struct SessionPolicy
 /// `I = min(4, N/2)` and `S = max(1, N/I)` and shrinks the arena. aarch64 keeps
 /// intra-op threads at least intraOpThreadFloor(). fp32 keeps one session and
 /// uses the budget as its intra-op thread count, with the same floor.
-// NOLINTNEXTLINE(readability-identifier-naming)
 [[nodiscard]] SessionPolicy MakeSessionPolicy(bool quantized, size_t requestedThreads, const MachineResources &machine);
 
 [[nodiscard]] std::string sessionPolicyText(size_t requestedThreads, const MachineResources &machine);

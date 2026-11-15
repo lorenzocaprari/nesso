@@ -1,8 +1,12 @@
 // Copyright (c) 2026 Lorenzo Caprari
 // SPDX-License-Identifier: Apache-2.0
 
+#include <cstddef>
+#include <cstdint>
 #include <embed/session_policy.hpp>
 
+#include <filesystem>
+#include <istream>
 #include <platform/narrow_cast.hpp>
 
 #include <algorithm>
@@ -12,6 +16,7 @@
 #include <optional>
 #include <set>
 #include <sstream>
+#include <string>
 #include <string_view>
 #include <system_error>
 #include <thread>
@@ -407,7 +412,6 @@ MachineResources readMachine(const MachineFsRoots &roots)
     return machine;
 }
 
-// NOLINTNEXTLINE(readability-identifier-naming)
 SessionPolicy MakeSessionPolicy(bool quantized, size_t requestedThreads, const MachineResources &machine)
 {
     const size_t logical = atLeastOne(machine.logicalThreads);

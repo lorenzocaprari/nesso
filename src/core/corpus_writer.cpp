@@ -1,10 +1,16 @@
 // Copyright (c) 2026 Lorenzo Caprari
 // SPDX-License-Identifier: Apache-2.0
 
+#include "core/core_types.hpp"
 #include "corpus_detail.hpp"
 
 #include <core/corpus_index.hpp>
 
+#include <cstddef>
+#include <ios>
+#include <istream>
+#include <memory>
+#include <ostream>
 #include <parser/archive_source.hpp>
 #include <parser/gzip_reader.hpp>
 #include <platform/file.hpp>

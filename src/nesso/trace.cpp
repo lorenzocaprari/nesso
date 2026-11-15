@@ -1,6 +1,7 @@
 // Copyright (c) 2026 Lorenzo Caprari
 // SPDX-License-Identifier: Apache-2.0
 
+#include <chrono>
 #include <nesso/trace.hpp>
 
 #include <platform/file.hpp>
@@ -10,6 +11,7 @@
 #include <iostream>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 namespace nesso

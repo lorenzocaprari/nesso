@@ -1,9 +1,11 @@
 // Copyright (c) 2026 Lorenzo Caprari
 // SPDX-License-Identifier: Apache-2.0
 
+#include "core/core_types.hpp"
 #include "corpus_detail.hpp"
 
 #include <core/corpus_index.hpp>
+#include <cstddef>
 #include <platform/file.hpp>
 
 #include <algorithm>
@@ -97,7 +99,6 @@ std::span<const std::string_view> MappedCorpus::texts() const noexcept { return 
 std::span<const float> MappedCorpus::matrix() const noexcept { return impl_->matrix; }
 std::span<const std::string_view> MappedCorpus::lexicalDictionary() const noexcept { return impl_->lexicalDictionary; }
 std::span<const LexicalLinePostings> MappedCorpus::lexicalPostings() const noexcept { return impl_->lexicalPostings; }
-// NOLINTNEXTLINE(readability-identifier-naming)
 LexicalStatus MappedCorpus::GetLexicalStatus() const noexcept { return impl_->lexicalStatus; }
 std::string_view MappedCorpus::corpusLexicalTermsVersion() const noexcept { return impl_->corpusLexicalTermsVersion; }
 

@@ -1,4 +1,33 @@
 ---
+# Disabled checks:
+# Alias de-dup (primary stays enabled via another glob — do not delete these
+# unless you also intend to turn the primary off):
+#   -cppcoreguidelines-avoid-c-arrays              -> modernize-avoid-c-arrays
+#   -cppcoreguidelines-avoid-magic-numbers        -> readability-magic-numbers (also listed)
+#   -cppcoreguidelines-c-copy-assignment-signature -> misc-unconventional-assign-operator
+#   -cppcoreguidelines-explicit-virtual-functions -> modernize-use-override
+#   -cppcoreguidelines-macro-to-enum              -> modernize-macro-to-enum
+#   -cppcoreguidelines-narrowing-conversions      -> bugprone-narrowing-conversions
+#   -cppcoreguidelines-noexcept-destructor        -> performance-noexcept-destructor
+#   -cppcoreguidelines-noexcept-move-operations   -> performance-noexcept-move-constructor
+#   -cppcoreguidelines-noexcept-swap              -> performance-noexcept-swap
+#   -cppcoreguidelines-non-private-member-variables-in-classes
+#                                                 -> misc-non-private-member-variables-in-classes
+#   -cppcoreguidelines-use-default-member-init    -> modernize-use-default-member-init
+#   -google-readability-function-size             -> readability-function-size
+#   -llvm-else-after-return                       -> readability-else-after-return
+#   -llvm-qualified-auto                          -> readability-qualified-auto
+# Policy / style (no primary elsewhere):
+#   -google-readability-braces-around-statements  (fights clang-format Allman)
+#   -google-readability-namespace-comments        (Google } // namespace style)
+#   -llvm-header-guard                            (custom NESSO_*/PLATFORM_* guards)
+#   -misc-include-cleaner                         (enable in a dedicated PR)
+#   -misc-use-anonymous-namespace                 (prefer static; see misc-use-internal-linkage)
+#   -modernize-use-trailing-return-type           (classical return types)
+#   -readability-magic-numbers                    (CLI/embed/scoring constants)
+# Irrelevant on this Linux CLI (never fire usefully):
+#   -google-objc-*, -clang-analyzer-osx*, -clang-analyzer-optin.mpi*,
+#   -clang-analyzer-optin.osx*, -clang-analyzer-fuchsia*, -clang-analyzer-webkit*
 Checks: >
   -*,
   bugprone-*,
@@ -42,20 +71,27 @@ Checks: >
   -cppcoreguidelines-noexcept-swap,
   -cppcoreguidelines-non-private-member-variables-in-classes,
   -cppcoreguidelines-use-default-member-init,
+  -google-objc-*,
   -google-readability-braces-around-statements,
   -google-readability-function-size,
   -google-readability-namespace-comments,
   -llvm-else-after-return,
   -llvm-header-guard,
   -llvm-qualified-auto,
-  -misc-include-cleaner,
   -misc-use-anonymous-namespace,
   -modernize-use-trailing-return-type,
-  -readability-magic-numbers
+  -readability-magic-numbers,
+  -clang-analyzer-osx*,
+  -clang-analyzer-optin.mpi*,
+  -clang-analyzer-optin.osx*,
+  -clang-analyzer-fuchsia*,
+  -clang-analyzer-webkit*
 
 WarningsAsErrors: '*'
 
 HeaderFilterRegex: '(src|include|test)/.*'
+
+FormatStyle: file
 
 CheckOptions:
   # '*' allows every system header. Tighten only after an inventory; include-cleaner
@@ -63,9 +99,23 @@ CheckOptions:
   portability-restrict-system-includes.Includes: '*'
   modernize-use-auto.MinTypeNameLength: '5'
   readability-identifier-naming.ClassCase: 'CamelCase'
+  readability-identifier-naming.EnumCase: 'CamelCase'
+  readability-identifier-naming.EnumConstantCase: 'CamelCase'
+  readability-identifier-naming.ConceptCase: 'CamelCase'
+  readability-identifier-naming.TypeAliasCase: 'CamelCase'
+  readability-identifier-naming.TypedefCase: 'CamelCase'
+  readability-identifier-naming.NamespaceCase: 'lower_case'
   readability-identifier-naming.VariableCase: 'camelBack'
+  readability-identifier-naming.ParameterCase: 'camelBack'
+  readability-identifier-naming.ClassMemberCase: 'camelBack'
+  readability-identifier-naming.PrivateMemberSuffix: '_'
+  readability-identifier-naming.ProtectedMemberSuffix: '_'
   readability-identifier-naming.FunctionCase: 'camelBack'
+  # Factory/compute verbs stay CamelCase so they do not clash with type names.
+  readability-identifier-naming.FunctionIgnoredRegexp: '^(Make|Get|Compute|Read|Write).*'
   readability-identifier-naming.GlobalConstantCase: 'UPPER_CASE'
+  readability-identifier-naming.MacroDefinitionCase: 'UPPER_CASE'
+  readability-identifier-naming.TypeAliasIgnoredRegexp: '^is_transparent$'
   modernize-use-concepts.AllowNullaryConcepts: true
   cppcoreguidelines-pro-type-vararg.AllowVaArgs: false
   cppcoreguidelines-pro-bounds-array-to-pointer-decay.AllowPtrToArrayDecays: false

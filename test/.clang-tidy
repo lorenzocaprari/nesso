@@ -1,0 +1,54 @@
+# Inherit the repo gate, then drop checks that are noise or intentional in tests
+# (Catch2 macros, short fixture names, binary/corpus bytes, fuzz C APIs, getenv).
+# bugprone-unused-return-value: Catch2 *_THROWS_AS discards std::expected returns.
+# bugprone-unchecked-optional-access: Catch2 REQUIRE is not a recognized assertion.
+InheritParentConfig: true
+Checks: >
+  -bugprone-easily-swappable-parameters,
+  -bugprone-implicit-widening-of-multiplication-result,
+  -bugprone-unchecked-optional-access,
+  -bugprone-unused-return-value,
+  -cert-msc51-cpp,
+  -clang-analyzer-optin.core.EnumCastOutOfRange,
+  -concurrency-mt-unsafe,
+  -cppcoreguidelines-avoid-do-while,
+  -cppcoreguidelines-owning-memory,
+  -cppcoreguidelines-pro-bounds-array-to-pointer-decay,
+  -cppcoreguidelines-pro-bounds-constant-array-index,
+  -cppcoreguidelines-pro-bounds-pointer-arithmetic,
+  -cppcoreguidelines-pro-type-reinterpret-cast,
+  -cppcoreguidelines-pro-type-vararg,
+  -cppcoreguidelines-special-member-functions,
+  -google-build-using-namespace,
+  -google-runtime-int,
+  -hicpp-signed-bitwise,
+  -llvm-prefer-static-over-anonymous-namespace,
+  -misc-const-correctness,
+  -misc-non-private-member-variables-in-classes,
+  -misc-use-internal-linkage,
+  -modernize-avoid-c-arrays,
+  -modernize-raw-string-literal,
+  -modernize-return-braced-init-list,
+  -modernize-use-auto,
+  -modernize-use-designated-initializers,
+  -modernize-use-emplace,
+  -modernize-use-integer-sign-comparison,
+  -modernize-use-ranges,
+  -modernize-use-scoped-lock,
+  -modernize-use-std-numbers,
+  -performance-inefficient-vector-operation,
+  -performance-no-automatic-move,
+  -performance-unnecessary-value-param,
+  -readability-container-size-empty,
+  -readability-function-cognitive-complexity,
+  -readability-function-size,
+  -readability-identifier-length,
+  -readability-math-missing-parentheses,
+  -readability-named-parameter,
+  -readability-simplify-boolean-expr,
+  -readability-uppercase-literal-suffix,
+  -readability-use-anyofallof,
+  -readability-use-concise-preprocessor-directives
+
+CheckOptions:
+  readability-identifier-naming.FunctionIgnoredRegexp: '^(LLVMFuzzerTestOneInput|Make|Get|Compute|Read|Write|Parse).*'

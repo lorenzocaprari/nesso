@@ -8,13 +8,19 @@
 
 JSON_COMMIT=9cca280a4d0ccf0c08f47a99aa71d1b0e52f8d03
 JSON_SHA256=9bea4c8066ef4a1c206b2be5a36302f8926f7fdc6087af5d20b417d0cf103ea6
+JSON_FWD_SHA256=5cefbba751baf5243033fd894c70be9b37103d64b3d3a959e4173197d71137b9
 json_dir=/tmp/nlohmann/nlohmann
 json_header="${json_dir}/json.hpp"
+json_fwd_header="${json_dir}/json_fwd.hpp"
 mkdir -p "${json_dir}"
 curl -fsSL \
   "https://raw.githubusercontent.com/nlohmann/json/${JSON_COMMIT}/single_include/nlohmann/json.hpp" \
   -o "${json_header}"
 echo "${JSON_SHA256}  ${json_header}" | sha256sum -c -
+curl -fsSL \
+  "https://raw.githubusercontent.com/nlohmann/json/${JSON_COMMIT}/single_include/nlohmann/json_fwd.hpp" \
+  -o "${json_fwd_header}"
+echo "${JSON_FWD_SHA256}  ${json_fwd_header}" | sha256sum -c -
 
 # gzip_reader links zlib. archive_source links libarchive and liblzma.
 # The bad-build check runs outside this image, so libarchive is built static
