@@ -95,15 +95,16 @@ class Nesso(ConanFile):
         tc.extra_sharedlinkflags = list(
             self.conf.get("user.nesso:sharedlinkflags", check_type=list, default=[])
         )
-        # GCC 14+ injects -fmodules-ts into every compile while module scanning
-        # is on. ccache refuses that flag, and this tree has no C++ modules.
+        # This tree has no C++ modules. Keep scanning off always: GCC 14+ injects
+        # -fmodules-ts (ccache refuses it), and a Clang configure-only compile DB
+        # otherwise references @*.modmap files that do not exist until a build.
+        tc.cache_variables["CMAKE_CXX_SCAN_FOR_MODULES"] = False
         cxx_launcher = os.environ.get("CMAKE_CXX_COMPILER_LAUNCHER")
         if cxx_launcher:
             tc.cache_variables["CMAKE_C_COMPILER_LAUNCHER"] = os.environ.get(
                 "CMAKE_C_COMPILER_LAUNCHER", cxx_launcher
             )
             tc.cache_variables["CMAKE_CXX_COMPILER_LAUNCHER"] = cxx_launcher
-            tc.cache_variables["CMAKE_CXX_SCAN_FOR_MODULES"] = False
         # Every host dependency is static, so nesso needs no library search path.
         # Without this, CMakeDeps link directories become a build-tree RUNPATH that
         # the release binary keeps, with a trailing empty entry (the current
