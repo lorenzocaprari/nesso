@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794704122674,
+  "lastUpdate": 1794705168765,
   "repoUrl": "https://github.com/lorenzocaprari/nesso",
   "entries": {
     "nesso": [
@@ -7181,6 +7181,60 @@ window.BENCHMARK_DATA = {
           {
             "name": "grep-100000-rss",
             "value": 146063360,
+            "unit": "bytes"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "caprarilorenzo5@gmail.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "committer": {
+            "email": "85455384+lorenzocaprari@users.noreply.github.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "distinct": true,
+          "id": "c68951dc4ecc2c9e2ddb78e9d0e4b56bf949359e",
+          "message": "ci(clang-tidy): enable cppcoreguidelines-owning-memory\n\nsrc/ already uses unique_ptr and values for ownership; turn the check on.",
+          "timestamp": "2026-11-15T02:08:48+01:00",
+          "tree_id": "ba0874c061cb094b37a4744c40b949c85d9eff24",
+          "url": "https://github.com/lorenzocaprari/nesso/commit/c68951dc4ecc2c9e2ddb78e9d0e4b56bf949359e"
+        },
+        "date": 1794705168121,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "grep-1000-wall",
+            "value": 0.14,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-1000-rss",
+            "value": 119169024,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-10000-wall",
+            "value": 0.15,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-10000-rss",
+            "value": 118550528,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-100000-wall",
+            "value": 0.33,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-100000-rss",
+            "value": 144789504,
             "unit": "bytes"
           }
         ]
