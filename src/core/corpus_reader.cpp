@@ -23,7 +23,33 @@
 namespace nesso::core
 {
 
-using namespace detail;
+using detail::alignUp;
+using detail::decodeLexicalSection;
+using detail::HEADER_BYTES;
+using detail::isZero;
+using detail::lexicalStatusOf;
+using detail::LINE_ARRAY_ELEMENT;
+using detail::LINE_RECORD_BYTES;
+using detail::LINE_SKIPPED;
+using detail::LINE_STORED_TEXT;
+using detail::MAGIC;
+using detail::MAX_DIMENSIONS;
+using detail::MAX_DISTINCT;
+using detail::MAX_LEXICAL_BYTES;
+using detail::MAX_LINES;
+using detail::MAX_POLICY_BYTES;
+using detail::MAX_SOURCES;
+using detail::MAX_TEXT_BYTES;
+using detail::parsePolicy;
+using detail::rangeInside;
+using detail::readU32;
+using detail::readU64;
+using detail::SOURCE_RECORD_BYTES;
+using detail::SOURCE_STORED_ONLY;
+using detail::SOURCE_TRACKED;
+using detail::TEXT_RECORD_BYTES;
+using detail::validatePolicy;
+using detail::viewBytes;
 
 struct Layout
 {
