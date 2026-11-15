@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- `scripts/clang-tidy` analyzes `test/` as well as `src/`. [`test/.clang-tidy`](test/.clang-tidy) inherits the root profile and disables Catch2/fuzz-oriented noise while keeping the production gate on `src/`.
+
 ### Added
 
 - [docs/quick-start.md](docs/quick-start.md) is a support-engineer path for installing nesso and grepping a sosreport or tarball in place, including encrypted, limit, and skipped-entry messages.

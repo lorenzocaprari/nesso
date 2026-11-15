@@ -277,10 +277,10 @@ TEST_CASE("v3 stores ordered lines, distinct vectors, policy and stored texts", 
     CHECK(mapped->lines()[1].distinctId == NO_DISTINCT);
     CHECK(mapped->lines()[2].byteOffset == 7);
     CHECK(mapped->lines()[2].byteLength == 5);
-    REQUIRE(mapped->lines()[4].storedText);
-    CHECK(*mapped->lines()[4].storedText == "bravo from stdin");
-    REQUIRE(mapped->lines()[5].storedText);
-    CHECK(mapped->lines()[5].storedText->empty());
+    REQUIRE(mapped->lines()[4].storedText.has_value());
+    CHECK(mapped->lines()[4].storedText.value() == "bravo from stdin");
+    REQUIRE(mapped->lines()[5].storedText.has_value());
+    CHECK(mapped->lines()[5].storedText.value().empty());
     CHECK(mapped->lines()[6].arrayElement);
     REQUIRE(mapped->texts().size() == 2);
     CHECK(mapped->texts()[0] == "alpha");
