@@ -3,12 +3,23 @@ set -euo pipefail
 
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
-if [ -f "$PROJECT_ROOT/build/Release/compile_commands.json" ]; then
+# Prefer an explicit compile DB (e.g. a clang-26 configure in build/Clang) when set.
+if [ -n "${NESSO_CLANG_TIDY_BUILD_DIR:-}" ]; then
+    BUILD_DIR="$NESSO_CLANG_TIDY_BUILD_DIR"
+elif [ -f "$PROJECT_ROOT/build/Release/compile_commands.json" ]; then
     BUILD_DIR="$PROJECT_ROOT/build/Release"
 elif [ -f "$PROJECT_ROOT/build/Debug/compile_commands.json" ]; then
     BUILD_DIR="$PROJECT_ROOT/build/Debug"
 else
     echo "clang-tidy: compile_commands.json not found." >&2
+    echo "Build once, or set NESSO_CLANG_TIDY_BUILD_DIR to a directory that has it." >&2
+    echo "Optional Clang-parity pass: conan build with clang-26 into a separate build dir," >&2
+    echo "then NESSO_CLANG_TIDY_BUILD_DIR=build/Clang bash scripts/clang-tidy" >&2
+    exit 1
+fi
+
+if [ ! -f "$BUILD_DIR/compile_commands.json" ]; then
+    echo "clang-tidy: missing $BUILD_DIR/compile_commands.json" >&2
     exit 1
 fi
 

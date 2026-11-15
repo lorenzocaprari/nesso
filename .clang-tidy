@@ -94,6 +94,9 @@ HeaderFilterRegex: '(src|include|test)/.*'
 FormatStyle: file
 
 CheckOptions:
+  # '*' allows every system header. Tighten only after an inventory; include-cleaner
+  # already gates direct includes under src/.
+  portability-restrict-system-includes.Includes: '*'
   modernize-use-auto.MinTypeNameLength: '5'
   readability-identifier-naming.ClassCase: 'CamelCase'
   readability-identifier-naming.EnumCase: 'CamelCase'
