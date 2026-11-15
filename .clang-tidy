@@ -36,7 +36,6 @@ Checks: >
   -cppcoreguidelines-c-copy-assignment-signature,
   -cppcoreguidelines-explicit-virtual-functions,
   -cppcoreguidelines-macro-to-enum,
-  -cppcoreguidelines-macro-usage,
   -cppcoreguidelines-narrowing-conversions,
   -cppcoreguidelines-noexcept-destructor,
   -cppcoreguidelines-noexcept-move-operations,
@@ -89,3 +88,4 @@ CheckOptions:
   readability-identifier-length.IgnoredParameterNames: '^[ab]$'
   readability-identifier-length.IgnoredVariableNames: '^[a-h]$'
   readability-identifier-length.IgnoredExceptionVariableNames: '^[e]$'
+  cppcoreguidelines-macro-usage.AllowedRegexp: '^(NESSO_|ZLIB_CONST$)'
