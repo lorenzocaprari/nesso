@@ -51,9 +51,9 @@ visitRecords(const std::filesystem::path &path, Scan &scan, bool &stdinUsed, std
         if (!stdinUsed)
         {
             stdinUsed = true;
-            for (nesso::parser::ParsedChunk &chunk : scan.stdinChunks)
+            for (const nesso::parser::ParsedChunk &chunk : scan.stdinChunks)
             {
-                consume(std::move(chunk));
+                consume(chunk);
             }
         }
         return {};
@@ -141,7 +141,7 @@ static std::expected<void, Error> flushIndexEmbeddings(IndexEmbedState &state)
 }
 
 static std::optional<Error> ingestIndexChunk(IndexEmbedState &state, IndexSourceCursor &cursor,
-                                             nesso::parser::ParsedChunk chunk)
+                                             const nesso::parser::ParsedChunk &chunk)
 {
     const LineCounts &counts = state.scanned->counts;
     if (cursor.archive && chunk.entryStart)
@@ -228,13 +228,13 @@ static std::expected<void, Error> embedIndexFiles(IndexEmbedState &state)
         }
         const auto streamed =
             visitRecords(path, *state.scanned, stdinUsed, state.request->jsonField, state.request->archiveLimits,
-                         [&](nesso::parser::ParsedChunk chunk)
+                         [&](const nesso::parser::ParsedChunk &chunk)
                          {
                              if (state.failed)
                              {
                                  return;
                              }
-                             if (auto error = ingestIndexChunk(state, cursor, std::move(chunk)))
+                             if (auto error = ingestIndexChunk(state, cursor, chunk))
                              {
                                  state.failed = std::move(error);
                              }

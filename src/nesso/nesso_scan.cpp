@@ -136,7 +136,8 @@ std::expected<Scan, Error> scanFiles(std::span<const std::filesystem::path> file
 
         const nesso::parser::ParseStats before = stats;
         const auto streamed = nesso::parser::Chunker::forEach(
-            path, MAX_LINE_LENGTH, &stats, jsonField, [&scan](nesso::parser::ParsedChunk) { ++scan.chunks; }, limits);
+            path, MAX_LINE_LENGTH, &stats, jsonField, [&scan](const nesso::parser::ParsedChunk &) { ++scan.chunks; },
+            limits);
         if (!streamed)
         {
             recordBundleSkips(scan, path, before, stats);

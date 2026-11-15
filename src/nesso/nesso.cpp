@@ -94,7 +94,7 @@ class OnnxBoundEmbedder final : public nesso::embed::Embedder
         std::optional<FileStamp> vocab;
     };
 
-    OnnxBoundEmbedder(std::unique_ptr<nesso::embed::OnnxEmbedder> inner, std::filesystem::path modelDir,
+    OnnxBoundEmbedder(std::unique_ptr<nesso::embed::OnnxEmbedder> inner, const std::filesystem::path &modelDir,
                       const ModelFileStamps &stamps)
         : inner_(std::move(inner)), modelPath_(modelDir / "model.onnx"), vocabPath_(modelDir / "vocab.txt"),
           modelStamp_(stamps.model), vocabStamp_(stamps.vocab)
