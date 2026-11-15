@@ -66,7 +66,6 @@ struct FileStamp
     friend bool operator==(const FileStamp &, const FileStamp &) = default;
 };
 
-// NOLINTNEXTLINE(readability-identifier-naming)
 static std::optional<FileStamp> ReadFileStamp(const std::filesystem::path &path)
 {
     struct stat status{};
@@ -245,7 +244,6 @@ embedDistinct(std::span<const std::string> texts, const nesso::embed::Embedder &
     return std::move(*embeddings);
 }
 
-// NOLINTNEXTLINE(readability-identifier-naming)
 std::expected<nesso::core::CorpusPolicy, Error> MakeCorpusPolicy(const nesso::embed::Embedder &embedder,
                                                                  const LineCounts &counts)
 {

@@ -30,7 +30,6 @@ using detail::parseFailure;
 using detail::sameSource;
 using detail::Scan;
 
-// NOLINTNEXTLINE(readability-identifier-naming)
 static LineCounts MakeLineCounts(const nesso::parser::ParseStats &stats, std::string jsonField)
 {
     return {.skipped = stats.skippedLines,

@@ -107,7 +107,6 @@ static void addArchiveLimits(CLI::App *command, nesso::parser::ArchiveLimits &li
 
 static constexpr const char *THREADS_HELP = "CPU budget N from 1 to 1024. Default and layout rules: docs/usage.md.";
 
-// NOLINTNEXTLINE(readability-identifier-naming)
 static CLI::Validator MakeThreadCountValidator()
 {
     return CLI::Validator{[](std::string &value)

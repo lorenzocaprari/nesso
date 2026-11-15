@@ -8,7 +8,6 @@
 namespace nesso::core
 {
 
-// NOLINTNEXTLINE(readability-identifier-naming)
 ZScoreStats ComputeZScoreStats(std::span<const double> values)
 {
     ZScoreStats stats;
