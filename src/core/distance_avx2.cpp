@@ -3,7 +3,9 @@
 
 #include <core/distance_kernels.hpp>
 
+#include <cstddef>
 #include <immintrin.h>
+#include <span>
 
 namespace nesso::core::math::detail
 {

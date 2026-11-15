@@ -1,11 +1,16 @@
 // Copyright (c) 2026 Lorenzo Caprari
 // SPDX-License-Identifier: Apache-2.0
 
+#include "core/core_types.hpp"
+#include <concepts>
 #include <core/distance.hpp>
 
 #include <core/distance_kernels.hpp>
 
 #include <cmath>
+#include <cstddef>
+#include <expected>
+#include <span>
 
 namespace nesso::core::math
 {

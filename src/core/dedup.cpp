@@ -3,7 +3,13 @@
 
 #include <core/dedup.hpp>
 
+#include <cstddef>
+#include <cstdint>
 #include <parser/template_mask.hpp>
+#include <span>
+#include <string>
+#include <string_view>
+#include <vector>
 
 namespace nesso::core
 {

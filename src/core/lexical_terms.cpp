@@ -2,6 +2,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include <core/lexical_terms.hpp>
+#include <cstddef>
+#include <string>
+#include <string_view>
+#include <vector>
 
 namespace nesso::core
 {

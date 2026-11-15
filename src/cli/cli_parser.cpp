@@ -1,11 +1,14 @@
 // Copyright (c) 2026 Lorenzo Caprari
 // SPDX-License-Identifier: Apache-2.0
 
+#include "embed/session_policy.hpp"
+#include "nesso/nesso.hpp"
 #include <cli/cli_parser.hpp>
 
+#include <expected>
+#include <filesystem>
+#include <memory>
 #include <parser/archive_source.hpp>
-
-#include <embed/onnx_embedder.hpp>
 
 #include <cli/thread_count.hpp>
 
@@ -15,7 +18,6 @@
 #include <cstdint>
 #include <cstdlib>
 #include <iostream>
-#include <iterator>
 #include <span>
 #include <string>
 #include <string_view>

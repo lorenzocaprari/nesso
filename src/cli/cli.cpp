@@ -1,6 +1,7 @@
 // Copyright (c) 2026 Lorenzo Caprari
 // SPDX-License-Identifier: Apache-2.0
 
+#include "nesso/nesso.hpp"
 #include <cli/check_stdout.hpp>
 #include <cli/cli.hpp>
 #include <cli/render_json.hpp>

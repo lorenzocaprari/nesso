@@ -1,6 +1,7 @@
 // Copyright (c) 2026 Lorenzo Caprari
 // SPDX-License-Identifier: Apache-2.0
 
+#include "core/core_types.hpp"
 #include "corpus_detail.hpp"
 
 #include <core/corpus_index.hpp>

@@ -1,6 +1,8 @@
 // Copyright (c) 2026 Lorenzo Caprari
 // SPDX-License-Identifier: Apache-2.0
 
+#include <cstddef>
+#include <cstdint>
 #include <nesso/nesso.hpp>
 
 #include <nesso/error_map.hpp>
@@ -20,6 +22,7 @@
 #include <span>
 #include <string>
 #include <string_view>
+#include <system_error>
 #include <utility>
 #include <vector>
 

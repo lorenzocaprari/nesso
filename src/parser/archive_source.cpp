@@ -1,13 +1,16 @@
 // Copyright (c) 2026 Lorenzo Caprari
 // SPDX-License-Identifier: Apache-2.0
 
+#include <expected>
+#include <filesystem>
+#include <functional>
+#include <ios>
 #include <parser/archive_source.hpp>
 #include <parser/gzip_reader.hpp>
 
 #include <archive.h>
 #include <archive_entry.h>
 
-#include <algorithm>
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -15,6 +18,8 @@
 #include <memory>
 #include <span>
 #include <string>
+#include <string_view>
+#include <system_error>
 #include <utility>
 
 namespace nesso::parser

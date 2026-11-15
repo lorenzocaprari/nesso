@@ -4,6 +4,9 @@
 #include <core/score_fusion.hpp>
 
 #include <cmath>
+#include <cstddef>
+#include <span>
+#include <vector>
 
 namespace nesso::core
 {

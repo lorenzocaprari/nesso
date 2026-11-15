@@ -1,6 +1,8 @@
 // Copyright (c) 2026 Lorenzo Caprari
 // SPDX-License-Identifier: Apache-2.0
 
+#include "core/core_types.hpp"
+#include <algorithm>
 #include <core/top_k.hpp>
 
 #include <core/distance.hpp>
@@ -8,10 +10,12 @@
 #include <condition_variable>
 #include <cstddef>
 #include <cstdint>
+#include <expected>
 #include <limits>
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <span>
 #include <system_error>
 #include <thread>
 #include <utility>

@@ -48,7 +48,6 @@ Checks: >
   -llvm-else-after-return,
   -llvm-header-guard,
   -llvm-qualified-auto,
-  -misc-include-cleaner,
   -misc-use-anonymous-namespace,
   -modernize-use-trailing-return-type,
   -readability-magic-numbers
