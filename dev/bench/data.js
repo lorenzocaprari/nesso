@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794702051736,
+  "lastUpdate": 1794703357950,
   "repoUrl": "https://github.com/lorenzocaprari/nesso",
   "entries": {
     "nesso": [
@@ -7073,6 +7073,60 @@ window.BENCHMARK_DATA = {
           {
             "name": "grep-100000-rss",
             "value": 144445440,
+            "unit": "bytes"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "caprarilorenzo5@gmail.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "committer": {
+            "email": "85455384+lorenzocaprari@users.noreply.github.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "distinct": true,
+          "id": "430eb2787203acf23822db0569048359369c7fe7",
+          "message": "refactor(core): replace using-namespace detail in corpus I/O\n\nSwap the google-build-using-namespace using-directives for explicit\nusing-declarations so the check can be re-enabled without behaviour change.",
+          "timestamp": "2026-11-15T01:37:58+01:00",
+          "tree_id": "4a731113fd7e789d6ee399f612f2226df626c2aa",
+          "url": "https://github.com/lorenzocaprari/nesso/commit/430eb2787203acf23822db0569048359369c7fe7"
+        },
+        "date": 1794703357245,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "grep-1000-wall",
+            "value": 0.15,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-1000-rss",
+            "value": 119324672,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-10000-wall",
+            "value": 0.16,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-10000-rss",
+            "value": 118415360,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-100000-wall",
+            "value": 0.33,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-100000-rss",
+            "value": 146034688,
             "unit": "bytes"
           }
         ]
