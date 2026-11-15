@@ -1,6 +1,9 @@
 // Copyright (c) 2026 Lorenzo Caprari
 // SPDX-License-Identifier: Apache-2.0
 
+#include <expected>
+#include <filesystem>
+#include <ios>
 #include <parser/gzip_reader.hpp>
 
 #include <algorithm>
@@ -12,6 +15,7 @@
 #include <span>
 #include <string>
 #include <string_view>
+#include <zconf.h>
 
 // next_in is const, so the compressed buffer does not need a const cast.
 #define ZLIB_CONST

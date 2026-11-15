@@ -1,10 +1,14 @@
 // Copyright (c) 2026 Lorenzo Caprari
 // SPDX-License-Identifier: Apache-2.0
 
+#include <cstddef>
 #include <embed/batch_plan.hpp>
 
 #include <algorithm>
 #include <numeric>
+#include <span>
+#include <utility>
+#include <vector>
 
 namespace nesso::embed
 {

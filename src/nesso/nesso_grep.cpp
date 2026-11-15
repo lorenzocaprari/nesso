@@ -1,9 +1,11 @@
 // Copyright (c) 2026 Lorenzo Caprari
 // SPDX-License-Identifier: Apache-2.0
 
+#include <cstddef>
+#include <cstdint>
+#include <filesystem>
 #include <nesso/nesso.hpp>
 
-#include <nesso/error_map.hpp>
 #include <nesso/trace.hpp>
 #include <nesso_detail.hpp>
 
@@ -21,7 +23,7 @@
 #include <algorithm>
 #include <expected>
 #include <optional>
-#include <ranges>
+#include <span>
 #include <string>
 #include <string_view>
 #include <unordered_map>

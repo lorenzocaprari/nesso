@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `misc-include-cleaner` is enabled. Translation units under `src/` include the headers they use directly.
 - `scripts/clang-tidy` analyzes `test/` as well as `src/`. [`test/.clang-tidy`](test/.clang-tidy) inherits the root profile and disables Catch2/fuzz-oriented noise while keeping the production gate on `src/`.
 
 ### Added

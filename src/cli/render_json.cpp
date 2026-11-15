@@ -1,14 +1,17 @@
 // Copyright (c) 2026 Lorenzo Caprari
 // SPDX-License-Identifier: Apache-2.0
 
+#include "nesso/nesso.hpp"
 #include <cli/render_json.hpp>
 
+#include <cstddef>
+#include <memory>
 #include <nlohmann/json.hpp>
 
 #include <array>
 #include <charconv>
 #include <format>
-#include <iterator>
+#include <optional>
 #include <string>
 #include <string_view>
 

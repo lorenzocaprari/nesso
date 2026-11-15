@@ -3,11 +3,17 @@
 
 #include <platform/file.hpp>
 
+#include <bits/types/struct_rusage.h>
+#include <cstddef>
+#include <cstdint>
+#include <cstdio>
+#include <expected>
+#include <fcntl.h>
+#include <filesystem>
+#include <span>
 #include <sys/mman.h>
 #include <sys/resource.h>
 #include <unistd.h>
-
-#include <fcntl.h>
 
 namespace nesso::platform
 {
@@ -50,7 +56,7 @@ std::expected<MappedFile, FileError> MappedFile::open(const std::filesystem::pat
     {
         return std::unexpected(FileError::OpenFailure);
     }
-    const off_t length = ::lseek(fileDescriptor, 0, SEEK_END);
+    const auto length = ::lseek(fileDescriptor, 0, SEEK_END);
     if (length < 0)
     {
         ::close(fileDescriptor);

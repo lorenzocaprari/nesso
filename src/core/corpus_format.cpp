@@ -12,9 +12,11 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <ios>
 #include <istream>
 #include <ostream>
 #include <span>
+#include <string>
 #include <string_view>
 #include <utility>
 
