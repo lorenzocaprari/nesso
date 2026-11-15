@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794701085399,
+  "lastUpdate": 1794702051736,
   "repoUrl": "https://github.com/lorenzocaprari/nesso",
   "entries": {
     "nesso": [
@@ -7019,6 +7019,60 @@ window.BENCHMARK_DATA = {
           {
             "name": "grep-100000-rss",
             "value": 143601664,
+            "unit": "bytes"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "caprarilorenzo5@gmail.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "committer": {
+            "email": "85455384+lorenzocaprari@users.noreply.github.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "distinct": true,
+          "id": "bf9e28721c631da0aa1ecb638450899e26deb48f",
+          "message": "ci(clang-tidy): enable cppcoreguidelines-macro-usage\n\nAllow NESSO_ feature macros and the ZLIB_CONST switch that must precede\nthe zlib header; include guards stay unflagged by the check.",
+          "timestamp": "2026-11-15T01:16:22+01:00",
+          "tree_id": "c42acc310a8cc40eadba8d1f93e51ae17f12ae1b",
+          "url": "https://github.com/lorenzocaprari/nesso/commit/bf9e28721c631da0aa1ecb638450899e26deb48f"
+        },
+        "date": 1794702050994,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "grep-1000-wall",
+            "value": 1.21,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-1000-rss",
+            "value": 118857728,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-10000-wall",
+            "value": 1.21,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-10000-rss",
+            "value": 119156736,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-100000-wall",
+            "value": 1.42,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-100000-rss",
+            "value": 144445440,
             "unit": "bytes"
           }
         ]
