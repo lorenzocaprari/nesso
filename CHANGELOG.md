@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- `.clang-tidy` documents alias disables (which primary check stays on), sets `FormatStyle: file`, and turns off irrelevant `google-objc-*` / `clang-analyzer-osx*` / MPI / fuchsia / webkit checkers for this Linux CLI.
+
 ### Added
 
 - [docs/quick-start.md](docs/quick-start.md) is a support-engineer path for installing nesso and grepping a sosreport or tarball in place, including encrypted, limit, and skipped-entry messages.
