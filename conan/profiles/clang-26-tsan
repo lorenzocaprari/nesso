@@ -1,0 +1,35 @@
+# Clang 21 + libstdc++ (the GCC 15 ABI), C++26, ThreadSanitizer.
+#
+# settings.compiler stays gcc/15/libstdc++11 on purpose, same as clang-26.
+# nesso-build-env bakes Release packages for that tuple; compiler=clang would
+# change every package id and rebuild onnxruntime, protobuf, and abseil from
+# source. libc++ is a different ABI and cannot link those static archives.
+#
+# tools.build:compiler_executables is not part of the package id, so
+# `conan install --no-remote` reuses the gcc-26 cache while CMake compiles
+# and links nesso with clang++-21 -stdlib=libstdc++.
+#
+# No -flto: clang turns -flto=auto into LLVM bitcode, which does not mix
+# cleanly with the gcc-built static dependencies. -Werror is not set here.
+# Run `ctest -L tsan` only. Tests that open ONNX Runtime sessions stay out:
+# those threads are not instrumented.
+
+[settings]
+os=Linux
+arch=x86_64
+compiler=gcc
+compiler.version=15
+compiler.libcxx=libstdc++11
+compiler.cppstd=26
+build_type=Release
+
+[conf]
+tools.build:compiler_executables={"c": "clang-21", "cpp": "clang++-21"}
+user.nesso:cxxflags=["-O3", "-g", "-march=x86-64-v2", "-stdlib=libstdc++", "-fvisibility=hidden", "-DNDEBUG", "-fno-omit-frame-pointer", "-fsanitize=thread", "-fno-sanitize-recover=all"]
+user.nesso:cflags=["-O3", "-g", "-march=x86-64-v2", "-fvisibility=hidden", "-DNDEBUG", "-fno-omit-frame-pointer", "-fsanitize=thread", "-fno-sanitize-recover=all"]
+user.nesso:sharedlinkflags=["-fsanitize=thread", "-Wl,-O1", "-Wl,--as-needed"]
+user.nesso:exelinkflags=["-stdlib=libstdc++", "-fsanitize=thread", "-Wl,-O1", "-Wl,--as-needed"]
+
+[buildenv]
+CC=clang-21
+CXX=clang++-21

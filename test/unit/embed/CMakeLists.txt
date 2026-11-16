@@ -54,3 +54,8 @@ set_tests_properties(
   amx_guard_test
   inference_wave_test
   PROPERTIES LABELS unit)
+# ctest -L tsan. The wave uses stand-in results, not an ONNX Runtime session.
+set_property(
+  TEST inference_wave_test
+  APPEND
+  PROPERTY LABELS tsan)

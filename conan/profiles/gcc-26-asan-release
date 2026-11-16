@@ -1,0 +1,25 @@
+# Optimised ASan + UBSan. Same compiler tuple as gcc-26.
+#
+# Dependencies, including ONNX Runtime, stay Release so their package ids match
+# gcc-26. Nesso is RelWithDebInfo: that config is -O2 -g -DNDEBUG. A Release
+# config would append -O3 after these flags and undo -O2.
+# No -flto (it does not mix with the sanitizers). -Werror is not set here.
+
+[settings]
+os=Linux
+arch=x86_64
+compiler=gcc
+compiler.version=15
+compiler.libcxx=libstdc++11
+compiler.cppstd=26
+build_type=Release
+&:build_type=RelWithDebInfo
+onnxruntime/*:build_type=Release
+
+[conf]
+# Consumer-only, same split as gcc-26-debug. -fno-sanitize-recover=all stops
+# ASan/UBSan on the first error without UBSAN_OPTIONS.
+user.nesso:cxxflags=["-O2", "-g", "-DNDEBUG", "-D_GLIBCXX_ASSERTIONS", "-fno-omit-frame-pointer", "-fsanitize=address,undefined", "-fno-sanitize-recover=all"]
+user.nesso:cflags=["-O2", "-g", "-DNDEBUG", "-fno-omit-frame-pointer", "-fsanitize=address,undefined", "-fno-sanitize-recover=all"]
+user.nesso:sharedlinkflags=["-fsanitize=address,undefined"]
+user.nesso:exelinkflags=["-fsanitize=address,undefined"]

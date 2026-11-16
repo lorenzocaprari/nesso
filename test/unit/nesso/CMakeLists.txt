@@ -87,3 +87,8 @@ set_tests_properties(
   scan_threads_test
   thread_count_test
   PROPERTIES LABELS unit)
+# ctest -L tsan. The scan uses a stand-in embedder, not an ONNX Runtime session.
+set_property(
+  TEST scan_threads_test
+  APPEND
+  PROPERTY LABELS tsan)
