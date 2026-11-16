@@ -16,6 +16,7 @@
 #include <expected>
 #include <filesystem>
 #include <memory>
+#include <optional>
 #include <span>
 #include <string>
 #include <string_view>
@@ -146,37 +147,43 @@ static bool ReadLayoutFields(std::span<const std::byte> bytes, Layout &layout)
            ReadU64(bytes, 104, layout.policy_offset);
 }
 
-static std::expected<Layout, EngineError> MapCorpusHeader(std::span<const std::byte> bytes,
-                                                          std::uint32_t *observed_version)
+struct ParsedHeader
+{
+    Layout layout{};
+    std::uint32_t version = 0;
+};
+
+static CorpusMapFailure MakeMapFailure(EngineError code, const std::optional<std::uint32_t> &version = std::nullopt)
+{
+    return {.code = code, .version = version};
+}
+
+static std::expected<ParsedHeader, CorpusMapFailure> MapCorpusHeader(std::span<const std::byte> bytes)
 {
     std::uint32_t version = 0;
     if (bytes.size() < 8 || std::memcmp(bytes.data(), MAGIC.data(), MAGIC.size()) != 0 || !ReadU32(bytes, 4, version))
     {
-        return std::unexpected(EngineError::CorruptDatabase);
-    }
-    if (observed_version != nullptr)
-    {
-        *observed_version = version;
+        return std::unexpected(MakeMapFailure(EngineError::CorruptDatabase));
     }
     if (version != CORPUS_VERSION)
     {
-        return std::unexpected(EngineError::UnsupportedVersion);
+        return std::unexpected(MakeMapFailure(EngineError::UnsupportedVersion, version));
     }
     if (bytes.size() < HEADER_BYTES)
     {
-        return std::unexpected(EngineError::CorruptDatabase);
+        return std::unexpected(MakeMapFailure(EngineError::CorruptDatabase, version));
     }
     const CorpusChecksum checksum = ComputeCorpusChecksum(bytes);
     if (!std::ranges::equal(checksum, bytes.subspan(CORPUS_CHECKSUM_OFFSET, CORPUS_CHECKSUM_BYTES)))
     {
-        return std::unexpected(EngineError::CorruptDatabase);
+        return std::unexpected(MakeMapFailure(EngineError::CorruptDatabase, version));
     }
     Layout layout;
     if (!ReadLayoutFields(bytes, layout))
     {
-        return std::unexpected(EngineError::CorruptDatabase);
+        return std::unexpected(MakeMapFailure(EngineError::CorruptDatabase, version));
     }
-    return layout;
+    return ParsedHeader{.layout = layout, .version = version};
 }
 
 static bool CorpusLimitsExceeded(const Layout &layout)
@@ -464,71 +471,73 @@ static void ApplyLexicalPolicy(bool has_lexical, const CorpusPolicy &policy, std
     status = LexicalStatusOf(has_lexical, policy);
 }
 
-std::expected<MappedCorpus, EngineError> MapCorpusFile(const std::filesystem::path &path,
-                                                       std::uint32_t *observed_version)
+std::expected<MappedCorpusFile, CorpusMapFailure> MapCorpusFile(const std::filesystem::path &path)
 {
     auto mapped = nesso::platform::MappedFile::Open(path);
     if (!mapped)
     {
-        return std::unexpected(mapped.error() == nesso::platform::FileError::OpenFailure
-                                   ? EngineError::FileOpenFailure
-                                   : EngineError::CorruptDatabase);
+        return std::unexpected(MakeMapFailure(mapped.error() == nesso::platform::FileError::OpenFailure
+                                                  ? EngineError::FileOpenFailure
+                                                  : EngineError::CorruptDatabase));
     }
     const std::span<const std::byte> bytes = mapped->Bytes();
-    auto layout = MapCorpusHeader(bytes, observed_version);
-    if (!layout)
+    auto header = MapCorpusHeader(bytes);
+    if (!header)
     {
-        return std::unexpected(layout.error());
+        return std::unexpected(header.error());
     }
+    const Layout &layout = header->layout;
+    const std::uint32_t version = header->version;
+    auto fail = [version](EngineError code) { return std::unexpected(MakeMapFailure(code, version)); };
     // Pre-postings v3 used lexicalOffset=lexicalBytes=0. Those corpora stay
     // readable for dense search; new writers always emit a non-empty section.
-    const bool has_lexical = layout->lexical_offset != 0 || layout->lexical_bytes != 0;
-    if (const auto valid = ValidateCorpusLayout(*layout, bytes, has_lexical); !valid)
+    const bool has_lexical = layout.lexical_offset != 0 || layout.lexical_bytes != 0;
+    if (const auto valid = ValidateCorpusLayout(layout, bytes, has_lexical); !valid)
     {
-        return std::unexpected(valid.error());
+        return fail(valid.error());
     }
-    auto policy = ParsePolicy(ViewBytes(bytes, layout->policy_offset, layout->policy_bytes));
+    auto policy = ParsePolicy(ViewBytes(bytes, layout.policy_offset, layout.policy_bytes));
     if (!policy)
     {
-        return std::unexpected(policy.error());
+        return fail(policy.error());
     }
     const auto dimensions = ValidatePolicy(*policy);
-    if (!dimensions || *dimensions != layout->dimensions)
+    if (!dimensions || *dimensions != layout.dimensions)
     {
-        return std::unexpected(EngineError::CorruptDatabase);
+        return fail(EngineError::CorruptDatabase);
     }
 
     auto impl = std::make_unique<MappedCorpus::Impl>();
     impl->policy = std::move(*policy);
-    impl->dimensions = layout->dimensions;
-    if (const auto sources = LoadMappedSources(bytes, *layout, impl->sources); !sources)
+    impl->dimensions = layout.dimensions;
+    if (const auto sources = LoadMappedSources(bytes, layout, impl->sources); !sources)
     {
-        return std::unexpected(sources.error());
+        return fail(sources.error());
     }
-    if (const auto texts = LoadMappedDistinctTexts(bytes, *layout, impl->texts); !texts)
+    if (const auto texts = LoadMappedDistinctTexts(bytes, layout, impl->texts); !texts)
     {
-        return std::unexpected(texts.error());
+        return fail(texts.error());
     }
-    if (const auto lines = LoadMappedLines(bytes, *layout, has_lexical, impl->sources, impl->lines); !lines)
+    if (const auto lines = LoadMappedLines(bytes, layout, has_lexical, impl->sources, impl->lines); !lines)
     {
-        return std::unexpected(lines.error());
+        return fail(lines.error());
     }
     if (has_lexical)
     {
-        if (const auto decoded = DecodeMappedLexical(bytes, *layout, impl->lexical_term_storage,
+        if (const auto decoded = DecodeMappedLexical(bytes, layout, impl->lexical_term_storage,
                                                      impl->lexical_dictionary, impl->lexical_postings);
             !decoded)
         {
-            return std::unexpected(decoded.error());
+            return fail(decoded.error());
         }
     }
     ApplyLexicalPolicy(has_lexical, impl->policy, impl->corpus_lexical_terms_version, impl->lexical_status);
 
     impl->file = std::move(*mapped);
     const auto stable = impl->file.Bytes();
-    const std::span<const std::byte> matrix_bytes = stable.subspan(static_cast<std::size_t>(layout->matrix_offset));
+    const std::span<const std::byte> matrix_bytes = stable.subspan(static_cast<std::size_t>(layout.matrix_offset));
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-    impl->matrix = {reinterpret_cast<const float *>(matrix_bytes.data()), layout->distinct_count * layout->dimensions};
+    impl->matrix = {reinterpret_cast<const float *>(matrix_bytes.data()), layout.distinct_count * layout.dimensions};
     AssertMappedShape(MappedShape{.sources = impl->sources.size(),
                                   .texts = impl->texts.size(),
                                   .lines = impl->lines.size(),
@@ -536,8 +545,8 @@ std::expected<MappedCorpus, EngineError> MapCorpusFile(const std::filesystem::pa
                                   .postings = impl->lexical_postings.size(),
                                   .dictionary = impl->lexical_dictionary.size(),
                                   .stored_terms = impl->lexical_term_storage.size()},
-                      *layout, has_lexical);
-    return MappedCorpus{std::move(impl)};
+                      layout, has_lexical);
+    return MappedCorpusFile{.corpus = MappedCorpus{std::move(impl)}, .version = version};
 }
 
 std::expected<std::vector<CorpusChunk>, EngineError> ReadCorpusFile(const std::filesystem::path &path)
@@ -545,27 +554,28 @@ std::expected<std::vector<CorpusChunk>, EngineError> ReadCorpusFile(const std::f
     auto mapped = MapCorpusFile(path);
     if (!mapped)
     {
-        return std::unexpected(mapped.error());
+        return std::unexpected(mapped.error().code);
     }
-    NESSO_ASSERT(mapped->Matrix().size() == mapped->Texts().size() * mapped->Dimensions());
-    if (!mapped->Texts().empty())
+    const MappedCorpus &corpus = mapped->corpus;
+    NESSO_ASSERT(corpus.Matrix().size() == corpus.Texts().size() * corpus.Dimensions());
+    if (!corpus.Texts().empty())
     {
-        NESSO_ASSERT(mapped->Dimensions() > 0);
+        NESSO_ASSERT(corpus.Dimensions() > 0);
     }
     std::vector<CorpusChunk> chunks;
-    for (const CorpusLine &line : mapped->Lines())
+    for (const CorpusLine &line : corpus.Lines())
     {
         if (line.distinct_id == NO_DISTINCT)
         {
             continue;
         }
-        const std::size_t dimensions = mapped->Dimensions();
+        const std::size_t dimensions = corpus.Dimensions();
         const auto embedding =
-            mapped->Matrix().subspan(static_cast<std::size_t>(line.distinct_id) * dimensions, dimensions);
+            corpus.Matrix().subspan(static_cast<std::size_t>(line.distinct_id) * dimensions, dimensions);
         chunks.push_back(
-            CorpusChunk{.chunk = {.text = std::string{line.stored_text.value_or(mapped->Texts()[line.distinct_id])},
+            CorpusChunk{.chunk = {.text = std::string{line.stored_text.value_or(corpus.Texts()[line.distinct_id])},
                                   .line_number = line.line_number,
-                                  .source = mapped->Sources()[line.source_index].path,
+                                  .source = corpus.Sources()[line.source_index].path,
                                   .byte_offset = line.byte_offset,
                                   .array_element = line.array_element,
                                   .byte_length = line.byte_length},

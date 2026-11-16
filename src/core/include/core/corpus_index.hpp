@@ -91,6 +91,16 @@ enum class LexicalStatus : std::uint8_t
 [[nodiscard]] std::expected<SourceInfo, EngineError> SourceInfoFor(const std::filesystem::path &path,
                                                                    std::string_view json_field);
 
+/// Failure from `MapCorpusFile`. `version` is set when the header named a
+/// format version, including one this build does not read.
+struct CorpusMapFailure
+{
+    EngineError code = EngineError::CorruptDatabase;
+    std::optional<std::uint32_t> version;
+};
+
+struct MappedCorpusFile;
+
 /// Text and matrix views remain valid while the mapped corpus is alive.
 class MappedCorpus
 {
@@ -118,8 +128,7 @@ class MappedCorpus
 
   private:
     struct Impl;
-    friend std::expected<MappedCorpus, EngineError> MapCorpusFile(const std::filesystem::path &path,
-                                                                  std::uint32_t *observed_version);
+    friend std::expected<MappedCorpusFile, CorpusMapFailure> MapCorpusFile(const std::filesystem::path &path);
     explicit MappedCorpus(std::unique_ptr<Impl> impl);
     std::unique_ptr<Impl> impl_;
 };
@@ -160,10 +169,16 @@ class CorpusWriter
     std::unique_ptr<Impl> impl_;
 };
 
-/// When supplied, `observedVersion` receives the version even when it is
-/// unsupported.
-[[nodiscard]] std::expected<MappedCorpus, EngineError> MapCorpusFile(const std::filesystem::path &path,
-                                                                     std::uint32_t *observed_version = nullptr);
+/// A mapped corpus and the format version stored in its header.
+struct MappedCorpusFile
+{
+    MappedCorpus corpus;
+    std::uint32_t version = 0;
+};
+
+/// Maps `path`. A header version is returned on success and on failure,
+/// including when that version is not supported.
+[[nodiscard]] std::expected<MappedCorpusFile, CorpusMapFailure> MapCorpusFile(const std::filesystem::path &path);
 
 /// Expands distinct vectors for callers that need owned per-line chunks.
 /// First 16 bytes of the SHA-256 of a whole corpus file, with the checksum

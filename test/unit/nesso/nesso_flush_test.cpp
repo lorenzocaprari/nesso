@@ -738,11 +738,11 @@ TEST_CASE("a gzip input is stored with its line text", "[nesso][text]")
     REQUIRE(app.Index({.files = {path}, .output = corpus}).has_value());
     const auto mapped = nesso::core::MapCorpusFile(corpus);
     REQUIRE(mapped);
-    REQUIRE(mapped->Sources().size() == 1);
-    CHECK(mapped->Sources()[0].stored_only);
-    CHECK_FALSE(mapped->Sources()[0].tracked);
+    REQUIRE(mapped->corpus.Sources().size() == 1);
+    CHECK(mapped->corpus.Sources()[0].stored_only);
+    CHECK_FALSE(mapped->corpus.Sources()[0].tracked);
     bool found = false;
-    for (const nesso::core::CorpusLine &line : mapped->Lines())
+    for (const nesso::core::CorpusLine &line : mapped->corpus.Lines())
     {
         if (line.stored_text && *line.stored_text == "database connection refused")
         {
