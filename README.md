@@ -73,7 +73,7 @@ line 552: 3.4186: Oct  7 05:07:28 web-02 app[7872]: write /var/lib/app/queue.db:
 
 ## Install
 
-Ubuntu 26.04+ (glibc 2.43+), amd64 or arm64. The `.deb` installs `/usr/bin/nesso` and the MiniLM files in `/usr/share/nesso`.
+Ubuntu 26.04+ (glibc 2.43+), amd64 or arm64. The `.deb` and `.rpm` install `/usr/bin/nesso` and the MiniLM files in `/usr/share/nesso`. Rocky Linux 9 and UBI 9 use the RPM (`nesso-<version>-1.x86_64.rpm` / `nesso-<version>-1.aarch64.rpm` on tags that publish them).
 
 ```bash
 curl -fL -o nesso_0.2.1_amd64.deb \
@@ -83,6 +83,12 @@ sudo apt install ./nesso_0.2.1_amd64.deb
 curl -fL -o nesso_0.2.1_arm64.deb \
   https://github.com/lorenzocaprari/nesso/releases/download/v0.2.1/nesso_0.2.1_arm64.deb
 sudo apt install ./nesso_0.2.1_arm64.deb
+
+# Rocky / UBI (x86_64). Use nesso-<version>-1.aarch64.rpm on arm64.
+ver=0.2.1
+curl -fL -o "nesso-${ver}-1.x86_64.rpm" \
+  "https://github.com/lorenzocaprari/nesso/releases/download/v${ver}/nesso-${ver}-1.x86_64.rpm"
+sudo dnf install "./nesso-${ver}-1.x86_64.rpm"
 ```
 
 The tags `v0.2.1`, `0.2.1`, and `latest` on `ghcr.io/lorenzocaprari/nesso` are one manifest list (`linux/amd64` and `linux/arm64`). The image stores the model at `/usr/share/nesso` and sets `NESSO_MODEL_DIR` to that directory. The entrypoint is `nesso` (`/usr/local/bin/nesso`). Mount the log directory:
@@ -94,7 +100,7 @@ docker run --rm -v "$PWD:/data:ro" -w /data ghcr.io/lorenzocaprari/nesso:v0.2.1 
 
 ## Verify a download
 
-`nesso_0.2.1.intoto.jsonl` covers the `.deb` packages and the SPDX SBOMs. `SHA256SUMS` lists every release file. The image attestation is stored on the manifest-list digest in GHCR.
+`nesso_0.2.1.intoto.jsonl` covers the `.deb` packages, the `.rpm` packages, and the SPDX SBOMs. `SHA256SUMS` lists every release file. The image attestation is stored on the manifest-list digest in GHCR.
 
 ```bash
 curl -fL -o nesso_0.2.1_amd64.deb \
