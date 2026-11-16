@@ -4,6 +4,24 @@ from conan import ConanFile
 from conan.tools.cmake import CMake, CMakeToolchain, CMakeDeps, cmake_layout
 
 
+def _absolute_ignorelist_flags(recipe_folder, flags):
+    # CMake's compiler check runs in build/<Config>/CMakeFiles/CMakeScratch,
+    # so a path relative to build/<Config> is not found. Rewrite a
+    # recipe-relative -fsanitize-ignorelist before the toolchain is written.
+    prefix = "-fsanitize-ignorelist="
+    rewritten = []
+    for flag in flags:
+        if isinstance(flag, str) and flag.startswith(prefix):
+            raw = flag[len(prefix):]
+            if raw and not os.path.isabs(raw):
+                raw = os.path.abspath(os.path.join(recipe_folder, raw))
+            if not raw or not os.path.isfile(raw):
+                raise RuntimeError(f"sanitizer ignorelist does not exist: {raw}")
+            flag = prefix + raw
+        rewritten.append(flag)
+    return rewritten
+
+
 class Nesso(ConanFile):
     name = "nesso"
     version = "0.2.1"
@@ -87,8 +105,14 @@ class Nesso(ConanFile):
             tc.cache_variables["NESSO_LINK_JOBS"] = str(link_jobs).strip()
         # Profile consumer flags (user.nesso:*) — not tools.build:*, so deps keep
         # stable package IDs and are not rebuilt with ASan/coverage/LTO.
-        tc.extra_cxxflags = list(self.conf.get("user.nesso:cxxflags", check_type=list, default=[]))
-        tc.extra_cflags = list(self.conf.get("user.nesso:cflags", check_type=list, default=[]))
+        tc.extra_cxxflags = _absolute_ignorelist_flags(
+            self.recipe_folder,
+            list(self.conf.get("user.nesso:cxxflags", check_type=list, default=[])),
+        )
+        tc.extra_cflags = _absolute_ignorelist_flags(
+            self.recipe_folder,
+            list(self.conf.get("user.nesso:cflags", check_type=list, default=[])),
+        )
         tc.extra_exelinkflags = list(
             self.conf.get("user.nesso:exelinkflags", check_type=list, default=[])
         )

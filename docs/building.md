@@ -70,7 +70,7 @@ ctest --test-dir build/RelWithDebInfo --output-on-failure -j "$(nproc)" -L funct
 
 ### Clang ASan and UBSan
 
-`conan/profiles/clang-26-asan` compiles and links nesso with Clang 21 and libstdc++. Dependency package ids match `gcc-26-debug` (`compiler=gcc`, `compiler.version=15`, Debug, ONNX Runtime Release), so `--no-remote` inside the build image reuses that cache. Consumer flags are `-O1 -g`, `-fno-omit-frame-pointer`, `-D_GLIBCXX_ASSERTIONS`, and `-fsanitize=address,undefined,float-divide-by-zero,implicit-conversion,local-bounds` with `-fno-sanitize-recover=all`. The profile does not define `_GLIBCXX_DEBUG`, does not enable `unsigned-integer-overflow` or MemorySanitizer, and does not pass `-Werror`. It is not a build-env image hash input. Formatting a float aborts in libstdc++ `<format>` (`_M_get_precision` initializes a `size_t` from `-1`). That is the only implicit-conversion report the ctest suite hits, and it fails the functional scenarios that print a score. On a low-RAM host, pass `-c user.nesso:link_jobs=1` on both commands. This profile and `gcc-26-debug` both write `build/Debug`; reconfigure when switching.
+`conan/profiles/clang-26-asan` compiles and links nesso with Clang 21 and libstdc++. Dependency package ids match `gcc-26-debug` (`compiler=gcc`, `compiler.version=15`, Debug, ONNX Runtime Release), so `--no-remote` inside the build image reuses that cache. Consumer flags are `-O1 -g`, `-fno-omit-frame-pointer`, `-D_GLIBCXX_ASSERTIONS`, and `-fsanitize=address,undefined,float-divide-by-zero,implicit-conversion,local-bounds` with `-fno-sanitize-recover=all`. The profile does not define `_GLIBCXX_DEBUG`, does not enable `unsigned-integer-overflow` or MemorySanitizer, and does not pass `-Werror`. It is not a build-env image hash input. Clang's `implicit-integer-sign-change` check reports `size_t __prec = -1` in libstdc++ `<format>` (`_M_get_precision`). That function is inlined into the caller, so the profile passes `-fsanitize-ignorelist=conan/sanitizer/libstdcxx-format.ignorelist`. The path is relative to the recipe root. `conanfile.py` rewrites it to an absolute path, because CMake's compiler check runs under `build/<Config>/CMakeFiles/CMakeScratch` and would not find a path relative to `build/<Config>`. The list ignores only that check in the `<format>` header. Other checks, including `implicit-integer-sign-change` in nesso's own files, stay on, so functional tests that print a score run. On a low-RAM host, pass `-c user.nesso:link_jobs=1` on both commands. This profile and `gcc-26-debug` both write `build/Debug`; reconfigure when switching.
 
 ```bash
 conan install . -pr:h ./conan/profiles/clang-26-asan -pr:b default \
@@ -97,6 +97,8 @@ conan build . -pr:h ./conan/profiles/clang-26-tsan -pr:b default \
 ctest --test-dir build/Release --output-on-failure -L tsan
 ```
 
+Pipeline runs these three profiles on the amd64 image with `--no-remote`, one job each: `gcc-26-asan-release-amd64` (unit, integration, and functional), `clang-26-asan-amd64` (the same three labels), and `clang-26-tsan-amd64` (`ctest -L tsan`).
+
 The binary is `build/Debug/src/nesso`, `build/Release/src/nesso`, or `build/RelWithDebInfo/src/nesso`. For CI-strict configure (fail instead of skip when the model or Go toolchain is missing), set `NESSO_REQUIRE_MODEL=1` and `NESSO_REQUIRE_BDD=1` on the `conan build` environment, as Pipeline does.
 
 ## Compile options
@@ -107,7 +109,7 @@ The binary is `build/Debug/src/nesso`, `build/Release/src/nesso`, or `build/RelW
 
 `NESSO_LINK_JOBS` caps concurrent Ninja link jobs when it is a positive integer (`user.nesso:link_jobs` from Conan, or the environment for a plain CMake configure). Unset leaves link parallelism unlimited, which is what CI uses. Compile jobs stay unlimited. A single LTO link can still spawn many codegen threads under `-flto=auto`; packaging and ship-faithful local builds use `NESSO_REPRODUCIBLE=1` so that becomes `-flto=1`.
 
-`conan/profiles/gcc-26-debug` and `conan/profiles/gcc-26-asan-release` pass `-fno-sanitize-recover=all` with `-fsanitize=address,undefined`. ASan and UBSan stop on the first error without `UBSAN_OPTIONS`. `conan/profiles/clang-26-tsan` does the same for ThreadSanitizer. `conan/profiles/clang-26-asan` does the same for Clang, and adds `float-divide-by-zero`, `implicit-conversion`, and `local-bounds`.
+`conan/profiles/gcc-26-debug` and `conan/profiles/gcc-26-asan-release` pass `-fno-sanitize-recover=all` with `-fsanitize=address,undefined`. ASan and UBSan stop on the first error without `UBSAN_OPTIONS`. `conan/profiles/clang-26-tsan` does the same for ThreadSanitizer. `conan/profiles/clang-26-asan` does the same for Clang, and adds `float-divide-by-zero`, `implicit-conversion`, and `local-bounds`. Its ignorelist drops only `implicit-integer-sign-change` in the libstdc++ `<format>` header (`conan/sanitizer/libstdcxx-format.ignorelist`).
 
 `conan/profiles/gcc-26-debug` and `conan/profiles/code-coverage` pass `-D_GLIBCXX_ASSERTIONS`. Those checks are inline libstdc++ preconditions and do not change the layout of standard containers. Neither profile passes `-D_GLIBCXX_DEBUG` or `-D_GLIBCXX_DEBUG_PEDANTIC`. `user.nesso:cxxflags` is not applied when Catch2, abseil, or ONNX Runtime is built, and those packages keep one shared Debug package ID. A debug-mode container must not cross that boundary.
 

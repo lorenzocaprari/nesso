@@ -1,0 +1,15 @@
+# Copyright (c) 2026 Lorenzo Caprari
+# SPDX-License-Identifier: Apache-2.0
+#
+# libstdc++ <format> stores "no precision" as `size_t __prec = -1` inside
+# _M_get_precision (GCC 15: libstdc++-v3/include/std/format). Clang's
+# implicit-integer-sign-change check reports that conversion. The function is
+# inlined into the caller, so a fun: entry does not match the frame that is
+# emitted; the source location is still the <format> header.
+#
+# This list ignores only that check in that header. AddressSanitizer and every
+# other UndefinedBehaviorSanitizer check still instrument <format>, and
+# implicit-integer-sign-change still fires in every other file.
+
+[implicit-integer-sign-change]
+src:*/c++/*/format
