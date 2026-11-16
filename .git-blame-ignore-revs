@@ -1,0 +1,9 @@
+# Commits listed here are ignored by git blame when blame.ignoreRevsFile
+# points at this file. Add only mechanical commits (bulk rename/format),
+# never behavior changes.
+#
+# Local setup (once per clone):
+#   git config blame.ignoreRevsFile .git-blame-ignore-revs
+
+# refactor: adopt Google naming for functions and variables (#288)
+075b12f9f3559aa243fcc6235f2f4cf20e7d2457
