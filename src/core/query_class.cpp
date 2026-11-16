@@ -383,31 +383,8 @@ static bool MatchIpv6(std::string_view token) noexcept
         return false;
     }
 
-    if (ParseIpv6Address(token))
-    {
-        return true;
-    }
-
-    const std::size_t last_colon = token.rfind(':');
-    const std::string_view tail = token.substr(last_colon + 1);
-    if (tail.empty())
-    {
-        return false;
-    }
-
-    if (!std::ranges::all_of(tail,
-                             [](const char code_unit) { return IsAsciiDigit(static_cast<unsigned char>(code_unit)); }))
-    {
-        return false;
-    }
-
-    std::uint32_t port = 0;
-    const std::string_view head = token.substr(0, last_colon);
-    if (ParseDecimalPort(tail, port) && ParseIpv6Address(head))
-    {
-        return false;
-    }
-    return false;
+    // Ports are only accepted as [address]:port; unbracketed host:port is ambiguous.
+    return ParseIpv6Address(token);
 }
 
 static bool MatchUnixAbsolutePath(std::string_view token) noexcept

@@ -49,6 +49,9 @@ TEST_CASE("identifier token patterns match ADR 0011", "[query][core]")
         ExpectNotIdentifier("C:\\Windows\\x");
         ExpectNotIdentifier("12");
         ExpectNotIdentifier("abc");
+        // Unbracketed IPv6:port is not an identifier (ports need [address]:port).
+        ExpectNotIdentifier("1:2:3:4:5:6:7:8:8080");
+        ExpectNotIdentifier("fe80::1:44321");
     }
 }
 

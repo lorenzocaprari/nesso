@@ -116,16 +116,16 @@ extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t *data, std::size_t size
         auto mapped = nesso::core::MapCorpusFile(path);
         if (mapped.has_value())
         {
-            sink += mapped->version;
-            sink += TouchMappedCorpus(mapped->corpus);
+            sink = sink + mapped->version;
+            sink = sink + TouchMappedCorpus(mapped->corpus);
         }
         else
         {
             if (mapped.error().version.has_value())
             {
-                sink += *mapped.error().version;
+                sink = sink + *mapped.error().version;
             }
-            sink += static_cast<std::size_t>(mapped.error().code);
+            sink = sink + static_cast<std::size_t>(mapped.error().code);
         }
     }
 

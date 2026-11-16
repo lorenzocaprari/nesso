@@ -46,7 +46,7 @@ extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t *data, std::size_t size
         {
             for (const nesso::parser::ParsedChunk &chunk : *chunks)
             {
-                sink += nesso::parser::MaskTemplate(chunk.text).size();
+                sink = sink + nesso::parser::MaskTemplate(chunk.text).size();
             }
         }
     }

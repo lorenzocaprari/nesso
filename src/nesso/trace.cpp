@@ -6,13 +6,13 @@
 
 #include <platform/file.hpp>
 
+#include <array>
 #include <cstdint>
 #include <cstdlib>
 #include <iostream>
 #include <string>
 #include <string_view>
 #include <utility>
-#include <vector>
 
 namespace nesso
 {
@@ -25,10 +25,13 @@ struct Stage
     std::int64_t microseconds = 0;
 };
 
+constexpr std::size_t MAX_STAGES = 16;
+
 struct TraceState
 {
     int depth = 0;
-    std::vector<Stage> stages;
+    std::array<Stage, MAX_STAGES> stages{};
+    std::size_t stage_count = 0;
 };
 
 } // namespace
@@ -50,7 +53,7 @@ static bool TracingEnabled()
 
 static void Emit(TraceState &current)
 {
-    if (current.stages.empty())
+    if (current.stage_count == 0)
     {
         return;
     }
@@ -58,17 +61,18 @@ static void Emit(TraceState &current)
     const std::int64_t rss_bytes = nesso::platform::PeakResidentBytes();
 
     std::cerr << R"({"peakRssBytes":)" << rss_bytes << R"(,"stages":[)";
-    for (size_t index = 0; index < current.stages.size(); ++index)
+    for (size_t index = 0; index < current.stage_count; ++index)
     {
         if (index != 0)
         {
             std::cerr << ',';
         }
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-constant-array-index)
         const Stage &stage = current.stages[index];
         std::cerr << R"({"name":")" << stage.name << R"(","us":)" << stage.microseconds << '}';
     }
     std::cerr << "]}\n";
-    current.stages.clear();
+    current.stage_count = 0;
 }
 
 TraceSession::TraceSession() : active_(TracingEnabled())
@@ -106,7 +110,17 @@ ScopedStage::~ScopedStage()
     }
     const auto elapsed = std::chrono::steady_clock::now() - start_;
     const auto microseconds = std::chrono::duration_cast<std::chrono::microseconds>(elapsed).count();
-    State().stages.push_back(Stage{.name = std::move(name_), .microseconds = microseconds});
+    TraceState &current = State();
+    if (current.stage_count >= current.stages.size())
+    {
+        return;
+    }
+    // Bounds checked above; operator[] stays non-throwing for the noexcept dtor.
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-constant-array-index)
+    Stage &slot = current.stages[current.stage_count];
+    slot.name = std::move(name_);
+    slot.microseconds = microseconds;
+    ++current.stage_count;
 }
 
 } // namespace nesso
