@@ -13,6 +13,7 @@
 #include <ostream>
 #include <parser/archive_source.hpp>
 #include <parser/gzip_reader.hpp>
+#include <platform/assert.hpp>
 #include <platform/file.hpp>
 
 #include <algorithm>
@@ -440,6 +441,7 @@ static std::expected<void, EngineError> SpillAddLines(std::ostream &lines_out, s
                                                       std::span<const CorpusLine> lines,
                                                       std::span<const std::vector<std::string>> line_terms)
 {
+    NESSO_ASSERT(lines.size() == line_terms.size());
     for (std::size_t index = 0; index < lines.size(); ++index)
     {
         const CorpusLine &line = lines[index];

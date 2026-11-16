@@ -1,4 +1,4 @@
-add_library(nesso_platform file.cpp)
+add_library(nesso_platform assert.cpp file.cpp)
 target_include_directories(nesso_platform
                            PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
 target_link_libraries(nesso_platform PRIVATE nesso_options)

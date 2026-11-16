@@ -20,6 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `NESSO_ASSERT` checks an internal invariant in debug, sanitized, and release builds. `NDEBUG` does not disable it. Failure prints the condition, file, and line to stderr and aborts. `NESSO_ASSERT_ASSUME` selects `std::unreachable()` instead of the trap and stays off.
 - `nesso_fuzz_corpus` maps untrusted corpus bytes through `MapCorpusFile`. The harness recomputes the checksum over those bytes so the reader is reached; the check in the reader is unchanged. Seeds in `test/fuzz/seeds/corpus` are small files written by `CorpusWriter` (`nesso_generate_corpus_seeds`). `scripts/fuzz-test` builds the harness with AddressSanitizer, UndefinedBehaviorSanitizer, and `_GLIBCXX_ASSERTIONS`. ClusterFuzzLite lists the `undefined` sanitizer and compiles with `_LIBCPP_HARDENING_MODE_EXTENSIVE`.
 - `experimental_simd_probe_test` checks a 384-float dot product and L2 with `std::experimental::native_simd` when `<experimental/simd>` and `__cpp_lib_experimental_parallel_simd` are present, and prints `SKIP unsupported` otherwise. The probe is a test executable only. ClusterFuzzLite compiles the same file with libc++ and does not link it into a fuzz target.
 - `NESSO_FORCE_KERNEL` pins the float distance kernel for tests and benchmarks. `scalar` uses the scalar kernel. `avx2` uses AVX2+FMA when the CPU supports both, and the scalar kernel otherwise. Unset, empty, and any other value keep automatic selection. The variable is read once per process and does not change command output.

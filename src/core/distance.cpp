@@ -6,6 +6,7 @@
 #include <core/distance.hpp>
 
 #include <core/distance_kernels.hpp>
+#include <platform/assert.hpp>
 
 #include <cmath>
 #include <cstddef>
@@ -21,6 +22,7 @@ namespace detail
 
 template <SupportedScalar T> T DotProductScalar(std::span<const T> a, std::span<const T> b) noexcept
 {
+    NESSO_ASSERT(a.size() == b.size());
     T sum{};
     for (size_t i = 0; i < a.size(); ++i)
     {
@@ -31,6 +33,7 @@ template <SupportedScalar T> T DotProductScalar(std::span<const T> a, std::span<
 
 template <SupportedScalar T> T L2SquaredDistanceScalar(std::span<const T> a, std::span<const T> b) noexcept
 {
+    NESSO_ASSERT(a.size() == b.size());
     T sum{};
     for (size_t i = 0; i < a.size(); ++i)
     {
@@ -91,6 +94,7 @@ DistanceKernel SelectedKernel() noexcept
 
 float DotProductKernel(DistanceKernel kernel, std::span<const float> a, std::span<const float> b) noexcept
 {
+    NESSO_ASSERT(a.size() == b.size());
 #ifdef __x86_64__
     if (kernel == DistanceKernel::Avx2Fma)
     {
@@ -104,6 +108,7 @@ float DotProductKernel(DistanceKernel kernel, std::span<const float> a, std::spa
 
 float L2SquaredDistanceKernel(DistanceKernel kernel, std::span<const float> a, std::span<const float> b) noexcept
 {
+    NESSO_ASSERT(a.size() == b.size());
 #ifdef __x86_64__
     if (kernel == DistanceKernel::Avx2Fma)
     {

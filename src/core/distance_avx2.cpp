@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include <core/distance_kernels.hpp>
+#include <platform/assert.hpp>
 
 #include <cstddef>
 #include <immintrin.h>
@@ -43,6 +44,7 @@ NESSO_TARGET_AVX2_FMA float HorizontalSum(__m256 value) noexcept
 
 NESSO_TARGET_AVX2_FMA float DotProductAvx2Fma(std::span<const float> a, std::span<const float> b) noexcept
 {
+    NESSO_ASSERT(a.size() == b.size());
     __m256 sum0 = _mm256_setzero_ps();
     __m256 sum1 = _mm256_setzero_ps();
     __m256 sum2 = _mm256_setzero_ps();
@@ -75,6 +77,7 @@ NESSO_TARGET_AVX2_FMA float DotProductAvx2Fma(std::span<const float> a, std::spa
 
 NESSO_TARGET_AVX2_FMA float L2SquaredDistanceAvx2Fma(std::span<const float> a, std::span<const float> b) noexcept
 {
+    NESSO_ASSERT(a.size() == b.size());
     __m256 sum0 = _mm256_setzero_ps();
     __m256 sum1 = _mm256_setzero_ps();
     __m256 sum2 = _mm256_setzero_ps();

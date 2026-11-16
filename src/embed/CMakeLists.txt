@@ -10,5 +10,5 @@ target_include_directories(nesso_embed
 find_package(onnxruntime CONFIG REQUIRED)
 target_link_libraries(
   nesso_embed
-  PUBLIC nesso_tokenizer onnxruntime::onnxruntime
-  PRIVATE nesso_options nesso_platform)
+  PUBLIC nesso_platform nesso_tokenizer onnxruntime::onnxruntime
+  PRIVATE nesso_options)

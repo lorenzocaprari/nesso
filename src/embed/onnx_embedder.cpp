@@ -8,6 +8,7 @@
 #include <embed/batch_plan.hpp>
 #include <embed/inference_wave.hpp>
 #include <embed/onnx_embedder.hpp>
+#include <platform/assert.hpp>
 
 #include <algorithm>
 #include <array>
@@ -39,9 +40,32 @@ struct HiddenShape
     size_t hidden_size = 0;
 };
 
+static void AssertEncodedBatch(std::span<const TokenizedInput> encoded, std::span<const size_t> indices,
+                               size_t padded_length)
+{
+    NESSO_ASSERT(std::ranges::all_of(indices,
+                                     [&](const size_t index)
+                                     {
+                                         if (index >= encoded.size())
+                                         {
+                                             return false;
+                                         }
+                                         const TokenizedInput &item = encoded[index];
+                                         return item.input_ids.size() == item.attention_mask.size() &&
+                                                item.input_ids.size() == item.token_type_ids.size() &&
+                                                item.input_ids.size() <= padded_length;
+                                     }));
+}
+
 static std::vector<float> MeanPoolAndNormalize(std::span<const float> hidden_states,
                                                std::span<const int64_t> attention_mask, const HiddenShape &shape)
 {
+    NESSO_ASSERT(hidden_states.size() == shape.sequence_length * shape.hidden_size);
+    NESSO_ASSERT(attention_mask.size() == shape.sequence_length);
+    if (!hidden_states.empty())
+    {
+        NESSO_ASSERT(hidden_states.data() != nullptr);
+    }
     std::vector<float> pooled(shape.hidden_size, 0.0F);
     size_t active_tokens = 0;
     for (size_t token = 0; token < shape.sequence_length; ++token)
@@ -231,6 +255,7 @@ OnnxEmbedder::SessionImpl::SessionImpl(const std::filesystem::path &model_path, 
     {
         sessions_.push_back(std::make_unique<Ort::Session>(env_, path.c_str(), options));
     }
+    NESSO_ASSERT(!sessions_.empty());
     io_ = ReadModelIo(*sessions_.front());
 }
 
@@ -252,7 +277,7 @@ OnnxEmbedder::SessionImpl::Infer(Ort::Session &session, std::span<const Tokenize
     {
         return std::unexpected(EmbedError::InferenceFailure);
     }
-
+    AssertEncodedBatch(encoded, indices, padded_length);
     const size_t batch_size = indices.size();
     std::vector<int64_t> flat_input_ids(batch_size * padded_length, 0);
     std::vector<int64_t> flat_attention_mask(batch_size * padded_length, 0);
@@ -363,6 +388,9 @@ static std::expected<void, EmbedError> ReportWaveProgress(std::span<const SlotRe
 
 static void StoreWaveParts(const BatchWave &wave, std::vector<SlotResult> &wave_outcome, std::vector<SlotResult> &parts)
 {
+    NESSO_ASSERT(wave.batch_indices.size() == wave_outcome.size());
+    NESSO_ASSERT(
+        std::ranges::all_of(wave.batch_indices, [&](const size_t batch_index) { return batch_index < parts.size(); }));
     for (std::size_t slot = 0; slot < wave.batch_indices.size(); ++slot)
     {
         parts[wave.batch_indices[slot]] = std::move(wave_outcome[slot]);
@@ -394,7 +422,10 @@ OnnxEmbedder::SessionImpl::InferAll(std::span<const TokenizedInput> encoded,
             RunInferenceWave(wave.batch_indices.size(),
                              [this, &wave, encoded, &plan](std::size_t slot)
                              {
+                                 NESSO_ASSERT(slot < sessions_.size());
+                                 NESSO_ASSERT(slot < wave.batch_indices.size());
                                  const std::size_t batch_index = wave.batch_indices[slot];
+                                 NESSO_ASSERT(batch_index < plan.batches.size());
                                  return Infer(*sessions_[slot], encoded, plan.batches[batch_index].indices);
                              });
         if (!wave_outcome)
