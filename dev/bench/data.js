@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794843982811,
+  "lastUpdate": 1794845355851,
   "repoUrl": "https://github.com/lorenzocaprari/nesso",
   "entries": {
     "nesso": [
@@ -7991,6 +7991,60 @@ window.BENCHMARK_DATA = {
           {
             "name": "grep-100000-rss",
             "value": 146976768,
+            "unit": "bytes"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "caprarilorenzo5@gmail.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "committer": {
+            "email": "85455384+lorenzocaprari@users.noreply.github.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "distinct": true,
+          "id": "52a41244359cbded994fecc0806463da1ecd92db",
+          "message": "build(conan): add a Clang ASan and UBSan profile\n\nAdd clang-26-asan so a Clang build can run ASan plus the UBSan checks\nGCC does not enable (implicit-conversion and local-bounds). Unit and\nintegration tests pass. Functional tests abort on the first formatted\nfloat inside libstdc++ <format>. Pipeline is unchanged.",
+          "timestamp": "2026-11-16T17:05:01+01:00",
+          "tree_id": "eea228d2b95e43fc806f63eb22e38c4b275ceefc",
+          "url": "https://github.com/lorenzocaprari/nesso/commit/52a41244359cbded994fecc0806463da1ecd92db"
+        },
+        "date": 1794845355512,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "grep-1000-wall",
+            "value": 0.15,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-1000-rss",
+            "value": 117702656,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-10000-wall",
+            "value": 0.16,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-10000-rss",
+            "value": 118558720,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-100000-wall",
+            "value": 0.36,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-100000-rss",
+            "value": 143749120,
             "unit": "bytes"
           }
         ]
