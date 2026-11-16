@@ -22,10 +22,12 @@ target_link_libraries(
   nesso_core
   PUBLIC nesso_platform Threads::Threads
   PRIVATE nesso_options nesso_parser)
-# AVX2 stays on this translation unit. Applying it to the whole library lets LTO
-# copy those instructions into generic callers and SIGILL on older CPUs.
+# Baseline ISA for this translation unit. The kernels use target("avx2,fma"),
+# which keeps those instructions out of generic callers under LTO. A file-wide
+# -mavx2/-mfma also compiles inline functions this file emits (libstdc++ debug
+# helpers reached from std::span::operator[] at -O0) with AVX2 encodings. The
+# linker can keep that COMDAT for the whole program and SIGILL on a CPU without
+# AVX2.
 if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64" AND NOT MSVC)
   target_sources(nesso_core PRIVATE distance_avx2.cpp)
-  set_source_files_properties(distance_avx2.cpp PROPERTIES COMPILE_OPTIONS
-                                                           "-mavx2;-mfma")
 endif()
