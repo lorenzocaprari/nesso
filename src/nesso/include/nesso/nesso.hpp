@@ -252,6 +252,7 @@ class Nesso
 
   private:
     [[nodiscard]] std::expected<const embed::Embedder *, Error> Embedder() const;
+    [[nodiscard]] std::expected<const embed::Embedder *, Error> LoadSearchEmbedder() const;
 
     Config config_;
     // Created on first use. const operations share that cache.

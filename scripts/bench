@@ -8,6 +8,11 @@ the first search, and writes bench/results/<sha>.logdir.json. nesso index
 reads regular files, so logdir passes each file on its own. --dataset ttfa
 (or --ttfa) generates a mixed bundle directory, indexes that directory as one
 path, times the first search, and writes bench/results/<sha>.ttfa.json.
+--dataset search-profile indexes one seeded log and times one nesso search.
+NESSO_TRACE=1 splits that search into corpus-read, model-load, query-embed,
+and distance. A second search without NESSO_TRACE must print the same stdout.
+The result is bench/results/<sha>.search-profile.json and is not compared
+with bench/baseline.json.
 """
 
 import argparse
@@ -30,6 +35,7 @@ DEFAULT_SIZES = (1000, 10_000, 100_000)
 HDFS_DEFAULT_LINES = 100_000
 LOGDIR_DEFAULT_LINES = 256
 TTFA_DEFAULT_LINES = 256
+SEARCH_PROFILE_DEFAULT_LINES = 1000
 LOGDIR_QUERY = "disk write failed"
 LOGDIR_NOISE_DIVISOR = 5
 QUERY = "database connection refused"
@@ -184,6 +190,20 @@ def write_log(path: Path, lines: int) -> None:
             handle.write(text + "\n")
 
 
+def write_profile_log(path: Path, lines: int) -> None:
+    # Numeric ids collapse under the template mask, so a distance scan would
+    # time a handful of vectors. A letter id keeps each non-query line distinct.
+    rng = random.Random(SEED)
+    with path.open("w", encoding="utf-8") as handle:
+        for ordinal in range(lines):
+            choice = rng.randrange(len(TEMPLATES))
+            if rng.randrange(10) == 0:
+                text = QUERY
+            else:
+                text = f"{TEMPLATES[choice]} id-{letter_token(ordinal)}"
+            handle.write(text + "\n")
+
+
 def parse_trace(stderr: str) -> dict | None:
     found = None
     for line in stderr.splitlines():
@@ -197,6 +217,43 @@ def parse_trace(stderr: str) -> dict | None:
         if isinstance(obj, dict) and "peakRssBytes" in obj and "stages" in obj:
             found = obj
     return found
+
+
+def stage_microseconds(trace: dict | None, name: str) -> int | None:
+    if not isinstance(trace, dict):
+        return None
+    stages = trace.get("stages")
+    if not isinstance(stages, list):
+        return None
+    total = 0
+    found = False
+    for stage in stages:
+        if not isinstance(stage, dict) or stage.get("name") != name:
+            continue
+        value = stage.get("us")
+        if isinstance(value, bool) or not isinstance(value, int):
+            return None
+        total += value
+        found = True
+    if not found:
+        return None
+    return total
+
+
+def search_profile_times(trace: dict | None) -> dict | None:
+    fields = (
+        ("ioUs", "corpus-read"),
+        ("embedUs", "query-embed"),
+        ("distanceUs", "distance"),
+        ("modelLoadUs", "model-load"),
+    )
+    times = {}
+    for field, name in fields:
+        value = stage_microseconds(trace, name)
+        if value is None:
+            return None
+        times[field] = value
+    return times
 
 
 def trace_ok(trace: dict | None) -> bool:
@@ -1231,16 +1288,179 @@ def run_ttfa(args: argparse.Namespace) -> None:
         raise SystemExit(1)
 
 
+def search_profile_payload(
+    *,
+    sha: str,
+    binary: Path,
+    cpu: str,
+    nproc: int,
+    threads: str | None,
+    lines: int,
+    index_result: dict,
+    search_result: dict | None,
+    times: dict | None,
+    stages: list | None,
+    stdout_identical: bool,
+    error: str | None,
+) -> dict:
+    payload = {
+        "sha": sha,
+        "binary": str(binary),
+        "dataset": "search-profile",
+        "query": QUERY,
+        "seed": SEED,
+        "cpuModel": cpu,
+        "nproc": nproc,
+        "threads": threads,
+        "lines": lines,
+        "ok": error is None,
+        "indexExitCode": index_result["exitCode"],
+        "searchExitCode": None if search_result is None else search_result["exitCode"],
+        "indexWallSeconds": index_result["wallSeconds"],
+        "searchWallSeconds": None if search_result is None else search_result["wallSeconds"],
+        "peakRssBytes": None if search_result is None else search_result["peakRssBytes"],
+        "ioUs": None if times is None else times["ioUs"],
+        "embedUs": None if times is None else times["embedUs"],
+        "distanceUs": None if times is None else times["distanceUs"],
+        "modelLoadUs": None if times is None else times["modelLoadUs"],
+        "stdoutIdentical": stdout_identical,
+        "stages": stages,
+    }
+    if error is not None:
+        payload["error"] = error
+    return payload
+
+
+def run_search_profile(args: argparse.Namespace) -> None:
+    if args.sizes is not None:
+        raise SystemExit("error: --sizes applies to the synthetic grep benchmark")
+    if args.sample is not None:
+        raise SystemExit("error: --sample applies to --dataset hdfs")
+    if args.mib is not None:
+        raise SystemExit("error: --mib applies to --dataset logdir or --dataset ttfa")
+    lines = SEARCH_PROFILE_DEFAULT_LINES if args.lines is None else args.lines
+    if lines <= 0:
+        raise SystemExit("error: --lines must be a positive integer")
+    binary = resolve_binary(args.binary)
+    if not binary.is_file():
+        raise SystemExit(f"error: binary not found: {binary}")
+    model_dir = resolve_model_dir(args.model_dir)
+    if not (model_dir / "model.onnx").is_file() or not (model_dir / "vocab.txt").is_file():
+        raise SystemExit(f"error: {model_dir} must contain model.onnx and vocab.txt")
+    time_bin = gnu_time_binary()
+    if not Path(time_bin).is_file():
+        raise SystemExit(f"error: {time_bin} is required")
+
+    with tempfile.TemporaryDirectory(prefix="nesso-bench-search-profile-") as tmp:
+        directory = Path(tmp)
+        log_path = directory / "corpus.log"
+        write_profile_log(log_path, lines)
+        corpus = directory / "corpus.nesso"
+        print(f"bench: search-profile index+search {lines} lines", flush=True)
+        index_result = execute_timed(
+            [
+                str(binary),
+                "index",
+                "-o",
+                str(corpus),
+                str(log_path),
+                "--model-dir",
+                str(model_dir),
+                "--quiet",
+            ],
+            args.timeout,
+            directory / "index-time.txt",
+        )
+        error = command_error(index_result, corpus=corpus)
+        search_argv = [
+            str(binary),
+            "search",
+            QUERY,
+            "-i",
+            str(corpus),
+            "--model-dir",
+            str(model_dir),
+            "-k",
+            "5",
+        ]
+        search_result = None
+        times = None
+        stages = None
+        stdout_identical = False
+        if error is None:
+            search_result = execute_timed(
+                search_argv,
+                args.timeout,
+                directory / "search-time.txt",
+                env={"NESSO_TRACE": "1"},
+            )
+            error = command_error(search_result, need_stdout=True)
+        if error is None and search_result is not None:
+            trace = parse_trace(search_result["stderr"])
+            stages = trace.get("stages") if isinstance(trace, dict) else None
+            times = search_profile_times(trace)
+            if times is None:
+                error = "missing corpus-read/model-load/query-embed/distance trace"
+        if error is None and search_result is not None:
+            plain_result = execute_timed(
+                search_argv,
+                args.timeout,
+                directory / "search-plain-time.txt",
+                env={"NESSO_TRACE": ""},
+            )
+            error = command_error(plain_result, need_stdout=True)
+            if error is None:
+                stdout_identical = plain_result["stdout"] == search_result["stdout"]
+                if not stdout_identical:
+                    error = "search stdout changed with NESSO_TRACE=1"
+        case = search_profile_payload(
+            sha=git_sha(),
+            binary=binary,
+            cpu=cpu_model(),
+            nproc=logical_cpus(),
+            threads=threads_setting(),
+            lines=lines,
+            index_result=index_result,
+            search_result=search_result,
+            times=times,
+            stages=stages,
+            stdout_identical=stdout_identical,
+            error=error,
+        )
+    status = "ok" if case["ok"] else case.get("error", "failed")
+    print(
+        f"bench: search-profile {case['lines']} lines {status} "
+        f"wall={case['searchWallSeconds']}s ioUs={case['ioUs']} embedUs={case['embedUs']} "
+        f"distanceUs={case['distanceUs']} modelLoadUs={case['modelLoadUs']} "
+        f"peak={case['peakRssBytes']}",
+        flush=True,
+    )
+    threads = case["threads"]
+    shown_threads = threads if threads is not None else "unset"
+    print(
+        f"bench: cpu={case['cpuModel']} nproc={case['nproc']} NESSO_THREADS={shown_threads}",
+        flush=True,
+    )
+    output = args.output or (ROOT / "bench" / "results" / f"{case['sha']}.search-profile.json")
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(json.dumps(case, indent=2) + "\n", encoding="utf-8")
+    print(f"bench: wrote {output}")
+    if not case.get("ok"):
+        raise SystemExit(1)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--binary", help="Path to the nesso executable")
     parser.add_argument("--model-dir", help="Directory with model.onnx and vocab.txt")
     parser.add_argument(
         "--dataset",
-        choices=("hdfs", "logdir", "ttfa"),
+        choices=("hdfs", "logdir", "ttfa", "search-profile"),
         help=(
             "hdfs indexes the Loghub sample. logdir indexes a generated log directory "
-            "and runs one search. ttfa indexes a generated bundle directory and runs one search"
+            "and runs one search. ttfa indexes a generated bundle directory and runs one search. "
+            "search-profile indexes one generated log and splits one search into corpus read, "
+            "model load, query embedding, and distance"
         ),
     )
     parser.add_argument(
@@ -1254,7 +1474,8 @@ def main() -> None:
         default=None,
         help=(
             "Line count for --dataset hdfs (repeat the sample), --dataset logdir "
-            "(generate the tree), or --dataset ttfa / --ttfa (generate the bundle)"
+            "(generate the tree), --dataset ttfa / --ttfa (generate the bundle), "
+            "or --dataset search-profile (generate the log)"
         ),
     )
     parser.add_argument(
@@ -1286,6 +1507,9 @@ def main() -> None:
         return
     if args.dataset == "ttfa":
         run_ttfa(args)
+        return
+    if args.dataset == "search-profile":
+        run_search_profile(args)
         return
     if args.mib is not None:
         raise SystemExit("error: --mib applies to --dataset logdir or --dataset ttfa")
