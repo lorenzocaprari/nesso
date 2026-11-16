@@ -75,3 +75,31 @@ TEST_CASE("NESSO_TRACE=1 emits one json line per session", "[trace]")
     REQUIRE(text.find("\"peakRssBytes\":") != std::string::npos);
     REQUIRE(std::count(text.begin(), text.end(), '\n') == 2);
 }
+
+TEST_CASE("ScopedStage drops recording when stage capacity is full", "[trace]")
+{
+    const ClearTraceEnv clear_env;
+    REQUIRE(setenv("NESSO_TRACE", "1", 1) == 0);
+
+    std::stringstream sink;
+    {
+        const RestoreCerr restore;
+        std::cerr.rdbuf(sink.rdbuf());
+        {
+            const nesso::TraceSession session;
+            for (int index = 0; index < 17; ++index)
+            {
+                const nesso::ScopedStage stage{"stage"};
+            }
+        }
+    }
+
+    const std::string text = sink.str();
+    std::size_t stages = 0;
+    for (std::size_t pos = 0; (pos = text.find("\"name\":\"stage\"", pos)) != std::string::npos; pos += 14)
+    {
+        ++stages;
+    }
+    // reserve(16): the 17th destructor drops instead of reallocating.
+    REQUIRE(stages == 16);
+}

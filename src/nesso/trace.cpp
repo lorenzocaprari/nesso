@@ -99,6 +99,11 @@ TraceSession::~TraceSession()
 ScopedStage::ScopedStage(std::string_view name)
     : active_(TracingEnabled()), name_(name), start_(std::chrono::steady_clock::now())
 {
+    if (active_)
+    {
+        // Constructors may throw; keep destructor allocation-free.
+        State().stages.reserve(16);
+    }
 }
 
 ScopedStage::~ScopedStage()
@@ -109,14 +114,13 @@ ScopedStage::~ScopedStage()
     }
     const auto elapsed = std::chrono::steady_clock::now() - start_;
     const auto microseconds = std::chrono::duration_cast<std::chrono::microseconds>(elapsed).count();
-    try
+    std::vector<Stage> &stages = State().stages;
+    // Avoid reallocation in a noexcept destructor; drop the stage if full.
+    if (stages.size() >= stages.capacity())
     {
-        State().stages.push_back(Stage{.name = std::move(name_), .microseconds = microseconds});
+        return;
     }
-    catch (...)
-    {
-        // Destructors are noexcept; drop the stage rather than terminate.
-    }
+    stages.push_back(Stage{.name = std::move(name_), .microseconds = microseconds});
 }
 
 } // namespace nesso
