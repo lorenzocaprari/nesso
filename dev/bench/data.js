@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794845355851,
+  "lastUpdate": 1794847174719,
   "repoUrl": "https://github.com/lorenzocaprari/nesso",
   "entries": {
     "nesso": [
@@ -8045,6 +8045,60 @@ window.BENCHMARK_DATA = {
           {
             "name": "grep-100000-rss",
             "value": 143749120,
+            "unit": "bytes"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "caprarilorenzo5@gmail.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "committer": {
+            "email": "85455384+lorenzocaprari@users.noreply.github.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "distinct": true,
+          "id": "a284f9977ef1936c5f7e3585e2870d777e9e00de",
+          "message": "test(bench): add per-kernel microbenchmarks and a search profile\n\nTime the scalar and AVX2+FMA dot-product and squared-L2 kernels on\n384-dimensional vectors. The AVX2+FMA cases skip when the CPU cannot\nrun those instructions.\n\nscripts/bench --dataset search-profile records corpus-read, query-embed,\nand distance from NESSO_TRACE=1, plus model-load for the ONNX session,\nand checks that stdout matches a search without that variable.",
+          "timestamp": "2026-11-16T17:34:47+01:00",
+          "tree_id": "ebc189864e235827278eb80b92eaf577be6f469b",
+          "url": "https://github.com/lorenzocaprari/nesso/commit/a284f9977ef1936c5f7e3585e2870d777e9e00de"
+        },
+        "date": 1794847174052,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "grep-1000-wall",
+            "value": 0.15,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-1000-rss",
+            "value": 117862400,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-10000-wall",
+            "value": 0.16,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-10000-rss",
+            "value": 117698560,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-100000-wall",
+            "value": 0.37,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-100000-rss",
+            "value": 145612800,
             "unit": "bytes"
           }
         ]
