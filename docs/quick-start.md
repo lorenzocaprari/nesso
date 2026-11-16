@@ -4,7 +4,7 @@ Get a first answer from a sosreport, tarball, zip, or log directory without extr
 
 ## Install
 
-Ubuntu 26.04+ (glibc 2.43+), amd64 or arm64. The package includes the MiniLM model.
+Ubuntu 26.04+ (glibc 2.43+), amd64 or arm64. The `.deb` installs `/usr/bin/nesso` and the MiniLM files in `/usr/share/nesso`.
 
 ```bash
 curl -fL -o nesso_0.2.1_amd64.deb \
@@ -16,7 +16,7 @@ curl -fL -o nesso_0.2.1_arm64.deb \
 sudo apt install ./nesso_0.2.1_arm64.deb
 ```
 
-`ghcr.io/lorenzocaprari/nesso` includes the model at `/usr/share/nesso` (`NESSO_MODEL_DIR`). The entrypoint is `nesso`. Mount the directory that holds the bundle:
+`ghcr.io/lorenzocaprari/nesso` stores the model at `/usr/share/nesso` and sets `NESSO_MODEL_DIR` to that directory. The entrypoint is `nesso` (`/usr/local/bin/nesso`). Mount the directory that holds the bundle:
 
 ```bash
 docker run --rm -v "$PWD:/data:ro" -w /data ghcr.io/lorenzocaprari/nesso:v0.2.1 \
@@ -55,6 +55,25 @@ nesso search "payment timeout" -i case.nesso --json
 ```
 
 `index` does not accept `--json` or `--group`. Archive size caps (`--archive-max-entry-bytes`, `--archive-max-bytes`, `--archive-max-entries`, `--archive-max-ratio`) apply to `grep` and `index` only.
+
+## Shell output
+
+Matches are lines on stdout. Skip counts, warnings, and errors stay on stderr, so a pipe reads only matches. `grep` draws a progress line on stderr when that stream is a terminal. `--quiet` turns the line off, which keeps it from drawing over `less`. `search` does not draw one. With nothing to rank, stdout is empty and the command exits 1. `set -o pipefail` makes the pipeline use that status.
+
+A text line is for reading. One file prints `line N: SCORE: TEXT`, with four digits after the decimal. An archive member, stdin (`-`), or more than one file prints `SOURCE:line N: SCORE: TEXT`. `--group` inserts the count, as `line N (COUNT): SCORE: TEXT` or `SOURCE:line N (COUNT): SCORE: TEXT`. A JSON array slot prints `element`. The log text can contain `: `, and an archive source already contains a colon, so read fields from `--json`. `grep -F` matches the rendered line, including that source prefix.
+
+`--json` prints one JSON object per line. The keys, in order, are `schema_version`, `rank`, `source`, `kind`, `line`, `score`, `text`, `occurrences`, `mode`, `dense`, and `lexical`. `schema_version` is 2. `kind` is `line` or `element`. `mode` is `dense`, `hybrid`, or `lexical`. `rank` starts at 1. The text score has four digits after the decimal. The JSON `score` is the shortest decimal that reads back as the same value. `dense` and `lexical` are numbers or `null`. `occurrences` is at least 1. `jq` reads each line as its own value. The index summary (`Indexed N chunks into 'case.nesso'.`) stays on stderr.
+
+```bash
+nesso grep "the disk is full" sosreport-host.tar.xz --quiet -k 20 | less
+nesso grep "the disk is full" sosreport-host.tar.xz --quiet -k 20 \
+  | grep -F 'sosreport-host.tar.xz:var/log/messages'
+nesso grep "the disk is full" sosreport-host.tar.xz --json -k 10 \
+  | jq -r '[.rank, .score, .source, .line, .text] | @tsv'
+nesso grep "auth failure" sosreport-host.tar.xz --json --group -k 5 \
+  | jq -r 'select(.occurrences > 1) | "\(.occurrences)\t\(.text)"'
+nesso search "payment timeout" -i case.nesso --json | jq -r .text
+```
 
 ## Encrypted, over the limit, or skipped
 

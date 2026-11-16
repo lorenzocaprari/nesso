@@ -19,11 +19,9 @@
 [![GHCR](https://img.shields.io/badge/ghcr.io-lorenzocaprari%2Fnesso-blue.svg)](https://github.com/lorenzocaprari/nesso/pkgs/container/nesso)
 [![Coverage](https://codecov.io/gh/lorenzocaprari/nesso/branch/main/graph/badge.svg)](https://codecov.io/gh/lorenzocaprari/nesso)
 
-Semantic log search. grep for meaning: find the log lines you're looking for even when the words differ. Offline, one binary.
+Semantic search for local logs: find a line by meaning when the words differ. Offline, one binary, no server, no cloud call, and no API key. [Apache-2.0](LICENSE).
 
-Semantic grep for logs, fully offline, no server, no cloud, no API keys, [Apache-2.0](LICENSE).
-
-Support engineers: [triage a sosreport or tarball](docs/quick-start.md).
+Support engineers: [triage a sosreport or tarball](docs/quick-start.md). Piping the matches is in that page's [shell output](docs/quick-start.md#shell-output) section.
 
 ## Demo
 
@@ -53,17 +51,17 @@ Indexed 5000 chunks into 'app.nesso'.
 nesso search "the disk is full" -i app.nesso -k 3
 ```
 
-`--json` on `grep` and `search` prints one JSON object per match. The keys, in order, are `schema_version`, `rank`, `source`, `kind`, `line`, `score`, `text`, `occurrences`, `mode`, `dense`, and `lexical`. `schema_version` is 2. `kind` is `line` or `element`. `score` is the shortest decimal that reads back as the same value. Bytes that are not UTF-8 in `source` or `text` are replaced with U+FFFD. Errors, warnings, and counts stay on stderr. With nothing to rank, stdout is empty and the command exits 1. Text output is unchanged. `index` does not accept `--json`. `grep` and `search` default to `--mode auto`.
-
 ```text
 line 869: 0.4736: Oct 18 06:13:11 web-02 app[4900]: write /var/lib/app/queue.db: No space left on device
 line 1494: 0.4694: Oct 22 17:08:04 web-02 app[7918]: write /var/lib/app/queue.db: No space left on device
 line 3762: 0.4677: Oct 24 23:39:07 web-02 app[2888]: write /var/lib/app/queue.db: No space left on device
 ```
 
+`--json` on `grep` and `search` prints one JSON object per match instead of these text lines. The keys, and how to pipe them, are in the quick start's [shell output](docs/quick-start.md#shell-output) section. `index` does not accept `--json`. `grep` and `search` default to `--mode auto`.
+
 ## Install
 
-Ubuntu 26.04+ (glibc 2.43+), amd64 or arm64. The package includes the MiniLM model.
+Ubuntu 26.04+ (glibc 2.43+), amd64 or arm64. The `.deb` installs `/usr/bin/nesso` and the MiniLM files in `/usr/share/nesso`.
 
 ```bash
 curl -fL -o nesso_0.2.1_amd64.deb \
@@ -75,7 +73,7 @@ curl -fL -o nesso_0.2.1_arm64.deb \
 sudo apt install ./nesso_0.2.1_arm64.deb
 ```
 
-`ghcr.io/lorenzocaprari/nesso` includes the model at `/usr/share/nesso` (`NESSO_MODEL_DIR`). The entrypoint is `nesso`. Mount the log directory:
+The tags `v0.2.1`, `0.2.1`, and `latest` on `ghcr.io/lorenzocaprari/nesso` are one manifest list (`linux/amd64` and `linux/arm64`). The image stores the model at `/usr/share/nesso` and sets `NESSO_MODEL_DIR` to that directory. The entrypoint is `nesso` (`/usr/local/bin/nesso`). Mount the log directory:
 
 ```bash
 docker run --rm -v "$PWD:/data:ro" -w /data ghcr.io/lorenzocaprari/nesso:v0.2.1 \
@@ -109,8 +107,23 @@ slsa-verifier verify-image "ghcr.io/lorenzocaprari/nesso@${digest}" \
 
 `slsa-verifier` v2.7.1 or later. Signatures and the other provenance files are in [Verifying a release](docs/verifying.md).
 
+## Build
+
+Linux, GCC 15 or newer, CMake 4.2 or newer, and Conan 2. The local Release profile is `conan/profiles/gcc-26-dev`:
+
+```bash
+conan install . -pr:h ./conan/profiles/gcc-26-dev -pr:b default \
+  --lockfile=conan.lock --build=missing
+conan build . -pr:h ./conan/profiles/gcc-26-dev -pr:b default \
+  --lockfile=conan.lock --build=missing
+./scripts/fetch-model
+```
+
+The binary is `build/Release/src/nesso`. A Debug build writes `build/Debug/src/nesso`. Inside the `nesso-build-env` image, add `--no-remote` on both Conan commands. The other profiles are in [Building](docs/building.md).
+
 ## More
 
+- [Quick start](docs/quick-start.md)
 - [Usage](docs/usage.md)
 - [Building](docs/building.md)
 - [Releases](docs/releases.md)
