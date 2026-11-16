@@ -6,6 +6,7 @@
 
 #include <cstdint>
 #include <span>
+#include <string_view>
 
 namespace nesso::core::math::detail
 {
@@ -15,6 +16,8 @@ enum class DistanceKernel : uint8_t
     Scalar,
     Avx2Fma
 };
+
+[[nodiscard]] DistanceKernel SelectDistanceKernel(std::string_view forced, bool avx2_fma) noexcept;
 
 [[nodiscard]] DistanceKernel SelectedKernel() noexcept;
 

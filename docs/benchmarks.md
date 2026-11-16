@@ -6,6 +6,8 @@ Use a Release build. `NESSO_TRACE=1` prints one JSON line on stderr per command,
 NESSO_TRACE=1 ./build/Release/src/nesso grep "connection refused" /var/log/app.log --model-dir models/
 ```
 
+`NESSO_FORCE_KERNEL` pins the float distance kernel for tests and benchmarks. It is read once, on the first distance calculation in the process. `scalar` uses the scalar kernel. `avx2` uses AVX2+FMA when the CPU supports both, and the scalar kernel otherwise, so it does not execute AVX2 instructions the CPU lacks. An unset variable, an empty value, or any other value keeps automatic selection (AVX2+FMA when the CPU supports both, otherwise scalar). Leave it unset for that automatic kernel. Command output is unchanged.
+
 `scripts/profile` runs the same command under `perf` and `heaptrack` and writes `build/profile/flamegraph.svg` and `build/profile/heaptrack-summary.txt`. It needs `perf`, `heaptrack`, and FlameGraph's `stackcollapse-perf.pl` and `flamegraph.pl` on `PATH`, or `NESSO_FLAMEGRAPH_DIR` set to a FlameGraph checkout:
 
 ```bash
