@@ -8,8 +8,10 @@ compiler.cppstd=26
 build_type=Release
 
 [conf]
-# AFL++ uses afl-clang-lto++ (fuzz targets link only parser/tokenizer, never the gcc-built ORT); no profile ASan (AFL_USE_ASAN).
-user.nesso:cxxflags=["-O1", "-g", "-fno-omit-frame-pointer", "-march=x86-64-v2"]
+# AFL++ uses afl-clang-lto++ (fuzz targets never link the gcc-built ORT).
+# Sanitizers stay out of the profile: scripts/fuzz-test sets AFL_USE_ASAN and AFL_USE_UBSAN.
+# _GLIBCXX_ASSERTIONS enables libstdc++ contract checks in this fuzz build.
+user.nesso:cxxflags=["-O1", "-g", "-fno-omit-frame-pointer", "-march=x86-64-v2", "-D_GLIBCXX_ASSERTIONS"]
 user.nesso:cflags=["-O1", "-g", "-fno-omit-frame-pointer", "-march=x86-64-v2"]
 user.nesso:sharedlinkflags=[]
 user.nesso:exelinkflags=[]

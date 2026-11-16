@@ -1,9 +1,10 @@
 #!/bin/bash -eu
-# Parser and tokenizer only. A full `conan install` also builds onnxruntime
-# (boost, protobuf, eigen, ...) and the project CMakeLists requires CMake >= 4.2
-# while base-builder ships 3.29. nlohmann_json 3.11.3 is header-only and is the
-# only dependency the tokenizer links. The parser fuzzer also links zlib for
-# gzip input (system libz; the product build uses the locked Conan package).
+# Parser, tokenizer, archive reader, and corpus reader. A full `conan install`
+# also builds onnxruntime (boost, protobuf, eigen, ...) and the project
+# CMakeLists requires CMake >= 4.2 while base-builder ships 3.29.
+# nlohmann_json 3.11.3 is header-only and is the only dependency the tokenizer
+# links. The parser and archive fuzzers also link zlib (system libz; the product
+# build uses the locked Conan package). The corpus fuzzer links none of those.
 # The json commit matches the v3.11.3 tag recorded in conanfile.py / conan.lock.
 
 JSON_COMMIT=9cca280a4d0ccf0c08f47a99aa71d1b0e52f8d03
@@ -94,7 +95,10 @@ archive_includes=(
 archive_link=(-L"${LA_PREFIX}/lib" -Wl,-Bstatic -larchive -llzma -lz -Wl,-Bdynamic)
 
 root="${SRC}/nesso"
-flags="${CXXFLAGS:-} -std=c++26 -DNESSO_LIBFUZZER -I/tmp/nlohmann"
+# Extensive libc++ checks cover iterator, span, and string bounds that the fast
+# production mode skips. Debug mode adds checks that dominate fuzzing time.
+# -U drops a mode CXXFLAGS may already have set, so the -D does not warn.
+flags="${CXXFLAGS:-} -std=c++26 -DNESSO_LIBFUZZER -U_LIBCPP_HARDENING_MODE -D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_EXTENSIVE -I/tmp/nlohmann"
 
 "${CXX}" ${flags} \
   "${archive_includes[@]}" \
@@ -125,6 +129,22 @@ flags="${CXXFLAGS:-} -std=c++26 -DNESSO_LIBFUZZER -I/tmp/nlohmann"
   "${archive_link[@]}" \
   -o "${OUT}/nesso_fuzz_archive_source"
 
+# Corpus reader only. The writer, parser, and ONNX embedder stay out of this
+# binary. Checksum fixup lives in the harness; MapCorpusFile still verifies it.
+"${CXX}" ${flags} \
+  -I"${root}/src/core/include" \
+  -I"${root}/src/core" \
+  -I"${root}/src/platform/include" \
+  "${root}/src/platform/file.cpp" \
+  "${root}/src/core/sha256.cpp" \
+  "${root}/src/core/corpus_format.cpp" \
+  "${root}/src/core/corpus_policy.cpp" \
+  "${root}/src/core/corpus_lexical.cpp" \
+  "${root}/src/core/corpus_reader.cpp" \
+  "${root}/test/fuzz/fuzz_corpus.cpp" \
+  ${LIB_FUZZING_ENGINE} \
+  -o "${OUT}/nesso_fuzz_corpus"
+
 python3 - "${root}/test/fuzz/seeds/parser" "${OUT}/nesso_fuzz_parser_seed_corpus.zip" <<'PY'
 import sys
 import zipfile
@@ -144,6 +164,17 @@ from pathlib import Path
 src, dest = Path(sys.argv[1]), Path(sys.argv[2])
 with zipfile.ZipFile(dest, "w", compression=zipfile.ZIP_DEFLATED) as archive:
     for path in sorted(item for item in src.iterdir() if item.is_file() and item.suffix != ".py"):
+        archive.write(path, arcname=path.name)
+PY
+
+python3 - "${root}/test/fuzz/seeds/corpus" "${OUT}/nesso_fuzz_corpus_seed_corpus.zip" <<'PY'
+import sys
+import zipfile
+from pathlib import Path
+
+src, dest = Path(sys.argv[1]), Path(sys.argv[2])
+with zipfile.ZipFile(dest, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+    for path in sorted(item for item in src.iterdir() if item.is_file()):
         archive.write(path, arcname=path.name)
 PY
 
