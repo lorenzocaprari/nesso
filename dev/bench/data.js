@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794824817326,
+  "lastUpdate": 1794825505625,
   "repoUrl": "https://github.com/lorenzocaprari/nesso",
   "entries": {
     "nesso": [
@@ -7829,6 +7829,60 @@ window.BENCHMARK_DATA = {
           {
             "name": "grep-100000-rss",
             "value": 144011264,
+            "unit": "bytes"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "caprarilorenzo5@gmail.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "committer": {
+            "email": "85455384+lorenzocaprari@users.noreply.github.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "distinct": true,
+          "id": "46862a7ad7827fbc398f3cc331546c6e36b193a7",
+          "message": "test: probe <experimental/simd> on supported toolchains\n\nCompile a Catch2 test that compares std::experimental::native_simd\nagainst a scalar dot product and L2 when the Parallelism TS header\nand feature macro are present, and skip otherwise. ClusterFuzzLite\nruns the same translation unit with libc++ and does not link it into\na fuzz target.\n\nCo-authored-by: Lorenzo Caprari <lorenzocaprari@users.noreply.github.com>",
+          "timestamp": "2026-11-16T11:34:06+01:00",
+          "tree_id": "3f929ba413292771a2edd37774b739d8164e326f",
+          "url": "https://github.com/lorenzocaprari/nesso/commit/46862a7ad7827fbc398f3cc331546c6e36b193a7"
+        },
+        "date": 1794825504944,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "grep-1000-wall",
+            "value": 0.12,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-1000-rss",
+            "value": 118898688,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-10000-wall",
+            "value": 0.13,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-10000-rss",
+            "value": 118288384,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-100000-wall",
+            "value": 0.37,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-100000-rss",
+            "value": 145534976,
             "unit": "bytes"
           }
         ]
