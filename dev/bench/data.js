@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794865182489,
+  "lastUpdate": 1794869700897,
   "repoUrl": "https://github.com/lorenzocaprari/nesso",
   "entries": {
     "nesso": [
@@ -8531,6 +8531,60 @@ window.BENCHMARK_DATA = {
           {
             "name": "grep-100000-rss",
             "value": 146100224,
+            "unit": "bytes"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "85455384+lorenzocaprari@users.noreply.github.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "0f743b394391b35b08bcd9ad9e72c56e62bf95b9",
+          "message": "fix: clean up dead IPv6 routing branch, throwing trace destructor and volatile sinks (#310)\n\n* fix: clean up dead IPv6 routing branch, throwing trace destructor and volatile sinks\n\n* fix(trace): avoid empty catch in ScopedStage destructor\n\n* fix(trace): record stages in a fixed array to keep the destructor non-throwing\n\n* fix(trace): satisfy clang-tidy naming and array-index checks\n\n* fix(trace): keep Emit non-throwing for TraceSession destructor",
+          "timestamp": "2026-11-16T23:50:47+01:00",
+          "tree_id": "8dc2c733bf8de772aee773b7b1b23ba949d20926",
+          "url": "https://github.com/lorenzocaprari/nesso/commit/0f743b394391b35b08bcd9ad9e72c56e62bf95b9"
+        },
+        "date": 1794869700103,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "grep-1000-wall",
+            "value": 0.16,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-1000-rss",
+            "value": 119042048,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-10000-wall",
+            "value": 0.18,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-10000-rss",
+            "value": 119828480,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-100000-wall",
+            "value": 0.39,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-100000-rss",
+            "value": 145350656,
             "unit": "bytes"
           }
         ]
