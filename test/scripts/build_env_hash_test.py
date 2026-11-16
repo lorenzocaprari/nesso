@@ -47,7 +47,7 @@ class BuildEnvHashTest(unittest.TestCase):
             for marker in ("zstd", "GOMODCACHE=/opt/go/pkg/mod", "\n    ccache \\"):
                 self.assertLess(conan_at, text.index(marker), f"{dockerfile} places {marker!r} before Conan")
             if arch.startswith("el9"):
-                self.assertIn("gcc-toolset-15-gcc-15.2.1-7.2.el9_8", text)
+                self.assertIn("gcc-toolset-15-gcc-15.2.1-7.1.el9_8", text)
                 self.assertIn("python3.12", text)
                 self.assertIn("cmake-4.4.5", text)
                 self.assertIn("dnf config-manager --set-enabled crb", text)

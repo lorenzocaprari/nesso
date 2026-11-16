@@ -2276,7 +2276,7 @@ jobs:
           set -euo pipefail
           uname -m | grep -qx x86_64
           g++ -dumpversion | grep -qx 15
-          rpm -q --qf '%{VERSION}-%{RELEASE}\n' gcc-toolset-15-gcc | grep -qx '15.2.1-7.2.el9_8'
+          rpm -q --qf '%{VERSION}-%{RELEASE}\n' gcc-toolset-15-gcc | grep -qx '15.2.1-7.1.el9_8'
 
       - name: Build the release binary
         shell: bash
