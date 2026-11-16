@@ -141,6 +141,7 @@ flags="${CXXFLAGS:-} -std=c++26 -DNESSO_LIBFUZZER -U_LIBCPP_HARDENING_MODE -D_LI
   "${root}/src/core/corpus_format.cpp" \
   "${root}/src/core/corpus_policy.cpp" \
   "${root}/src/core/corpus_lexical.cpp" \
+  "${root}/src/core/lexical_terms.cpp" \
   "${root}/src/core/corpus_reader.cpp" \
   "${root}/test/fuzz/fuzz_corpus.cpp" \
   ${LIB_FUZZING_ENGINE} \
