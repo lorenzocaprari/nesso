@@ -14,11 +14,19 @@ permissions: {}
 # in its own containers; the agent watches the runner VM.
 jobs:
   fuzzing:
-    name: ClusterFuzzLite
+    name: ClusterFuzzLite (${{ matrix.sanitizer }})
     runs-on: ubuntu-latest
     timeout-minutes: 60
     permissions:
       contents: read
+    # address is the existing run. undefined is already listed in
+    # .clusterfuzzlite/project.yaml; the action only builds the sanitizer
+    # named here. Each job keeps the 60 minute timeout and the 180s / 600s
+    # fuzz budget. One sanitizer failing does not cancel the other.
+    strategy:
+      fail-fast: false
+      matrix:
+        sanitizer: [address, undefined]
     steps:
       - name: Harden runner
         uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
@@ -34,17 +42,17 @@ jobs:
         uses: google/clusterfuzzlite/actions/build_fuzzers@884713a6c30a92e5e8544c39945cd7cb630abcd1 # v1
         with:
           language: c++
-          sanitizer: address
+          sanitizer: ${{ matrix.sanitizer }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
-          # Run both targets on every pull request. Affected-target pruning needs
-          # coverage metadata this header-only build does not emit.
+          # Run every fuzz target on every pull request. Affected-target pruning
+          # needs coverage metadata this build does not emit.
           keep-unaffected-fuzz-targets: true
 
       - name: Run fuzzers
         uses: google/clusterfuzzlite/actions/run_fuzzers@884713a6c30a92e5e8544c39945cd7cb630abcd1 # v1
         with:
           language: c++
-          sanitizer: address
+          sanitizer: ${{ matrix.sanitizer }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
           # Pull requests get a short code-change run. The weekly schedule batch-fuzzes longer.
           fuzz-seconds: ${{ github.event_name == 'schedule' && '600' || '180' }}
@@ -54,6 +62,6 @@ jobs:
         if: failure() && steps.build.outcome == 'success'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: clusterfuzzlite-crashes
+          name: clusterfuzzlite-crashes-${{ matrix.sanitizer }}
           path: ./out/artifacts
           if-no-files-found: ignore
