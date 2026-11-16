@@ -113,6 +113,8 @@ The binary is `build/Debug/src/nesso`, `build/Release/src/nesso`, or `build/RelW
 
 `conan/profiles/gcc-26-debug` and `conan/profiles/code-coverage` pass `-D_GLIBCXX_ASSERTIONS`. Those checks are inline libstdc++ preconditions and do not change the layout of standard containers. Neither profile passes `-D_GLIBCXX_DEBUG` or `-D_GLIBCXX_DEBUG_PEDANTIC`. `user.nesso:cxxflags` is not applied when Catch2, abseil, or ONNX Runtime is built, and those packages keep one shared Debug package ID. A debug-mode container must not cross that boundary.
 
+`conan/profiles/gcc-26`, `conan/profiles/gcc-26-armv8`, `conan/profiles/gcc-26-el9`, and `conan/profiles/gcc-26-el9-armv8` pass hardening through those same consumer lists. Compile flags are `-U_FORTIFY_SOURCE`, `-D_FORTIFY_SOURCE=3`, `-fstack-protector-strong`, `-fstack-clash-protection`, `-ftrivial-auto-var-init=zero`, and `-fPIE`. The executable link adds `-pie` and `-Wl,-z,relro,-z,now,-z,noexecstack`. x86_64 adds `-fcf-protection=full` on compile and link. armv8 adds `-mbranch-protection=standard` on compile and link. `user.nesso:sharedlinkflags` carries the same link flags except `-pie`. This is not `-fhardened`. `-U_FORTIFY_SOURCE` is first so a toolchain spec that already defines the macro (Ubuntu injects level 3 under `-O`, and skips that inject when `-U` is present) cannot leave a different level in place.
+
 GCC and Clang:
 
 `-Wall` `-Wextra` `-Wpedantic` `-Wconversion` `-Wsign-conversion` `-Wshadow` `-Wformat=2` `-Wold-style-cast` `-Wnon-virtual-dtor` `-Woverloaded-virtual` `-Wnull-dereference` `-Wdouble-promotion` `-Wimplicit-fallthrough` `-Wcast-align` `-Wextra-semi`

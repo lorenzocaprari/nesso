@@ -13,10 +13,11 @@ build_type=Release
 
 [conf]
 tools.build:compiler_executables={"c": "/opt/rh/gcc-toolset-15/root/usr/bin/gcc", "cpp": "/opt/rh/gcc-toolset-15/root/usr/bin/g++"}
-user.nesso:cxxflags=["-O3", "-march=armv8-a", "-flto=auto", "-fvisibility=hidden", "-DNDEBUG"]
-user.nesso:cflags=["-O3", "-march=armv8-a", "-flto=auto", "-fvisibility=hidden", "-DNDEBUG"]
-user.nesso:sharedlinkflags=["-flto=auto", "-Wl,-O1", "-Wl,--as-needed"]
-user.nesso:exelinkflags=["-flto=auto", "-Wl,-O1", "-Wl,--as-needed"]
+# Same consumer-only hardening as gcc-26-armv8, including -mbranch-protection=standard.
+user.nesso:cxxflags=["-O3", "-march=armv8-a", "-flto=auto", "-fvisibility=hidden", "-DNDEBUG", "-U_FORTIFY_SOURCE", "-D_FORTIFY_SOURCE=3", "-fstack-protector-strong", "-fstack-clash-protection", "-mbranch-protection=standard", "-fPIE", "-ftrivial-auto-var-init=zero"]
+user.nesso:cflags=["-O3", "-march=armv8-a", "-flto=auto", "-fvisibility=hidden", "-DNDEBUG", "-U_FORTIFY_SOURCE", "-D_FORTIFY_SOURCE=3", "-fstack-protector-strong", "-fstack-clash-protection", "-mbranch-protection=standard", "-fPIE", "-ftrivial-auto-var-init=zero"]
+user.nesso:sharedlinkflags=["-flto=auto", "-Wl,-O1", "-Wl,--as-needed", "-mbranch-protection=standard", "-Wl,-z,relro,-z,now,-z,noexecstack"]
+user.nesso:exelinkflags=["-flto=auto", "-Wl,-O1", "-Wl,--as-needed", "-pie", "-mbranch-protection=standard", "-Wl,-z,relro,-z,now,-z,noexecstack"]
 
 [buildenv]
 CC=/opt/rh/gcc-toolset-15/root/usr/bin/gcc
