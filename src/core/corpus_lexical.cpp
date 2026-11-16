@@ -5,6 +5,7 @@
 #include "corpus_detail.hpp"
 
 #include <core/corpus_index.hpp>
+#include <core/lexical_terms.hpp>
 
 #include <algorithm>
 #include <array>
@@ -23,21 +24,6 @@
 
 namespace nesso::core::detail
 {
-
-static bool TermByteLess(std::string_view left, std::string_view right) noexcept
-{
-    const std::size_t count = left.size() < right.size() ? left.size() : right.size();
-    for (std::size_t index = 0; index < count; ++index)
-    {
-        const auto left_byte = static_cast<unsigned char>(left[index]);
-        const auto right_byte = static_cast<unsigned char>(right[index]);
-        if (left_byte != right_byte)
-        {
-            return left_byte < right_byte;
-        }
-    }
-    return left.size() < right.size();
-}
 
 static bool AppendVarint(std::vector<std::byte> &out, std::uint64_t value)
 {

@@ -37,6 +37,9 @@ inline constexpr std::string_view LEXICAL_TERMS_VERSION{"v1"};
 /// the result is a multiset: `a-a` is `a`, `a`, `a-a`.
 [[nodiscard]] std::vector<std::string> LexicalTerms(std::string_view text);
 
+/// Strict weak ordering on term bytes as unsigned values (not signed char).
+[[nodiscard]] bool TermByteLess(std::string_view left, std::string_view right) noexcept;
+
 } // namespace nesso::core
 
 #endif // CORE_LEXICAL_TERMS_HPP

@@ -81,6 +81,38 @@ TEST_CASE("lexical terms of empty input are empty", "[lexical]")
     CHECK(TermsOf(std::string_view{}).empty());
 }
 
+TEST_CASE("term byte order treats bytes as unsigned", "[lexical]")
+{
+    using nesso::core::TermByteLess;
+    // Signed char would put 0x80 before ASCII; unsigned puts it after.
+    CHECK(TermByteLess("a", "\x80"));
+    CHECK_FALSE(TermByteLess("\x80", "a"));
+    CHECK(TermByteLess("\x7f", "\x80"));
+    CHECK_FALSE(TermByteLess("\x80", "\x7f"));
+}
+
+TEST_CASE("term byte order puts a proper prefix first", "[lexical]")
+{
+    using nesso::core::TermByteLess;
+    CHECK(TermByteLess("ab", "abc"));
+    CHECK_FALSE(TermByteLess("abc", "ab"));
+}
+
+TEST_CASE("term byte order is irreflexive", "[lexical]")
+{
+    using nesso::core::TermByteLess;
+    CHECK_FALSE(TermByteLess("cat", "cat"));
+    CHECK_FALSE(TermByteLess("\x80\xFF", "\x80\xFF"));
+}
+
+TEST_CASE("term byte order ranks the empty string", "[lexical]")
+{
+    using nesso::core::TermByteLess;
+    CHECK(TermByteLess("", "a"));
+    CHECK_FALSE(TermByteLess("a", ""));
+    CHECK_FALSE(TermByteLess("", ""));
+}
+
 TEST_CASE("lexical terms of separators only are empty", "[lexical]")
 {
     CHECK(TermsOf(" \t\n/\\,;").empty());
