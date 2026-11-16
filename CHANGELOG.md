@@ -73,6 +73,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- The default int8 session pool respects cgroup memory limits: `MemAvailable` alone reported host RAM inside containers, so the pool could oversize under `docker run -m`. A finite v1 or v2 memory limit now caps the budget by remaining headroom.
 - x86_64 builds compile `distance_avx2.cpp` for the baseline ISA. AVX2 and FMA stay on the kernel functions via `target("avx2,fma")`. A file-wide `-mavx2 -mfma` also compiled inline functions that translation unit emits, and the linker could keep that COMDAT for a CPU without AVX2. Distances are unchanged.
 - `--threads` and `NESSO_THREADS` reject an explicit budget outside 1..1024 at parse with exit 2 (`must be an integer from 1 to 1024`, or `NESSO_THREADS must be an integer from 1 to 1024`). Omit the option and leave the variable unset for the default (usable physical cores, still reduced by the int8 session memory cap). A huge value used to wrap when cast to ONNX intra-op threads and could ask for tens of thousands of int8 sessions. Valid budgets stay byte-identical.
 - Ranking comparators treat NaN scores as last (non-NaN before NaN, then higher score, ties by lower index), so `partial_sort` and heap merges keep a strict weak order. Finite orderings, including ±0.0 ties, stay byte-identical. `nesso search` still refuses non-finite dense scores as invalid input.

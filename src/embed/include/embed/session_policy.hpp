@@ -46,7 +46,9 @@ struct MachineResources
     /// quota.
     size_t physical_cores = 1;
     size_t logical_threads = 1;
-    /// Memory the process can use: MemAvailable, else total RAM. 0 is unknown.
+    /// Memory the process can use: MemAvailable (else total RAM), then reduced
+    /// by the tightest cgroup memory headroom when a finite limit exists. 0 is
+    /// unknown.
     std::uintmax_t memory_limit_bytes = 0;
 };
 

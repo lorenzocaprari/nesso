@@ -188,7 +188,7 @@ static std::optional<std::set<int>> AllowedFromStatus(const std::filesystem::pat
     return std::nullopt;
 }
 
-static bool ControllerIsCpu(std::string_view controllers)
+static bool ControllerHas(std::string_view controllers, std::string_view wanted)
 {
     std::size_t cursor = 0;
     while (cursor <= controllers.size())
@@ -196,7 +196,7 @@ static bool ControllerIsCpu(std::string_view controllers)
         const std::size_t comma = controllers.find(',', cursor);
         const std::string_view name =
             controllers.substr(cursor, comma == std::string_view::npos ? controllers.size() - cursor : comma - cursor);
-        if (name == "cpu")
+        if (name == wanted)
         {
             return true;
         }
@@ -248,20 +248,26 @@ static void MinQuota(std::optional<size_t> &tightest, size_t parsed)
     tightest = tightest ? std::min(*tightest, parsed) : std::optional<size_t>{parsed};
 }
 
-struct CgroupCpuPaths
+static void MinHeadroom(std::optional<std::uintmax_t> &tightest, std::uintmax_t headroom)
+{
+    tightest = tightest ? std::min(*tightest, headroom) : std::optional<std::uintmax_t>{headroom};
+}
+
+struct CgroupPaths
 {
     std::optional<std::filesystem::path> v2_path;
-    std::optional<std::filesystem::path> v1_path;
+    std::optional<std::filesystem::path> v1_cpu_path;
+    std::optional<std::filesystem::path> v1_memory_path;
 };
 
-static std::optional<CgroupCpuPaths> ReadCgroupCpuPaths(const std::filesystem::path &proc_root)
+static std::optional<CgroupPaths> ReadCgroupPaths(const std::filesystem::path &proc_root)
 {
     std::ifstream cgroup(proc_root / "self/cgroup");
     if (!cgroup)
     {
         return std::nullopt;
     }
-    CgroupCpuPaths paths;
+    CgroupPaths paths;
     std::string line;
     while (std::getline(cgroup, line))
     {
@@ -276,12 +282,51 @@ static std::optional<CgroupCpuPaths> ReadCgroupCpuPaths(const std::filesystem::p
         {
             continue;
         }
-        if (ControllerIsCpu(line.substr(first + 1, second - first - 1)))
+        // Bind to line (not string::substr) so the view outlives the checks.
+        const std::string_view line_view = line;
+        const std::string_view controllers = line_view.substr(first + 1, second - first - 1);
+        const std::filesystem::path relative{std::string{StripSlash(line_view.substr(second + 1))}};
+        if (ControllerHas(controllers, "cpu"))
         {
-            paths.v1_path = std::filesystem::path{std::string{StripSlash(line.substr(second + 1))}};
+            paths.v1_cpu_path = relative;
+        }
+        if (ControllerHas(controllers, "memory"))
+        {
+            paths.v1_memory_path = relative;
         }
     }
     return paths;
+}
+
+static std::optional<std::uintmax_t> ParseUintBytes(std::string_view text)
+{
+    text = Trim(text);
+    if (text.empty())
+    {
+        return std::nullopt;
+    }
+    std::uintmax_t value = 0;
+    for (const char digit : text)
+    {
+        if (digit < '0' || digit > '9' ||
+            value > (std::numeric_limits<std::uintmax_t>::max() - static_cast<unsigned>(digit - '0')) / 10)
+        {
+            return std::nullopt;
+        }
+        value = (value * 10) + static_cast<unsigned>(digit - '0');
+    }
+    return value;
+}
+
+static std::optional<std::uintmax_t> ReadUintFile(const std::filesystem::path &path)
+{
+    std::ifstream input(path);
+    std::string line;
+    if (!input || !std::getline(input, line))
+    {
+        return std::nullopt;
+    }
+    return ParseUintBytes(line);
 }
 
 struct CgroupV1Walk
@@ -289,6 +334,102 @@ struct CgroupV1Walk
     std::filesystem::path cgroup_root;
     std::filesystem::path relative;
 };
+
+struct ProcCgroupRoots
+{
+    std::filesystem::path proc_root;
+    std::filesystem::path cgroup_root;
+};
+
+// Remaining bytes under the tightest finite memory.max on the walk. nullopt
+// when every ancestor is "max" or unreadable.
+static std::optional<std::uintmax_t> TightestV2MemoryHeadroom(const std::filesystem::path &root,
+                                                              std::filesystem::path relative)
+{
+    std::optional<std::uintmax_t> tightest;
+    while (true)
+    {
+        const std::filesystem::path directory = relative.empty() ? root : root / relative;
+        std::ifstream max_file(directory / "memory.max");
+        std::string max_line;
+        if (max_file && std::getline(max_file, max_line))
+        {
+            const std::string_view max_text = Trim(max_line);
+            if (max_text != "max")
+            {
+                if (const std::optional<std::uintmax_t> limit = ParseUintBytes(max_text))
+                {
+                    const std::uintmax_t current = ReadUintFile(directory / "memory.current").value_or(0);
+                    MinHeadroom(tightest, *limit > current ? *limit - current : 0);
+                }
+            }
+        }
+        if (relative.empty())
+        {
+            break;
+        }
+        relative = relative.parent_path();
+    }
+    return tightest;
+}
+
+static bool V1MemoryLimitIsUnlimited(std::uintmax_t limit, std::uintmax_t physical_bytes)
+{
+    constexpr std::uintmax_t UNLIMITED_FLOOR = std::uintmax_t{1} << 62U;
+    if (limit >= UNLIMITED_FLOOR)
+    {
+        return true;
+    }
+    return physical_bytes > 0 && limit >= physical_bytes;
+}
+
+static std::optional<std::uintmax_t> TightestV1MemoryHeadroom(const CgroupV1Walk &walk, std::uintmax_t physical_bytes)
+{
+    std::optional<std::uintmax_t> tightest;
+    const std::filesystem::path controller = walk.cgroup_root / "memory";
+    std::filesystem::path relative = walk.relative;
+    while (true)
+    {
+        const std::filesystem::path directory = relative.empty() ? controller : controller / relative;
+        if (const std::optional<std::uintmax_t> limit = ReadUintFile(directory / "memory.limit_in_bytes"))
+        {
+            if (!V1MemoryLimitIsUnlimited(*limit, physical_bytes))
+            {
+                const std::uintmax_t usage = ReadUintFile(directory / "memory.usage_in_bytes").value_or(0);
+                MinHeadroom(tightest, *limit > usage ? *limit - usage : 0);
+            }
+        }
+        if (relative.empty())
+        {
+            break;
+        }
+        relative = relative.parent_path();
+    }
+    return tightest;
+}
+
+static std::optional<std::uintmax_t> CgroupMemoryHeadroom(const ProcCgroupRoots &roots, std::uintmax_t physical_bytes)
+{
+    const std::optional<CgroupPaths> paths = ReadCgroupPaths(roots.proc_root);
+    if (!paths)
+    {
+        return std::nullopt;
+    }
+    std::optional<std::uintmax_t> tightest;
+    if (paths->v2_path)
+    {
+        tightest = TightestV2MemoryHeadroom(roots.cgroup_root, *paths->v2_path);
+    }
+    if (paths->v1_memory_path)
+    {
+        if (const std::optional<std::uintmax_t> v1 = TightestV1MemoryHeadroom(
+                {.cgroup_root = roots.cgroup_root, .relative = *paths->v1_memory_path}, physical_bytes))
+        {
+            MinHeadroom(tightest, *v1);
+        }
+    }
+    return tightest;
+}
 
 static std::optional<size_t> TightestV1Quota(const CgroupV1Walk &walk)
 {
@@ -322,15 +463,9 @@ static std::optional<size_t> TightestV1Quota(const CgroupV1Walk &walk)
     return tightest;
 }
 
-struct ProcCgroupRoots
-{
-    std::filesystem::path proc_root;
-    std::filesystem::path cgroup_root;
-};
-
 static std::optional<size_t> CgroupCpuLimit(const ProcCgroupRoots &roots)
 {
-    const std::optional<CgroupCpuPaths> paths = ReadCgroupCpuPaths(roots.proc_root);
+    const std::optional<CgroupPaths> paths = ReadCgroupPaths(roots.proc_root);
     if (!paths)
     {
         return std::nullopt;
@@ -340,10 +475,10 @@ static std::optional<size_t> CgroupCpuLimit(const ProcCgroupRoots &roots)
     {
         tightest = TightestQuota(roots.cgroup_root, *paths->v2_path, "cpu.max");
     }
-    if (paths->v1_path)
+    if (paths->v1_cpu_path)
     {
         if (const std::optional<size_t> v1_quota =
-                TightestV1Quota({.cgroup_root = roots.cgroup_root, .relative = *paths->v1_path}))
+                TightestV1Quota({.cgroup_root = roots.cgroup_root, .relative = *paths->v1_cpu_path}))
         {
             MinQuota(tightest, *v1_quota);
         }
@@ -398,14 +533,25 @@ MachineResources ReadMachine(const MachineFsRoots &roots)
     {
         machine.memory_limit_bytes = PhysicalMemoryBytes();
     }
+    const ProcCgroupRoots cgroup_roots{.proc_root = roots.proc_root, .cgroup_root = roots.cgroup_root};
+    if (const std::optional<std::uintmax_t> headroom = CgroupMemoryHeadroom(cgroup_roots, PhysicalMemoryBytes()))
+    {
+        machine.memory_limit_bytes = std::min(machine.memory_limit_bytes, *headroom);
+        // 0 means "unknown" in MakeSessionPolicy; keep a positive limit so the
+        // existing max(..., 1) path still yields one session when usage exceeds
+        // the cgroup.
+        if (machine.memory_limit_bytes == 0)
+        {
+            machine.memory_limit_bytes = 1;
+        }
+    }
     const std::optional<std::set<int>> allowed = AllowedFromStatus(roots.proc_root / "self/status");
     size_t cores = CountPhysicalCores(roots.sys_root / "devices/system/cpu", allowed);
     if (cores == 0)
     {
         cores = allowed ? allowed->size() : machine.logical_threads;
     }
-    if (const std::optional<size_t> quota =
-            CgroupCpuLimit({.proc_root = roots.proc_root, .cgroup_root = roots.cgroup_root}))
+    if (const std::optional<size_t> quota = CgroupCpuLimit(cgroup_roots))
     {
         cores = std::min(cores, *quota);
     }
