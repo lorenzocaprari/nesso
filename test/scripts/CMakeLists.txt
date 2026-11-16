@@ -76,6 +76,18 @@ if(NESSO_PYTHON_EXECUTABLE)
     PROPERTIES
       LABELS unit ENVIRONMENT
       "NESSO_COMPILE_COMMANDS=${CMAKE_BINARY_DIR}/compile_commands.json")
+  # The test archive omits compile_commands.json, so ctest skips the live check
+  # there. This target runs in the build that generates the database.
+  add_custom_target(
+    distance_avx2_flags_check ALL
+    COMMAND
+      "${CMAKE_COMMAND}" -E env
+      "NESSO_COMPILE_COMMANDS=${CMAKE_BINARY_DIR}/compile_commands.json"
+      NESSO_REQUIRE_COMPILE_COMMANDS=1 "${NESSO_PYTHON_EXECUTABLE}"
+      "${CMAKE_CURRENT_SOURCE_DIR}/distance_avx2_flags_test.py"
+      DistanceAvx2FlagsTest.test_this_build_omits_file_wide_avx2_flags
+    COMMENT "distance_avx2.cpp has no file-wide AVX2 or FMA flags"
+    VERBATIM)
 endif()
 
 find_program(NESSO_GO_EXECUTABLE go)
