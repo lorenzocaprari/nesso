@@ -75,14 +75,17 @@ RUN conan profile detect --force \
     && rm -rf /tmp/nesso /tmp/* /var/tmp/*
 WORKDIR /
 
-# After the Conan install. A change to ccache, Go, or zstd must not rebuild
-# that layer. ccache is in EPEL. GitHub Actions sets HOME to /github/home,
-# so the godog module cache cannot live under /root.
+# After the Conan install. A change to ccache, Go, zstd, or rpm-build must
+# not rebuild that layer. ccache is in EPEL. rpm-build is here so the
+# toolset install layer stays cacheable when AppStream NVRs move.
+# GitHub Actions sets HOME to /github/home, so the godog module cache
+# cannot live under /root.
 RUN dnf -y install epel-release \
     && dnf -y install \
     ccache \
     golang \
     zstd \
+    rpm-build \
     && dnf clean all \
     && rm -rf /var/cache/dnf
 
