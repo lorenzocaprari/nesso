@@ -188,7 +188,7 @@ static std::optional<std::set<int>> AllowedFromStatus(const std::filesystem::pat
     return std::nullopt;
 }
 
-enum class CgroupController
+enum class CgroupController : std::uint8_t
 {
     Cpu,
     Memory,
