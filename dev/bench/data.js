@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794847174719,
+  "lastUpdate": 1794850130547,
   "repoUrl": "https://github.com/lorenzocaprari/nesso",
   "entries": {
     "nesso": [
@@ -8099,6 +8099,60 @@ window.BENCHMARK_DATA = {
           {
             "name": "grep-100000-rss",
             "value": 145612800,
+            "unit": "bytes"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "caprarilorenzo5@gmail.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "committer": {
+            "email": "85455384+lorenzocaprari@users.noreply.github.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "distinct": true,
+          "id": "1de952a95051291c641237c2a7ca2624a820cd0c",
+          "message": "ci(fuzz): run ClusterFuzzLite with UBSan\n\nThe workflow passed sanitizer: address on build and run, so the\nundefined entry in .clusterfuzzlite/project.yaml never executed.\nBuild and run address and undefined as separate jobs for pull\nrequests, manual runs, and the weekly batch. Each job keeps the\n60 minute timeout and the 180s / 600s fuzz budget.",
+          "timestamp": "2026-11-16T18:24:22+01:00",
+          "tree_id": "21d29ee1a562511282c9fb277cfdebd2301afb15",
+          "url": "https://github.com/lorenzocaprari/nesso/commit/1de952a95051291c641237c2a7ca2624a820cd0c"
+        },
+        "date": 1794850130037,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "grep-1000-wall",
+            "value": 0.16,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-1000-rss",
+            "value": 116862976,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-10000-wall",
+            "value": 0.17,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-10000-rss",
+            "value": 117932032,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-100000-wall",
+            "value": 0.4,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-100000-rss",
+            "value": 145551360,
             "unit": "bytes"
           }
         ]
