@@ -14,10 +14,10 @@ name: Release
 # It does not run approve-release. The release environment allows only v*
 # tags, so that job on a branch would fail the run before any step. Dispatch
 # still runs verify-package, image (build, scan, determinism, smoke, and
-# workflow artifacts), and subjects. Push, cosign, provenance, and the
-# GitHub Release stay off, including when the dispatch ref is a tag: those
-# steps and jobs run only after approve-release succeeds, and that job runs
-# only on a tag push.
+# workflow artifacts), pack-rpm, compare-rpm, distro-rpm, and subjects.
+# Push, cosign, provenance, and the GitHub Release stay off, including when
+# the dispatch ref is a tag: those steps and jobs run only after
+# approve-release succeeds, and that job runs only on a tag push.
 #
 # A tag push runs approve-release after verify-package. The job uses the
 # release environment and an empty token. The reviewer approves once the
@@ -27,20 +27,23 @@ name: Release
 # approve-release too.
 #
 # The image jobs wait on Package (.github/workflows/package.yml). That
-# workflow builds each .deb twice and installs it on Ubuntu 22.04, 24.04,
-# 26.04, and 26.10, and on Debian 12, for both architectures. A failed check does not push the image or publish
-# the GitHub Release. Package also runs on its own nightly schedule and when
-# its packaging files change.
+# workflow builds each .deb and .rpm twice and installs the .deb on Ubuntu
+# 22.04, 24.04, 26.04, and 26.10, and on Debian 12, and the .rpm on Rocky
+# Linux 9 and UBI 9, for both architectures. A failed check does not push
+# the image or publish the GitHub Release. Package also runs on its own
+# nightly schedule and when its packaging files change. Release then packs
+# the publishable .rpm from the image-extracted binary in EL9, compares the
+# two builds, and smokes Rocky 9 and UBI 9 before subjects.
 #
 # Tag releases sign ghcr.io/<owner>/nesso with keyless cosign (cosign 2.6.1).
 # `cosign verify` on a release tag resolves the tag to the manifest-list
 # digest, so that index is signed. A pin to one platform digest does not
 # inherit the index signature; each platform digest is signed too.
 # SLSA Build Level 3 provenance comes from slsa-github-generator v2.1.0:
-# the generic generator for both .debs and both SPDX SBOMs, the container
-# generator for the index digest and each platform digest. Those reusable
-# workflows are referenced by tag. They verify their own ref and reject a
-# commit SHA. Every other action stays pinned by SHA.
+# the generic generator for both .debs, both .rpms, and both SPDX SBOMs, the
+# container generator for the index digest and each platform digest. Those
+# reusable workflows are referenced by tag. They verify their own ref and
+# reject a commit SHA. Every other action stays pinned by SHA.
 #
 # step-security/harden-runner v2.22.2 (egress-policy: audit) is the first
 # step of jobs that have steps. verify-package is the Package workflow.
@@ -413,6 +416,8 @@ jobs:
             nesso_${{ steps.ver.outputs.ver }}_${{ matrix.arch }}.deb
             nesso_${{ steps.ver.outputs.ver }}_${{ matrix.arch }}.spdx.json
             nesso-${{ matrix.arch }}
+            models
+            doc
           if-no-files-found: error
 
       - name: Push arch image
@@ -451,9 +456,371 @@ jobs:
           path: runtime-digest.txt
           if-no-files-found: error
 
+  resolve-el9:
+    needs: verify-package
+    if: ${{ !cancelled() && needs.verify-package.result == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      packages: read
+    outputs:
+      image_amd64: ${{ steps.select.outputs.image_amd64 }}
+      image_arm64: ${{ steps.select.outputs.image_arm64 }}
+    steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
+        with:
+          egress-policy: audit
+
+      - name: Checkout Repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Resolve build-env image
+        id: select
+        run: |
+          set -euo pipefail
+          owner_lc="$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')"
+          reg="${{ env.REGISTRY }}/${owner_lc}/nesso-build-env-el9"
+          for arch in amd64 arm64; do
+            deps_hash="$(./scripts/ci/build-env-hash "el9-${arch}")"
+            suffix=""
+            if [[ "${arch}" == "arm64" ]]; then
+              suffix="-arm64"
+            fi
+            ref="${reg}:deps-${deps_hash}${suffix}"
+            echo "image_${arch}=${ref}" >> "${GITHUB_OUTPUT}"
+            echo "${arch} ${ref}"
+          done
+
+      - name: Log into ${{ env.REGISTRY }}
+        uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - name: Require nesso-build-env-el9
+        env:
+          IMAGE_AMD64: ${{ steps.select.outputs.image_amd64 }}
+          IMAGE_ARM64: ${{ steps.select.outputs.image_arm64 }}
+          GOPROXY: "off"
+          GOTOOLCHAIN: local
+          GOFLAGS: "-mod=readonly -buildvcs=false"
+        run: |
+          set -euo pipefail
+          go run -C scripts/ci . wait-build-env --interval 30s \
+            "${IMAGE_AMD64}" "${IMAGE_ARM64}"
+
+  pack-rpm:
+    name: pack-rpm (${{ matrix.arch }} ${{ matrix.slot }})
+    needs:
+      - image
+      - resolve-el9
+    if: ${{ !cancelled() && needs.image.result == 'success' && needs.resolve-el9.result == 'success' }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: read
+      actions: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            slot: a
+            runner: ubuntu-latest
+            rpm_arch: x86_64
+          - arch: amd64
+            slot: b
+            runner: ubuntu-latest
+            rpm_arch: x86_64
+          - arch: arm64
+            slot: a
+            runner: ubuntu-24.04-arm
+            rpm_arch: aarch64
+          - arch: arm64
+            slot: b
+            runner: ubuntu-24.04-arm
+            rpm_arch: aarch64
+    container:
+      image: ${{ matrix.arch == 'arm64' && needs.resolve-el9.outputs.image_arm64 || needs.resolve-el9.outputs.image_amd64 }} # zizmor: ignore[unpinned-images] deps-<hash> tag, not a digest
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+    env:
+      ARCH: ${{ matrix.arch }}
+      SLOT: ${{ matrix.slot }}
+      RPM_ARCH: ${{ matrix.rpm_arch }}
+      LC_ALL: C
+      TZ: UTC
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Require the native architecture
+        run: |
+          set -euo pipefail
+          case "${ARCH}:$(uname -m)" in
+            amd64:x86_64|arm64:aarch64) ;;
+            *)
+              echo "error: ${ARCH} pack-rpm is running on $(uname -m)" >&2
+              exit 1
+              ;;
+          esac
+
+      - name: Pin SOURCE_DATE_EPOCH
+        run: |
+          set -euo pipefail
+          git config --global --add safe.directory "${GITHUB_WORKSPACE}"
+          git config --global --add safe.directory /__w/nesso/nesso
+          epoch="$(git log -1 --format=%ct)"
+          if [[ ! "${epoch}" =~ ^[0-9]+$ ]]; then
+            echo "error: commit timestamp is '${epoch}'" >&2
+            exit 1
+          fi
+          echo "SOURCE_DATE_EPOCH=${epoch}" >> "${GITHUB_ENV}"
+
+      - name: Download image artifacts
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: release-image-${{ matrix.arch }}
+          path: release-image
+
+      - name: Package .rpm
+        run: |
+          set -euo pipefail
+          binary="release-image/nesso-${ARCH}"
+          if [[ ! -f "${binary}" ]]; then
+            echo "error: missing ${binary}" >&2
+            find release-image -print >&2
+            exit 1
+          fi
+          chmod +x "${binary}"
+          if [[ ! -f release-image/models/model.onnx || ! -f release-image/models/vocab.txt ]]; then
+            echo "error: MiniLM missing under release-image/models" >&2
+            find release-image -print >&2
+            exit 1
+          fi
+          doc="release-image/doc"
+          if [[ ! -s "${doc}/copyright" || ! -s "${doc}/THIRD_PARTY_NOTICES" ]]; then
+            echo "error: notices missing under ${doc}" >&2
+            find release-image -print >&2
+            exit 1
+          fi
+          if [[ "${SLOT}" == "b" ]]; then
+            touch "${binary}" "${doc}/copyright" "${doc}/THIRD_PARTY_NOTICES" \
+              release-image/models/model.onnx release-image/models/vocab.txt
+          fi
+          ver="$(./scripts/check-versions)"
+          chmod +x packaging/scripts/package-rpm
+          DOC_DIR="${doc}" packaging/scripts/package-rpm \
+            "${ver}" "${binary}" release-image/models repro-rpm
+          rpm="$(find repro-rpm -type f -name "nesso-${ver}-1.${RPM_ARCH}.rpm" -print -quit)"
+          if [[ -z "${rpm}" || ! -f "${rpm}" ]]; then
+            echo "error: package-rpm did not write a ${RPM_ARCH} rpm" >&2
+            find repro-rpm -print >&2 || true
+            exit 1
+          fi
+          sha256sum "${rpm}"
+          if [[ -n "${GITHUB_STEP_SUMMARY:-}" ]]; then
+            echo "Packed \`${rpm}\` (${ARCH} ${SLOT})." >> "${GITHUB_STEP_SUMMARY}"
+          fi
+
+      - name: Upload .rpm
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-rpm-${{ matrix.arch }}-${{ matrix.slot }}
+          path: repro-rpm/*.rpm
+          retention-days: 14
+          if-no-files-found: error
+
+  compare-rpm:
+    needs: pack-rpm
+    if: ${{ !cancelled() && needs.pack-rpm.result == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      actions: write
+    steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
+        with:
+          egress-policy: audit
+
+      - name: Checkout Repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install diffoscope and rpm tools
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends diffoscope zstd rpm cpio
+
+      - name: Download RPM builds
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: release-rpm-*
+          merge-multiple: false
+          path: release-rpms
+
+      - name: Download release .debs
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: release-image-*
+          merge-multiple: false
+          path: release-debs
+
+      - name: Compare RPM bytes and payload binary vs .deb
+        run: |
+          set -euo pipefail
+          chmod +x packaging/scripts/compare-rpm
+          compare_arch() {
+            local arch="$1"
+            local rpm_arch="$2"
+            local -a rpms=()
+            mapfile -t rpms < <(find release-rpms -type f -name "nesso-*-1.${rpm_arch}.rpm" | sort)
+            if [[ "${#rpms[@]}" -ne 2 ]]; then
+              echo "error: expected 2 ${rpm_arch} rpms, found ${#rpms[@]}" >&2
+              find release-rpms -type f -print >&2
+              return 1
+            fi
+            packaging/scripts/compare-rpm "${rpms[0]}" "${rpms[1]}" "repro-report-rpm/${rpm_arch}"
+            echo "reproducible rpm ${rpm_arch} $(sha256sum "${rpms[0]}" | awk '{print $1}')"
+
+            local -a debs=()
+            mapfile -t debs < <(find release-debs -type f -name "nesso_*_${arch}.deb" | sort)
+            if [[ "${#debs[@]}" -ne 1 ]]; then
+              echo "error: expected 1 ${arch} deb for binary compare, found ${#debs[@]}" >&2
+              find release-debs -type f -print >&2
+              return 1
+            fi
+            local work
+            work="$(mktemp -d)"
+            dpkg-deb -x "${debs[0]}" "${work}/deb"
+            mkdir -p "${work}/rpm"
+            rpm2cpio "${rpms[0]}" | (cd "${work}/rpm" && cpio -idmu --quiet)
+            if ! cmp -s "${work}/deb/usr/bin/nesso" "${work}/rpm/usr/bin/nesso"; then
+              echo "error: /usr/bin/nesso differs between .deb and .rpm (${arch})" >&2
+              sha256sum "${work}/deb/usr/bin/nesso" "${work}/rpm/usr/bin/nesso" >&2
+              rm -rf "${work}"
+              return 1
+            fi
+            echo "rpm vs deb binary identical ${arch}"
+            rm -rf "${work}"
+          }
+          status=0
+          compare_arch amd64 x86_64 || status=1
+          compare_arch arm64 aarch64 || status=1
+          exit "${status}"
+
+      - name: Upload RPM diffoscope report
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-rpm-diffoscope
+          path: repro-report-rpm/
+          retention-days: 14
+          if-no-files-found: error
+
+  distro-rpm:
+    name: distro-rpm (${{ matrix.arch }}, ${{ matrix.distro }})
+    needs: compare-rpm
+    if: ${{ !cancelled() && needs.compare-rpm.result == 'success' }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      actions: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            distro: rockylinux:9
+            image: rockylinux:9@sha256:d7be1c094cc5845ee815d4632fe377514ee6ebcf8efaed6892889657e5ddaaa6
+            runner: ubuntu-latest
+            rpm_arch: x86_64
+          - arch: amd64
+            distro: ubi9
+            image: redhat/ubi9@sha256:1e9f0ed9fceafb40878bc1705ff124aa150e3fed873f18c42cdc2dded319e0a8
+            runner: ubuntu-latest
+            rpm_arch: x86_64
+          - arch: arm64
+            distro: rockylinux:9
+            image: rockylinux:9@sha256:d7be1c094cc5845ee815d4632fe377514ee6ebcf8efaed6892889657e5ddaaa6
+            runner: ubuntu-24.04-arm
+            rpm_arch: aarch64
+          - arch: arm64
+            distro: ubi9
+            image: redhat/ubi9@sha256:1e9f0ed9fceafb40878bc1705ff124aa150e3fed873f18c42cdc2dded319e0a8
+            runner: ubuntu-24.04-arm
+            rpm_arch: aarch64
+    steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
+        with:
+          egress-policy: audit
+
+      - name: Checkout Repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Require the native architecture
+        env:
+          ARCH: ${{ matrix.arch }}
+        run: |
+          set -euo pipefail
+          case "${ARCH}:$(uname -m)" in
+            amd64:x86_64|arm64:aarch64) ;;
+            *)
+              echo "error: ${ARCH} distro-rpm smoke is running on $(uname -m)" >&2
+              exit 1
+              ;;
+          esac
+
+      - name: Download .rpm
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: release-rpm-${{ matrix.arch }}-a
+          path: release-rpm
+
+      - name: Install, smoke, and remove
+        env:
+          IMAGE: ${{ matrix.image }}
+          RPM_ARCH: ${{ matrix.rpm_arch }}
+        run: |
+          set -euo pipefail
+          chmod +x packaging/scripts/smoke-rpm
+          mapfile -t rpms < <(find release-rpm -type f -name "nesso-*-1.${RPM_ARCH}.rpm" | sort)
+          if [[ "${#rpms[@]}" -ne 1 ]]; then
+            echo "error: expected 1 ${RPM_ARCH} rpm, found ${#rpms[@]}" >&2
+            find release-rpm -type f -print >&2
+            exit 1
+          fi
+          packaging/scripts/smoke-rpm "${rpms[0]}" "${IMAGE}"
+          if [[ -n "${GITHUB_STEP_SUMMARY:-}" ]]; then
+            echo "Installed and removed \`${rpms[0]}\` on \`${IMAGE}\` (${RPM_ARCH})." >> "${GITHUB_STEP_SUMMARY}"
+          fi
+
   subjects:
-    needs: image
-    if: ${{ !cancelled() && needs.image.result == 'success' }}
+    needs: [image, distro-rpm]
+    if: ${{ !cancelled() && needs.image.result == 'success' && needs.distro-rpm.result == 'success' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
@@ -475,6 +842,13 @@ jobs:
           pattern: release-image-*
           merge-multiple: true
           path: release-files
+
+      - name: Download slot-a RPMs
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: release-rpm-*-a
+          merge-multiple: true
+          path: release-rpms
 
       - name: Hash release subjects
         id: hash
@@ -501,14 +875,27 @@ jobs:
             ver="${this}"
             cp -a "${deb}" "${sbom}" .
           done
+          for rpm_arch in x86_64 aarch64; do
+            rpm="$(find release-rpms -type f -name "nesso-${ver}-1.${rpm_arch}.rpm" -print -quit)"
+            if [[ -z "${rpm}" || ! -f "${rpm}" ]]; then
+              echo "error: missing nesso-${ver}-1.${rpm_arch}.rpm" >&2
+              find release-rpms -type f -print >&2
+              exit 1
+            fi
+            cp -a "${rpm}" .
+          done
           hashes="$(sha256sum \
             "nesso_${ver}_amd64.deb" \
             "nesso_${ver}_arm64.deb" \
+            "nesso-${ver}-1.x86_64.rpm" \
+            "nesso-${ver}-1.aarch64.rpm" \
             "nesso_${ver}_amd64.spdx.json" \
             "nesso_${ver}_arm64.spdx.json" | base64 -w0)"
           sha256sum \
             "nesso_${ver}_amd64.deb" \
             "nesso_${ver}_arm64.deb" \
+            "nesso-${ver}-1.x86_64.rpm" \
+            "nesso-${ver}-1.aarch64.rpm" \
             "nesso_${ver}_amd64.spdx.json" \
             "nesso_${ver}_arm64.spdx.json" \
             > SHA256SUMS
@@ -526,6 +913,8 @@ jobs:
           path: |
             nesso_${{ steps.hash.outputs.ver }}_amd64.deb
             nesso_${{ steps.hash.outputs.ver }}_arm64.deb
+            nesso-${{ steps.hash.outputs.ver }}-1.x86_64.rpm
+            nesso-${{ steps.hash.outputs.ver }}-1.aarch64.rpm
             nesso_${{ steps.hash.outputs.ver }}_amd64.spdx.json
             nesso_${{ steps.hash.outputs.ver }}_arm64.spdx.json
             SHA256SUMS
@@ -661,8 +1050,9 @@ jobs:
             cosign sign --yes "${IMAGE}@${digest}"
           done
 
-  # SLSA Build L3 for both .debs and both SPDX SBOMs. upload-assets stays
-  # false so the release job can checksum the provenance before publishing.
+  # SLSA Build L3 for both .debs, both .rpms, and both SPDX SBOMs.
+  # upload-assets stays false so the release job can checksum the provenance
+  # before publishing.
   # contents: write is declared because the called workflow's upload job
   # requests it; that job does not run when upload-assets is false.
   # Tag ref: the generator rejects a SHA pin. See CONTRIBUTING.md.
@@ -838,6 +1228,8 @@ jobs:
           sha256sum \
             "nesso_${VER}_amd64.deb" \
             "nesso_${VER}_arm64.deb" \
+            "nesso-${VER}-1.x86_64.rpm" \
+            "nesso-${VER}-1.aarch64.rpm" \
             "nesso_${VER}_amd64.spdx.json" \
             "nesso_${VER}_arm64.spdx.json" \
             "${PROVENANCE_NAME}" \
@@ -854,6 +1246,8 @@ jobs:
           files: |
             nesso_${{ needs.subjects.outputs.ver }}_amd64.deb
             nesso_${{ needs.subjects.outputs.ver }}_arm64.deb
+            nesso-${{ needs.subjects.outputs.ver }}-1.x86_64.rpm
+            nesso-${{ needs.subjects.outputs.ver }}-1.aarch64.rpm
             nesso_${{ needs.subjects.outputs.ver }}_amd64.spdx.json
             nesso_${{ needs.subjects.outputs.ver }}_arm64.spdx.json
             ${{ needs.provenance.outputs.provenance-name }}
