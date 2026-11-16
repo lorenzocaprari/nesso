@@ -6,6 +6,9 @@ import subprocess
 import tempfile
 import unittest
 
+from package_deb_test import doc_dir as _deb_doc_dir
+from package_deb_test import elf64, model_dir
+
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 PACKAGE = ROOT / "packaging" / "scripts" / "package-rpm"
@@ -13,30 +16,11 @@ SCRIPT_TEXT = PACKAGE.read_text(encoding="utf-8")
 HAS_RPMBUILD = shutil.which("rpmbuild") is not None
 
 
-def elf64(machine: int) -> bytes:
-    buf = bytearray(64)
-    buf[0:4] = b"\x7fELF"
-    buf[4] = 2
-    buf[5] = 1
-    buf[6] = 1
-    buf[18] = machine & 0xFF
-    buf[19] = (machine >> 8) & 0xFF
-    return bytes(buf)
-
-
-def model_dir(directory: pathlib.Path) -> pathlib.Path:
-    models = directory / "models"
-    models.mkdir()
-    (models / "vocab.txt").write_text("token\n")
-    (models / "model.onnx").write_bytes(b"onnx")
-    return models
-
-
 def doc_dir(directory: pathlib.Path) -> pathlib.Path:
-    doc = directory / "doc"
-    doc.mkdir(exist_ok=True)
-    (doc / "copyright").write_text("nesso\nCopyright (c) 2026 Lorenzo Caprari\nnesso third-party notices\n")
-    (doc / "THIRD_PARTY_NOTICES").write_text("nesso third-party notices\n")
+    # package-rpm smoke checks for the notices phrase inside copyright.
+    doc = _deb_doc_dir(directory)
+    copyright = doc / "copyright"
+    copyright.write_text(copyright.read_text(encoding="utf-8") + "nesso third-party notices\n")
     return doc
 
 
