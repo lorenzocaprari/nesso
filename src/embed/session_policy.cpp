@@ -188,15 +188,22 @@ static std::optional<std::set<int>> AllowedFromStatus(const std::filesystem::pat
     return std::nullopt;
 }
 
-static bool ControllerHas(std::string_view controllers, std::string_view wanted)
+enum class CgroupController
 {
+    Cpu,
+    Memory,
+};
+
+static bool ControllerHas(std::string_view controllers, CgroupController wanted)
+{
+    const std::string_view wanted_name = wanted == CgroupController::Cpu ? "cpu" : "memory";
     std::size_t cursor = 0;
     while (cursor <= controllers.size())
     {
         const std::size_t comma = controllers.find(',', cursor);
         const std::string_view name =
             controllers.substr(cursor, comma == std::string_view::npos ? controllers.size() - cursor : comma - cursor);
-        if (name == wanted)
+        if (name == wanted_name)
         {
             return true;
         }
@@ -286,11 +293,11 @@ static std::optional<CgroupPaths> ReadCgroupPaths(const std::filesystem::path &p
         const std::string_view line_view = line;
         const std::string_view controllers = line_view.substr(first + 1, second - first - 1);
         const std::filesystem::path relative{std::string{StripSlash(line_view.substr(second + 1))}};
-        if (ControllerHas(controllers, "cpu"))
+        if (ControllerHas(controllers, CgroupController::Cpu))
         {
             paths.v1_cpu_path = relative;
         }
-        if (ControllerHas(controllers, "memory"))
+        if (ControllerHas(controllers, CgroupController::Memory))
         {
             paths.v1_memory_path = relative;
         }
@@ -341,6 +348,29 @@ struct ProcCgroupRoots
     std::filesystem::path cgroup_root;
 };
 
+// nullopt when memory.max is "max", missing, or unreadable.
+static std::optional<std::uintmax_t> V2MemoryHeadroomAt(const std::filesystem::path &directory)
+{
+    std::ifstream max_file(directory / "memory.max");
+    std::string max_line;
+    if (!max_file || !std::getline(max_file, max_line))
+    {
+        return std::nullopt;
+    }
+    const std::string_view max_text = Trim(max_line);
+    if (max_text == "max")
+    {
+        return std::nullopt;
+    }
+    const std::optional<std::uintmax_t> limit = ParseUintBytes(max_text);
+    if (!limit)
+    {
+        return std::nullopt;
+    }
+    const std::uintmax_t current = ReadUintFile(directory / "memory.current").value_or(0);
+    return *limit > current ? *limit - current : 0;
+}
+
 // Remaining bytes under the tightest finite memory.max on the walk. nullopt
 // when every ancestor is "max" or unreadable.
 static std::optional<std::uintmax_t> TightestV2MemoryHeadroom(const std::filesystem::path &root,
@@ -350,19 +380,9 @@ static std::optional<std::uintmax_t> TightestV2MemoryHeadroom(const std::filesys
     while (true)
     {
         const std::filesystem::path directory = relative.empty() ? root : root / relative;
-        std::ifstream max_file(directory / "memory.max");
-        std::string max_line;
-        if (max_file && std::getline(max_file, max_line))
+        if (const std::optional<std::uintmax_t> headroom = V2MemoryHeadroomAt(directory))
         {
-            const std::string_view max_text = Trim(max_line);
-            if (max_text != "max")
-            {
-                if (const std::optional<std::uintmax_t> limit = ParseUintBytes(max_text))
-                {
-                    const std::uintmax_t current = ReadUintFile(directory / "memory.current").value_or(0);
-                    MinHeadroom(tightest, *limit > current ? *limit - current : 0);
-                }
-            }
+            MinHeadroom(tightest, *headroom);
         }
         if (relative.empty())
         {
@@ -375,8 +395,8 @@ static std::optional<std::uintmax_t> TightestV2MemoryHeadroom(const std::filesys
 
 static bool V1MemoryLimitIsUnlimited(std::uintmax_t limit, std::uintmax_t physical_bytes)
 {
-    constexpr std::uintmax_t UNLIMITED_FLOOR = std::uintmax_t{1} << 62U;
-    if (limit >= UNLIMITED_FLOOR)
+    constexpr std::uintmax_t unlimited_floor = std::uintmax_t{1} << 62U;
+    if (limit >= unlimited_floor)
     {
         return true;
     }
@@ -422,10 +442,10 @@ static std::optional<std::uintmax_t> CgroupMemoryHeadroom(const ProcCgroupRoots 
     }
     if (paths->v1_memory_path)
     {
-        if (const std::optional<std::uintmax_t> v1 = TightestV1MemoryHeadroom(
+        if (const std::optional<std::uintmax_t> v1_headroom = TightestV1MemoryHeadroom(
                 {.cgroup_root = roots.cgroup_root, .relative = *paths->v1_memory_path}, physical_bytes))
         {
-            MinHeadroom(tightest, *v1);
+            MinHeadroom(tightest, *v1_headroom);
         }
     }
     return tightest;

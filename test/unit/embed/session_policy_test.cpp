@@ -492,10 +492,12 @@ TEST_CASE("memory_limit_bytes follows the tightest cgroup memory headroom", "[se
     const MachineResources capped =
         nesso::embed::ReadMachine({.proc_root = proc, .sys_root = sys, .cgroup_root = cgroup});
     CHECK(capped.memory_limit_bytes == GIB);
-    const SessionPolicy with_cgroup = nesso::embed::MakeSessionPolicy(true, 0, capped);
-    const MachineResources host_only{.physical_cores = capped.physical_cores,
-                                     .logical_threads = capped.logical_threads,
-                                     .memory_limit_bytes = available};
+    // 16 cores: arm64 would stay at one session with the fixture's 4 cores, so
+    // the cgroup vs MemAvailable comparison would be 1 < 1.
+    const MachineResources capped_wide{
+        .physical_cores = 16, .logical_threads = 32, .memory_limit_bytes = capped.memory_limit_bytes};
+    const SessionPolicy with_cgroup = nesso::embed::MakeSessionPolicy(true, 0, capped_wide);
+    const MachineResources host_only{.physical_cores = 16, .logical_threads = 32, .memory_limit_bytes = available};
     const SessionPolicy without_cgroup = nesso::embed::MakeSessionPolicy(true, 0, host_only);
     CHECK(with_cgroup.sessions < without_cgroup.sessions);
     CHECK(with_cgroup.memory_cap == (GIB / 2) / INT8_SESSION_BYTES);
