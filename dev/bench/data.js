@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794855936256,
+  "lastUpdate": 1794860525631,
   "repoUrl": "https://github.com/lorenzocaprari/nesso",
   "entries": {
     "nesso": [
@@ -8315,6 +8315,60 @@ window.BENCHMARK_DATA = {
           {
             "name": "grep-100000-rss",
             "value": 145588224,
+            "unit": "bytes"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "caprarilorenzo5@gmail.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "committer": {
+            "email": "85455384+lorenzocaprari@users.noreply.github.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "distinct": true,
+          "id": "481f0099a695e62cc13d25ec773b98a9d32eb234",
+          "message": "build(conan): harden release builds with explicit flags\n\nPass fortify, stack protection, clash protection, PIE, full RELRO,\nimmediate binding, and zero-init through the consumer-only\nuser.nesso flag lists on the four release profiles. x86_64 adds\ncontrol-flow protection. armv8 adds branch protection. Dependency\npackage ids stay on the existing Release graph.",
+          "timestamp": "2026-11-16T21:17:15+01:00",
+          "tree_id": "606140a15a383ef733e04708087c533948cbb1c8",
+          "url": "https://github.com/lorenzocaprari/nesso/commit/481f0099a695e62cc13d25ec773b98a9d32eb234"
+        },
+        "date": 1794860524918,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "grep-1000-wall",
+            "value": 0.12,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-1000-rss",
+            "value": 118849536,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-10000-wall",
+            "value": 0.13,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-10000-rss",
+            "value": 119582720,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-100000-wall",
+            "value": 0.29,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-100000-rss",
+            "value": 145620992,
             "unit": "bytes"
           }
         ]
