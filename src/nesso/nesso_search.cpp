@@ -17,6 +17,7 @@
 #include <core/query_class.hpp>
 #include <core/score_fusion.hpp>
 #include <core/top_k.hpp>
+#include <embed/embed_types.hpp>
 #include <embed/embedder.hpp>
 #include <embed/session_policy.hpp>
 #include <parser/log_chunker.hpp>
@@ -761,6 +762,7 @@ struct SearchDenseScores
 static SearchDenseScores ScoreSearchDense(const nesso::core::MappedCorpus &corpus,
                                           std::span<const float> query_embedding, size_t threads)
 {
+    const ScopedStage distance{"distance"};
     SearchDenseScores result;
     result.scores.assign(corpus.Texts().size(), 0.0F);
     CorpusScore scored;
@@ -799,6 +801,13 @@ static std::vector<RankedLine> SelectSearchRanked(const nesso::core::MappedCorpu
     return RankHybridLines(corpus, scores, bm25_scores, options.top_k, options.threads, options.group);
 }
 
+static std::expected<std::vector<float>, nesso::embed::EmbedError> EmbedSearchQuery(const nesso::embed::Embedder &model,
+                                                                                    std::string_view query)
+{
+    const ScopedStage query_embed{"query-embed"};
+    return model.embed(query);
+}
+
 static EffectiveMode MaybeLexicalFallback(EffectiveMode effective, std::span<const double> bm25_scores,
                                           bool &lexical_fallback)
 {
@@ -815,6 +824,12 @@ static EffectiveMode MaybeLexicalFallback(EffectiveMode effective, std::span<con
     return EffectiveMode::Hybrid;
 }
 
+std::expected<const nesso::embed::Embedder *, Error> Nesso::LoadSearchEmbedder() const
+{
+    const ScopedStage model_load{"model-load"};
+    return Embedder();
+}
+
 std::expected<TextResults, Error> Nesso::Search(const SearchRequest &request) const
 {
     const TraceSession session;
@@ -824,7 +839,7 @@ std::expected<TextResults, Error> Nesso::Search(const SearchRequest &request) co
         return std::unexpected(std::move(corpus.error()));
     }
 
-    const auto model = Embedder();
+    const auto model = LoadSearchEmbedder();
     if (!model)
     {
         return std::unexpected(model.error());
@@ -866,7 +881,7 @@ std::expected<TextResults, Error> Nesso::Search(const SearchRequest &request) co
     bool lexical_fallback = false;
 
     const ScopedStage stage{"rank"};
-    const auto query_embedding = (*model)->embed(request.query);
+    const auto query_embedding = EmbedSearchQuery(**model, request.query);
     if (!query_embedding)
     {
         return fail(ErrorKind::QueryEmbed, CauseOf(query_embedding.error()));
