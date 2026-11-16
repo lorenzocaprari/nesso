@@ -25,12 +25,12 @@ struct Stage
     std::int64_t microseconds = 0;
 };
 
-constexpr std::size_t kMaxStages = 16;
+constexpr std::size_t MAX_STAGES = 16;
 
 struct TraceState
 {
     int depth = 0;
-    std::array<Stage, kMaxStages> stages{};
+    std::array<Stage, MAX_STAGES> stages{};
     std::size_t stage_count = 0;
 };
 
@@ -67,7 +67,7 @@ static void Emit(TraceState &current)
         {
             std::cerr << ',';
         }
-        const Stage &stage = current.stages[index];
+        const Stage &stage = current.stages.at(index);
         std::cerr << R"({"name":")" << stage.name << R"(","us":)" << stage.microseconds << '}';
     }
     std::cerr << "]}\n";
@@ -114,8 +114,9 @@ ScopedStage::~ScopedStage()
     {
         return;
     }
+    // Bounds checked above; operator[] stays non-throwing for the noexcept dtor.
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-constant-array-index)
     Stage &slot = current.stages[current.stage_count];
-    // string move-assignment is noexcept; no vector reallocation in this dtor.
     slot.name = std::move(name_);
     slot.microseconds = microseconds;
     ++current.stage_count;
