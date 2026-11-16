@@ -73,54 +73,56 @@ line 552: 3.4186: Oct  7 05:07:28 web-02 app[7872]: write /var/lib/app/queue.db:
 
 ## Install
 
-Ubuntu 26.04+ (glibc 2.43+), amd64 or arm64. The `.deb` and `.rpm` install `/usr/bin/nesso` and the MiniLM files in `/usr/share/nesso`. Rocky Linux 9 and UBI 9 use the RPM (`nesso-<version>-1.x86_64.rpm` / `nesso-<version>-1.aarch64.rpm` on tags that publish them).
+Ubuntu 22.04+, Debian 12+, and RHEL/Rocky 9, amd64/x86_64 or arm64/aarch64. The `.deb` and `.rpm` install `/usr/bin/nesso` and the MiniLM files in `/usr/share/nesso`.
 
 ```bash
-curl -fL -o nesso_0.2.1_amd64.deb \
-  https://github.com/lorenzocaprari/nesso/releases/download/v0.2.1/nesso_0.2.1_amd64.deb
-sudo apt install ./nesso_0.2.1_amd64.deb
+curl -fL -o nesso_0.3.0_amd64.deb \
+  https://github.com/lorenzocaprari/nesso/releases/download/v0.3.0/nesso_0.3.0_amd64.deb
+sudo apt install ./nesso_0.3.0_amd64.deb
 
-curl -fL -o nesso_0.2.1_arm64.deb \
-  https://github.com/lorenzocaprari/nesso/releases/download/v0.2.1/nesso_0.2.1_arm64.deb
-sudo apt install ./nesso_0.2.1_arm64.deb
+curl -fL -o nesso_0.3.0_arm64.deb \
+  https://github.com/lorenzocaprari/nesso/releases/download/v0.3.0/nesso_0.3.0_arm64.deb
+sudo apt install ./nesso_0.3.0_arm64.deb
 
-# Rocky / UBI (x86_64). Use nesso-<version>-1.aarch64.rpm on arm64.
-ver=0.2.1
-curl -fL -o "nesso-${ver}-1.x86_64.rpm" \
-  "https://github.com/lorenzocaprari/nesso/releases/download/v${ver}/nesso-${ver}-1.x86_64.rpm"
-sudo dnf install "./nesso-${ver}-1.x86_64.rpm"
+curl -fL -o nesso-0.3.0-1.x86_64.rpm \
+  https://github.com/lorenzocaprari/nesso/releases/download/v0.3.0/nesso-0.3.0-1.x86_64.rpm
+sudo dnf install ./nesso-0.3.0-1.x86_64.rpm
+
+curl -fL -o nesso-0.3.0-1.aarch64.rpm \
+  https://github.com/lorenzocaprari/nesso/releases/download/v0.3.0/nesso-0.3.0-1.aarch64.rpm
+sudo dnf install ./nesso-0.3.0-1.aarch64.rpm
 ```
 
-The tags `v0.2.1`, `0.2.1`, and `latest` on `ghcr.io/lorenzocaprari/nesso` are one manifest list (`linux/amd64` and `linux/arm64`). The image stores the model at `/usr/share/nesso` and sets `NESSO_MODEL_DIR` to that directory. The entrypoint is `nesso` (`/usr/local/bin/nesso`). Mount the log directory:
+The tags `v0.3.0`, `0.3.0`, and `latest` on `ghcr.io/lorenzocaprari/nesso` are one manifest list (`linux/amd64` and `linux/arm64`). The image stores the model at `/usr/share/nesso` and sets `NESSO_MODEL_DIR` to that directory. The entrypoint is `nesso` (`/usr/local/bin/nesso`). Mount the log directory:
 
 ```bash
-docker run --rm -v "$PWD:/data:ro" -w /data ghcr.io/lorenzocaprari/nesso:v0.2.1 \
+docker run --rm -v "$PWD:/data:ro" -w /data ghcr.io/lorenzocaprari/nesso:v0.3.0 \
   grep "the disk is full" app.log
 ```
 
 ## Verify a download
 
-`nesso_0.2.1.intoto.jsonl` covers the `.deb` packages, the `.rpm` packages, and the SPDX SBOMs. `SHA256SUMS` lists every release file. The image attestation is stored on the manifest-list digest in GHCR.
+`nesso_0.3.0.intoto.jsonl` covers the `.deb` packages, the `.rpm` packages, and the SPDX SBOMs. `SHA256SUMS` lists every release file. The image attestation is stored on the manifest-list digest in GHCR.
 
 ```bash
-curl -fL -o nesso_0.2.1_amd64.deb \
-  https://github.com/lorenzocaprari/nesso/releases/download/v0.2.1/nesso_0.2.1_amd64.deb
-curl -fL -o nesso_0.2.1.intoto.jsonl \
-  https://github.com/lorenzocaprari/nesso/releases/download/v0.2.1/nesso_0.2.1.intoto.jsonl
+curl -fL -o nesso_0.3.0_amd64.deb \
+  https://github.com/lorenzocaprari/nesso/releases/download/v0.3.0/nesso_0.3.0_amd64.deb
+curl -fL -o nesso_0.3.0.intoto.jsonl \
+  https://github.com/lorenzocaprari/nesso/releases/download/v0.3.0/nesso_0.3.0.intoto.jsonl
 curl -fL -o SHA256SUMS \
-  https://github.com/lorenzocaprari/nesso/releases/download/v0.2.1/SHA256SUMS
+  https://github.com/lorenzocaprari/nesso/releases/download/v0.3.0/SHA256SUMS
 
 sha256sum --ignore-missing -c SHA256SUMS
 
-slsa-verifier verify-artifact nesso_0.2.1_amd64.deb \
-  --provenance-path nesso_0.2.1.intoto.jsonl \
+slsa-verifier verify-artifact nesso_0.3.0_amd64.deb \
+  --provenance-path nesso_0.3.0.intoto.jsonl \
   --source-uri github.com/lorenzocaprari/nesso \
-  --source-tag v0.2.1
+  --source-tag v0.3.0
 
-digest="$(docker buildx imagetools inspect --format '{{index .Manifest.Digest}}' ghcr.io/lorenzocaprari/nesso:v0.2.1)"
+digest="$(docker buildx imagetools inspect --format '{{index .Manifest.Digest}}' ghcr.io/lorenzocaprari/nesso:v0.3.0)"
 slsa-verifier verify-image "ghcr.io/lorenzocaprari/nesso@${digest}" \
   --source-uri github.com/lorenzocaprari/nesso \
-  --source-tag v0.2.1
+  --source-tag v0.3.0
 ```
 
 `slsa-verifier` v2.7.1 or later. Signatures and the other provenance files are in [Verifying a release](docs/verifying.md).
