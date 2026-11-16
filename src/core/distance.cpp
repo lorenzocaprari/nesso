@@ -9,8 +9,10 @@
 
 #include <cmath>
 #include <cstddef>
+#include <cstdlib>
 #include <expected>
 #include <span>
+#include <string_view>
 
 namespace nesso::core::math
 {
@@ -38,22 +40,51 @@ template <SupportedScalar T> T L2SquaredDistanceScalar(std::span<const T> a, std
     return sum;
 }
 
-DistanceKernel SelectedKernel() noexcept
+DistanceKernel SelectDistanceKernel(std::string_view forced, bool avx2_fma) noexcept
 {
-    static const DistanceKernel KERNEL = []
+    if (forced == "scalar")
     {
-#ifdef _MSC_VER
-        // Phase 6 selects AVX2 with __cpuidex and _xgetbv under /arch:AVX2.
         return DistanceKernel::Scalar;
-#elifdef __x86_64__
-        if (__builtin_cpu_supports("avx2") && __builtin_cpu_supports("fma"))
+    }
+    // `avx2` stays on AVX2+FMA. It does not follow a wider automatic choice,
+    // and it stays on scalar when this CPU cannot run those instructions.
+    if (forced == "avx2")
+    {
+        if (avx2_fma)
         {
             return DistanceKernel::Avx2Fma;
         }
         return DistanceKernel::Scalar;
+    }
+    if (avx2_fma)
+    {
+        return DistanceKernel::Avx2Fma;
+    }
+    return DistanceKernel::Scalar;
+}
+
+[[nodiscard]] static bool HostSupportsAvx2Fma() noexcept
+{
+#ifdef _MSC_VER
+    // Phase 6 selects AVX2 with __cpuidex and _xgetbv under /arch:AVX2.
+    return false;
+#elifdef __x86_64__
+    return __builtin_cpu_supports("avx2") && __builtin_cpu_supports("fma");
 #else
-        return DistanceKernel::Scalar;
+    return false;
 #endif
+}
+
+DistanceKernel SelectedKernel() noexcept
+{
+    static const DistanceKernel KERNEL = []() noexcept
+    {
+        // getenv is not thread-safe. The choice is fixed on first use; later
+        // calls return the cached kernel and do not read the environment.
+        // NOLINTNEXTLINE(concurrency-mt-unsafe)
+        const char *env_value = std::getenv("NESSO_FORCE_KERNEL");
+        const std::string_view forced = env_value == nullptr ? std::string_view{} : std::string_view{env_value};
+        return SelectDistanceKernel(forced, HostSupportsAvx2Fma());
     }();
     return KERNEL;
 }
