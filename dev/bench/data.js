@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794861782998,
+  "lastUpdate": 1794863687870,
   "repoUrl": "https://github.com/lorenzocaprari/nesso",
   "entries": {
     "nesso": [
@@ -8423,6 +8423,60 @@ window.BENCHMARK_DATA = {
           {
             "name": "grep-100000-rss",
             "value": 145166336,
+            "unit": "bytes"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "85455384+lorenzocaprari@users.noreply.github.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "683e41bbb4e3ec267b9e676220d1ec8b5c62673a",
+          "message": "fix(embed): respect cgroup memory limits when sizing the session pool (#308)\n\n* fix(embed): respect cgroup memory limits when sizing the session pool\n\n* fix(embed): clear clang-tidy and arm64 cgroup memory policy tests\n\n* fix(embed): use uint8_t base for CgroupController",
+          "timestamp": "2026-11-16T22:09:56+01:00",
+          "tree_id": "e25575b8ead8a406a8a59a75b7b707ebda64585d",
+          "url": "https://github.com/lorenzocaprari/nesso/commit/683e41bbb4e3ec267b9e676220d1ec8b5c62673a"
+        },
+        "date": 1794863686969,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "grep-1000-wall",
+            "value": 1.23,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-1000-rss",
+            "value": 119128064,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-10000-wall",
+            "value": 1.23,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-10000-rss",
+            "value": 118210560,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-100000-wall",
+            "value": 1.47,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-100000-rss",
+            "value": 144015360,
             "unit": "bytes"
           }
         ]
