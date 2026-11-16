@@ -66,6 +66,11 @@ lcov() {
 }
 # Keep libstdc++ and the Conan cache out of the merge. Those headers emit the
 # mismatched exception tags. The --remove below stays as a safety net.
+# A "negative taken count" from lcov is a capture race, not a floor miss.
+# conan/profiles/code-coverage passes -fprofile-update=atomic because inferAll
+# runs infer on one thread per int8 session and plain --coverage counters drift
+# (seen on onnx_embedder.cpp). Never add "negative" to the ignore lists, never
+# drop that flag, and never lower REQUIRED_*.
 lcov --directory build/coverage/build/Debug --capture \
   --include "${ROOT}/src/*" --include "${ROOT}/test/*" \
   --output-file build/coverage/coverage.info
