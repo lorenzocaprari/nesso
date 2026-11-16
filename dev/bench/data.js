@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794850130547,
+  "lastUpdate": 1794852245317,
   "repoUrl": "https://github.com/lorenzocaprari/nesso",
   "entries": {
     "nesso": [
@@ -8153,6 +8153,60 @@ window.BENCHMARK_DATA = {
           {
             "name": "grep-100000-rss",
             "value": 145551360,
+            "unit": "bytes"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "caprarilorenzo5@gmail.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "committer": {
+            "email": "85455384+lorenzocaprari@users.noreply.github.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "distinct": true,
+          "id": "c854fb778aa815ba811c712cc7ab72f32d2c8f28",
+          "message": "ci(package): build the .deb and runtime image from the EL9 binary\n\nCompile the shipped binary in nesso-build-env-el9 with NESSO_ABI_BASELINE\nso the glibc 2.34 gate runs on amd64 and arm64. Pack the .deb on the Ubuntu\nrunner, where dpkg-deb exists, and point the runtime image build stage at\nthat same EL9 image. On aarch64, link libatomic.a: the toolset driver adds\n-latomic and the shared library is outside the baseline NEEDED set. Drop\nlibgomp1 from the package and the runtime image; the binary does not need it.\nSmoke the package on Ubuntu 22.04, 24.04, 26.04, and 26.10, and on Debian 12,\nfor both architectures. Those images are pinned by OCI index digest.",
+          "timestamp": "2026-11-16T18:59:13+01:00",
+          "tree_id": "f34d58991facd8349015a2b849a0bb9575042826",
+          "url": "https://github.com/lorenzocaprari/nesso/commit/c854fb778aa815ba811c712cc7ab72f32d2c8f28"
+        },
+        "date": 1794852244625,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "grep-1000-wall",
+            "value": 1.23,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-1000-rss",
+            "value": 119906304,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-10000-wall",
+            "value": 1.23,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-10000-rss",
+            "value": 117575680,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-100000-wall",
+            "value": 1.49,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-100000-rss",
+            "value": 144424960,
             "unit": "bytes"
           }
         ]
