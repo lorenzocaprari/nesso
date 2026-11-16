@@ -157,3 +157,12 @@ with zipfile.ZipFile(dest, "w", compression=zipfile.ZIP_DEFLATED) as archive:
     for path in sorted(item for item in src.iterdir() if item.is_file()):
         archive.write(path, arcname=path.name)
 PY
+
+# libc++ availability of <experimental/simd>. The Catch2 test is not built
+# here. The binary is not a fuzz target and is not linked into a harness.
+probe_bin="$(mktemp)"
+"${CXX}" ${flags} -DNESSO_SIMD_PROBE_STANDALONE \
+  "${root}/test/unit/platform/experimental_simd_probe_test.cpp" \
+  -o "${probe_bin}"
+"${probe_bin}"
+rm -f "${probe_bin}"
