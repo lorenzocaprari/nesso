@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794863687870,
+  "lastUpdate": 1794865182489,
   "repoUrl": "https://github.com/lorenzocaprari/nesso",
   "entries": {
     "nesso": [
@@ -8477,6 +8477,60 @@ window.BENCHMARK_DATA = {
           {
             "name": "grep-100000-rss",
             "value": 144015360,
+            "unit": "bytes"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "85455384+lorenzocaprari@users.noreply.github.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "eab5759fbcc326e4c6bdf1fc09008cd8f2423200",
+          "message": "build(packaging): build and test an RPM (#309)\n\n* build(packaging): build and test an RPM\n\n* build(el9): pin gcc-toolset-15 to 15.2.1-7.2.el9_8\n\n* build(el9): install rpm-build after the Conan layer\n\n* test(packaging): reuse deb helpers in package_rpm_test\n\nDrop the duplicated elf64/model_dir/doc_dir block that pushed SonarCloud\nnew-code duplication over the 3% gate.\n\n* fix(packaging): quiet rpmbuild stdout and test native RPM arch\n\nEL9 unit tests failed because rpmbuild chatter polluted stdout and\nbecause aarch64 rpmbuild is rejected on the amd64 host.\n\n* fix(packaging): own RPM share dirs so dnf remove cleans up\n\ndistro-rpm smoke failed after a successful install because empty\n/usr/share/nesso and /usr/share/doc/nesso remained without %dir.",
+          "timestamp": "2026-11-16T22:34:34+01:00",
+          "tree_id": "e19433e774f31909167abeb0dabe504e48b21a5a",
+          "url": "https://github.com/lorenzocaprari/nesso/commit/eab5759fbcc326e4c6bdf1fc09008cd8f2423200"
+        },
+        "date": 1794865181861,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "grep-1000-wall",
+            "value": 0.14,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-1000-rss",
+            "value": 118677504,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-10000-wall",
+            "value": 0.15,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-10000-rss",
+            "value": 118943744,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-100000-wall",
+            "value": 0.32,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-100000-rss",
+            "value": 146100224,
             "unit": "bytes"
           }
         ]
