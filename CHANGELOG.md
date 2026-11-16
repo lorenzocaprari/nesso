@@ -19,6 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `experimental_simd_probe_test` checks a 384-float dot product and L2 with `std::experimental::native_simd` when `<experimental/simd>` and `__cpp_lib_experimental_parallel_simd` are present, and prints `SKIP unsupported` otherwise. The probe is a test executable only. ClusterFuzzLite compiles the same file with libc++ and does not link it into a fuzz target.
 - `NESSO_FORCE_KERNEL` pins the float distance kernel for tests and benchmarks. `scalar` uses the scalar kernel. `avx2` uses AVX2+FMA when the CPU supports both, and the scalar kernel otherwise. Unset, empty, and any other value keep automatic selection. The variable is read once per process and does not change command output.
 - [docs/quick-start.md](docs/quick-start.md) is a support-engineer path for installing nesso and grepping a sosreport or tarball in place, including encrypted, limit, and skipped-entry messages. Its shell-output section pipes `grep` and `search` matches into `less`, `grep`, and `jq`. The README names the `.deb` paths `/usr/bin/nesso` and `/usr/share/nesso`, the image entrypoint, and the local Release build.
 - Encrypted zip entries and whole-file OpenPGP bundles exit 2 with an actionable parse note (`decrypt it first` / `gpg --decrypt`). Archive limit notes name the override flag. Skipped bundle members (directories, links, binary) are summarized on stderr per bundle; stdout and `--json` stay unchanged.
