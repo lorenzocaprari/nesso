@@ -43,12 +43,12 @@ extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t *data, std::size_t size
         const auto read = nesso::parser::ReadArchive(path, {},
                                                      [&sink](std::string_view member, std::string_view body)
                                                      {
-                                                         sink += member.size();
-                                                         sink += body.size();
+                                                         sink = sink + member.size();
+                                                         sink = sink + body.size();
                                                      });
         if (!read)
         {
-            sink += static_cast<std::size_t>(read.error().code);
+            sink = sink + static_cast<std::size_t>(read.error().code);
         }
     }
 

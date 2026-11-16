@@ -75,7 +75,10 @@ TraceSession::TraceSession() : active_(TracingEnabled())
 {
     if (active_)
     {
-        ++State().depth;
+        TraceState &current = State();
+        ++current.depth;
+        // CLI sessions use a handful of stages; reserve so ~ScopedStage need not allocate.
+        current.stages.reserve(16);
     }
 }
 
@@ -106,7 +109,14 @@ ScopedStage::~ScopedStage()
     }
     const auto elapsed = std::chrono::steady_clock::now() - start_;
     const auto microseconds = std::chrono::duration_cast<std::chrono::microseconds>(elapsed).count();
-    State().stages.push_back(Stage{.name = std::move(name_), .microseconds = microseconds});
+    try
+    {
+        State().stages.push_back(Stage{.name = std::move(name_), .microseconds = microseconds});
+    }
+    catch (...)
+    {
+        // Destructors are noexcept; drop the stage rather than terminate.
+    }
 }
 
 } // namespace nesso
