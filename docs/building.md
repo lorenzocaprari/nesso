@@ -53,7 +53,36 @@ conan build . -pr:h ./conan/profiles/gcc-26 -pr:b default \
   --lockfile=conan.lock --build=missing -c user.nesso:link_jobs=1
 ```
 
-The binary is `build/Debug/src/nesso` or `build/Release/src/nesso`. For CI-strict configure (fail instead of skip when the model or Go toolchain is missing), set `NESSO_REQUIRE_MODEL=1` and `NESSO_REQUIRE_BDD=1` on the `conan build` environment, as Pipeline does.
+### Optimised ASan and UBSan
+
+`conan/profiles/gcc-26-asan-release` uses the `gcc-26` compiler tuple. Dependency package ids stay Release, including ONNX Runtime. Nesso itself is RelWithDebInfo, so the compile is `-O2 -g -DNDEBUG` plus `-D_GLIBCXX_ASSERTIONS`, `-fsanitize=address,undefined`, `-fno-sanitize-recover=all`, and `-fno-omit-frame-pointer`. There is no `-flto` and no `-Werror`. On a low-RAM host, pass `-c user.nesso:link_jobs=1` on **both** commands. The binaries are under `build/RelWithDebInfo`.
+
+```bash
+conan install . -pr:h ./conan/profiles/gcc-26-asan-release -pr:b default \
+  --lockfile=conan.lock --build=missing -c user.nesso:link_jobs=1
+conan build . -pr:h ./conan/profiles/gcc-26-asan-release -pr:b default \
+  --lockfile=conan.lock --build=missing -c user.nesso:link_jobs=1
+./scripts/fetch-model
+ctest --test-dir build/RelWithDebInfo --output-on-failure -j "$(nproc)" -L unit
+ctest --test-dir build/RelWithDebInfo --output-on-failure -j "$(nproc)" -L integration
+ctest --test-dir build/RelWithDebInfo --output-on-failure -j "$(nproc)" -L functional
+```
+
+### ThreadSanitizer
+
+`conan/profiles/clang-26-tsan` matches `clang-26`: Clang 21, libstdc++, and `compiler=gcc` so the Release package ids stay the ones baked for `gcc-26`. It adds `-g`, `-fno-omit-frame-pointer`, `-fsanitize=thread`, and `-fno-sanitize-recover=all`. There is no `-flto` and no `-Werror`. The binaries are under `build/Release` (the same directory as `clang-26`).
+
+`ctest -L tsan` runs `top_k_test`, `scan_threads_test`, and `inference_wave_test`. `session_pool_test` is not in that label: it opens ONNX Runtime sessions, and those threads are not instrumented.
+
+```bash
+conan install . -pr:h ./conan/profiles/clang-26-tsan -pr:b default \
+  --lockfile=conan.lock --build=missing
+conan build . -pr:h ./conan/profiles/clang-26-tsan -pr:b default \
+  --lockfile=conan.lock --build=missing
+ctest --test-dir build/Release --output-on-failure -L tsan
+```
+
+The binary is `build/Debug/src/nesso`, `build/Release/src/nesso`, or `build/RelWithDebInfo/src/nesso`. For CI-strict configure (fail instead of skip when the model or Go toolchain is missing), set `NESSO_REQUIRE_MODEL=1` and `NESSO_REQUIRE_BDD=1` on the `conan build` environment, as Pipeline does.
 
 ## Compile options
 
@@ -63,7 +92,7 @@ The binary is `build/Debug/src/nesso` or `build/Release/src/nesso`. For CI-stric
 
 `NESSO_LINK_JOBS` caps concurrent Ninja link jobs when it is a positive integer (`user.nesso:link_jobs` from Conan, or the environment for a plain CMake configure). Unset leaves link parallelism unlimited, which is what CI uses. Compile jobs stay unlimited. A single LTO link can still spawn many codegen threads under `-flto=auto`; packaging and ship-faithful local builds use `NESSO_REPRODUCIBLE=1` so that becomes `-flto=1`.
 
-`conan/profiles/gcc-26-debug` passes `-fno-sanitize-recover=all` with `-fsanitize=address,undefined`. ASan and UBSan stop on the first error without `UBSAN_OPTIONS`.
+`conan/profiles/gcc-26-debug` and `conan/profiles/gcc-26-asan-release` pass `-fno-sanitize-recover=all` with `-fsanitize=address,undefined`. ASan and UBSan stop on the first error without `UBSAN_OPTIONS`. `conan/profiles/clang-26-tsan` does the same for ThreadSanitizer.
 
 `conan/profiles/gcc-26-debug` and `conan/profiles/code-coverage` pass `-D_GLIBCXX_ASSERTIONS`. Those checks are inline libstdc++ preconditions and do not change the layout of standard containers. Neither profile passes `-D_GLIBCXX_DEBUG` or `-D_GLIBCXX_DEBUG_PEDANTIC`. `user.nesso:cxxflags` is not applied when Catch2, abseil, or ONNX Runtime is built, and those packages keep one shared Debug package ID. A debug-mode container must not cross that boundary.
 

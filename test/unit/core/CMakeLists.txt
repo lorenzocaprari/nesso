@@ -67,3 +67,8 @@ set_tests_properties(
   query_class_test
   score_fusion_test
   PROPERTIES LABELS unit)
+# ctest -L tsan. Ranking threads only; no ONNX Runtime session.
+set_property(
+  TEST top_k_test
+  APPEND
+  PROPERTY LABELS tsan)
