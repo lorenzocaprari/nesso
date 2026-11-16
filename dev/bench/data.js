@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794824190145,
+  "lastUpdate": 1794824817326,
   "repoUrl": "https://github.com/lorenzocaprari/nesso",
   "entries": {
     "nesso": [
@@ -7775,6 +7775,60 @@ window.BENCHMARK_DATA = {
           {
             "name": "grep-100000-rss",
             "value": 144969728,
+            "unit": "bytes"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "85455384+lorenzocaprari@users.noreply.github.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "27636f603d72d2bf48d59c4cd87ac101c550bb96",
+          "message": "test(core): add a switch to force the distance kernel (#291)\n\nNESSO_FORCE_KERNEL pins scalar or AVX2+FMA for tests and benchmarks.\nUnset and unknown values keep automatic selection. avx2 falls back to\nscalar when the CPU cannot run those instructions.",
+          "timestamp": "2026-11-16T11:12:05+01:00",
+          "tree_id": "cff34d9dc3d02306a16573acd899a5cc69b159f6",
+          "url": "https://github.com/lorenzocaprari/nesso/commit/27636f603d72d2bf48d59c4cd87ac101c550bb96"
+        },
+        "date": 1794824816605,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "grep-1000-wall",
+            "value": 0.17,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-1000-rss",
+            "value": 117899264,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-10000-wall",
+            "value": 0.19,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-10000-rss",
+            "value": 116781056,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-100000-wall",
+            "value": 0.4,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-100000-rss",
+            "value": 144011264,
             "unit": "bytes"
           }
         ]
