@@ -14,7 +14,7 @@ Bugs and feature requests use the issue forms. Vulnerabilities follow [SECURITY.
 - Conan 2 (`conanfile.py`, `conan.lock`)
 - Python 3 for pre-commit, `scripts/bench`, and `scripts/bench-compare`. `go run -C scripts/ci . bench-baseline` rewrites `bench/baseline.json` from one or more of those results, keeping the slower wall time of each tier. Commit that file in its own change.
 - Go 1.24+ only for the godog specs (`test/functional/go.mod`)
-- AFL++, lld 21, and llvm-21 only for `scripts/fuzz-test`. Clang 21 is that toolchain and `conan/profiles/clang-26`
+- AFL++, lld 21, and llvm-21 only for `scripts/fuzz-test`. Clang 21 is that toolchain, `conan/profiles/clang-26`, and `conan/profiles/clang-26-asan`
 
 ## Devcontainer image
 
@@ -42,6 +42,7 @@ Profiles in `conan/profiles/`:
 | `gcc-26-el9` | EL9 amd64 Release, GCC Toolset 15 (`-O3`, `-march=x86-64-v2`, LTO) |
 | `gcc-26-el9-armv8` | EL9 arm64 Release, GCC Toolset 15 (`-O3`, `-march=armv8-a`, LTO) |
 | `clang-26` | Clang 21 Release with libstdc++, no LTO (`-O3`, `-march=x86-64-v2`) |
+| `clang-26-asan` | Clang 21 Debug with ASan and UBSan (`-O1 -g`, `-fno-sanitize-recover=all`) and `_GLIBCXX_ASSERTIONS` |
 | `clang-26-tsan` | Local Clang 21 ThreadSanitizer. `ctest -L tsan` |
 | `code-coverage` | Debug plus `--coverage` and `_GLIBCXX_ASSERTIONS` |
 

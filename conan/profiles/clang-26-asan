@@ -1,0 +1,44 @@
+# Clang 21 + libstdc++ (the GCC 15 ABI), C++26, ASan and UBSan.
+#
+# settings.compiler stays gcc/15/libstdc++11 on purpose, same as clang-26.
+# nesso-build-env bakes Debug packages for that tuple (gcc-26-debug);
+# compiler=clang would change every package id and rebuild onnxruntime,
+# protobuf, and abseil from source. libc++ is a different ABI and cannot
+# link those static archives.
+#
+# tools.build:compiler_executables is not part of the package id, so
+# `conan install --no-remote` reuses the gcc-26-debug cache while CMake
+# compiles and links nesso with clang++-21 -stdlib=libstdc++.
+#
+# No -flto: clang turns -flto=auto into LLVM bitcode, which does not mix
+# cleanly with the gcc-built static dependencies.
+#
+# build_type=Debug so CMake does not append -O3 -DNDEBUG over -O1 -g.
+# -O1 -g keeps sanitizer stacks usable without the -O0 debug tax.
+# _GLIBCXX_ASSERTIONS checks libstdc++ preconditions and does not switch
+# on the _GLIBCXX_DEBUG ABI. unsigned-integer-overflow stays off because
+# hashing wraps on purpose. MemorySanitizer stays off: it cannot be
+# combined with ASan and would need every dependency rebuilt with it.
+# -Werror is not set here.
+
+[settings]
+os=Linux
+arch=x86_64
+compiler=gcc
+compiler.version=15
+compiler.libcxx=libstdc++11
+compiler.cppstd=26
+build_type=Debug
+# Release binary matches gcc-26, so this ASan build does not carry ORT's debug info.
+onnxruntime/*:build_type=Release
+
+[conf]
+tools.build:compiler_executables={"c": "clang-21", "cpp": "clang++-21"}
+user.nesso:cxxflags=["-O1", "-g", "-fno-omit-frame-pointer", "-D_GLIBCXX_ASSERTIONS", "-stdlib=libstdc++", "-fsanitize=address,undefined,float-divide-by-zero,implicit-conversion,local-bounds", "-fno-sanitize-recover=all"]
+user.nesso:cflags=["-O1", "-g", "-fno-omit-frame-pointer", "-fsanitize=address,undefined,float-divide-by-zero,implicit-conversion,local-bounds", "-fno-sanitize-recover=all"]
+user.nesso:sharedlinkflags=["-fsanitize=address,undefined,float-divide-by-zero,implicit-conversion,local-bounds"]
+user.nesso:exelinkflags=["-stdlib=libstdc++", "-fsanitize=address,undefined,float-divide-by-zero,implicit-conversion,local-bounds"]
+
+[buildenv]
+CC=clang-21
+CXX=clang++-21
