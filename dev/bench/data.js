@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794839439937,
+  "lastUpdate": 1794843982811,
   "repoUrl": "https://github.com/lorenzocaprari/nesso",
   "entries": {
     "nesso": [
@@ -7937,6 +7937,60 @@ window.BENCHMARK_DATA = {
           {
             "name": "grep-100000-rss",
             "value": 146296832,
+            "unit": "bytes"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "caprarilorenzo5@gmail.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "committer": {
+            "email": "85455384+lorenzocaprari@users.noreply.github.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "distinct": true,
+          "id": "2ae910e514f964cb1c5c669d1faeb2a05b561481",
+          "message": "feat(core): add a NESSO_ASSERT macro that traps in every build\n\nNESSO_ASSERT checks internal invariants in debug, sanitized, and release\nbuilds. NDEBUG does not disable it. Failure prints the condition, file,\nand line to stderr and aborts from an out-of-line function. The optional\nunreachable backend stays off.",
+          "timestamp": "2026-11-16T16:41:47+01:00",
+          "tree_id": "a04d4bf11937fe7dca16702b269bd4e06e7bb83e",
+          "url": "https://github.com/lorenzocaprari/nesso/commit/2ae910e514f964cb1c5c669d1faeb2a05b561481"
+        },
+        "date": 1794843982001,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "grep-1000-wall",
+            "value": 0.16,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-1000-rss",
+            "value": 119971840,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-10000-wall",
+            "value": 0.18,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-10000-rss",
+            "value": 117481472,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-100000-wall",
+            "value": 0.37,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-100000-rss",
+            "value": 146976768,
             "unit": "bytes"
           }
         ]
