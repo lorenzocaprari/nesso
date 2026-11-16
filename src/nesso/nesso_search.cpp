@@ -584,26 +584,26 @@ static std::vector<RankedLine> RankLexicalLines(const nesso::core::MappedCorpus 
 
 static std::expected<nesso::core::MappedCorpus, Error> MapSearchCorpus(const std::filesystem::path &path)
 {
-    std::uint32_t version = 0;
-    auto corpus = [&path, &version]
+    auto corpus = [&path]
     {
         const ScopedStage stage{"corpus-read"};
-        return nesso::core::MapCorpusFile(path, &version);
+        return nesso::core::MapCorpusFile(path);
     }();
     if (!corpus)
     {
-        Error error = MakeError(ErrorKind::CorpusRead, CauseOf(corpus.error()), path, {});
-        if (corpus.error() == nesso::core::EngineError::UnsupportedVersion)
+        const nesso::core::CorpusMapFailure &failure = corpus.error();
+        Error error = MakeError(ErrorKind::CorpusRead, CauseOf(failure.code), path, {});
+        if (failure.code == nesso::core::EngineError::UnsupportedVersion)
         {
-            error.corpus_version = version;
+            error.corpus_version = failure.version;
         }
         return std::unexpected(std::move(error));
     }
-    if (corpus->Texts().empty())
+    if (corpus->corpus.Texts().empty())
     {
         return std::unexpected(MakeError(ErrorKind::EmptyInput, ErrorCause::EmptyCorpus, path, {}));
     }
-    return std::move(*corpus);
+    return std::move(corpus->corpus);
 }
 
 static std::expected<void, Error> RefuseModelMismatch(const nesso::core::CorpusPolicy &stored,

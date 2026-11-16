@@ -265,47 +265,48 @@ TEST_CASE("v3 stores ordered lines, distinct vectors, policy and stored texts", 
 
     const auto mapped = nesso::core::MapCorpusFile(path);
     REQUIRE(mapped);
-    CHECK(mapped->Policy() == Policy());
-    CHECK(mapped->Dimensions() == 2);
-    REQUIRE(mapped->Sources().size() == 3);
-    CHECK(mapped->Sources()[0].path == source.string());
-    CHECK(mapped->Sources()[0].size == 19);
-    CHECK(mapped->Sources()[0].tracked);
-    CHECK(mapped->Sources()[1].stored_only);
-    CHECK(mapped->Sources()[2].path == "bundle.tar!app.log");
-    REQUIRE(mapped->Lines().size() == 7);
-    CHECK(mapped->Lines()[1].distinct_id == NO_DISTINCT);
-    CHECK(mapped->Lines()[2].byte_offset == 7);
-    CHECK(mapped->Lines()[2].byte_length == 5);
-    REQUIRE(mapped->Lines()[4].stored_text.has_value());
-    CHECK(mapped->Lines()[4].stored_text.value() == "bravo from stdin");
-    REQUIRE(mapped->Lines()[5].stored_text.has_value());
-    CHECK(mapped->Lines()[5].stored_text.value().empty());
-    CHECK(mapped->Lines()[6].array_element);
-    REQUIRE(mapped->Texts().size() == 2);
-    CHECK(mapped->Texts()[0] == "alpha");
-    CHECK(mapped->Texts()[1] == "bravo");
-    REQUIRE(mapped->Matrix().size() == 4);
-    CHECK(mapped->Matrix()[0] == 1.F);
-    CHECK(mapped->Matrix()[3] == 1.F);
-    CHECK(reinterpret_cast<std::uintptr_t>(mapped->Matrix().data()) % 64 == 0);
+    CHECK(mapped->version == nesso::core::CORPUS_VERSION);
+    CHECK(mapped->corpus.Policy() == Policy());
+    CHECK(mapped->corpus.Dimensions() == 2);
+    REQUIRE(mapped->corpus.Sources().size() == 3);
+    CHECK(mapped->corpus.Sources()[0].path == source.string());
+    CHECK(mapped->corpus.Sources()[0].size == 19);
+    CHECK(mapped->corpus.Sources()[0].tracked);
+    CHECK(mapped->corpus.Sources()[1].stored_only);
+    CHECK(mapped->corpus.Sources()[2].path == "bundle.tar!app.log");
+    REQUIRE(mapped->corpus.Lines().size() == 7);
+    CHECK(mapped->corpus.Lines()[1].distinct_id == NO_DISTINCT);
+    CHECK(mapped->corpus.Lines()[2].byte_offset == 7);
+    CHECK(mapped->corpus.Lines()[2].byte_length == 5);
+    REQUIRE(mapped->corpus.Lines()[4].stored_text.has_value());
+    CHECK(mapped->corpus.Lines()[4].stored_text.value() == "bravo from stdin");
+    REQUIRE(mapped->corpus.Lines()[5].stored_text.has_value());
+    CHECK(mapped->corpus.Lines()[5].stored_text.value().empty());
+    CHECK(mapped->corpus.Lines()[6].array_element);
+    REQUIRE(mapped->corpus.Texts().size() == 2);
+    CHECK(mapped->corpus.Texts()[0] == "alpha");
+    CHECK(mapped->corpus.Texts()[1] == "bravo");
+    REQUIRE(mapped->corpus.Matrix().size() == 4);
+    CHECK(mapped->corpus.Matrix()[0] == 1.F);
+    CHECK(mapped->corpus.Matrix()[3] == 1.F);
+    CHECK(reinterpret_cast<std::uintptr_t>(mapped->corpus.Matrix().data()) % 64 == 0);
     CHECK(GetU64(ReadBytes(path), 48) % 64 == 0);
-    REQUIRE(mapped->LexicalPostings().size() == 7);
-    CHECK(mapped->LexicalPostings()[1].length == 0);
-    CHECK(mapped->LexicalPostings()[1].entries.empty());
-    CHECK(mapped->LexicalPostings()[5].length == 0);
+    REQUIRE(mapped->corpus.LexicalPostings().size() == 7);
+    CHECK(mapped->corpus.LexicalPostings()[1].length == 0);
+    CHECK(mapped->corpus.LexicalPostings()[1].entries.empty());
+    CHECK(mapped->corpus.LexicalPostings()[5].length == 0);
     {
         const auto expected_alpha = TermsOf("alpha");
         std::uint32_t length = 0;
-        for (const auto &[termId, frequency] : mapped->LexicalPostings()[0].entries)
+        for (const auto &[termId, frequency] : mapped->corpus.LexicalPostings()[0].entries)
         {
-            REQUIRE(termId < mapped->LexicalDictionary().size());
+            REQUIRE(termId < mapped->corpus.LexicalDictionary().size());
             length += frequency;
         }
-        CHECK(mapped->LexicalPostings()[0].length == expected_alpha.size());
+        CHECK(mapped->corpus.LexicalPostings()[0].length == expected_alpha.size());
         CHECK(length == expected_alpha.size());
         Bm25Index rebuilt;
-        for (const LexicalLinePostings &row : mapped->LexicalPostings())
+        for (const LexicalLinePostings &row : mapped->corpus.LexicalPostings())
         {
             std::vector<std::string_view> tokens;
             tokens.reserve(row.length);
@@ -313,7 +314,7 @@ TEST_CASE("v3 stores ordered lines, distinct vectors, policy and stored texts", 
             {
                 for (std::uint32_t copy = 0; copy < frequency; ++copy)
                 {
-                    tokens.push_back(mapped->LexicalDictionary()[termId]);
+                    tokens.push_back(mapped->corpus.LexicalDictionary()[termId]);
                 }
             }
             rebuilt.AddLine(tokens);
@@ -361,12 +362,12 @@ TEST_CASE("duplicate lines share one stored vector", "[corpus][core]")
     REQUIRE(writer->Finish());
     auto mapped = nesso::core::MapCorpusFile(dir.Path() / "duplicates.nesso");
     REQUIRE(mapped);
-    CHECK(mapped->Lines().size() == count);
-    CHECK(mapped->Texts().size() == 1);
-    CHECK(mapped->Matrix().size() == 384);
-    REQUIRE(mapped->LexicalPostings().size() == count);
-    CHECK(mapped->LexicalDictionary().size() == 1);
-    CHECK(mapped->LexicalDictionary()[0] == "dup");
+    CHECK(mapped->corpus.Lines().size() == count);
+    CHECK(mapped->corpus.Texts().size() == 1);
+    CHECK(mapped->corpus.Matrix().size() == 384);
+    REQUIRE(mapped->corpus.LexicalPostings().size() == count);
+    CHECK(mapped->corpus.LexicalDictionary().size() == 1);
+    CHECK(mapped->corpus.LexicalDictionary()[0] == "dup");
     CHECK(std::filesystem::file_size(dir.Path() / "duplicates.nesso") < count * 384 * sizeof(float) / 4);
 }
 
@@ -379,12 +380,12 @@ TEST_CASE("empty v3 corpora and source metadata are handled explicitly", "[corpu
     REQUIRE(writer->Finish());
     const auto mapped = nesso::core::MapCorpusFile(path);
     REQUIRE(mapped);
-    CHECK(mapped->Lines().empty());
-    CHECK(mapped->Texts().empty());
-    CHECK(mapped->Matrix().empty());
-    CHECK(mapped->LexicalDictionary().empty());
-    CHECK(mapped->LexicalPostings().empty());
-    CHECK(mapped->Dimensions() == 0);
+    CHECK(mapped->corpus.Lines().empty());
+    CHECK(mapped->corpus.Texts().empty());
+    CHECK(mapped->corpus.Matrix().empty());
+    CHECK(mapped->corpus.LexicalDictionary().empty());
+    CHECK(mapped->corpus.LexicalPostings().empty());
+    CHECK(mapped->corpus.Dimensions() == 0);
     const auto stdin_info = nesso::core::SourceInfoFor("-", "message");
     REQUIRE(stdin_info);
     CHECK(stdin_info->stored_only);
@@ -511,9 +512,9 @@ TEST_CASE("v3 streams lines before their distinct vectors", "[corpus][core]")
     REQUIRE(writer->Finish());
     const auto mapped = nesso::core::MapCorpusFile(path);
     REQUIRE(mapped);
-    CHECK(mapped->Lines().size() == 3);
-    CHECK(mapped->Texts().size() == 2);
-    CHECK(mapped->Matrix().size() == 4);
+    CHECK(mapped->corpus.Lines().size() == 3);
+    CHECK(mapped->corpus.Texts().size() == 2);
+    CHECK(mapped->corpus.Matrix().size() == 4);
 }
 
 TEST_CASE("v3 rejects unsupported versions and malformed files", "[corpus][core]")
@@ -617,13 +618,13 @@ TEST_CASE("v3 rejects unsupported versions and malformed files", "[corpus][core]
         Reseal(bytes);
     }
     WriteBytes(path, bytes);
-    std::uint32_t observed = 0;
-    const auto result = nesso::core::MapCorpusFile(path, &observed);
+    const auto result = nesso::core::MapCorpusFile(path);
     REQUIRE_FALSE(result);
-    CHECK(result.error() == expected);
+    CHECK(result.error().code == expected);
     if (expected == EngineError::UnsupportedVersion)
     {
-        CHECK(observed != nesso::core::CORPUS_VERSION);
+        REQUIRE(result.error().version.has_value());
+        CHECK(*result.error().version != nesso::core::CORPUS_VERSION);
     }
 }
 
@@ -638,8 +639,8 @@ TEST_CASE("v3 lexical postings round-trip for empty and one-line corpora", "[cor
         REQUIRE(writer->Finish());
         const auto mapped = nesso::core::MapCorpusFile(path);
         REQUIRE(mapped);
-        CHECK(mapped->LexicalDictionary().empty());
-        CHECK(mapped->LexicalPostings().empty());
+        CHECK(mapped->corpus.LexicalDictionary().empty());
+        CHECK(mapped->corpus.LexicalPostings().empty());
         CHECK(GetU64(ReadBytes(path), 96) >= 16);
     }
     SECTION("one line")
@@ -655,14 +656,14 @@ TEST_CASE("v3 lexical postings round-trip for empty and one-line corpora", "[cor
         REQUIRE(writer->Finish());
         const auto mapped = nesso::core::MapCorpusFile(path);
         REQUIRE(mapped);
-        REQUIRE(mapped->LexicalPostings().size() == 1);
-        CHECK(mapped->LexicalPostings()[0].length == terms.size());
+        REQUIRE(mapped->corpus.LexicalPostings().size() == 1);
+        CHECK(mapped->corpus.LexicalPostings()[0].length == terms.size());
         std::vector<std::string> rebuilt;
-        for (const auto &[termId, frequency] : mapped->LexicalPostings()[0].entries)
+        for (const auto &[termId, frequency] : mapped->corpus.LexicalPostings()[0].entries)
         {
             for (std::uint32_t copy = 0; copy < frequency; ++copy)
             {
-                rebuilt.push_back(std::string{mapped->LexicalDictionary()[termId]});
+                rebuilt.push_back(std::string{mapped->corpus.LexicalDictionary()[termId]});
             }
         }
         std::ranges::sort(rebuilt);
@@ -747,7 +748,7 @@ TEST_CASE("v3 lexical payload errors stay corrupt", "[corpus][core]")
     WriteBytes(path, bytes);
     const auto mapped = nesso::core::MapCorpusFile(path);
     REQUIRE_FALSE(mapped);
-    CHECK(mapped.error() == EngineError::CorruptDatabase);
+    CHECK(mapped.error().code == EngineError::CorruptDatabase);
 }
 
 TEST_CASE("v3 AddLines rejects term and order errors before writing", "[corpus][core]")
@@ -815,7 +816,7 @@ TEST_CASE("v3 file open failures stay distinct from corrupt corpora", "[corpus][
     {
         const auto mapped = nesso::core::MapCorpusFile(dir.Path() / "missing.nesso");
         REQUIRE_FALSE(mapped);
-        CHECK(mapped.error() == EngineError::FileOpenFailure);
+        CHECK(mapped.error().code == EngineError::FileOpenFailure);
     }
     SECTION("finish cannot reopen a spill")
     {
@@ -853,5 +854,5 @@ TEST_CASE("v3 map rejects a policy dimension that disagrees with the header", "[
     WriteBytes(path, bytes);
     const auto mapped = nesso::core::MapCorpusFile(path);
     REQUIRE_FALSE(mapped);
-    CHECK(mapped.error() == EngineError::CorruptDatabase);
+    CHECK(mapped.error().code == EngineError::CorruptDatabase);
 }
