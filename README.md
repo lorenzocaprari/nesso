@@ -25,18 +25,28 @@ Support engineers: [triage a sosreport or tarball](docs/quick-start.md). Piping 
 
 ## Demo
 
-![nesso grep for "the disk is full" matching lines that say "No space left on device"](docs/assets/demo.gif)
+![keyword grep misses "the disk is full", then nesso grep, index, and search find "No space left on device"](docs/assets/demo.gif)
 
-The log does not contain the query.
+The log does not contain the query. A plain `grep` finds nothing; `nesso grep` matches by meaning. Index once, then `nesso search` for more queries on the same corpus. Sosreport/tar/zip and `--json` are in the [quick start](docs/quick-start.md).
 
 ```bash
-nesso grep "the disk is full" app.log -k 3
+grep -c 'the disk is full' app.log
 ```
 
 ```text
-line 869: 0.4736: Oct 18 06:13:11 web-02 app[4900]: write /var/lib/app/queue.db: No space left on device
-line 1494: 0.4694: Oct 22 17:08:04 web-02 app[7918]: write /var/lib/app/queue.db: No space left on device
-line 3762: 0.4677: Oct 24 23:39:07 web-02 app[2888]: write /var/lib/app/queue.db: No space left on device
+0
+```
+
+```bash
+nesso grep "the disk is full" app.log
+```
+
+```text
+line 151: 3.4186: Oct 11 04:43:02 web-02 app[4389]: write /var/lib/app/queue.db: No space left on device
+line 183: 3.4186: Oct 15 01:56:49 web-01 app[9813]: write /var/lib/app/queue.db: No space left on device
+line 268: 3.4186: Oct 12 23:12:36 web-02 app[3833]: write /var/lib/app/queue.db: No space left on device
+line 301: 3.4186: Oct 24 23:33:21 web-01 app[6365]: write /var/lib/app/queue.db: No space left on device
+line 552: 3.4186: Oct  7 05:07:28 web-02 app[7872]: write /var/lib/app/queue.db: No space left on device
 ```
 
 ```bash
@@ -48,13 +58,15 @@ Indexed 5000 chunks into 'app.nesso'.
 ```
 
 ```bash
-nesso search "the disk is full" -i app.nesso -k 3
+nesso search "the disk is full" -i app.nesso
 ```
 
 ```text
-line 869: 0.4736: Oct 18 06:13:11 web-02 app[4900]: write /var/lib/app/queue.db: No space left on device
-line 1494: 0.4694: Oct 22 17:08:04 web-02 app[7918]: write /var/lib/app/queue.db: No space left on device
-line 3762: 0.4677: Oct 24 23:39:07 web-02 app[2888]: write /var/lib/app/queue.db: No space left on device
+line 151: 3.4186: Oct 11 04:43:02 web-02 app[4389]: write /var/lib/app/queue.db: No space left on device
+line 183: 3.4186: Oct 15 01:56:49 web-01 app[9813]: write /var/lib/app/queue.db: No space left on device
+line 268: 3.4186: Oct 12 23:12:36 web-02 app[3833]: write /var/lib/app/queue.db: No space left on device
+line 301: 3.4186: Oct 24 23:33:21 web-01 app[6365]: write /var/lib/app/queue.db: No space left on device
+line 552: 3.4186: Oct  7 05:07:28 web-02 app[7872]: write /var/lib/app/queue.db: No space left on device
 ```
 
 `--json` on `grep` and `search` prints one JSON object per match instead of these text lines. The keys, and how to pipe them, are in the quick start's [shell output](docs/quick-start.md#shell-output) section. `index` does not accept `--json`. `grep` and `search` default to `--mode auto`.
