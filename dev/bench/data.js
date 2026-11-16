@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794852245317,
+  "lastUpdate": 1794852980685,
   "repoUrl": "https://github.com/lorenzocaprari/nesso",
   "entries": {
     "nesso": [
@@ -8207,6 +8207,60 @@ window.BENCHMARK_DATA = {
           {
             "name": "grep-100000-rss",
             "value": 144424960,
+            "unit": "bytes"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "caprarilorenzo5@gmail.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "committer": {
+            "email": "85455384+lorenzocaprari@users.noreply.github.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "distinct": true,
+          "id": "e416202060b9f02fb16bad746300c9055835d3ec",
+          "message": "refactor(core): return the corpus version from MapCorpusFile\n\nMapCorpusFile returns the header version with the mapped corpus and on\nfailure, including an unsupported version, so search still names that\nversion in its error text.",
+          "timestamp": "2026-11-16T18:59:54+01:00",
+          "tree_id": "01c556e58c753073636de2e75b9b39abbc28d4fc",
+          "url": "https://github.com/lorenzocaprari/nesso/commit/e416202060b9f02fb16bad746300c9055835d3ec"
+        },
+        "date": 1794852979703,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "grep-1000-wall",
+            "value": 0.15,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-1000-rss",
+            "value": 119934976,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-10000-wall",
+            "value": 0.16,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-10000-rss",
+            "value": 120356864,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-100000-wall",
+            "value": 0.39,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-100000-rss",
+            "value": 144281600,
             "unit": "bytes"
           }
         ]
