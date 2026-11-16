@@ -14,7 +14,7 @@ Bugs and feature requests use the issue forms. Vulnerabilities follow [SECURITY.
 - Conan 2 (`conanfile.py`, `conan.lock`)
 - Python 3 for pre-commit, `scripts/bench`, and `scripts/bench-compare`. `go run -C scripts/ci . bench-baseline` rewrites `bench/baseline.json` from one or more of those results, keeping the slower wall time of each tier. Commit that file in its own change.
 - Go 1.24+ only for the godog specs (`test/functional/go.mod`)
-- AFL++, lld 21, and llvm-21 only for `scripts/fuzz-test`. Clang 21 is that toolchain, `conan/profiles/clang-26`, and `conan/profiles/clang-26-asan`
+- AFL++, lld 21, and llvm-21 only for `scripts/fuzz-test`. Clang 21 is that toolchain, `conan/profiles/clang-26`, `conan/profiles/clang-26-asan`, and `conan/profiles/clang-26-tsan`
 
 ## Devcontainer image
 
@@ -36,14 +36,14 @@ Profiles in `conan/profiles/`:
 | `gcc-26` | CI/package Release (`-O3`, `-march=x86-64-v2`, `-flto=auto`) |
 | `gcc-26-dev` | Local Release without LTO (`-O3`, `-march=x86-64-v2`, `link_jobs=1`) |
 | `gcc-26-debug` | Debug with ASan and UBSan (`-fno-sanitize-recover=all`) and `_GLIBCXX_ASSERTIONS` |
-| `gcc-26-asan-release` | Local `-O2` ASan and UBSan. Dependencies stay on the `gcc-26` Release package ids |
+| `gcc-26-asan-release` | `-O2` ASan and UBSan on the `gcc-26` Release package ids. Pipeline job `gcc-26-asan-release-amd64` runs the full ctest suite |
 | `gcc-26-fuzz` | AFL++ library harnesses |
 | `gcc-26-armv8` | arm64 Release (`-O3`, `-march=armv8-a`, LTO) |
 | `gcc-26-el9` | EL9 amd64 Release, GCC Toolset 15 (`-O3`, `-march=x86-64-v2`, LTO) |
 | `gcc-26-el9-armv8` | EL9 arm64 Release, GCC Toolset 15 (`-O3`, `-march=armv8-a`, LTO) |
 | `clang-26` | Clang 21 Release with libstdc++, no LTO (`-O3`, `-march=x86-64-v2`) |
-| `clang-26-asan` | Clang 21 Debug with ASan and UBSan (`-O1 -g`, `-fno-sanitize-recover=all`) and `_GLIBCXX_ASSERTIONS` |
-| `clang-26-tsan` | Local Clang 21 ThreadSanitizer. `ctest -L tsan` |
+| `clang-26-asan` | Clang 21 Debug with ASan and UBSan (`-O1 -g`, `-fno-sanitize-recover=all`) and `_GLIBCXX_ASSERTIONS`. Pipeline job `clang-26-asan-amd64` runs unit, integration, and functional. `conan/sanitizer/libstdcxx-format.ignorelist` ignores the libstdc++ `<format>` sign change |
+| `clang-26-tsan` | Clang 21 ThreadSanitizer. Pipeline job `clang-26-tsan-amd64` runs `ctest -L tsan` |
 | `code-coverage` | Debug plus `--coverage` and `_GLIBCXX_ASSERTIONS` |
 
 `nesso_options` in `CMakeLists.txt` is the INTERFACE target every nesso target links. It requires C++26 with compiler extensions off and sets the warning flags. `-Werror` is off unless `NESSO_WERROR` is ON. Profiles do not set that. `conanfile.py` copies `user.nesso:werror` into the cache variable, and `conan -c user.nesso:werror=True` turns it on. `conan build` generates the toolchain again, so the flag has to be on that command too. Optimization, sanitizer, and LTO flags stay in `user.nesso:cxxflags` so they are not applied to dependency builds. `gcc-26-debug` and `code-coverage` pass `-D_GLIBCXX_ASSERTIONS` there and do not pass `-D_GLIBCXX_DEBUG`. Debug-mode containers would be an ABI break against Catch2, abseil, and ONNX Runtime, which stay on the shared Debug package ID those profiles do not rebuild. `user.nesso:link_jobs` (or `NESSO_LINK_JOBS`) caps concurrent Ninja links when set; CI leaves it unset.
@@ -68,7 +68,7 @@ The functional label includes the `bdd` test. It runs `go test` in `test/functio
 
 `bdd` runs godog scenarios concurrently, one per logical CPU. Each scenario has its own temporary directory, environment, and pty. CI passes `-j "$(nproc)"` and `--output-on-failure` to every ctest invocation. The test jobs also pass `--output-junit` and list failing tests in the job summary.
 
-`gcc-26-debug` passes `-fno-sanitize-recover=all`, so a local debug build stops on the first ASan or UBSan error. Debug ctest in CI also sets `ASAN_OPTIONS` and `UBSAN_OPTIONS`. `conan/profiles/gcc-26-asan-release` and `conan/profiles/clang-26-tsan` are local profiles; the commands are in [docs/building.md](docs/building.md). `ctest -L tsan` selects `top_k_test`, `scan_threads_test`, and `inference_wave_test`. `session_pool_test` stays on the `unit` label only, because it opens ONNX Runtime sessions.
+`gcc-26-debug` passes `-fno-sanitize-recover=all`, so a local debug build stops on the first ASan or UBSan error. Debug ctest in CI also sets `ASAN_OPTIONS` and `UBSAN_OPTIONS`. Pipeline also runs `gcc-26-asan-release-amd64` (full ctest suite), `clang-26-asan-amd64` (unit, integration, and functional), and `clang-26-tsan-amd64` (`ctest -L tsan`). The commands are in [docs/building.md](docs/building.md). `ctest -L tsan` selects `top_k_test`, `scan_threads_test`, and `inference_wave_test`. `session_pool_test` stays on the `unit` label only, because it opens ONNX Runtime sessions.
 
 ## Fuzz
 
