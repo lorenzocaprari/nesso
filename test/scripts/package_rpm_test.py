@@ -1,5 +1,6 @@
 import os
 import pathlib
+import platform
 import shutil
 import stat
 import subprocess
@@ -22,6 +23,19 @@ def doc_dir(directory: pathlib.Path) -> pathlib.Path:
     copyright = doc / "copyright"
     copyright.write_text(copyright.read_text(encoding="utf-8") + "nesso third-party notices\n")
     return doc
+
+
+def host_rpm_arch() -> str:
+    machine = platform.machine()
+    if machine in ("x86_64", "amd64"):
+        return "x86_64"
+    if machine in ("aarch64", "arm64"):
+        return "aarch64"
+    raise unittest.SkipTest(f"unsupported host machine {machine}")
+
+
+def host_elf_machine() -> int:
+    return 62 if host_rpm_arch() == "x86_64" else 183
 
 
 class PackageRpmTest(unittest.TestCase):
@@ -93,12 +107,17 @@ class PackageRpmTest(unittest.TestCase):
             )
             self.assertEqual(result.returncode, 2)
 
+    def test_script_maps_elf_machines_to_rpm_arches(self) -> None:
+        self.assertIn("62) printf '%s\\n' x86_64 ;;", SCRIPT_TEXT)
+        self.assertIn("183) printf '%s\\n' aarch64 ;;", SCRIPT_TEXT)
+
     @unittest.skipUnless(HAS_RPMBUILD, "rpmbuild is not installed")
     def test_builds_pinned_name_with_expected_files(self) -> None:
+        arch = host_rpm_arch()
         with tempfile.TemporaryDirectory() as temp:
             directory = pathlib.Path(temp)
             binary = directory / "nesso"
-            binary.write_bytes(elf64(62))
+            binary.write_bytes(elf64(host_elf_machine()))
             binary.chmod(binary.stat().st_mode | stat.S_IXUSR)
             doc_dir(directory)
             out = directory / "out"
@@ -112,7 +131,7 @@ class PackageRpmTest(unittest.TestCase):
                 check=False,
             )
             self.assertEqual(result.returncode, 0, result.stderr)
-            rpm = out / "nesso-0.1.0-1.x86_64.rpm"
+            rpm = out / f"nesso-0.1.0-1.{arch}.rpm"
             self.assertTrue(rpm.is_file(), result.stdout)
             self.assertEqual(result.stdout.strip(), str(rpm.resolve()))
 
@@ -128,7 +147,7 @@ class PackageRpmTest(unittest.TestCase):
                 text=True,
                 check=True,
             )
-            self.assertEqual(query.stdout.strip(), "nesso-0.1.0-1.x86_64")
+            self.assertEqual(query.stdout.strip(), f"nesso-0.1.0-1.{arch}")
 
             files = subprocess.run(
                 ["rpm", "-qlp", str(rpm)],
@@ -147,10 +166,13 @@ class PackageRpmTest(unittest.TestCase):
 
     @unittest.skipUnless(HAS_RPMBUILD, "rpmbuild is not installed")
     def test_spec_fields_from_built_rpm(self) -> None:
+        # rpmbuild rejects a foreign BuildArch on this host; Package builds each
+        # arch on a matching runner instead.
+        arch = host_rpm_arch()
         with tempfile.TemporaryDirectory() as temp:
             directory = pathlib.Path(temp)
             binary = directory / "nesso"
-            binary.write_bytes(elf64(183))
+            binary.write_bytes(elf64(host_elf_machine()))
             binary.chmod(binary.stat().st_mode | stat.S_IXUSR)
             doc_dir(directory)
             out = directory / "out"
@@ -164,7 +186,7 @@ class PackageRpmTest(unittest.TestCase):
                 check=False,
             )
             self.assertEqual(result.returncode, 0, result.stderr)
-            rpm = out / "nesso-1.2.3-1.aarch64.rpm"
+            rpm = out / f"nesso-1.2.3-1.{arch}.rpm"
             self.assertTrue(rpm.is_file(), result.stdout)
             fields = subprocess.run(
                 [
@@ -178,7 +200,7 @@ class PackageRpmTest(unittest.TestCase):
                 text=True,
                 check=True,
             ).stdout.strip()
-            self.assertEqual(fields, "nesso|1.2.3|1|aarch64|Apache-2.0")
+            self.assertEqual(fields, f"nesso|1.2.3|1|{arch}|Apache-2.0")
 
 
 if __name__ == "__main__":

@@ -162,7 +162,8 @@ RPM_MACROS=(
   --target "${RPM_ARCH}"
 )
 
-rpmbuild -bb "${RPM_MACROS[@]}" "${TOPDIR}/SPECS/nesso.spec"
+# rpmbuild prints progress on stdout; keep stdout as the package path only.
+rpmbuild -bb "${RPM_MACROS[@]}" "${TOPDIR}/SPECS/nesso.spec" >/dev/null
 
 mkdir -p "${OUT_DIR}"
 OUT_RPM="$(cd "${OUT_DIR}" && pwd)/nesso-${VERSION}-1.${RPM_ARCH}.rpm"
