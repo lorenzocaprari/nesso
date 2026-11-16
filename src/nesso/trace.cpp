@@ -6,13 +6,13 @@
 
 #include <platform/file.hpp>
 
+#include <array>
 #include <cstdint>
 #include <cstdlib>
 #include <iostream>
 #include <string>
 #include <string_view>
 #include <utility>
-#include <vector>
 
 namespace nesso
 {
@@ -25,10 +25,13 @@ struct Stage
     std::int64_t microseconds = 0;
 };
 
+constexpr std::size_t kMaxStages = 16;
+
 struct TraceState
 {
     int depth = 0;
-    std::vector<Stage> stages;
+    std::array<Stage, kMaxStages> stages{};
+    std::size_t stage_count = 0;
 };
 
 } // namespace
@@ -50,7 +53,7 @@ static bool TracingEnabled()
 
 static void Emit(TraceState &current)
 {
-    if (current.stages.empty())
+    if (current.stage_count == 0)
     {
         return;
     }
@@ -58,7 +61,7 @@ static void Emit(TraceState &current)
     const std::int64_t rss_bytes = nesso::platform::PeakResidentBytes();
 
     std::cerr << R"({"peakRssBytes":)" << rss_bytes << R"(,"stages":[)";
-    for (size_t index = 0; index < current.stages.size(); ++index)
+    for (size_t index = 0; index < current.stage_count; ++index)
     {
         if (index != 0)
         {
@@ -68,17 +71,14 @@ static void Emit(TraceState &current)
         std::cerr << R"({"name":")" << stage.name << R"(","us":)" << stage.microseconds << '}';
     }
     std::cerr << "]}\n";
-    current.stages.clear();
+    current.stage_count = 0;
 }
 
 TraceSession::TraceSession() : active_(TracingEnabled())
 {
     if (active_)
     {
-        TraceState &current = State();
-        ++current.depth;
-        // CLI sessions use a handful of stages; reserve so ~ScopedStage need not allocate.
-        current.stages.reserve(16);
+        ++State().depth;
     }
 }
 
@@ -99,11 +99,6 @@ TraceSession::~TraceSession()
 ScopedStage::ScopedStage(std::string_view name)
     : active_(TracingEnabled()), name_(name), start_(std::chrono::steady_clock::now())
 {
-    if (active_)
-    {
-        // Constructors may throw; keep destructor allocation-free.
-        State().stages.reserve(16);
-    }
 }
 
 ScopedStage::~ScopedStage()
@@ -114,13 +109,16 @@ ScopedStage::~ScopedStage()
     }
     const auto elapsed = std::chrono::steady_clock::now() - start_;
     const auto microseconds = std::chrono::duration_cast<std::chrono::microseconds>(elapsed).count();
-    std::vector<Stage> &stages = State().stages;
-    // Avoid reallocation in a noexcept destructor; drop the stage if full.
-    if (stages.size() >= stages.capacity())
+    TraceState &current = State();
+    if (current.stage_count >= current.stages.size())
     {
         return;
     }
-    stages.push_back(Stage{.name = std::move(name_), .microseconds = microseconds});
+    Stage &slot = current.stages[current.stage_count];
+    // string move-assignment is noexcept; no vector reallocation in this dtor.
+    slot.name = std::move(name_);
+    slot.microseconds = microseconds;
+    ++current.stage_count;
 }
 
 } // namespace nesso

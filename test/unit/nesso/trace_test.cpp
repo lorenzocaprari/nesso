@@ -100,6 +100,6 @@ TEST_CASE("ScopedStage drops recording when stage capacity is full", "[trace]")
     {
         ++stages;
     }
-    // reserve(16): the 17th destructor drops instead of reallocating.
+    // Fixed capacity 16: the 17th destructor drops instead of growing.
     REQUIRE(stages == 16);
 }
