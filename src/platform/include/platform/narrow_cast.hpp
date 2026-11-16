@@ -10,13 +10,13 @@
 namespace nesso::platform
 {
 
-/// Convert From to To when the value is in range for To. Throws std::logic_error
-/// instead of wrapping when it is not.
-template <typename To, typename From> [[nodiscard]] constexpr To narrowCast(From value)
+/// Convert From to To when the value is in range for To. Throws
+/// std::logic_error instead of wrapping when it is not.
+template <typename To, typename From> [[nodiscard]] constexpr To NarrowCast(From value)
 {
     if (!std::in_range<To>(value))
     {
-        throw std::logic_error("narrowCast out of range");
+        throw std::logic_error("NarrowCast out of range");
     }
     return static_cast<To>(value);
 }

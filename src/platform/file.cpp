@@ -48,29 +48,29 @@ MappedFile &MappedFile::operator=(MappedFile &&other) noexcept
     return *this;
 }
 
-std::expected<MappedFile, FileError> MappedFile::open(const std::filesystem::path &path)
+std::expected<MappedFile, FileError> MappedFile::Open(const std::filesystem::path &path)
 {
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg, hicpp-vararg)
-    const int fileDescriptor = ::open(path.c_str(), O_RDONLY);
-    if (fileDescriptor < 0)
+    const int file_descriptor = ::open(path.c_str(), O_RDONLY);
+    if (file_descriptor < 0)
     {
         return std::unexpected(FileError::OpenFailure);
     }
-    const auto length = ::lseek(fileDescriptor, 0, SEEK_END);
+    const auto length = ::lseek(file_descriptor, 0, SEEK_END);
     if (length < 0)
     {
-        ::close(fileDescriptor);
+        ::close(file_descriptor);
         return std::unexpected(FileError::MapFailure);
     }
     MappedFile mapped;
     mapped.size_ = static_cast<std::size_t>(length);
     if (mapped.size_ == 0)
     {
-        ::close(fileDescriptor);
+        ::close(file_descriptor);
         return mapped;
     }
-    void *const view = ::mmap(nullptr, mapped.size_, PROT_READ, MAP_PRIVATE, fileDescriptor, 0);
-    ::close(fileDescriptor);
+    void *const view = ::mmap(nullptr, mapped.size_, PROT_READ, MAP_PRIVATE, file_descriptor, 0);
+    ::close(file_descriptor);
     if (view == MAP_FAILED)
     {
         return std::unexpected(FileError::MapFailure);
@@ -79,9 +79,9 @@ std::expected<MappedFile, FileError> MappedFile::open(const std::filesystem::pat
     return mapped;
 }
 
-std::span<const std::byte> MappedFile::bytes() const noexcept { return {data_, size_}; }
+std::span<const std::byte> MappedFile::Bytes() const noexcept { return {data_, size_}; }
 
-std::expected<void, FileError> replaceFileAtomically(const std::filesystem::path &source,
+std::expected<void, FileError> ReplaceFileAtomically(const std::filesystem::path &source,
                                                      const std::filesystem::path &destination)
 {
     if (::rename(source.c_str(), destination.c_str()) != 0)
@@ -91,14 +91,14 @@ std::expected<void, FileError> replaceFileAtomically(const std::filesystem::path
     return {};
 }
 
-std::int64_t peakResidentBytes() noexcept
+std::int64_t PeakResidentBytes() noexcept
 {
     rusage usage{};
     const int status = ::getrusage(RUSAGE_SELF, &usage);
     // glibc exposes ru_maxrss only as an anonymous-union member, in kilobytes.
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-union-access)
-    const auto peakKb = status == 0 ? usage.ru_maxrss : 0;
-    return static_cast<std::int64_t>(peakKb) * 1024;
+    const auto peak_kb = status == 0 ? usage.ru_maxrss : 0;
+    return static_cast<std::int64_t>(peak_kb) * 1024;
 }
 
 } // namespace nesso::platform

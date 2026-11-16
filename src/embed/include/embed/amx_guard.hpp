@@ -14,12 +14,12 @@ namespace nesso::embed
 /// Returns true when AMX cannot be in use: the CPU is not x86-64, or the
 /// permission request is now refused. Returns false when the permission was
 /// already granted or the refusal could not be installed.
-bool denyAmxTiles();
+bool DenyAmxTiles();
 
 /// Writes one line to `err` when `guardInEffect` is false, naming that the int8
 /// model may use the AMX kernel. Writes nothing when the guard is in effect.
-/// `guardInEffect` is the result of denyAmxTiles(), or a stand-in for tests.
-void reportAmxGuard(bool guardInEffect, std::FILE *err);
+/// `guardInEffect` is the result of DenyAmxTiles(), or a stand-in for tests.
+void ReportAmxGuard(bool guard_in_effect, std::FILE *err);
 
 } // namespace nesso::embed
 

@@ -59,9 +59,9 @@ static constexpr char32_t HANGUL_N_COUNT = HANGUL_V_COUNT * HANGUL_T_COUNT;
 static constexpr char32_t HANGUL_L_COUNT = 19;
 static constexpr char32_t HANGUL_S_COUNT = HANGUL_L_COUNT * HANGUL_N_COUNT;
 
-static std::string unkTokenSymbol() { return std::string("[") + "UNK" + "]"; }
+static std::string UnkTokenSymbol() { return std::string("[") + "UNK" + "]"; }
 
-static bool containsCode(std::span<const CodeRange> ranges, char32_t code)
+static bool ContainsCode(std::span<const CodeRange> ranges, char32_t code)
 {
     std::size_t low = 0;
     std::size_t high = ranges.size();
@@ -84,25 +84,25 @@ static bool containsCode(std::span<const CodeRange> ranges, char32_t code)
     return false;
 }
 
-static bool isWhitespace(char32_t code)
+static bool IsWhitespace(char32_t code)
 {
-    return code == '\t' || code == '\n' || code == '\r' || containsCode(SPACE_RANGES, code);
+    return code == '\t' || code == '\n' || code == '\r' || ContainsCode(SPACE_RANGES, code);
 }
 
-static bool isControl(char32_t code) { return containsCode(CONTROL_RANGES, code); }
+static bool IsControl(char32_t code) { return ContainsCode(CONTROL_RANGES, code); }
 
-static bool isMark(char32_t code) { return containsCode(MARK_RANGES, code); }
+static bool IsMark(char32_t code) { return ContainsCode(MARK_RANGES, code); }
 
-static bool isAsciiPunctuation(char32_t code)
+static bool IsAsciiPunctuation(char32_t code)
 {
     return (code >= 33 && code <= 47) || (code >= 58 && code <= 64) || (code >= 91 && code <= 96) ||
            (code >= 123 && code <= 126);
 }
 
-static bool isPunctuation(char32_t code) { return isAsciiPunctuation(code) || containsCode(PUNCT_RANGES, code); }
+static bool IsPunctuation(char32_t code) { return IsAsciiPunctuation(code) || ContainsCode(PUNCT_RANGES, code); }
 
 // BERT BasicTokenizer's CJK set, which is narrower than every Han character.
-static bool isChinese(char32_t code)
+static bool IsChinese(char32_t code)
 {
     return (code >= 0x4E00 && code <= 0x9FFF) || (code >= 0x3400 && code <= 0x4DBF) ||
            (code >= 0x20000 && code <= 0x2A6DF) || (code >= 0x2A700 && code <= 0x2B73F) ||
@@ -110,7 +110,7 @@ static bool isChinese(char32_t code)
            (code >= 0xF900 && code <= 0xFAFF) || (code >= 0x2F800 && code <= 0x2FA1F);
 }
 
-static char32_t lowerCode(char32_t code)
+static char32_t LowerCode(char32_t code)
 {
     const std::span<const LowerRange> ranges{LOWER_RANGES};
     std::size_t low = 0;
@@ -135,19 +135,20 @@ static char32_t lowerCode(char32_t code)
     return code;
 }
 
-static void appendLower(char32_t code, std::vector<char32_t> &out)
+static void AppendLower(char32_t code, std::vector<char32_t> &out)
 {
-    // Python str.lower() expands U+0130 to i + combining dot; accent stripping then drops the dot.
+    // Python str.lower() expands U+0130 to i + combining dot; accent stripping
+    // then drops the dot.
     if (code == 0x130)
     {
         out.push_back(0x69);
         out.push_back(0x307);
         return;
     }
-    out.push_back(lowerCode(code));
+    out.push_back(LowerCode(code));
 }
 
-static const Decomp *findDecomp(char32_t code)
+static const Decomp *FindDecomp(char32_t code)
 {
     const std::span<const Decomp> table{DECOMP_TABLE};
     std::size_t low = 0;
@@ -171,22 +172,22 @@ static const Decomp *findDecomp(char32_t code)
     return nullptr;
 }
 
-static void decompose(char32_t code, std::vector<char32_t> &out)
+static void Decompose(char32_t code, std::vector<char32_t> &out)
 {
     if (code >= HANGUL_S_BASE && code < (HANGUL_S_BASE + HANGUL_S_COUNT))
     {
         const char32_t index = code - HANGUL_S_BASE;
         out.push_back(HANGUL_L_BASE + (index / HANGUL_N_COUNT));
         out.push_back(HANGUL_V_BASE + ((index % HANGUL_N_COUNT) / HANGUL_T_COUNT));
-        const char32_t trailIndex = index % HANGUL_T_COUNT;
-        if (trailIndex != 0)
+        const char32_t trail_index = index % HANGUL_T_COUNT;
+        if (trail_index != 0)
         {
-            out.push_back(HANGUL_T_BASE + trailIndex);
+            out.push_back(HANGUL_T_BASE + trail_index);
         }
         return;
     }
 
-    const Decomp *found = findDecomp(code);
+    const Decomp *found = FindDecomp(code);
     if (found == nullptr)
     {
         out.push_back(code);
@@ -207,7 +208,7 @@ static void decompose(char32_t code, std::vector<char32_t> &out)
     }
 }
 
-static std::size_t utf8Length(std::uint32_t lead)
+static std::size_t Utf8Length(std::uint32_t lead)
 {
     if (lead < 0x80U)
     {
@@ -228,9 +229,9 @@ static std::size_t utf8Length(std::uint32_t lead)
     return 0;
 }
 
-static bool isContinuation(unsigned char byte) { return (static_cast<std::uint32_t>(byte) & 0xC0U) == 0x80U; }
+static bool IsContinuation(unsigned char byte) { return (static_cast<std::uint32_t>(byte) & 0xC0U) == 0x80U; }
 
-static void appendUtf8(std::string &out, char32_t code)
+static void AppendUtf8(std::string &out, char32_t code)
 {
     const auto value = static_cast<std::uint32_t>(code);
     if (value <= 0x7FU)
@@ -257,24 +258,24 @@ static void appendUtf8(std::string &out, char32_t code)
     out.push_back(static_cast<char>(0x80U | (value & 0x3FU)));
 }
 
-static std::string utf8Of(std::span<const char32_t> codes)
+static std::string Utf8Of(std::span<const char32_t> codes)
 {
     std::string out;
     for (const char32_t code : codes)
     {
-        appendUtf8(out, code);
+        AppendUtf8(out, code);
     }
     return out;
 }
 
-static std::string utf8OfOne(char32_t code)
+static std::string Utf8OfOne(char32_t code)
 {
     std::string out;
-    appendUtf8(out, code);
+    AppendUtf8(out, code);
     return out;
 }
 
-static std::vector<char32_t> decodeUtf8(std::string_view text)
+static std::vector<char32_t> DecodeUtf8(std::string_view text)
 {
     std::vector<char32_t> codes;
     codes.reserve(text.size());
@@ -282,7 +283,7 @@ static std::vector<char32_t> decodeUtf8(std::string_view text)
     while (index < text.size())
     {
         const auto lead = static_cast<std::uint32_t>(static_cast<unsigned char>(text[index]));
-        const std::size_t length = utf8Length(lead);
+        const std::size_t length = Utf8Length(lead);
         if (length == 0 || index + length > text.size())
         {
             codes.push_back(REPLACEMENT);
@@ -293,7 +294,7 @@ static std::vector<char32_t> decodeUtf8(std::string_view text)
         bool valid = true;
         for (std::size_t offset = 1; offset < length; ++offset)
         {
-            if (!isContinuation(static_cast<unsigned char>(text[index + offset])))
+            if (!IsContinuation(static_cast<unsigned char>(text[index + offset])))
             {
                 valid = false;
                 break;
@@ -353,23 +354,23 @@ static std::vector<char32_t> decodeUtf8(std::string_view text)
     return codes;
 }
 
-static void cleanBasicCodes(std::string_view text, std::vector<char32_t> &cleaned)
+static void CleanBasicCodes(std::string_view text, std::vector<char32_t> &cleaned)
 {
-    for (const char32_t code : decodeUtf8(text))
+    for (const char32_t code : DecodeUtf8(text))
     {
-        if (code == 0 || code == REPLACEMENT || isControl(code))
+        if (code == 0 || code == REPLACEMENT || IsControl(code))
         {
             continue;
         }
-        cleaned.push_back(isWhitespace(code) ? static_cast<char32_t>(' ') : code);
+        cleaned.push_back(IsWhitespace(code) ? static_cast<char32_t>(' ') : code);
     }
 }
 
-static void spaceChineseCodes(const std::vector<char32_t> &cleaned, std::vector<char32_t> &spaced)
+static void SpaceChineseCodes(const std::vector<char32_t> &cleaned, std::vector<char32_t> &spaced)
 {
     for (const char32_t code : cleaned)
     {
-        if (isChinese(code))
+        if (IsChinese(code))
         {
             spaced.push_back(' ');
             spaced.push_back(code);
@@ -382,45 +383,45 @@ static void spaceChineseCodes(const std::vector<char32_t> &cleaned, std::vector<
     }
 }
 
-static void normalizeBasicSpan(const std::vector<char32_t> &spaced, std::size_t begin, std::size_t end,
+static void NormalizeBasicSpan(const std::vector<char32_t> &spaced, std::size_t begin, std::size_t end,
                                std::vector<char32_t> &plain)
 {
     std::vector<char32_t> lowered;
     for (std::size_t cursor = begin; cursor < end; ++cursor)
     {
-        appendLower(spaced[cursor], lowered);
+        AppendLower(spaced[cursor], lowered);
     }
     std::vector<char32_t> decomposed;
     for (const char32_t code : lowered)
     {
-        decompose(code, decomposed);
+        Decompose(code, decomposed);
     }
     for (const char32_t code : decomposed)
     {
-        if (!isMark(code))
+        if (!IsMark(code))
         {
             plain.push_back(code);
         }
     }
 }
 
-static void appendPunctSplit(const std::vector<char32_t> &plain, std::vector<std::string> &tokens)
+static void AppendPunctSplit(const std::vector<char32_t> &plain, std::vector<std::string> &tokens)
 {
     std::vector<char32_t> current;
     const auto flush = [&tokens, &current]()
     {
         if (!current.empty())
         {
-            tokens.push_back(utf8Of(current));
+            tokens.push_back(Utf8Of(current));
             current.clear();
         }
     };
     for (const char32_t code : plain)
     {
-        if (isPunctuation(code))
+        if (IsPunctuation(code))
         {
             flush();
-            tokens.push_back(utf8OfOne(code));
+            tokens.push_back(Utf8OfOne(code));
         }
         else
         {
@@ -430,19 +431,19 @@ static void appendPunctSplit(const std::vector<char32_t> &plain, std::vector<std
     flush();
 }
 
-static std::vector<std::string> basicTokenize(std::string_view text)
+static std::vector<std::string> BasicTokenize(std::string_view text)
 {
     std::vector<char32_t> cleaned;
-    cleanBasicCodes(text, cleaned);
+    CleanBasicCodes(text, cleaned);
 
     std::vector<char32_t> spaced;
-    spaceChineseCodes(cleaned, spaced);
+    SpaceChineseCodes(cleaned, spaced);
 
     std::vector<std::string> tokens;
     std::size_t index = 0;
     while (index < spaced.size())
     {
-        while (index < spaced.size() && isWhitespace(spaced[index]))
+        while (index < spaced.size() && IsWhitespace(spaced[index]))
         {
             ++index;
         }
@@ -451,30 +452,30 @@ static std::vector<std::string> basicTokenize(std::string_view text)
             break;
         }
         std::size_t end = index;
-        while (end < spaced.size() && !isWhitespace(spaced[end]))
+        while (end < spaced.size() && !IsWhitespace(spaced[end]))
         {
             ++end;
         }
 
         std::vector<char32_t> plain;
-        normalizeBasicSpan(spaced, index, end, plain);
-        appendPunctSplit(plain, tokens);
+        NormalizeBasicSpan(spaced, index, end, plain);
+        AppendPunctSplit(plain, tokens);
         index = end;
     }
     return tokens;
 }
 
 WordPieceTokenizer::WordPieceTokenizer(std::unordered_map<std::string, int64_t> vocab, const SpecialTokenIds &ids,
-                                       size_t maxSequenceLength)
-    : vocab_(std::move(vocab)), clsId_(ids.clsId), sepId_(ids.sepId), unkId_(ids.unkId),
-      maxSequenceLength_(maxSequenceLength)
+                                       size_t max_sequence_length)
+    : vocab_(std::move(vocab)), cls_id_(ids.cls_id), sep_id_(ids.sep_id), unk_id_(ids.unk_id),
+      max_sequence_length_(max_sequence_length)
 {
 }
 
-std::expected<WordPieceTokenizer, EmbedError> WordPieceTokenizer::fromVocabFile(const std::filesystem::path &vocabPath,
-                                                                                size_t maxSequenceLength)
+std::expected<WordPieceTokenizer, EmbedError> WordPieceTokenizer::FromVocabFile(const std::filesystem::path &vocab_path,
+                                                                                size_t max_sequence_length)
 {
-    std::ifstream input(vocabPath);
+    std::ifstream input(vocab_path);
     if (!input)
     {
         return std::unexpected(EmbedError::VocabLoadFailure);
@@ -482,14 +483,14 @@ std::expected<WordPieceTokenizer, EmbedError> WordPieceTokenizer::fromVocabFile(
 
     std::unordered_map<std::string, int64_t> vocab;
     std::string token;
-    int64_t nextId = 0;
+    int64_t next_id = 0;
     while (std::getline(input, token))
     {
         if (!token.empty() && token.back() == '\r')
         {
             token.pop_back();
         }
-        vocab.emplace(token, nextId++);
+        vocab.emplace(token, next_id++);
     }
 
     if (vocab.empty())
@@ -507,27 +508,28 @@ std::expected<WordPieceTokenizer, EmbedError> WordPieceTokenizer::fromVocabFile(
         return found->second;
     };
 
-    const auto clsId = lookup(CLS_TOKEN);
-    const auto sepId = lookup(SEP_TOKEN);
-    const auto unkId = lookup(unkTokenSymbol());
-    if (!clsId || !sepId || !unkId)
+    const auto cls_id = lookup(CLS_TOKEN);
+    const auto sep_id = lookup(SEP_TOKEN);
+    const auto unk_id = lookup(UnkTokenSymbol());
+    if (!cls_id || !sep_id || !unk_id)
     {
         return std::unexpected(EmbedError::VocabLoadFailure);
     }
-    return WordPieceTokenizer(std::move(vocab), {.clsId = *clsId, .sepId = *sepId, .unkId = *unkId}, maxSequenceLength);
+    return WordPieceTokenizer(std::move(vocab), {.cls_id = *cls_id, .sep_id = *sep_id, .unk_id = *unk_id},
+                              max_sequence_length);
 }
 
-std::vector<std::string> WordPieceTokenizer::wordPieceTokenize(std::string_view token) const
+std::vector<std::string> WordPieceTokenizer::WordPieceTokenize(std::string_view token) const
 {
-    const std::vector<char32_t> chars = decodeUtf8(token);
-    const std::string unkToken = unkTokenSymbol();
+    const std::vector<char32_t> chars = DecodeUtf8(token);
+    const std::string unk_token = UnkTokenSymbol();
     if (chars.empty())
     {
         return {};
     }
     if (chars.size() > MAX_WORD_CHARS)
     {
-        return {unkToken};
+        return {unk_token};
     }
 
     std::vector<std::string> pieces;
@@ -538,7 +540,7 @@ std::vector<std::string> WordPieceTokenizer::wordPieceTokenize(std::string_view 
         std::string match;
         while (end > start)
         {
-            std::string candidate = utf8Of(std::span<const char32_t>(chars).subspan(start, end - start));
+            std::string candidate = Utf8Of(std::span<const char32_t>(chars).subspan(start, end - start));
             if (start > 0)
             {
                 candidate.insert(0, "##");
@@ -553,7 +555,7 @@ std::vector<std::string> WordPieceTokenizer::wordPieceTokenize(std::string_view 
 
         if (match.empty())
         {
-            return {unkToken};
+            return {unk_token};
         }
 
         pieces.push_back(std::move(match));
@@ -562,7 +564,7 @@ std::vector<std::string> WordPieceTokenizer::wordPieceTokenize(std::string_view 
     return pieces;
 }
 
-std::expected<TokenizedInput, EmbedError> WordPieceTokenizer::encode(std::string_view text) const
+std::expected<TokenizedInput, EmbedError> WordPieceTokenizer::Encode(std::string_view text) const
 {
     if (text.empty())
     {
@@ -570,39 +572,39 @@ std::expected<TokenizedInput, EmbedError> WordPieceTokenizer::encode(std::string
     }
 
     TokenizedInput encoded;
-    encoded.inputIds.push_back(clsId_);
-    encoded.attentionMask.push_back(1);
-    encoded.tokenTypeIds.push_back(0);
+    encoded.input_ids.push_back(cls_id_);
+    encoded.attention_mask.push_back(1);
+    encoded.token_type_ids.push_back(0);
 
-    for (const std::string &basicToken : basicTokenize(text))
+    for (const std::string &basic_token : BasicTokenize(text))
     {
-        for (const std::string &piece : wordPieceTokenize(basicToken))
+        for (const std::string &piece : WordPieceTokenize(basic_token))
         {
-            if (encoded.inputIds.size() >= maxSequenceLength_)
+            if (encoded.input_ids.size() >= max_sequence_length_)
             {
                 break;
             }
 
             const auto found = vocab_.find(piece);
-            encoded.inputIds.push_back(found == vocab_.end() ? unkId_ : found->second);
-            encoded.attentionMask.push_back(1);
-            encoded.tokenTypeIds.push_back(0);
+            encoded.input_ids.push_back(found == vocab_.end() ? unk_id_ : found->second);
+            encoded.attention_mask.push_back(1);
+            encoded.token_type_ids.push_back(0);
         }
-        if (encoded.inputIds.size() >= maxSequenceLength_)
+        if (encoded.input_ids.size() >= max_sequence_length_)
         {
             break;
         }
     }
 
-    if (encoded.inputIds.size() >= maxSequenceLength_)
+    if (encoded.input_ids.size() >= max_sequence_length_)
     {
-        encoded.inputIds.back() = sepId_;
+        encoded.input_ids.back() = sep_id_;
     }
     else
     {
-        encoded.inputIds.push_back(sepId_);
-        encoded.attentionMask.push_back(1);
-        encoded.tokenTypeIds.push_back(0);
+        encoded.input_ids.push_back(sep_id_);
+        encoded.attention_mask.push_back(1);
+        encoded.token_type_ids.push_back(0);
     }
 
     return encoded;

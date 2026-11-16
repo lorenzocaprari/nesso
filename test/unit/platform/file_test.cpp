@@ -20,13 +20,13 @@ TEST_CASE("a mapped file views its bytes", "[platform]")
         output << "nesso";
     }
 
-    const auto mapped = nesso::platform::MappedFile::open(path);
+    const auto mapped = nesso::platform::MappedFile::Open(path);
     REQUIRE(mapped);
-    REQUIRE(mapped->bytes().size() == 5);
-    REQUIRE(mapped->bytes()[0] == std::byte{'n'});
+    REQUIRE(mapped->Bytes().size() == 5);
+    REQUIRE(mapped->Bytes()[0] == std::byte{'n'});
 
     std::filesystem::remove(path);
-    REQUIRE_FALSE(nesso::platform::MappedFile::open(path));
+    REQUIRE_FALSE(nesso::platform::MappedFile::Open(path));
 }
 
 TEST_CASE("mapping handles directories, empty files, and a failed replace", "[platform]")
@@ -34,18 +34,18 @@ TEST_CASE("mapping handles directories, empty files, and a failed replace", "[pl
     const auto directory = std::filesystem::temp_directory_path() / ("nesso_mapdir_" + std::to_string(getpid()));
     std::filesystem::create_directory(directory);
 
-    const auto directoryMap = nesso::platform::MappedFile::open(directory);
-    REQUIRE_FALSE(directoryMap);
-    REQUIRE(directoryMap.error() == nesso::platform::FileError::MapFailure);
+    const auto directory_map = nesso::platform::MappedFile::Open(directory);
+    REQUIRE_FALSE(directory_map);
+    REQUIRE(directory_map.error() == nesso::platform::FileError::MapFailure);
 
     const auto empty = directory / "empty";
     {
         std::ofstream output(empty, std::ios::binary);
         REQUIRE(output);
     }
-    const auto mapped = nesso::platform::MappedFile::open(empty);
+    const auto mapped = nesso::platform::MappedFile::Open(empty);
     REQUIRE(mapped);
-    REQUIRE(mapped->bytes().empty());
+    REQUIRE(mapped->Bytes().empty());
 
     const auto first = directory / "first";
     const auto second = directory / "second";
@@ -59,17 +59,17 @@ TEST_CASE("mapping handles directories, empty files, and a failed replace", "[pl
         REQUIRE(output);
         output << "two!";
     }
-    auto left = nesso::platform::MappedFile::open(first);
-    auto right = nesso::platform::MappedFile::open(second);
+    auto left = nesso::platform::MappedFile::Open(first);
+    auto right = nesso::platform::MappedFile::Open(second);
     REQUIRE(left);
     REQUIRE(right);
     *left = std::move(*right);
-    REQUIRE(left->bytes().size() == 4);
-    REQUIRE(left->bytes()[0] == std::byte{'t'});
+    REQUIRE(left->Bytes().size() == 4);
+    REQUIRE(left->Bytes()[0] == std::byte{'t'});
 
     const auto nested = directory / "nested";
     std::filesystem::create_directory(nested);
-    REQUIRE_FALSE(nesso::platform::replaceFileAtomically(first, nested));
+    REQUIRE_FALSE(nesso::platform::ReplaceFileAtomically(first, nested));
 
     std::filesystem::remove_all(directory);
 }
@@ -86,7 +86,7 @@ TEST_CASE("atomic replace keeps the destination name", "[platform]")
         output << "v2";
     }
 
-    REQUIRE(nesso::platform::replaceFileAtomically(source, destination));
+    REQUIRE(nesso::platform::ReplaceFileAtomically(source, destination));
     REQUIRE_FALSE(std::filesystem::exists(source));
     std::ifstream input(destination);
     std::string text;
@@ -97,7 +97,7 @@ TEST_CASE("atomic replace keeps the destination name", "[platform]")
 
 TEST_CASE("peak resident bytes is positive and monotonic", "[platform]")
 {
-    const std::int64_t before = nesso::platform::peakResidentBytes();
+    const std::int64_t before = nesso::platform::PeakResidentBytes();
     REQUIRE(before > 0);
     REQUIRE(before % 1024 == 0);
 
@@ -110,7 +110,7 @@ TEST_CASE("peak resident bytes is positive and monotonic", "[platform]")
     }
     REQUIRE(dirty == block.size() / 4096);
 
-    const std::int64_t after = nesso::platform::peakResidentBytes();
+    const std::int64_t after = nesso::platform::PeakResidentBytes();
     REQUIRE(after >= before);
     REQUIRE(after % 1024 == 0);
 }

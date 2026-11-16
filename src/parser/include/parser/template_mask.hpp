@@ -31,7 +31,8 @@ inline constexpr std::string_view MASKED_TOKEN = "<*>";
 ///   previous byte is not a path byte (`A-Z`, `a-z`, `0-9`, `_`, `/`, `.`,
 ///   `-`, `+`, `~`, `%`).
 /// - HDFS id: `blk_`, an optional `-`, then digits.
-/// - Timestamp: ISO 8601 `YYYY-MM-DD` with an optional `T` or space, `HH:MM:SS`,
+/// - Timestamp: ISO 8601 `YYYY-MM-DD` with an optional `T` or space,
+/// `HH:MM:SS`,
 ///   optional fraction, and optional `Z` or numeric zone; syslog
 ///   `Mon DD HH:MM:SS`; or a standalone `HH:MM:SS` with an optional `.fff`.
 ///
@@ -43,7 +44,7 @@ inline constexpr std::string_view MASKED_TOKEN = "<*>";
 /// Three octets (`1.2.3`), an octet above 255, and `12:34` are not one
 /// address or one clock; `12:34` becomes `<*>:<*>` because each number is a
 /// decimal. `std::vector` is not an IPv6 address.
-[[nodiscard]] std::string maskTemplate(std::string_view text);
+[[nodiscard]] std::string MaskTemplate(std::string_view text);
 
 } // namespace nesso::parser
 

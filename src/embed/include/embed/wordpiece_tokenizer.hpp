@@ -19,37 +19,37 @@ namespace nesso::embed
 
 struct TokenizedInput
 {
-    std::vector<int64_t> inputIds;
-    std::vector<int64_t> attentionMask;
-    std::vector<int64_t> tokenTypeIds;
+    std::vector<int64_t> input_ids;
+    std::vector<int64_t> attention_mask;
+    std::vector<int64_t> token_type_ids;
 };
 
 class WordPieceTokenizer
 {
   public:
     [[nodiscard]] static std::expected<WordPieceTokenizer, EmbedError>
-    fromVocabFile(const std::filesystem::path &vocabPath, size_t maxSequenceLength = DEFAULT_MAX_SEQUENCE_LENGTH);
+    FromVocabFile(const std::filesystem::path &vocab_path, size_t max_sequence_length = DEFAULT_MAX_SEQUENCE_LENGTH);
 
-    [[nodiscard]] std::expected<TokenizedInput, EmbedError> encode(std::string_view text) const;
+    [[nodiscard]] std::expected<TokenizedInput, EmbedError> Encode(std::string_view text) const;
 
   private:
     struct SpecialTokenIds
     {
-        int64_t clsId = 0;
-        int64_t sepId = 0;
-        int64_t unkId = 0;
+        int64_t cls_id = 0;
+        int64_t sep_id = 0;
+        int64_t unk_id = 0;
     };
 
     WordPieceTokenizer(std::unordered_map<std::string, int64_t> vocab, const SpecialTokenIds &ids,
-                       size_t maxSequenceLength);
+                       size_t max_sequence_length);
 
-    [[nodiscard]] std::vector<std::string> wordPieceTokenize(std::string_view token) const;
+    [[nodiscard]] std::vector<std::string> WordPieceTokenize(std::string_view token) const;
 
     std::unordered_map<std::string, int64_t> vocab_;
-    int64_t clsId_ = 0;
-    int64_t sepId_ = 0;
-    int64_t unkId_ = 0;
-    size_t maxSequenceLength_ = DEFAULT_MAX_SEQUENCE_LENGTH;
+    int64_t cls_id_ = 0;
+    int64_t sep_id_ = 0;
+    int64_t unk_id_ = 0;
+    size_t max_sequence_length_ = DEFAULT_MAX_SEQUENCE_LENGTH;
 };
 
 } // namespace nesso::embed

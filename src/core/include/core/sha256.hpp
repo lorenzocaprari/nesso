@@ -26,8 +26,8 @@ enum class HashError : std::uint8_t
 [[nodiscard]] Sha256Digest ComputeSha256(std::span<const std::byte> bytes);
 /// Digest of `parts` hashed in order, as if they were one contiguous buffer.
 [[nodiscard]] Sha256Digest ComputeSha256(std::span<const std::span<const std::byte>> parts);
-[[nodiscard]] std::expected<Sha256Digest, HashError> sha256File(const std::filesystem::path &path);
-[[nodiscard]] std::string hexSha256(const Sha256Digest &digest);
+[[nodiscard]] std::expected<Sha256Digest, HashError> Sha256File(const std::filesystem::path &path);
+[[nodiscard]] std::string HexSha256(const Sha256Digest &digest);
 
 } // namespace nesso::core
 

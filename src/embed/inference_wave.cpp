@@ -15,14 +15,15 @@
 namespace nesso::embed
 {
 
-static void runWaveSlot(const std::function<SlotResult(std::size_t)> &work, std::vector<SlotResult> &slots,
+static void RunWaveSlot(const std::function<SlotResult(std::size_t)> &work, std::vector<SlotResult> &slots,
                         std::size_t slot)
 {
     try
     {
         slots[slot] = work(slot);
     }
-    // bad_alloc: flat buffers. Ort::Exception stays in infer's try. system_error from work.
+    // bad_alloc: flat buffers. Ort::Exception stays in infer's try. system_error
+    // from work.
     catch (const std::bad_alloc &)
     {
         slots[slot] = std::unexpected(EmbedError::InferenceFailure);
@@ -33,7 +34,7 @@ static void runWaveSlot(const std::function<SlotResult(std::size_t)> &work, std:
     }
 }
 
-std::expected<std::vector<SlotResult>, EmbedError> runInferenceWave(std::size_t width,
+std::expected<std::vector<SlotResult>, EmbedError> RunInferenceWave(std::size_t width,
                                                                     const std::function<SlotResult(std::size_t)> &work)
 {
     std::vector<SlotResult> slots(width);
@@ -45,13 +46,14 @@ std::expected<std::vector<SlotResult>, EmbedError> runInferenceWave(std::size_t 
         workers.reserve(width);
         for (std::size_t slot = 0; slot < width; ++slot)
         {
-            workers.emplace_back([&work, &slots, slot] { runWaveSlot(work, slots, slot); });
+            workers.emplace_back([&work, &slots, slot] { RunWaveSlot(work, slots, slot); });
         }
     }
     catch (const std::system_error &)
     {
         // pthread_create failure is an environment limit. InferenceFailure is the
-        // existing embed error for this path, so the process does not treat it as a bug.
+        // existing embed error for this path, so the process does not treat it as a
+        // bug.
         return std::unexpected(EmbedError::InferenceFailure);
     }
     return slots;

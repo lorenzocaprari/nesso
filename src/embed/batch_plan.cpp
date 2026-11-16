@@ -19,8 +19,9 @@ struct BatchBudget
     size_t tokens = 0;
 };
 
-// Ascending order makes tokens(next) the padded length of the run that would include it.
-[[nodiscard]] static bool fitsBudget(const BatchBudget &budget)
+// Ascending order makes tokens(next) the padded length of the run that would
+// include it.
+[[nodiscard]] static bool FitsBudget(const BatchBudget &budget)
 {
     if (budget.count >= BATCH_MAX_TEXTS)
     {
@@ -34,22 +35,22 @@ struct BatchBudget
     return next <= BATCH_TOKEN_BUDGET / budget.tokens;
 }
 
-BatchPlan planBatches(std::span<const size_t> tokenCounts)
+BatchPlan PlanBatches(std::span<const size_t> token_counts)
 {
     BatchPlan plan;
-    for (size_t windowStart = 0; windowStart < tokenCounts.size(); windowStart += BATCH_WINDOW)
+    for (size_t window_start = 0; window_start < token_counts.size(); window_start += BATCH_WINDOW)
     {
-        const size_t windowEnd = std::min(tokenCounts.size(), windowStart + BATCH_WINDOW);
-        std::vector<size_t> order(windowEnd - windowStart);
-        std::ranges::iota(order, windowStart);
-        std::ranges::stable_sort(order, [&tokenCounts](size_t left, size_t right)
-                                 { return tokenCounts[left] < tokenCounts[right]; });
+        const size_t window_end = std::min(token_counts.size(), window_start + BATCH_WINDOW);
+        std::vector<size_t> order(window_end - window_start);
+        std::ranges::iota(order, window_start);
+        std::ranges::stable_sort(order, [&token_counts](size_t left, size_t right)
+                                 { return token_counts[left] < token_counts[right]; });
 
         std::vector<size_t> current;
         current.reserve(BATCH_MAX_TEXTS);
         for (const size_t index : order)
         {
-            if (!current.empty() && !fitsBudget({.count = current.size(), .tokens = tokenCounts[index]}))
+            if (!current.empty() && !FitsBudget({.count = current.size(), .tokens = token_counts[index]}))
             {
                 plan.batches.push_back(PlannedBatch{.indices = current});
                 current.clear();
@@ -62,28 +63,28 @@ BatchPlan planBatches(std::span<const size_t> tokenCounts)
     return plan;
 }
 
-std::vector<BatchWave> batchWaves(size_t batchCount, size_t sessions)
+std::vector<BatchWave> BatchWaves(size_t batch_count, size_t sessions)
 {
     std::vector<BatchWave> waves;
     if (sessions == 0)
     {
         return waves;
     }
-    for (size_t start = 0; start < batchCount; start += sessions)
+    for (size_t start = 0; start < batch_count; start += sessions)
     {
-        const size_t width = std::min(sessions, batchCount - start);
+        const size_t width = std::min(sessions, batch_count - start);
         BatchWave wave;
-        wave.batchIndices.reserve(width);
+        wave.batch_indices.reserve(width);
         for (size_t slot = 0; slot < width; ++slot)
         {
-            wave.batchIndices.push_back(start + slot);
+            wave.batch_indices.push_back(start + slot);
         }
         waves.push_back(std::move(wave));
     }
     return waves;
 }
 
-std::vector<size_t> executionOrder(const BatchPlan &plan)
+std::vector<size_t> ExecutionOrder(const BatchPlan &plan)
 {
     std::vector<size_t> order;
     for (const PlannedBatch &batch : plan.batches)

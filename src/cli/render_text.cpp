@@ -13,14 +13,14 @@ namespace nesso::cli
 
 static constexpr std::string_view HEX_DIGITS = "0123456789ABCDEF";
 
-static void appendHexByte(std::string &output, unsigned char byte)
+static void AppendHexByte(std::string &output, unsigned char byte)
 {
     output.append("\\x");
     output.push_back(HEX_DIGITS.at(byte >> 4U));
     output.push_back(HEX_DIGITS.at(byte & 0x0FU));
 }
 
-static std::size_t utf8SequenceLength(unsigned char lead)
+static std::size_t Utf8SequenceLength(unsigned char lead)
 {
     if (lead >= 0xC2U && lead <= 0xDFU)
     {
@@ -43,7 +43,7 @@ struct Utf8Slice
     std::size_t length = 0;
 };
 
-static bool decodeUtf8(std::string_view text, const Utf8Slice &slice, std::uint32_t &codepoint)
+static bool DecodeUtf8(std::string_view text, const Utf8Slice &slice, std::uint32_t &codepoint)
 {
     const auto byte = [&text](std::size_t index) { return static_cast<unsigned char>(text[index]); };
     const unsigned char lead = byte(slice.offset);
@@ -73,7 +73,7 @@ static bool decodeUtf8(std::string_view text, const Utf8Slice &slice, std::uint3
            (codepoint < 0xD800U || codepoint > 0xDFFFU);
 }
 
-std::string escapeTerminalControls(std::string_view text)
+std::string EscapeTerminalControls(std::string_view text)
 {
     std::string output;
     output.reserve(text.size());
@@ -82,7 +82,7 @@ std::string escapeTerminalControls(std::string_view text)
         const auto current = static_cast<unsigned char>(text[index]);
         if (current < 0x20U || current == 0x7FU)
         {
-            appendHexByte(output, current);
+            AppendHexByte(output, current);
             ++index;
             continue;
         }
@@ -93,12 +93,12 @@ std::string escapeTerminalControls(std::string_view text)
             continue;
         }
 
-        const std::size_t length = utf8SequenceLength(current);
+        const std::size_t length = Utf8SequenceLength(current);
         std::uint32_t codepoint = 0;
         if (length == 0 || length > text.size() - index ||
-            !decodeUtf8(text, {.offset = index, .length = length}, codepoint))
+            !DecodeUtf8(text, {.offset = index, .length = length}, codepoint))
         {
-            appendHexByte(output, current);
+            AppendHexByte(output, current);
             ++index;
             continue;
         }

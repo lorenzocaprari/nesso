@@ -31,13 +31,13 @@ class TempDir
     TempDir &operator=(const TempDir &) = delete;
     ~TempDir() { std::filesystem::remove_all(path_); }
 
-    [[nodiscard]] const std::filesystem::path &path() const { return path_; }
+    [[nodiscard]] const std::filesystem::path &Path() const { return path_; }
 
   private:
     std::filesystem::path path_;
 };
 
-void writeBytes(const std::filesystem::path &path, std::string_view bytes)
+void WriteBytes(const std::filesystem::path &path, std::string_view bytes)
 {
     std::filesystem::create_directories(path.parent_path());
     std::ofstream output(path, std::ios::binary);
@@ -46,7 +46,7 @@ void writeBytes(const std::filesystem::path &path, std::string_view bytes)
     REQUIRE(output);
 }
 
-std::string unhex(std::string_view hex)
+std::string Unhex(std::string_view hex)
 {
     std::string out;
     out.reserve(hex.size() / 2);
@@ -73,21 +73,22 @@ std::string unhex(std::string_view hex)
     return out;
 }
 
-const std::string_view GZIP_DATABASE =
-    "1f8b0800f722f26a02ff4b492c494c4a2c4e5548cecfcb4b4d2ec9cccf53284a4d2b2d4e4de10200e756bf4f1c000000";
-const std::string_view GZIP_CONCAT =
-    "1f8b0800f722f26a02ffcb48cdc9c9070086a61036050000001f8b0800f722f26a02ff5328cf2fca49e10200e9262b3e07000000";
+const std::string_view GZIP_DATABASE = "1f8b0800f722f26a02ff4b492c494c4a2c4e5548cecfcb4b4d2ec9cccf53284a4d2b2d4e4d"
+                                       "e10200e756bf4f1c000000";
+const std::string_view GZIP_CONCAT = "1f8b0800f722f26a02ffcb48cdc9c9070086a61036050000001f8b0800f722f26a02ff5328"
+                                     "cf2fca49e10200e9262b3e07000000";
 const std::string_view GZIP_BINARY = "1f8b0800f722f26a02ff4b4c4a6648494de30200d41300c208000000";
-const std::string_view GZIP_JSON = "1f8b0800f722f26a02ffab56ca4d2d2e4e4c4f55b2524a492c494c4a2c4e5548cecfcb4b4d2ec9cccf5"
+const std::string_view GZIP_JSON = "1f8b0800f722f26a02ffab56ca4d2d2e4e4c4f55b25"
+                                   "24a492c494c4a2c4e5548cecfcb4b4d2ec9cccf5"
                                    "3284a4d2b2d4e4d51aae50200087aaacb2a000000";
-const std::string_view GZIP_JSONL =
-    "1f8b0800f722f26a02ffab56ca4d2d2e4e4c4f55b2524acb2c2a2e51aae5aa46122b4e4dcecf4b51c8c9cc4b05ca0000772595d92e000000";
+const std::string_view GZIP_JSONL = "1f8b0800f722f26a02ffab56ca4d2d2e4e4c4f55b2524acb2c2a2e51aae5aa46122b4e4dce"
+                                    "cf4b51c8c9cc4b05ca0000772595d92e000000";
 const std::string_view GZIP_EMPTY = "1f8b0800f722f26a02ff03000000000000000000";
 const std::string_view GZIP_TWO = "1f8b0800f722f26a02ffcbcf4be52a29cfe70200e60bba1208000000";
 
-std::vector<std::string> textsOf(const std::filesystem::path &path)
+std::vector<std::string> TextsOf(const std::filesystem::path &path)
 {
-    const auto chunks = nesso::parser::Chunker::fromFile(path);
+    const auto chunks = nesso::parser::Chunker::FromFile(path);
     REQUIRE(chunks);
     std::vector<std::string> texts;
     for (const nesso::parser::ParsedChunk &chunk : *chunks)
@@ -99,15 +100,15 @@ std::vector<std::string> textsOf(const std::filesystem::path &path)
 
 } // namespace
 
-TEST_CASE("expandInputs keeps a file and stdin in argument order", "[parser][walk]")
+TEST_CASE("ExpandInputs keeps a file and stdin in argument order", "[parser][walk]")
 {
     const TempDir dir{"nesso-walk-file"};
-    const auto first = dir.path() / "z.log";
-    const auto second = dir.path() / "a.log";
-    writeBytes(first, "z\n");
-    writeBytes(second, "a\n");
-    const std::filesystem::path stdinPath{"-"};
-    const auto expanded = nesso::parser::expandInputs(std::vector<std::filesystem::path>{first, stdinPath, second});
+    const auto first = dir.Path() / "z.log";
+    const auto second = dir.Path() / "a.log";
+    WriteBytes(first, "z\n");
+    WriteBytes(second, "a\n");
+    const std::filesystem::path stdin_path{"-"};
+    const auto expanded = nesso::parser::ExpandInputs(std::vector<std::filesystem::path>{first, stdin_path, second});
     REQUIRE(expanded);
     REQUIRE(expanded->size() == 3);
     CHECK(expanded->at(0) == first);
@@ -116,23 +117,23 @@ TEST_CASE("expandInputs keeps a file and stdin in argument order", "[parser][wal
     CHECK(expanded->front().string() == first.string());
 }
 
-TEST_CASE("expandInputs sorts a directory by unsigned path bytes", "[parser][walk]")
+TEST_CASE("ExpandInputs sorts a directory by unsigned path bytes", "[parser][walk]")
 {
     const TempDir dir{"nesso-walk-sort"};
-    const auto root = dir.path() / "logs";
-    writeBytes(root / "b.log", "b\n");
-    writeBytes(root / "nested" / "c.log", "c\n");
-    writeBytes(root / "a.log", "a\n");
-    writeBytes(root / ".hidden.log", "h\n");
-    const std::string highName(1, static_cast<char>(0xFF));
-    writeBytes(root / (highName + ".log"), "high\n");
+    const auto root = dir.Path() / "logs";
+    WriteBytes(root / "b.log", "b\n");
+    WriteBytes(root / "nested" / "c.log", "c\n");
+    WriteBytes(root / "a.log", "a\n");
+    WriteBytes(root / ".hidden.log", "h\n");
+    const std::string high_name(1, static_cast<char>(0xFF));
+    WriteBytes(root / (high_name + ".log"), "high\n");
     const auto pipe = root / "pipe";
     REQUIRE(mkfifo(pipe.c_str(), 0600) == 0);
-    const auto pipeOnly = nesso::parser::expandInputs(std::vector<std::filesystem::path>{pipe});
-    REQUIRE_FALSE(pipeOnly);
-    CHECK(pipeOnly.error().path == pipe);
+    const auto pipe_only = nesso::parser::ExpandInputs(std::vector<std::filesystem::path>{pipe});
+    REQUIRE_FALSE(pipe_only);
+    CHECK(pipe_only.error().path == pipe);
 
-    const auto expanded = nesso::parser::expandInputs(std::vector<std::filesystem::path>{root});
+    const auto expanded = nesso::parser::ExpandInputs(std::vector<std::filesystem::path>{root});
     REQUIRE(expanded);
     REQUIRE(expanded->size() == 5);
     CHECK(expanded->at(0).filename() == ".hidden.log");
@@ -146,22 +147,22 @@ TEST_CASE("expandInputs sorts a directory by unsigned path bytes", "[parser][wal
     }
 }
 
-TEST_CASE("expandInputs does not follow directory symlinks and keeps file symlinks", "[parser][walk]")
+TEST_CASE("ExpandInputs does not follow directory symlinks and keeps file symlinks", "[parser][walk]")
 {
     const TempDir dir{"nesso-walk-links"};
-    const auto root = dir.path() / "logs";
-    writeBytes(root / "real" / "a.log", "from-real\n");
+    const auto root = dir.Path() / "logs";
+    WriteBytes(root / "real" / "a.log", "from-real\n");
     std::filesystem::create_directory_symlink(root / "real", root / "linkdir");
-    writeBytes(root / "target.log", "from-file\n");
+    WriteBytes(root / "target.log", "from-file\n");
     std::filesystem::create_symlink(root / "target.log", root / "link.log");
     std::filesystem::create_symlink(root / "missing.log", root / "dangling.log");
 
-    const auto walked = nesso::parser::expandInputs(std::vector<std::filesystem::path>{root});
+    const auto walked = nesso::parser::ExpandInputs(std::vector<std::filesystem::path>{root});
     REQUIRE_FALSE(walked);
     CHECK(walked.error().path.filename() == "dangling.log");
 
     std::filesystem::remove(root / "dangling.log");
-    const auto expanded = nesso::parser::expandInputs(std::vector<std::filesystem::path>{root});
+    const auto expanded = nesso::parser::ExpandInputs(std::vector<std::filesystem::path>{root});
     REQUIRE(expanded);
     std::vector<std::string> names;
     for (const std::filesystem::path &path : *expanded)
@@ -171,99 +172,101 @@ TEST_CASE("expandInputs does not follow directory symlinks and keeps file symlin
     }
     CHECK(names == std::vector<std::string>{"link.log", "a.log", "target.log"});
 
-    const auto throughLink = nesso::parser::expandInputs(std::vector<std::filesystem::path>{root / "linkdir"});
-    REQUIRE(throughLink);
-    REQUIRE(throughLink->size() == 1);
-    CHECK(throughLink->front().filename() == "a.log");
-    CHECK(throughLink->front().parent_path().filename() == "linkdir");
+    const auto through_link = nesso::parser::ExpandInputs(std::vector<std::filesystem::path>{root / "linkdir"});
+    REQUIRE(through_link);
+    REQUIRE(through_link->size() == 1);
+    CHECK(through_link->front().filename() == "a.log");
+    CHECK(through_link->front().parent_path().filename() == "linkdir");
 
-    CHECK(textsOf(root / "link.log") == std::vector<std::string>{"from-file"});
+    CHECK(TextsOf(root / "link.log") == std::vector<std::string>{"from-file"});
 }
 
-TEST_CASE("expandInputs reports a missing path", "[parser][walk]")
+TEST_CASE("ExpandInputs reports a missing path", "[parser][walk]")
 {
     const TempDir dir{"nesso-walk-missing"};
-    const auto missing = dir.path() / "nope.log";
-    const auto expanded = nesso::parser::expandInputs(std::vector<std::filesystem::path>{missing});
+    const auto missing = dir.Path() / "nope.log";
+    const auto expanded = nesso::parser::ExpandInputs(std::vector<std::filesystem::path>{missing});
     REQUIRE_FALSE(expanded);
     CHECK(expanded.error().path == missing);
 
-    const auto empty = dir.path() / "empty";
+    const auto empty = dir.Path() / "empty";
     std::filesystem::create_directory(empty);
-    const auto walked = nesso::parser::expandInputs(std::vector<std::filesystem::path>{empty});
+    const auto walked = nesso::parser::ExpandInputs(std::vector<std::filesystem::path>{empty});
     REQUIRE(walked);
     CHECK(walked->empty());
 }
 
-TEST_CASE("readGzip inflates members, concatenation, and rejects a short stream", "[parser][gzip]")
+TEST_CASE("ReadGzip inflates members, concatenation, and rejects a short stream", "[parser][gzip]")
 {
     const TempDir dir{"nesso-gzip-reader"};
-    const auto one = dir.path() / "one.gz";
-    const auto concat = dir.path() / "concat.gz";
-    const auto empty = dir.path() / "empty.gz";
-    const auto truncated = dir.path() / "short.gz";
-    writeBytes(one, unhex(GZIP_DATABASE));
-    writeBytes(concat, unhex(GZIP_CONCAT));
-    writeBytes(empty, unhex(GZIP_EMPTY));
-    writeBytes(truncated, unhex(GZIP_DATABASE).substr(0, 12));
+    const auto one = dir.Path() / "one.gz";
+    const auto concat = dir.Path() / "concat.gz";
+    const auto empty = dir.Path() / "empty.gz";
+    const auto truncated = dir.Path() / "short.gz";
+    WriteBytes(one, Unhex(GZIP_DATABASE));
+    WriteBytes(concat, Unhex(GZIP_CONCAT));
+    WriteBytes(empty, Unhex(GZIP_EMPTY));
+    WriteBytes(truncated, Unhex(GZIP_DATABASE).substr(0, 12));
 
-    const auto text = nesso::parser::readGzip(one);
+    const auto text = nesso::parser::ReadGzip(one);
     REQUIRE(text);
     CHECK(*text == "database connection refused\n");
-    const auto joined = nesso::parser::readGzip(concat);
+    const auto joined = nesso::parser::ReadGzip(concat);
     REQUIRE(joined);
     CHECK(*joined == "hello world\n");
-    const auto blank = nesso::parser::readGzip(empty);
+    const auto blank = nesso::parser::ReadGzip(empty);
     REQUIRE(blank);
     CHECK(blank->empty());
-    const auto bad = nesso::parser::readGzip(truncated);
+    const auto bad = nesso::parser::ReadGzip(truncated);
     REQUIRE_FALSE(bad);
     CHECK(bad.error() == nesso::parser::GzipError::Corrupt);
-    const auto missing = nesso::parser::readGzip(dir.path() / "missing.gz");
+    const auto missing = nesso::parser::ReadGzip(dir.Path() / "missing.gz");
     REQUIRE_FALSE(missing);
     CHECK(missing.error() == nesso::parser::GzipError::OpenFailure);
-    CHECK(nesso::parser::isGzipPath(dir.path() / "App.LOG.GZ"));
-    CHECK_FALSE(nesso::parser::isGzipPath(dir.path() / "app.gz.bak"));
+    CHECK(nesso::parser::IsGzipPath(dir.Path() / "App.LOG.GZ"));
+    CHECK_FALSE(nesso::parser::IsGzipPath(dir.Path() / "app.gz.bak"));
 }
 
 TEST_CASE("Chunker reads gzip logs and json, and rejects binary or corrupt gzip", "[parser][gzip]")
 {
     const TempDir dir{"nesso-gzip-chunk"};
-    const auto log = dir.path() / "app.log.gz";
-    const auto upper = dir.path() / "APP.LOG.GZ";
-    const auto json = dir.path() / "events.json.gz";
-    const auto jsonl = dir.path() / "events.jsonl.gz";
-    const auto binary = dir.path() / "blob.log.gz";
-    const auto corrupt = dir.path() / "bad.gz";
-    const auto two = dir.path() / "two.log.gz";
-    writeBytes(log, unhex(GZIP_DATABASE));
-    writeBytes(upper, unhex(GZIP_DATABASE));
-    writeBytes(json, unhex(GZIP_JSON));
-    writeBytes(jsonl, unhex(GZIP_JSONL));
-    writeBytes(binary, unhex(GZIP_BINARY));
-    writeBytes(corrupt, std::string{"\x1f\x8b\x08\x00", 4});
-    writeBytes(two, unhex(GZIP_TWO));
-    writeBytes(dir.path() / "raw.log", "caf\xFF\n");
+    const auto log = dir.Path() / "app.log.gz";
+    const auto upper = dir.Path() / "APP.LOG.GZ";
+    const auto json = dir.Path() / "events.json.gz";
+    const auto jsonl = dir.Path() / "events.jsonl.gz";
+    const auto binary = dir.Path() / "blob.log.gz";
+    const auto corrupt = dir.Path() / "bad.gz";
+    const auto two = dir.Path() / "two.log.gz";
+    WriteBytes(log, Unhex(GZIP_DATABASE));
+    WriteBytes(upper, Unhex(GZIP_DATABASE));
+    WriteBytes(json, Unhex(GZIP_JSON));
+    WriteBytes(jsonl, Unhex(GZIP_JSONL));
+    WriteBytes(binary, Unhex(GZIP_BINARY));
+    WriteBytes(corrupt, std::string{"\x1f\x8b\x08\x00", 4});
+    WriteBytes(two, Unhex(GZIP_TWO));
+    WriteBytes(dir.Path() / "raw.log", "caf\xFF\n");
 
-    CHECK(textsOf(log) == std::vector<std::string>{"database connection refused"});
-    CHECK(textsOf(upper) == std::vector<std::string>{"database connection refused"});
-    CHECK(textsOf(json) == std::vector<std::string>{"database connection refused"});
-    CHECK(textsOf(jsonl) == std::vector<std::string>{"first", "second line"});
-    CHECK(textsOf(dir.path() / "raw.log") == std::vector<std::string>{"caf\xFF"});
+    CHECK(TextsOf(log) == std::vector<std::string>{"database connection refused"});
+    CHECK(TextsOf(upper) == std::vector<std::string>{"database connection refused"});
+    CHECK(TextsOf(json) == std::vector<std::string>{"database connection refused"});
+    CHECK(TextsOf(jsonl) == std::vector<std::string>{"first", "second line"});
+    CHECK(TextsOf(dir.Path() / "raw.log") == std::vector<std::string>{"caf\xFF"});
 
-    const auto rejected = nesso::parser::Chunker::fromFile(binary);
+    const auto rejected = nesso::parser::Chunker::FromFile(binary);
     REQUIRE_FALSE(rejected);
     CHECK(rejected.error() == nesso::parser::ParseError::BinaryFile);
-    const auto broken = nesso::parser::Chunker::fromFile(corrupt);
+    const auto broken = nesso::parser::Chunker::FromFile(corrupt);
     REQUIRE_FALSE(broken);
     CHECK(broken.error() == nesso::parser::ParseError::CorruptGzip);
 
-    const auto second = nesso::parser::Chunker::readRecord(
-        two, {.text = {}, .lineNumber = 2, .byteOffset = 4, .arrayElement = false, .byteLength = 3}, "message", 4096);
+    const auto second = nesso::parser::Chunker::ReadRecord(
+        two, {.text = {}, .line_number = 2, .byte_offset = 4, .array_element = false, .byte_length = 3}, "message",
+        4096);
     REQUIRE(second);
     CHECK(*second == "two");
-    const auto object = nesso::parser::Chunker::readRecord(
-        json, {.text = {}, .lineNumber = 1, .byteOffset = 0, .arrayElement = false, .byteLength = 0}, "message", 4096);
+    const auto object = nesso::parser::Chunker::ReadRecord(
+        json, {.text = {}, .line_number = 1, .byte_offset = 0, .array_element = false, .byte_length = 0}, "message",
+        4096);
     REQUIRE(object);
     CHECK(*object == "database connection refused");
 }
@@ -271,9 +274,9 @@ TEST_CASE("Chunker reads gzip logs and json, and rejects binary or corrupt gzip"
 TEST_CASE("an empty gzip file has no chunks", "[parser][gzip]")
 {
     const TempDir dir{"nesso-gzip-empty"};
-    const auto path = dir.path() / "empty.gz";
-    writeBytes(path, unhex(GZIP_EMPTY));
-    const auto chunks = nesso::parser::Chunker::fromFile(path);
+    const auto path = dir.Path() / "empty.gz";
+    WriteBytes(path, Unhex(GZIP_EMPTY));
+    const auto chunks = nesso::parser::Chunker::FromFile(path);
     REQUIRE(chunks);
     CHECK(chunks->empty());
 }
@@ -281,18 +284,18 @@ TEST_CASE("an empty gzip file has no chunks", "[parser][gzip]")
 TEST_CASE("Chunker maps missing gzip to FileOpenFailure", "[parser][gzip]")
 {
     const TempDir dir{"nesso-gzip-missing-chunker"};
-    const auto missing = dir.path() / "missing.gz";
-    const auto fromFile = nesso::parser::Chunker::fromFile(missing);
-    REQUIRE_FALSE(fromFile);
-    CHECK(fromFile.error() == nesso::parser::ParseError::FileOpenFailure);
+    const auto missing = dir.Path() / "missing.gz";
+    const auto from_file = nesso::parser::Chunker::FromFile(missing);
+    REQUIRE_FALSE(from_file);
+    CHECK(from_file.error() == nesso::parser::ParseError::FileOpenFailure);
 
     const auto walked =
-        nesso::parser::Chunker::forEachRecord(missing, 4096, nullptr, "message", [](nesso::parser::ParsedChunk) {});
+        nesso::parser::Chunker::ForEachRecord(missing, 4096, nullptr, "message", [](nesso::parser::ParsedChunk) {});
     REQUIRE_FALSE(walked);
     CHECK(walked.error() == nesso::parser::ParseError::FileOpenFailure);
 
-    const auto record = nesso::parser::Chunker::readRecord(
-        missing, {.text = {}, .lineNumber = 1, .byteOffset = 0, .arrayElement = false, .byteLength = 1}, "message",
+    const auto record = nesso::parser::Chunker::ReadRecord(
+        missing, {.text = {}, .line_number = 1, .byte_offset = 0, .array_element = false, .byte_length = 1}, "message",
         4096);
     REQUIRE_FALSE(record);
     CHECK(record.error() == nesso::parser::ParseError::FileOpenFailure);

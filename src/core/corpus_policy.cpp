@@ -24,7 +24,7 @@
 namespace nesso::core::detail
 {
 
-static bool validKey(std::string_view key)
+static bool ValidKey(std::string_view key)
 {
     return !key.empty() && std::ranges::all_of(key,
                                                [](char character)
@@ -35,7 +35,7 @@ static bool validKey(std::string_view key)
                                                });
 }
 
-static bool validHash(std::string_view value)
+static bool ValidHash(std::string_view value)
 {
     return value.size() == 64 &&
            std::ranges::all_of(
@@ -43,14 +43,14 @@ static bool validHash(std::string_view value)
                { return (character >= '0' && character <= '9') || (character >= 'a' && character <= 'f'); });
 }
 
-static bool parseNumber(std::string_view text, std::uint32_t &value)
+static bool ParseNumber(std::string_view text, std::uint32_t &value)
 {
     const char *const first = std::to_address(text.begin());
     const char *const last = std::to_address(text.end());
     const auto parsed = std::from_chars(first, last, value);
     return parsed.ec == std::errc{} && parsed.ptr == last && std::to_string(value) == text;
 }
-std::expected<std::uint32_t, EngineError> validatePolicy(const CorpusPolicy &policy)
+std::expected<std::uint32_t, EngineError> ValidatePolicy(const CorpusPolicy &policy)
 {
     constexpr std::array<std::string_view, 10> required{
         "batch",        "dedup",      "dimensions", "mask",        "model.id", "model.quantization",
@@ -65,7 +65,7 @@ std::expected<std::uint32_t, EngineError> validatePolicy(const CorpusPolicy &pol
     std::uint64_t size = 0;
     for (const auto &[key, value] : policy)
     {
-        if (!validKey(key) || value.empty() || value.find_first_of("\r\n\0", 0, 3) != std::string::npos)
+        if (!ValidKey(key) || value.empty() || value.find_first_of("\r\n\0", 0, 3) != std::string::npos)
         {
             return std::unexpected(EngineError::CorruptDatabase);
         }
@@ -76,11 +76,11 @@ std::expected<std::uint32_t, EngineError> validatePolicy(const CorpusPolicy &pol
         }
     }
     std::uint32_t dimensions = 0;
-    std::uint32_t maxTokens = 0;
+    std::uint32_t max_tokens = 0;
     const auto &quantization = policy.at("model.quantization");
-    if (!parseNumber(policy.at("dimensions"), dimensions) || dimensions > MAX_DIMENSIONS ||
-        !parseNumber(policy.at("tokens.max"), maxTokens) || maxTokens == 0 || policy.at("model.id").size() > 1024 ||
-        !validHash(policy.at("model.sha256")) || !validHash(policy.at("vocab.sha256")) ||
+    if (!ParseNumber(policy.at("dimensions"), dimensions) || dimensions > MAX_DIMENSIONS ||
+        !ParseNumber(policy.at("tokens.max"), max_tokens) || max_tokens == 0 || policy.at("model.id").size() > 1024 ||
+        !ValidHash(policy.at("model.sha256")) || !ValidHash(policy.at("vocab.sha256")) ||
         (quantization != "int8" && quantization != "fp32"))
     {
         return std::unexpected(EngineError::CorruptDatabase);
@@ -88,22 +88,22 @@ std::expected<std::uint32_t, EngineError> validatePolicy(const CorpusPolicy &pol
     return dimensions;
 }
 
-LexicalStatus lexicalStatusOf(bool hasLexical, const CorpusPolicy &policy)
+LexicalStatus LexicalStatusOf(bool has_lexical, const CorpusPolicy &policy)
 {
-    if (!hasLexical)
+    if (!has_lexical)
     {
         return LexicalStatus::Missing;
     }
-    const bool termsOk = policy.contains("lexical.terms") && policy.at("lexical.terms") == LEXICAL_TERMS_VERSION;
-    const bool bm25Ok = policy.contains("bm25") && policy.at("bm25") == BM25_POLICY;
-    if (!termsOk || !bm25Ok)
+    const bool terms_ok = policy.contains("lexical.terms") && policy.at("lexical.terms") == LEXICAL_TERMS_VERSION;
+    const bool bm25_ok = policy.contains("bm25") && policy.at("bm25") == BM25_POLICY;
+    if (!terms_ok || !bm25_ok)
     {
         return LexicalStatus::VersionMismatch;
     }
     return LexicalStatus::Ok;
 }
 
-std::expected<void, EngineError> validateVector(std::span<const float> embedding, std::uint32_t dimensions)
+std::expected<void, EngineError> ValidateVector(std::span<const float> embedding, std::uint32_t dimensions)
 {
     if (embedding.empty())
     {
@@ -120,7 +120,7 @@ std::expected<void, EngineError> validateVector(std::span<const float> embedding
     return {};
 }
 
-std::string serializePolicy(const CorpusPolicy &policy)
+std::string SerializePolicy(const CorpusPolicy &policy)
 {
     std::string text;
     for (const auto &[key, value] : policy)
@@ -133,7 +133,7 @@ std::string serializePolicy(const CorpusPolicy &policy)
     return text;
 }
 
-std::expected<CorpusPolicy, EngineError> parsePolicy(std::string_view text)
+std::expected<CorpusPolicy, EngineError> ParsePolicy(std::string_view text)
 {
     CorpusPolicy policy;
     std::string previous;
@@ -159,7 +159,7 @@ std::expected<CorpusPolicy, EngineError> parsePolicy(std::string_view text)
         policy.emplace(std::move(key), std::string{record.substr(separator + 1)});
         text.remove_prefix(newline + 1);
     }
-    if (!validatePolicy(policy))
+    if (!ValidatePolicy(policy))
     {
         return std::unexpected(EngineError::CorruptDatabase);
     }

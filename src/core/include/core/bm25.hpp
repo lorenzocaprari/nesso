@@ -25,7 +25,8 @@ inline constexpr double BM25_B = 0.75;
 /// Policy-block value for these BM25 constants (`bm25=…`).
 inline constexpr std::string_view BM25_POLICY{"k1:1.5,b:0.75"};
 
-/// One line's postings for `scoresFromPostings`: `|D|` and unique `(termId, tf)`.
+/// One line's postings for `ScoresFromPostings`: `|D|` and unique `(termId,
+/// tf)`.
 struct Bm25LinePostings
 {
     std::uint32_t length = 0;
@@ -35,13 +36,13 @@ struct Bm25LinePostings
 /// In-memory Okapi BM25 over lines.
 ///
 /// `idf = ln(1 + (N - df + 0.5) / (df + 0.5))`, with `std::log`. `|D|` is the
-/// number of tokens passed to `addLine` for that line. `df` is the number of
-/// lines that contain the term. `N` is `lineCount()`. `avgdl` is
-/// `averageLength()`.
+/// number of tokens passed to `AddLine` for that line. `df` is the number of
+/// lines that contain the term. `N` is `LineCount()`. `avgdl` is
+/// `AverageLength()`.
 ///
 /// `scores` sums in double over the distinct query terms in unsigned byte
 /// order. A repeated query term counts once. A term present in no line adds
-/// nothing. The returned vector has one score per line, in `addLine` order.
+/// nothing. The returned vector has one score per line, in `AddLine` order.
 /// It does not rank: equal scores stay equal, and a higher score does not move
 /// toward the front. Breaking a tie by line ordinal is the caller's job.
 ///
@@ -52,25 +53,26 @@ class Bm25Index
 {
   public:
     /// Appends one line. Each token counts once toward `|D|` and toward that
-    /// term's frequency. An empty span is a zero-length line and still counts in `N`.
-    void addLine(std::span<const std::string_view> terms);
+    /// term's frequency. An empty span is a zero-length line and still counts in
+    /// `N`.
+    void AddLine(std::span<const std::string_view> terms);
 
     /// Appends one line from already-interned `(termId, tf)` rows. `termId`
-    /// values index this index's dictionary from prior `addLine` /
-    /// `internTerm` calls. `length` is `|D|` (token multiset size).
-    void addLinePostings(std::span<const std::pair<std::uint32_t, std::uint32_t>> entries, std::uint32_t length);
+    /// values index this index's dictionary from prior `AddLine` /
+    /// `InternTerm` calls. `length` is `|D|` (token multiset size).
+    void AddLinePostings(std::span<const std::pair<std::uint32_t, std::uint32_t>> entries, std::uint32_t length);
 
     /// Interns `term` into the shared dictionary; returns its id.
-    [[nodiscard]] std::uint32_t internTerm(std::string_view term);
+    [[nodiscard]] std::uint32_t InternTerm(std::string_view term);
 
     /// Lines added so far.
-    [[nodiscard]] std::size_t lineCount() const noexcept;
+    [[nodiscard]] std::size_t LineCount() const noexcept;
 
-    /// Mean `|D|`, or `0` when `lineCount()` is `0`.
-    [[nodiscard]] double averageLength() const noexcept;
+    /// Mean `|D|`, or `0` when `LineCount()` is `0`.
+    [[nodiscard]] double AverageLength() const noexcept;
 
     /// One score per added line, in insertion order.
-    [[nodiscard]] std::vector<double> scores(std::span<const std::string_view> query) const;
+    [[nodiscard]] std::vector<double> Scores(std::span<const std::string_view> query) const;
 
   private:
     struct Line
@@ -82,15 +84,15 @@ class Bm25Index
 
     std::unordered_map<std::string, std::uint32_t> ids_;
     std::vector<Line> lines_;
-    std::vector<std::size_t> documentFrequency_;
-    std::size_t totalLength_ = 0;
+    std::vector<std::size_t> document_frequency_;
+    std::size_t total_length_ = 0;
 };
 
 /// BM25 over mapped corpus postings. `dictionary` is sorted unique terms;
 /// `lines[i].entries` use those ids. Does not copy the dictionary or postings.
 /// Distinct query terms are scored in unsigned byte order, same formula as
 /// `Bm25Index::scores`.
-[[nodiscard]] std::vector<double> scoresFromPostings(std::span<const std::string_view> dictionary,
+[[nodiscard]] std::vector<double> ScoresFromPostings(std::span<const std::string_view> dictionary,
                                                      std::span<const Bm25LinePostings> lines,
                                                      std::span<const std::string_view> query);
 

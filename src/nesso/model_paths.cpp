@@ -14,56 +14,56 @@ namespace nesso
 
 // getenv is not thread-safe. The CLI reads the environment once on the main
 // thread.
-static const char *envOrEmpty(const char *key)
+static const char *EnvOrEmpty(const char *key)
 {
     // NOLINTNEXTLINE(concurrency-mt-unsafe)
     const char *value = std::getenv(key);
     return value == nullptr ? "" : value;
 }
 
-bool containsModelFiles(const std::filesystem::path &dir)
+bool ContainsModelFiles(const std::filesystem::path &dir)
 {
-    std::error_code errorCode;
-    return std::filesystem::is_regular_file(dir / VOCAB_FILENAME, errorCode) &&
-           std::filesystem::is_regular_file(dir / MODEL_FILENAME, errorCode);
+    std::error_code error_code;
+    return std::filesystem::is_regular_file(dir / VOCAB_FILENAME, error_code) &&
+           std::filesystem::is_regular_file(dir / MODEL_FILENAME, error_code);
 }
 
-std::vector<std::filesystem::path> modelDirCandidates(const ModelDirLookup &lookup)
+std::vector<std::filesystem::path> ModelDirCandidates(const ModelDirLookup &lookup)
 {
-    if (const char *envDir = envOrEmpty("NESSO_MODEL_DIR"); !std::string_view{envDir}.empty())
+    if (const char *env_dir = EnvOrEmpty("NESSO_MODEL_DIR"); !std::string_view{env_dir}.empty())
     {
-        return {envDir};
+        return {env_dir};
     }
 
     std::vector<std::filesystem::path> dirs;
     dirs.push_back(lookup.cwd / "models");
-    if (const char *xdg = envOrEmpty("XDG_DATA_HOME"); !std::string_view{xdg}.empty())
+    if (const char *xdg = EnvOrEmpty("XDG_DATA_HOME"); !std::string_view{xdg}.empty())
     {
         dirs.push_back(std::filesystem::path(xdg) / "nesso");
     }
-    else if (const char *home = envOrEmpty("HOME"); !std::string_view{home}.empty())
+    else if (const char *home = EnvOrEmpty("HOME"); !std::string_view{home}.empty())
     {
         dirs.push_back(std::filesystem::path(home) / ".local" / "share" / "nesso");
     }
-    dirs.push_back(lookup.packagedDir);
+    dirs.push_back(lookup.packaged_dir);
     return dirs;
 }
 
-std::filesystem::path resolveDefaultModelDir(const ModelDirLookup &lookup)
+std::filesystem::path ResolveDefaultModelDir(const ModelDirLookup &lookup)
 {
-    if (const char *envDir = envOrEmpty("NESSO_MODEL_DIR"); !std::string_view{envDir}.empty())
+    if (const char *env_dir = EnvOrEmpty("NESSO_MODEL_DIR"); !std::string_view{env_dir}.empty())
     {
-        return envDir;
+        return env_dir;
     }
 
-    for (const std::filesystem::path &dir : modelDirCandidates(lookup))
+    for (const std::filesystem::path &dir : ModelDirCandidates(lookup))
     {
-        if (containsModelFiles(dir))
+        if (ContainsModelFiles(dir))
         {
             return dir;
         }
     }
-    return lookup.packagedDir;
+    return lookup.packaged_dir;
 }
 
 } // namespace nesso

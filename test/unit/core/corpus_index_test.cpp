@@ -34,17 +34,17 @@ using nesso::core::NO_DISTINCT;
 class TempDir
 {
   public:
-    TempDir() : path_(uniquePath()) { REQUIRE(std::filesystem::create_directory(path_)); }
+    TempDir() : path_(UniquePath()) { REQUIRE(std::filesystem::create_directory(path_)); }
 
     ~TempDir() { std::filesystem::remove_all(path_); }
     TempDir(const TempDir &) = delete;
     TempDir &operator=(const TempDir &) = delete;
     TempDir(TempDir &&) = delete;
     TempDir &operator=(TempDir &&) = delete;
-    [[nodiscard]] const std::filesystem::path &path() const { return path_; }
+    [[nodiscard]] const std::filesystem::path &Path() const { return path_; }
 
   private:
-    static std::filesystem::path uniquePath()
+    static std::filesystem::path UniquePath()
     {
         static unsigned counter = 0;
         return std::filesystem::temp_directory_path() /
@@ -54,7 +54,7 @@ class TempDir
     std::filesystem::path path_;
 };
 
-CorpusPolicy policy(std::uint32_t dimensions = 2)
+CorpusPolicy Policy(std::uint32_t dimensions = 2)
 {
     return {{"batch", "window:1024,max:32,tokens:1024,order:length-then-input"},
             {"bm25", std::string{nesso::core::BM25_POLICY}},
@@ -70,9 +70,9 @@ CorpusPolicy policy(std::uint32_t dimensions = 2)
             {"vocab.sha256", std::string(64, 'b')}};
 }
 
-std::vector<std::string> termsOf(std::string_view text) { return nesso::core::lexicalTerms(text); }
+std::vector<std::string> TermsOf(std::string_view text) { return nesso::core::LexicalTerms(text); }
 
-void writeBytes(const std::filesystem::path &path, std::string_view bytes)
+void WriteBytes(const std::filesystem::path &path, std::string_view bytes)
 {
     std::ofstream output(path, std::ios::binary);
     REQUIRE(output);
@@ -80,14 +80,14 @@ void writeBytes(const std::filesystem::path &path, std::string_view bytes)
     REQUIRE(output);
 }
 
-std::string readBytes(const std::filesystem::path &path)
+std::string ReadBytes(const std::filesystem::path &path)
 {
     std::ifstream input(path, std::ios::binary);
     REQUIRE(input);
     return {std::istreambuf_iterator<char>{input}, std::istreambuf_iterator<char>{}};
 }
 
-std::uint64_t getU64(std::string_view bytes, std::size_t offset)
+std::uint64_t GetU64(std::string_view bytes, std::size_t offset)
 {
     REQUIRE(offset + sizeof(std::uint64_t) <= bytes.size());
     std::uint64_t value = 0;
@@ -95,59 +95,59 @@ std::uint64_t getU64(std::string_view bytes, std::size_t offset)
     return value;
 }
 
-void putU32(std::string &bytes, std::size_t offset, std::uint32_t value)
+void PutU32(std::string &bytes, std::size_t offset, std::uint32_t value)
 {
     REQUIRE(offset + sizeof(value) <= bytes.size());
     std::memcpy(bytes.data() + offset, &value, sizeof(value));
 }
 
-void putU64(std::string &bytes, std::size_t offset, std::uint64_t value)
+void PutU64(std::string &bytes, std::size_t offset, std::uint64_t value)
 {
     REQUIRE(offset + sizeof(value) <= bytes.size());
     std::memcpy(bytes.data() + offset, &value, sizeof(value));
 }
 
-void reseal(std::string &bytes)
+void Reseal(std::string &bytes)
 {
     REQUIRE(bytes.size() >= nesso::core::CORPUS_CHECKSUM_OFFSET + nesso::core::CORPUS_CHECKSUM_BYTES);
     const auto checksum = nesso::core::ComputeCorpusChecksum(std::as_bytes(std::span{bytes}));
     std::memcpy(bytes.data() + nesso::core::CORPUS_CHECKSUM_OFFSET, checksum.data(), checksum.size());
 }
 
-void writeExample(const std::filesystem::path &corpus, const std::filesystem::path &source)
+void WriteExample(const std::filesystem::path &corpus, const std::filesystem::path &source)
 {
-    writeBytes(source, "alpha\n\nbravo\nalpha\n");
-    auto writer = CorpusWriter::create(corpus, policy());
+    WriteBytes(source, "alpha\n\nbravo\nalpha\n");
+    auto writer = CorpusWriter::Create(corpus, Policy());
     REQUIRE(writer);
-    auto info = nesso::core::sourceInfoFor(source, "message");
+    auto info = nesso::core::SourceInfoFor(source, "message");
     REQUIRE(info);
-    REQUIRE(writer->addSource(*info) == 0);
-    REQUIRE(writer->addSource({.path = "-", .storedOnly = true}) == 1);
-    REQUIRE(writer->addSource({.path = "bundle.tar!app.log", .storedOnly = true}) == 2);
+    REQUIRE(writer->AddSource(*info) == 0);
+    REQUIRE(writer->AddSource({.path = "-", .stored_only = true}) == 1);
+    REQUIRE(writer->AddSource({.path = "bundle.tar!app.log", .stored_only = true}) == 2);
     const std::array<float, 2> alpha{1.F, 0.F};
     const std::array<float, 2> bravo{0.F, 1.F};
-    REQUIRE(writer->addDistinct("alpha", alpha) == 0);
-    REQUIRE(writer->addDistinct("bravo", bravo) == 1);
+    REQUIRE(writer->AddDistinct("alpha", alpha) == 0);
+    REQUIRE(writer->AddDistinct("bravo", bravo) == 1);
     const std::array<CorpusLine, 7> lines{
-        CorpusLine{.lineNumber = 1, .byteOffset = 0, .byteLength = 5, .sourceIndex = 0, .distinctId = 0},
-        CorpusLine{.lineNumber = 2, .byteOffset = 6, .byteLength = 0, .sourceIndex = 0, .distinctId = NO_DISTINCT},
-        CorpusLine{.lineNumber = 3, .byteOffset = 7, .byteLength = 5, .sourceIndex = 0, .distinctId = 1},
-        CorpusLine{.lineNumber = 4, .byteOffset = 13, .byteLength = 5, .sourceIndex = 0, .distinctId = 0},
-        CorpusLine{.lineNumber = 1, .sourceIndex = 1, .distinctId = 1, .storedText = "bravo from stdin"},
-        CorpusLine{.lineNumber = 2, .sourceIndex = 1, .distinctId = NO_DISTINCT, .storedText = ""},
-        CorpusLine{.lineNumber = 1,
-                   .sourceIndex = 2,
-                   .distinctId = 0,
-                   .arrayElement = true,
-                   .storedText = "archive original"}};
+        CorpusLine{.line_number = 1, .byte_offset = 0, .byte_length = 5, .source_index = 0, .distinct_id = 0},
+        CorpusLine{.line_number = 2, .byte_offset = 6, .byte_length = 0, .source_index = 0, .distinct_id = NO_DISTINCT},
+        CorpusLine{.line_number = 3, .byte_offset = 7, .byte_length = 5, .source_index = 0, .distinct_id = 1},
+        CorpusLine{.line_number = 4, .byte_offset = 13, .byte_length = 5, .source_index = 0, .distinct_id = 0},
+        CorpusLine{.line_number = 1, .source_index = 1, .distinct_id = 1, .stored_text = "bravo from stdin"},
+        CorpusLine{.line_number = 2, .source_index = 1, .distinct_id = NO_DISTINCT, .stored_text = ""},
+        CorpusLine{.line_number = 1,
+                   .source_index = 2,
+                   .distinct_id = 0,
+                   .array_element = true,
+                   .stored_text = "archive original"}};
     const std::array<std::vector<std::string>, 7> terms{
-        termsOf("alpha"),           {}, termsOf("bravo"), termsOf("alpha"), termsOf("bravo from stdin"), {},
-        termsOf("archive original")};
-    REQUIRE(writer->addLines(lines, terms));
-    REQUIRE(writer->finish());
+        TermsOf("alpha"),           {}, TermsOf("bravo"), TermsOf("alpha"), TermsOf("bravo from stdin"), {},
+        TermsOf("archive original")};
+    REQUIRE(writer->AddLines(lines, terms));
+    REQUIRE(writer->Finish());
 }
 
-bool readVarintAt(std::string_view bytes, std::size_t &cursor, std::uint64_t &value)
+bool ReadVarintAt(std::string_view bytes, std::size_t &cursor, std::uint64_t &value)
 {
     value = 0;
     for (unsigned shift = 0; shift < 64; shift += 7)
@@ -169,62 +169,62 @@ bool readVarintAt(std::string_view bytes, std::size_t &cursor, std::uint64_t &va
 
 struct LexicalSites
 {
-    std::size_t firstTermByte = 0;
-    std::size_t firstFrequency = 0;
-    std::size_t firstPostingLength = 0;
-    std::size_t firstDelta = 0;
-    std::uint64_t termCount = 0;
+    std::size_t first_term_byte = 0;
+    std::size_t first_frequency = 0;
+    std::size_t first_posting_length = 0;
+    std::size_t first_delta = 0;
+    std::uint64_t term_count = 0;
 };
 
 LexicalSites ParseLexicalSites(std::string_view bytes)
 {
-    const auto origin = getU64(bytes, 88);
+    const auto origin = GetU64(bytes, 88);
     LexicalSites sites;
-    sites.termCount = getU64(bytes, origin);
-    const auto postingLines = getU64(bytes, origin + 8);
+    sites.term_count = GetU64(bytes, origin);
+    const auto posting_lines = GetU64(bytes, origin + 8);
     std::size_t cursor = origin + 16;
-    for (std::uint64_t term = 0; term < sites.termCount; ++term)
+    for (std::uint64_t term = 0; term < sites.term_count; ++term)
     {
         std::uint64_t length = 0;
-        REQUIRE(readVarintAt(bytes, cursor, length));
+        REQUIRE(ReadVarintAt(bytes, cursor, length));
         REQUIRE(length > 0);
         REQUIRE(cursor + length <= bytes.size());
         if (term == 0)
         {
-            sites.firstTermByte = cursor;
+            sites.first_term_byte = cursor;
         }
         cursor += static_cast<std::size_t>(length);
     }
-    for (std::uint64_t line = 0; line < postingLines; ++line)
+    for (std::uint64_t line = 0; line < posting_lines; ++line)
     {
         std::uint64_t unique = 0;
-        REQUIRE(readVarintAt(bytes, cursor, unique));
+        REQUIRE(ReadVarintAt(bytes, cursor, unique));
         for (std::uint64_t index = 0; index < unique; ++index)
         {
-            if (sites.firstDelta == 0)
+            if (sites.first_delta == 0)
             {
-                sites.firstDelta = cursor;
+                sites.first_delta = cursor;
             }
             std::uint64_t delta = 0;
-            REQUIRE(readVarintAt(bytes, cursor, delta));
-            if (sites.firstFrequency == 0)
+            REQUIRE(ReadVarintAt(bytes, cursor, delta));
+            if (sites.first_frequency == 0)
             {
-                sites.firstFrequency = cursor;
+                sites.first_frequency = cursor;
             }
             std::uint64_t frequency = 0;
-            REQUIRE(readVarintAt(bytes, cursor, frequency));
+            REQUIRE(ReadVarintAt(bytes, cursor, frequency));
         }
-        if (sites.firstPostingLength == 0 && unique > 0)
+        if (sites.first_posting_length == 0 && unique > 0)
         {
-            sites.firstPostingLength = cursor;
+            sites.first_posting_length = cursor;
         }
         std::uint64_t length = 0;
-        REQUIRE(readVarintAt(bytes, cursor, length));
+        REQUIRE(ReadVarintAt(bytes, cursor, length));
     }
     return sites;
 }
 
-bool hasSpill(const std::filesystem::path &directory)
+bool HasSpill(const std::filesystem::path &directory)
 {
     for (const auto &entry : std::filesystem::directory_iterator(directory))
     {
@@ -244,68 +244,68 @@ bool hasSpill(const std::filesystem::path &directory)
 TEST_CASE("corpus metadata preserves positional aggregate initialization", "[corpus][core]")
 {
     const nesso::core::LogChunk chunk{"text", 7, "source.log", 20, true};
-    CHECK(chunk.arrayElement);
-    CHECK(chunk.byteLength == 0);
+    CHECK(chunk.array_element);
+    CHECK(chunk.byte_length == 0);
 
     const nesso::core::SourceInfo source{"source.log", 42, 13, true};
     CHECK(source.size == 42);
-    CHECK(source.modifiedTime == 13);
+    CHECK(source.modified_time == 13);
     CHECK(source.tracked);
-    CHECK(source.jsonField == "message");
-    CHECK_FALSE(source.storedOnly);
+    CHECK(source.json_field == "message");
+    CHECK_FALSE(source.stored_only);
 }
 
 TEST_CASE("v3 stores ordered lines, distinct vectors, policy and stored texts", "[corpus][core]")
 {
     const TempDir dir;
-    const auto path = dir.path() / "corpus.nesso";
-    const auto source = dir.path() / "app.log";
-    writeExample(path, source);
-    REQUIRE_FALSE(hasSpill(dir.path()));
+    const auto path = dir.Path() / "corpus.nesso";
+    const auto source = dir.Path() / "app.log";
+    WriteExample(path, source);
+    REQUIRE_FALSE(HasSpill(dir.Path()));
 
-    const auto mapped = nesso::core::mapCorpusFile(path);
+    const auto mapped = nesso::core::MapCorpusFile(path);
     REQUIRE(mapped);
-    CHECK(mapped->policy() == policy());
-    CHECK(mapped->dimensions() == 2);
-    REQUIRE(mapped->sources().size() == 3);
-    CHECK(mapped->sources()[0].path == source.string());
-    CHECK(mapped->sources()[0].size == 19);
-    CHECK(mapped->sources()[0].tracked);
-    CHECK(mapped->sources()[1].storedOnly);
-    CHECK(mapped->sources()[2].path == "bundle.tar!app.log");
-    REQUIRE(mapped->lines().size() == 7);
-    CHECK(mapped->lines()[1].distinctId == NO_DISTINCT);
-    CHECK(mapped->lines()[2].byteOffset == 7);
-    CHECK(mapped->lines()[2].byteLength == 5);
-    REQUIRE(mapped->lines()[4].storedText.has_value());
-    CHECK(mapped->lines()[4].storedText.value() == "bravo from stdin");
-    REQUIRE(mapped->lines()[5].storedText.has_value());
-    CHECK(mapped->lines()[5].storedText.value().empty());
-    CHECK(mapped->lines()[6].arrayElement);
-    REQUIRE(mapped->texts().size() == 2);
-    CHECK(mapped->texts()[0] == "alpha");
-    CHECK(mapped->texts()[1] == "bravo");
-    REQUIRE(mapped->matrix().size() == 4);
-    CHECK(mapped->matrix()[0] == 1.F);
-    CHECK(mapped->matrix()[3] == 1.F);
-    CHECK(reinterpret_cast<std::uintptr_t>(mapped->matrix().data()) % 64 == 0);
-    CHECK(getU64(readBytes(path), 48) % 64 == 0);
-    REQUIRE(mapped->lexicalPostings().size() == 7);
-    CHECK(mapped->lexicalPostings()[1].length == 0);
-    CHECK(mapped->lexicalPostings()[1].entries.empty());
-    CHECK(mapped->lexicalPostings()[5].length == 0);
+    CHECK(mapped->Policy() == Policy());
+    CHECK(mapped->Dimensions() == 2);
+    REQUIRE(mapped->Sources().size() == 3);
+    CHECK(mapped->Sources()[0].path == source.string());
+    CHECK(mapped->Sources()[0].size == 19);
+    CHECK(mapped->Sources()[0].tracked);
+    CHECK(mapped->Sources()[1].stored_only);
+    CHECK(mapped->Sources()[2].path == "bundle.tar!app.log");
+    REQUIRE(mapped->Lines().size() == 7);
+    CHECK(mapped->Lines()[1].distinct_id == NO_DISTINCT);
+    CHECK(mapped->Lines()[2].byte_offset == 7);
+    CHECK(mapped->Lines()[2].byte_length == 5);
+    REQUIRE(mapped->Lines()[4].stored_text.has_value());
+    CHECK(mapped->Lines()[4].stored_text.value() == "bravo from stdin");
+    REQUIRE(mapped->Lines()[5].stored_text.has_value());
+    CHECK(mapped->Lines()[5].stored_text.value().empty());
+    CHECK(mapped->Lines()[6].array_element);
+    REQUIRE(mapped->Texts().size() == 2);
+    CHECK(mapped->Texts()[0] == "alpha");
+    CHECK(mapped->Texts()[1] == "bravo");
+    REQUIRE(mapped->Matrix().size() == 4);
+    CHECK(mapped->Matrix()[0] == 1.F);
+    CHECK(mapped->Matrix()[3] == 1.F);
+    CHECK(reinterpret_cast<std::uintptr_t>(mapped->Matrix().data()) % 64 == 0);
+    CHECK(GetU64(ReadBytes(path), 48) % 64 == 0);
+    REQUIRE(mapped->LexicalPostings().size() == 7);
+    CHECK(mapped->LexicalPostings()[1].length == 0);
+    CHECK(mapped->LexicalPostings()[1].entries.empty());
+    CHECK(mapped->LexicalPostings()[5].length == 0);
     {
-        const auto expectedAlpha = termsOf("alpha");
+        const auto expected_alpha = TermsOf("alpha");
         std::uint32_t length = 0;
-        for (const auto &[termId, frequency] : mapped->lexicalPostings()[0].entries)
+        for (const auto &[termId, frequency] : mapped->LexicalPostings()[0].entries)
         {
-            REQUIRE(termId < mapped->lexicalDictionary().size());
+            REQUIRE(termId < mapped->LexicalDictionary().size());
             length += frequency;
         }
-        CHECK(mapped->lexicalPostings()[0].length == expectedAlpha.size());
-        CHECK(length == expectedAlpha.size());
+        CHECK(mapped->LexicalPostings()[0].length == expected_alpha.size());
+        CHECK(length == expected_alpha.size());
         Bm25Index rebuilt;
-        for (const LexicalLinePostings &row : mapped->lexicalPostings())
+        for (const LexicalLinePostings &row : mapped->LexicalPostings())
         {
             std::vector<std::string_view> tokens;
             tokens.reserve(row.length);
@@ -313,85 +313,85 @@ TEST_CASE("v3 stores ordered lines, distinct vectors, policy and stored texts", 
             {
                 for (std::uint32_t copy = 0; copy < frequency; ++copy)
                 {
-                    tokens.push_back(mapped->lexicalDictionary()[termId]);
+                    tokens.push_back(mapped->LexicalDictionary()[termId]);
                 }
             }
-            rebuilt.addLine(tokens);
+            rebuilt.AddLine(tokens);
         }
-        CHECK(rebuilt.lineCount() == 7);
+        CHECK(rebuilt.LineCount() == 7);
     }
 
-    const auto expanded = nesso::core::readCorpusFile(path);
+    const auto expanded = nesso::core::ReadCorpusFile(path);
     REQUIRE(expanded);
     REQUIRE(expanded->size() == 5);
     CHECK((*expanded)[0].chunk.text == "alpha");
     CHECK((*expanded)[1].chunk.text == "bravo");
     CHECK((*expanded)[3].chunk.text == "bravo from stdin");
     CHECK((*expanded)[4].chunk.text == "archive original");
-    CHECK((*expanded)[4].chunk.arrayElement);
+    CHECK((*expanded)[4].chunk.array_element);
     CHECK((*expanded)[1].embedding == std::vector<float>{0.F, 1.F});
 }
 
 TEST_CASE("duplicate lines share one stored vector", "[corpus][core]")
 {
     const TempDir dir;
-    const auto source = dir.path() / "duplicates.log";
+    const auto source = dir.Path() / "duplicates.log";
     constexpr std::size_t count = 1000;
     std::string contents;
     for (std::size_t index = 0; index < count; ++index)
     {
         contents += "dup\n";
     }
-    writeBytes(source, contents);
-    auto writer = CorpusWriter::create(dir.path() / "duplicates.nesso", policy(384));
+    WriteBytes(source, contents);
+    auto writer = CorpusWriter::Create(dir.Path() / "duplicates.nesso", Policy(384));
     REQUIRE(writer);
-    auto info = nesso::core::sourceInfoFor(source, "message");
+    auto info = nesso::core::SourceInfoFor(source, "message");
     REQUIRE(info);
-    REQUIRE(writer->addSource(*info) == 0);
-    REQUIRE(writer->addDistinct("dup", std::vector<float>(384, 1.F)) == 0);
+    REQUIRE(writer->AddSource(*info) == 0);
+    REQUIRE(writer->AddDistinct("dup", std::vector<float>(384, 1.F)) == 0);
     std::vector<CorpusLine> lines;
     std::vector<std::vector<std::string>> terms;
-    const std::vector<std::string> dupTerms = termsOf("dup");
+    const std::vector<std::string> dup_terms = TermsOf("dup");
     for (std::size_t index = 0; index < count; ++index)
     {
-        lines.push_back({.lineNumber = index + 1, .byteOffset = index * 4, .byteLength = 3, .distinctId = 0});
-        terms.push_back(dupTerms);
+        lines.push_back({.line_number = index + 1, .byte_offset = index * 4, .byte_length = 3, .distinct_id = 0});
+        terms.push_back(dup_terms);
     }
-    REQUIRE(writer->addLines(lines, terms));
-    REQUIRE(writer->finish());
-    auto mapped = nesso::core::mapCorpusFile(dir.path() / "duplicates.nesso");
+    REQUIRE(writer->AddLines(lines, terms));
+    REQUIRE(writer->Finish());
+    auto mapped = nesso::core::MapCorpusFile(dir.Path() / "duplicates.nesso");
     REQUIRE(mapped);
-    CHECK(mapped->lines().size() == count);
-    CHECK(mapped->texts().size() == 1);
-    CHECK(mapped->matrix().size() == 384);
-    REQUIRE(mapped->lexicalPostings().size() == count);
-    CHECK(mapped->lexicalDictionary().size() == 1);
-    CHECK(mapped->lexicalDictionary()[0] == "dup");
-    CHECK(std::filesystem::file_size(dir.path() / "duplicates.nesso") < count * 384 * sizeof(float) / 4);
+    CHECK(mapped->Lines().size() == count);
+    CHECK(mapped->Texts().size() == 1);
+    CHECK(mapped->Matrix().size() == 384);
+    REQUIRE(mapped->LexicalPostings().size() == count);
+    CHECK(mapped->LexicalDictionary().size() == 1);
+    CHECK(mapped->LexicalDictionary()[0] == "dup");
+    CHECK(std::filesystem::file_size(dir.Path() / "duplicates.nesso") < count * 384 * sizeof(float) / 4);
 }
 
 TEST_CASE("empty v3 corpora and source metadata are handled explicitly", "[corpus][core]")
 {
     const TempDir dir;
-    const auto path = dir.path() / "empty.nesso";
-    auto writer = CorpusWriter::create(path, policy(0));
+    const auto path = dir.Path() / "empty.nesso";
+    auto writer = CorpusWriter::Create(path, Policy(0));
     REQUIRE(writer);
-    REQUIRE(writer->finish());
-    const auto mapped = nesso::core::mapCorpusFile(path);
+    REQUIRE(writer->Finish());
+    const auto mapped = nesso::core::MapCorpusFile(path);
     REQUIRE(mapped);
-    CHECK(mapped->lines().empty());
-    CHECK(mapped->texts().empty());
-    CHECK(mapped->matrix().empty());
-    CHECK(mapped->lexicalDictionary().empty());
-    CHECK(mapped->lexicalPostings().empty());
-    CHECK(mapped->dimensions() == 0);
-    const auto stdinInfo = nesso::core::sourceInfoFor("-", "message");
-    REQUIRE(stdinInfo);
-    CHECK(stdinInfo->storedOnly);
-    CHECK_FALSE(stdinInfo->tracked);
-    CHECK_FALSE(nesso::core::sourceInfoFor(dir.path() / "missing", "message"));
+    CHECK(mapped->Lines().empty());
+    CHECK(mapped->Texts().empty());
+    CHECK(mapped->Matrix().empty());
+    CHECK(mapped->LexicalDictionary().empty());
+    CHECK(mapped->LexicalPostings().empty());
+    CHECK(mapped->Dimensions() == 0);
+    const auto stdin_info = nesso::core::SourceInfoFor("-", "message");
+    REQUIRE(stdin_info);
+    CHECK(stdin_info->stored_only);
+    CHECK_FALSE(stdin_info->tracked);
+    CHECK_FALSE(nesso::core::SourceInfoFor(dir.Path() / "missing", "message"));
 
-    const auto gzip = dir.path() / "APP.LOG.GZ";
+    const auto gzip = dir.Path() / "APP.LOG.GZ";
     {
         std::ofstream output(gzip, std::ios::binary);
         const std::array<unsigned char, 4> bytes{0x1f, 0x8b, 0x08, 0x00};
@@ -399,24 +399,24 @@ TEST_CASE("empty v3 corpora and source metadata are handled explicitly", "[corpu
         output.write(reinterpret_cast<const char *>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
         REQUIRE(output);
     }
-    const auto gzipInfo = nesso::core::sourceInfoFor(gzip, "host");
-    REQUIRE(gzipInfo);
-    CHECK(gzipInfo->storedOnly);
-    CHECK_FALSE(gzipInfo->tracked);
-    CHECK(gzipInfo->jsonField == "host");
-    CHECK(gzipInfo->size == std::filesystem::file_size(gzip));
-    const auto plain = dir.path() / "plain.log";
-    writeBytes(plain, "alpha\n");
-    const auto plainInfo = nesso::core::sourceInfoFor(plain, "message");
-    REQUIRE(plainInfo);
-    CHECK(plainInfo->tracked);
-    CHECK_FALSE(plainInfo->storedOnly);
+    const auto gzip_info = nesso::core::SourceInfoFor(gzip, "host");
+    REQUIRE(gzip_info);
+    CHECK(gzip_info->stored_only);
+    CHECK_FALSE(gzip_info->tracked);
+    CHECK(gzip_info->json_field == "host");
+    CHECK(gzip_info->size == std::filesystem::file_size(gzip));
+    const auto plain = dir.Path() / "plain.log";
+    WriteBytes(plain, "alpha\n");
+    const auto plain_info = nesso::core::SourceInfoFor(plain, "message");
+    REQUIRE(plain_info);
+    CHECK(plain_info->tracked);
+    CHECK_FALSE(plain_info->stored_only);
 }
 
 TEST_CASE("v3 writer rejects invalid policies and unusable destinations", "[corpus][core]")
 {
     const TempDir dir;
-    CorpusPolicy invalid = policy();
+    CorpusPolicy invalid = Policy();
     SECTION("missing field") { invalid.erase("batch"); }
     SECTION("bad model hash") { invalid["model.sha256"] = "not-a-hash"; }
     SECTION("bad vocabulary hash") { invalid["vocab.sha256"] = std::string(64, 'G'); }
@@ -430,115 +430,115 @@ TEST_CASE("v3 writer rejects invalid policies and unusable destinations", "[corp
     SECTION("invalid key") { invalid["Bad Key"] = "value"; }
     SECTION("model id too long") { invalid["model.id"] = std::string(1025, 'x'); }
     SECTION("policy too long") { invalid["extra"] = std::string(65536, 'x'); }
-    const auto rejected = CorpusWriter::create(dir.path() / "invalid.nesso", invalid);
+    const auto rejected = CorpusWriter::Create(dir.Path() / "invalid.nesso", invalid);
     REQUIRE_FALSE(rejected);
     CHECK(rejected.error() == EngineError::CorruptDatabase);
-    CHECK_FALSE(hasSpill(dir.path()));
+    CHECK_FALSE(HasSpill(dir.Path()));
 }
 
 TEST_CASE("v3 writer validates records and preserves an existing destination", "[corpus][core]")
 {
     const TempDir dir;
-    const auto path = dir.path() / "corpus.nesso";
-    writeBytes(path, "old corpus");
+    const auto path = dir.Path() / "corpus.nesso";
+    WriteBytes(path, "old corpus");
     {
-        auto writer = CorpusWriter::create(path, policy());
+        auto writer = CorpusWriter::Create(path, Policy());
         REQUIRE(writer);
-        CHECK_FALSE(writer->addSource({.path = ""}));
-        CHECK_FALSE(writer->addSource({.path = std::string{"a\0b", 3}}));
-        REQUIRE(writer->addSource({.path = "-", .storedOnly = true}) == 0);
-        CHECK_FALSE(writer->addDistinct("empty", {}));
-        CHECK_FALSE(writer->addDistinct("wrong width", std::array<float, 1>{1.F}));
+        CHECK_FALSE(writer->AddSource({.path = ""}));
+        CHECK_FALSE(writer->AddSource({.path = std::string{"a\0b", 3}}));
+        REQUIRE(writer->AddSource({.path = "-", .stored_only = true}) == 0);
+        CHECK_FALSE(writer->AddDistinct("empty", {}));
+        CHECK_FALSE(writer->AddDistinct("wrong width", std::array<float, 1>{1.F}));
         CHECK_FALSE(
-            writer->addDistinct("nonfinite", std::array<float, 2>{1.F, std::numeric_limits<float>::infinity()}));
+            writer->AddDistinct("nonfinite", std::array<float, 2>{1.F, std::numeric_limits<float>::infinity()}));
         CHECK_FALSE(
-            writer->addDistinct(std::string(8ULL * 1024ULL * 1024ULL + 1, 'x'), std::array<float, 2>{1.F, 0.F}));
-        REQUIRE(writer->addDistinct("alpha", std::array<float, 2>{1.F, 0.F}) == 0);
-        CHECK_FALSE(writer->addDistinct("alpha", std::array<float, 2>{1.F, 0.F}));
-        const std::array<CorpusLine, 1> noStored{CorpusLine{.lineNumber = 1, .distinctId = 0}};
-        const std::array<std::vector<std::string>, 1> alphaTerms{termsOf("alpha")};
-        CHECK_FALSE(writer->addLines(noStored, alphaTerms));
-        const std::array<CorpusLine, 1> badSource{
-            CorpusLine{.lineNumber = 1, .sourceIndex = 1, .distinctId = 0, .storedText = "alpha"}};
-        CHECK_FALSE(writer->addLines(badSource, alphaTerms));
-        const std::array<CorpusLine, 1> badId{CorpusLine{.lineNumber = 1, .distinctId = 1, .storedText = "alpha"}};
-        CHECK_FALSE(writer->addLines(badId, alphaTerms));
-        const std::array<CorpusLine, 1> good{CorpusLine{.lineNumber = 1, .distinctId = 0, .storedText = "alpha"}};
-        REQUIRE(writer->addLines(good, alphaTerms));
-        CHECK_FALSE(writer->addLines(good, alphaTerms));
+            writer->AddDistinct(std::string(8ULL * 1024ULL * 1024ULL + 1, 'x'), std::array<float, 2>{1.F, 0.F}));
+        REQUIRE(writer->AddDistinct("alpha", std::array<float, 2>{1.F, 0.F}) == 0);
+        CHECK_FALSE(writer->AddDistinct("alpha", std::array<float, 2>{1.F, 0.F}));
+        const std::array<CorpusLine, 1> no_stored{CorpusLine{.line_number = 1, .distinct_id = 0}};
+        const std::array<std::vector<std::string>, 1> alpha_terms{TermsOf("alpha")};
+        CHECK_FALSE(writer->AddLines(no_stored, alpha_terms));
+        const std::array<CorpusLine, 1> bad_source{
+            CorpusLine{.line_number = 1, .source_index = 1, .distinct_id = 0, .stored_text = "alpha"}};
+        CHECK_FALSE(writer->AddLines(bad_source, alpha_terms));
+        const std::array<CorpusLine, 1> bad_id{CorpusLine{.line_number = 1, .distinct_id = 1, .stored_text = "alpha"}};
+        CHECK_FALSE(writer->AddLines(bad_id, alpha_terms));
+        const std::array<CorpusLine, 1> good{CorpusLine{.line_number = 1, .distinct_id = 0, .stored_text = "alpha"}};
+        REQUIRE(writer->AddLines(good, alpha_terms));
+        CHECK_FALSE(writer->AddLines(good, alpha_terms));
     }
-    CHECK(readBytes(path) == "old corpus");
-    CHECK_FALSE(hasSpill(dir.path()));
-    CHECK_FALSE(CorpusWriter::create(dir.path(), policy()));
-    CHECK_FALSE(CorpusWriter::create(dir.path() / "missing" / "corpus", policy()));
+    CHECK(ReadBytes(path) == "old corpus");
+    CHECK_FALSE(HasSpill(dir.Path()));
+    CHECK_FALSE(CorpusWriter::Create(dir.Path(), Policy()));
+    CHECK_FALSE(CorpusWriter::Create(dir.Path() / "missing" / "corpus", Policy()));
 }
 
 TEST_CASE("v3 writer detects unreferenced vectors and transfers spill ownership", "[corpus][core]")
 {
     const TempDir dir;
     {
-        auto first = CorpusWriter::create(dir.path() / "first", policy());
-        auto second = CorpusWriter::create(dir.path() / "second", policy());
+        auto first = CorpusWriter::Create(dir.Path() / "first", Policy());
+        auto second = CorpusWriter::Create(dir.Path() / "second", Policy());
         REQUIRE(first);
         REQUIRE(second);
         *first = std::move(*second);
-        REQUIRE(first->addDistinct("unused", std::array<float, 2>{1.F, 0.F}));
-        const auto rejected = first->finish();
+        REQUIRE(first->AddDistinct("unused", std::array<float, 2>{1.F, 0.F}));
+        const auto rejected = first->Finish();
         REQUIRE_FALSE(rejected);
         CHECK(rejected.error() == EngineError::CorruptDatabase);
     }
-    CHECK_FALSE(hasSpill(dir.path()));
+    CHECK_FALSE(HasSpill(dir.Path()));
 }
 
 TEST_CASE("v3 streams lines before their distinct vectors", "[corpus][core]")
 {
     const TempDir dir;
-    const auto path = dir.path() / "streamed.nesso";
-    auto writer = CorpusWriter::create(path, policy());
+    const auto path = dir.Path() / "streamed.nesso";
+    auto writer = CorpusWriter::Create(path, Policy());
     REQUIRE(writer);
-    REQUIRE(writer->addSource({.path = "-", .storedOnly = true}) == 0);
-    REQUIRE(writer->reserveDistinct("alpha") == 0);
-    REQUIRE(writer->reserveDistinct("bravo") == 1);
-    const std::array<CorpusLine, 3> lines{CorpusLine{.lineNumber = 1, .distinctId = 0, .storedText = "alpha"},
-                                          CorpusLine{.lineNumber = 2, .distinctId = NO_DISTINCT, .storedText = ""},
-                                          CorpusLine{.lineNumber = 3, .distinctId = 1, .storedText = "bravo"}};
-    const std::array<std::vector<std::string>, 3> terms{termsOf("alpha"), {}, termsOf("bravo")};
-    REQUIRE(writer->addLines(lines, terms));
-    CHECK_FALSE(writer->finish());
-    CHECK_FALSE(writer->addVector(1, std::array<float, 2>{0.F, 1.F}));
-    REQUIRE(writer->addVector(0, std::array<float, 2>{1.F, 0.F}));
-    REQUIRE(writer->addVector(1, std::array<float, 2>{0.F, 1.F}));
-    REQUIRE(writer->finish());
-    const auto mapped = nesso::core::mapCorpusFile(path);
+    REQUIRE(writer->AddSource({.path = "-", .stored_only = true}) == 0);
+    REQUIRE(writer->ReserveDistinct("alpha") == 0);
+    REQUIRE(writer->ReserveDistinct("bravo") == 1);
+    const std::array<CorpusLine, 3> lines{CorpusLine{.line_number = 1, .distinct_id = 0, .stored_text = "alpha"},
+                                          CorpusLine{.line_number = 2, .distinct_id = NO_DISTINCT, .stored_text = ""},
+                                          CorpusLine{.line_number = 3, .distinct_id = 1, .stored_text = "bravo"}};
+    const std::array<std::vector<std::string>, 3> terms{TermsOf("alpha"), {}, TermsOf("bravo")};
+    REQUIRE(writer->AddLines(lines, terms));
+    CHECK_FALSE(writer->Finish());
+    CHECK_FALSE(writer->AddVector(1, std::array<float, 2>{0.F, 1.F}));
+    REQUIRE(writer->AddVector(0, std::array<float, 2>{1.F, 0.F}));
+    REQUIRE(writer->AddVector(1, std::array<float, 2>{0.F, 1.F}));
+    REQUIRE(writer->Finish());
+    const auto mapped = nesso::core::MapCorpusFile(path);
     REQUIRE(mapped);
-    CHECK(mapped->lines().size() == 3);
-    CHECK(mapped->texts().size() == 2);
-    CHECK(mapped->matrix().size() == 4);
+    CHECK(mapped->Lines().size() == 3);
+    CHECK(mapped->Texts().size() == 2);
+    CHECK(mapped->Matrix().size() == 4);
 }
 
 TEST_CASE("v3 rejects unsupported versions and malformed files", "[corpus][core]")
 {
     const TempDir dir;
-    const auto path = dir.path() / "corpus.nesso";
-    writeExample(path, dir.path() / "app.log");
-    std::string bytes = readBytes(path);
-    const auto sourceOffset = getU64(bytes, 32);
-    const auto lineOffset = getU64(bytes, 40);
-    const auto matrixOffset = getU64(bytes, 48);
-    const auto distinctOffset = getU64(bytes, 64);
-    const auto textOffset = getU64(bytes, 72);
-    const auto storedOffset = getU64(bytes, 80);
+    const auto path = dir.Path() / "corpus.nesso";
+    WriteExample(path, dir.Path() / "app.log");
+    std::string bytes = ReadBytes(path);
+    const auto source_offset = GetU64(bytes, 32);
+    const auto line_offset = GetU64(bytes, 40);
+    const auto matrix_offset = GetU64(bytes, 48);
+    const auto distinct_offset = GetU64(bytes, 64);
+    const auto text_offset = GetU64(bytes, 72);
+    const auto stored_offset = GetU64(bytes, 80);
     EngineError expected = EngineError::CorruptDatabase;
     bool sealed = true;
 
     SECTION("v2")
     {
-        putU32(bytes, 4, 2);
+        PutU32(bytes, 4, 2);
         expected = EngineError::UnsupportedVersion;
     }
     SECTION("future version")
     {
-        putU32(bytes, 4, 4);
+        PutU32(bytes, 4, 4);
         expected = EngineError::UnsupportedVersion;
     }
     SECTION("bad magic") { bytes[0] = 'X'; }
@@ -549,27 +549,27 @@ TEST_CASE("v3 rejects unsupported versions and malformed files", "[corpus][core]
     }
     SECTION("truncated matrix") { bytes.pop_back(); }
     SECTION("trailing bytes") { bytes.push_back('x'); }
-    SECTION("misaligned matrix") { putU64(bytes, 48, matrixOffset + 1); }
-    SECTION("too many sources") { putU64(bytes, 16, 1'000'001); }
-    SECTION("too many lines") { putU64(bytes, 24, 10'000'001); }
-    SECTION("too many texts") { putU64(bytes, 56, 1'000'001); }
-    SECTION("zero dimensions") { putU32(bytes, 12, 0); }
-    SECTION("bad source section offset") { putU64(bytes, 32, sourceOffset + 8); }
-    SECTION("bad line section size") { putU64(bytes, 40, lineOffset + 1); }
-    SECTION("bad distinct section size") { putU64(bytes, 64, distinctOffset + 1); }
-    SECTION("bad text section offset") { putU64(bytes, 72, textOffset + 1); }
-    SECTION("bad stored section offset") { putU64(bytes, 80, matrixOffset + 1); }
+    SECTION("misaligned matrix") { PutU64(bytes, 48, matrix_offset + 1); }
+    SECTION("too many sources") { PutU64(bytes, 16, 1'000'001); }
+    SECTION("too many lines") { PutU64(bytes, 24, 10'000'001); }
+    SECTION("too many texts") { PutU64(bytes, 56, 1'000'001); }
+    SECTION("zero dimensions") { PutU32(bytes, 12, 0); }
+    SECTION("bad source section offset") { PutU64(bytes, 32, source_offset + 8); }
+    SECTION("bad line section size") { PutU64(bytes, 40, line_offset + 1); }
+    SECTION("bad distinct section size") { PutU64(bytes, 64, distinct_offset + 1); }
+    SECTION("bad text section offset") { PutU64(bytes, 72, text_offset + 1); }
+    SECTION("bad stored section offset") { PutU64(bytes, 80, matrix_offset + 1); }
     SECTION("out-of-range lexical offset")
     {
-        putU64(bytes, 88, matrixOffset);
-        putU64(bytes, 96, 8);
+        PutU64(bytes, 88, matrix_offset);
+        PutU64(bytes, 96, 8);
     }
-    SECTION("truncated lexical table") { putU64(bytes, 96, 1); }
-    SECTION("lexical length past matrix") { putU64(bytes, 96, matrixOffset); }
-    SECTION("bad policy offset") { putU64(bytes, 104, 0); }
+    SECTION("truncated lexical table") { PutU64(bytes, 96, 1); }
+    SECTION("lexical length past matrix") { PutU64(bytes, 96, matrix_offset); }
+    SECTION("bad policy offset") { PutU64(bytes, 104, 0); }
     SECTION("checksum mismatch")
     {
-        bytes[matrixOffset] = static_cast<char>(bytes[matrixOffset] ^ 1);
+        bytes[matrix_offset] = static_cast<char>(bytes[matrix_offset] ^ 1);
         sealed = false;
     }
     SECTION("checksum field")
@@ -589,36 +589,36 @@ TEST_CASE("v3 rejects unsupported versions and malformed files", "[corpus][core]
         REQUIRE(hash != std::string::npos);
         bytes[hash + std::string_view{"model.sha256="}.size()] = 'g';
     }
-    SECTION("bad source flags") { putU32(bytes, sourceOffset + 12, 4); }
-    SECTION("bad source offset") { putU64(bytes, sourceOffset, sourceOffset); }
-    SECTION("bad source length") { putU32(bytes, sourceOffset + 8, 0); }
-    SECTION("reserved source field") { putU32(bytes, sourceOffset + 44, 1); }
-    SECTION("bad line number") { putU64(bytes, lineOffset, 0); }
-    SECTION("bad line order") { putU64(bytes, lineOffset + 56, 1); }
-    SECTION("bad source reference") { putU32(bytes, lineOffset + 24, 99); }
-    SECTION("bad distinct reference") { putU32(bytes, lineOffset + 28, 99); }
-    SECTION("bad skipped flag") { putU32(bytes, lineOffset + 44, 4); }
-    SECTION("bad source range") { putU64(bytes, lineOffset + 16, 1000); }
-    SECTION("unexpected stored offset") { putU64(bytes, lineOffset + 32, storedOffset); }
-    SECTION("stored-only source without text") { putU32(bytes, lineOffset + 4 * 56 + 44, 0); }
-    SECTION("bad stored text offset") { putU64(bytes, lineOffset + 4 * 56 + 32, 0); }
-    SECTION("reserved line field") { putU64(bytes, lineOffset + 48, 1); }
-    SECTION("bad distinct text offset") { putU64(bytes, distinctOffset, textOffset + 1); }
-    SECTION("bad distinct text length") { putU32(bytes, distinctOffset + 8, 8U * 1024U * 1024U + 1U); }
-    SECTION("reserved distinct field") { putU32(bytes, distinctOffset + 12, 1); }
-    SECTION("duplicate distinct texts") { bytes.replace(textOffset + 5, 5, "alpha"); }
+    SECTION("bad source flags") { PutU32(bytes, source_offset + 12, 4); }
+    SECTION("bad source offset") { PutU64(bytes, source_offset, source_offset); }
+    SECTION("bad source length") { PutU32(bytes, source_offset + 8, 0); }
+    SECTION("reserved source field") { PutU32(bytes, source_offset + 44, 1); }
+    SECTION("bad line number") { PutU64(bytes, line_offset, 0); }
+    SECTION("bad line order") { PutU64(bytes, line_offset + 56, 1); }
+    SECTION("bad source reference") { PutU32(bytes, line_offset + 24, 99); }
+    SECTION("bad distinct reference") { PutU32(bytes, line_offset + 28, 99); }
+    SECTION("bad skipped flag") { PutU32(bytes, line_offset + 44, 4); }
+    SECTION("bad source range") { PutU64(bytes, line_offset + 16, 1000); }
+    SECTION("unexpected stored offset") { PutU64(bytes, line_offset + 32, stored_offset); }
+    SECTION("stored-only source without text") { PutU32(bytes, line_offset + 4 * 56 + 44, 0); }
+    SECTION("bad stored text offset") { PutU64(bytes, line_offset + 4 * 56 + 32, 0); }
+    SECTION("reserved line field") { PutU64(bytes, line_offset + 48, 1); }
+    SECTION("bad distinct text offset") { PutU64(bytes, distinct_offset, text_offset + 1); }
+    SECTION("bad distinct text length") { PutU32(bytes, distinct_offset + 8, 8U * 1024U * 1024U + 1U); }
+    SECTION("reserved distinct field") { PutU32(bytes, distinct_offset + 12, 1); }
+    SECTION("duplicate distinct texts") { bytes.replace(text_offset + 5, 5, "alpha"); }
     SECTION("unreferenced distinct vector")
     {
-        putU32(bytes, lineOffset + 2 * 56 + 28, 0);
-        putU32(bytes, lineOffset + 4 * 56 + 28, 0);
+        PutU32(bytes, line_offset + 2 * 56 + 28, 0);
+        PutU32(bytes, line_offset + 4 * 56 + 28, 0);
     }
     if (sealed)
     {
-        reseal(bytes);
+        Reseal(bytes);
     }
-    writeBytes(path, bytes);
+    WriteBytes(path, bytes);
     std::uint32_t observed = 0;
-    const auto result = nesso::core::mapCorpusFile(path, &observed);
+    const auto result = nesso::core::MapCorpusFile(path, &observed);
     REQUIRE_FALSE(result);
     CHECK(result.error() == expected);
     if (expected == EngineError::UnsupportedVersion)
@@ -632,37 +632,37 @@ TEST_CASE("v3 lexical postings round-trip for empty and one-line corpora", "[cor
     const TempDir dir;
     SECTION("empty")
     {
-        const auto path = dir.path() / "empty.nesso";
-        auto writer = CorpusWriter::create(path, policy(0));
+        const auto path = dir.Path() / "empty.nesso";
+        auto writer = CorpusWriter::Create(path, Policy(0));
         REQUIRE(writer);
-        REQUIRE(writer->finish());
-        const auto mapped = nesso::core::mapCorpusFile(path);
+        REQUIRE(writer->Finish());
+        const auto mapped = nesso::core::MapCorpusFile(path);
         REQUIRE(mapped);
-        CHECK(mapped->lexicalDictionary().empty());
-        CHECK(mapped->lexicalPostings().empty());
-        CHECK(getU64(readBytes(path), 96) >= 16);
+        CHECK(mapped->LexicalDictionary().empty());
+        CHECK(mapped->LexicalPostings().empty());
+        CHECK(GetU64(ReadBytes(path), 96) >= 16);
     }
     SECTION("one line")
     {
-        const auto path = dir.path() / "one.nesso";
-        auto writer = CorpusWriter::create(path, policy());
+        const auto path = dir.Path() / "one.nesso";
+        auto writer = CorpusWriter::Create(path, Policy());
         REQUIRE(writer);
-        REQUIRE(writer->addSource({.path = "-", .storedOnly = true}) == 0);
-        REQUIRE(writer->addDistinct("blk_-123 failed", std::array<float, 2>{1.F, 0.F}) == 0);
-        const CorpusLine line{.lineNumber = 1, .distinctId = 0, .storedText = "blk_-123 failed"};
-        const std::vector<std::string> terms = termsOf("blk_-123 failed");
-        REQUIRE(writer->addLines(std::span{&line, 1}, std::span{&terms, 1}));
-        REQUIRE(writer->finish());
-        const auto mapped = nesso::core::mapCorpusFile(path);
+        REQUIRE(writer->AddSource({.path = "-", .stored_only = true}) == 0);
+        REQUIRE(writer->AddDistinct("blk_-123 failed", std::array<float, 2>{1.F, 0.F}) == 0);
+        const CorpusLine line{.line_number = 1, .distinct_id = 0, .stored_text = "blk_-123 failed"};
+        const std::vector<std::string> terms = TermsOf("blk_-123 failed");
+        REQUIRE(writer->AddLines(std::span{&line, 1}, std::span{&terms, 1}));
+        REQUIRE(writer->Finish());
+        const auto mapped = nesso::core::MapCorpusFile(path);
         REQUIRE(mapped);
-        REQUIRE(mapped->lexicalPostings().size() == 1);
-        CHECK(mapped->lexicalPostings()[0].length == terms.size());
+        REQUIRE(mapped->LexicalPostings().size() == 1);
+        CHECK(mapped->LexicalPostings()[0].length == terms.size());
         std::vector<std::string> rebuilt;
-        for (const auto &[termId, frequency] : mapped->lexicalPostings()[0].entries)
+        for (const auto &[termId, frequency] : mapped->LexicalPostings()[0].entries)
         {
             for (std::uint32_t copy = 0; copy < frequency; ++copy)
             {
-                rebuilt.push_back(std::string{mapped->lexicalDictionary()[termId]});
+                rebuilt.push_back(std::string{mapped->LexicalDictionary()[termId]});
             }
         }
         std::ranges::sort(rebuilt);
@@ -675,27 +675,27 @@ TEST_CASE("v3 lexical postings round-trip for empty and one-line corpora", "[cor
 TEST_CASE("v3 corpus bytes match across repeated finishes", "[corpus][core]")
 {
     const TempDir dir;
-    const auto source = dir.path() / "app.log";
-    writeBytes(source, "alpha\nbravo\nalpha\n");
+    const auto source = dir.Path() / "app.log";
+    WriteBytes(source, "alpha\nbravo\nalpha\n");
     std::vector<std::string> corpora;
     for (int run = 0; run < 3; ++run)
     {
-        const auto path = dir.path() / ("corpus-" + std::to_string(run) + ".nesso");
-        auto writer = CorpusWriter::create(path, policy());
+        const auto path = dir.Path() / ("corpus-" + std::to_string(run) + ".nesso");
+        auto writer = CorpusWriter::Create(path, Policy());
         REQUIRE(writer);
-        auto info = nesso::core::sourceInfoFor(source, "message");
+        auto info = nesso::core::SourceInfoFor(source, "message");
         REQUIRE(info);
-        REQUIRE(writer->addSource(*info) == 0);
-        REQUIRE(writer->addDistinct("alpha", std::array<float, 2>{1.F, 0.F}) == 0);
-        REQUIRE(writer->addDistinct("bravo", std::array<float, 2>{0.F, 1.F}) == 1);
+        REQUIRE(writer->AddSource(*info) == 0);
+        REQUIRE(writer->AddDistinct("alpha", std::array<float, 2>{1.F, 0.F}) == 0);
+        REQUIRE(writer->AddDistinct("bravo", std::array<float, 2>{0.F, 1.F}) == 1);
         const std::array<CorpusLine, 3> lines{
-            CorpusLine{.lineNumber = 1, .byteOffset = 0, .byteLength = 5, .distinctId = 0},
-            CorpusLine{.lineNumber = 2, .byteOffset = 6, .byteLength = 5, .distinctId = 1},
-            CorpusLine{.lineNumber = 3, .byteOffset = 12, .byteLength = 5, .distinctId = 0}};
-        const std::array<std::vector<std::string>, 3> terms{termsOf("alpha"), termsOf("bravo"), termsOf("alpha")};
-        REQUIRE(writer->addLines(lines, terms));
-        REQUIRE(writer->finish());
-        corpora.push_back(readBytes(path));
+            CorpusLine{.line_number = 1, .byte_offset = 0, .byte_length = 5, .distinct_id = 0},
+            CorpusLine{.line_number = 2, .byte_offset = 6, .byte_length = 5, .distinct_id = 1},
+            CorpusLine{.line_number = 3, .byte_offset = 12, .byte_length = 5, .distinct_id = 0}};
+        const std::array<std::vector<std::string>, 3> terms{TermsOf("alpha"), TermsOf("bravo"), TermsOf("alpha")};
+        REQUIRE(writer->AddLines(lines, terms));
+        REQUIRE(writer->Finish());
+        corpora.push_back(ReadBytes(path));
     }
     CHECK(corpora[0] == corpora[1]);
     CHECK(corpora[0] == corpora[2]);
@@ -704,102 +704,102 @@ TEST_CASE("v3 corpus bytes match across repeated finishes", "[corpus][core]")
 TEST_CASE("v3 lexical payload errors stay corrupt", "[corpus][core]")
 {
     const TempDir dir;
-    const auto path = dir.path() / "corpus.nesso";
-    writeExample(path, dir.path() / "app.log");
-    std::string bytes = readBytes(path);
+    const auto path = dir.Path() / "corpus.nesso";
+    WriteExample(path, dir.Path() / "app.log");
+    std::string bytes = ReadBytes(path);
     const auto sites = ParseLexicalSites(bytes);
-    REQUIRE(sites.termCount >= 2);
-    REQUIRE(sites.firstTermByte != 0);
-    REQUIRE(sites.firstFrequency != 0);
-    REQUIRE(sites.firstPostingLength != 0);
-    REQUIRE(sites.firstDelta != 0);
-    const auto lexicalOffset = getU64(bytes, 88);
-    const auto lexicalBytes = getU64(bytes, 96);
-    const auto matrixOffset = getU64(bytes, 48);
+    REQUIRE(sites.term_count >= 2);
+    REQUIRE(sites.first_term_byte != 0);
+    REQUIRE(sites.first_frequency != 0);
+    REQUIRE(sites.first_posting_length != 0);
+    REQUIRE(sites.first_delta != 0);
+    const auto lexical_offset = GetU64(bytes, 88);
+    const auto lexical_bytes = GetU64(bytes, 96);
+    const auto matrix_offset = GetU64(bytes, 48);
 
-    SECTION("posting line count") { putU64(bytes, lexicalOffset + 8, getU64(bytes, 24) + 1); }
-    SECTION("unsorted dictionary") { bytes[sites.firstTermByte] = static_cast<char>(0xFF); }
+    SECTION("posting line count") { PutU64(bytes, lexical_offset + 8, GetU64(bytes, 24) + 1); }
+    SECTION("unsorted dictionary") { bytes[sites.first_term_byte] = static_cast<char>(0xFF); }
     SECTION("zero frequency")
     {
-        REQUIRE(static_cast<unsigned char>(bytes[sites.firstFrequency]) != 0);
-        REQUIRE((static_cast<unsigned char>(bytes[sites.firstFrequency]) & 0x80U) == 0);
-        bytes[sites.firstFrequency] = 0;
+        REQUIRE(static_cast<unsigned char>(bytes[sites.first_frequency]) != 0);
+        REQUIRE((static_cast<unsigned char>(bytes[sites.first_frequency]) & 0x80U) == 0);
+        bytes[sites.first_frequency] = 0;
     }
     SECTION("posting length")
     {
-        REQUIRE((static_cast<unsigned char>(bytes[sites.firstPostingLength]) & 0x80U) == 0);
-        REQUIRE(static_cast<unsigned char>(bytes[sites.firstPostingLength]) < 127);
-        ++bytes[sites.firstPostingLength];
+        REQUIRE((static_cast<unsigned char>(bytes[sites.first_posting_length]) & 0x80U) == 0);
+        REQUIRE(static_cast<unsigned char>(bytes[sites.first_posting_length]) < 127);
+        ++bytes[sites.first_posting_length];
     }
     SECTION("term id delta")
     {
-        REQUIRE(sites.termCount < 0x7F);
-        REQUIRE((static_cast<unsigned char>(bytes[sites.firstDelta]) & 0x80U) == 0);
-        bytes[sites.firstDelta] = static_cast<char>(0x7F);
+        REQUIRE(sites.term_count < 0x7F);
+        REQUIRE((static_cast<unsigned char>(bytes[sites.first_delta]) & 0x80U) == 0);
+        bytes[sites.first_delta] = static_cast<char>(0x7F);
     }
     SECTION("trailing lexical byte")
     {
-        REQUIRE(lexicalOffset + lexicalBytes < matrixOffset);
-        putU64(bytes, 96, lexicalBytes + 1);
+        REQUIRE(lexical_offset + lexical_bytes < matrix_offset);
+        PutU64(bytes, 96, lexical_bytes + 1);
     }
 
-    reseal(bytes);
-    writeBytes(path, bytes);
-    const auto mapped = nesso::core::mapCorpusFile(path);
+    Reseal(bytes);
+    WriteBytes(path, bytes);
+    const auto mapped = nesso::core::MapCorpusFile(path);
     REQUIRE_FALSE(mapped);
     CHECK(mapped.error() == EngineError::CorruptDatabase);
 }
 
-TEST_CASE("v3 addLines rejects term and order errors before writing", "[corpus][core]")
+TEST_CASE("v3 AddLines rejects term and order errors before writing", "[corpus][core]")
 {
     const TempDir dir;
-    const auto path = dir.path() / "corpus.nesso";
-    writeBytes(path, "old corpus");
-    auto writer = CorpusWriter::create(path, policy());
+    const auto path = dir.Path() / "corpus.nesso";
+    WriteBytes(path, "old corpus");
+    auto writer = CorpusWriter::Create(path, Policy());
     REQUIRE(writer);
-    REQUIRE(writer->addSource({.path = "-", .storedOnly = true}) == 0);
-    REQUIRE(writer->addDistinct("alpha", std::array<float, 2>{1.F, 0.F}) == 0);
-    const CorpusLine line{.lineNumber = 2, .distinctId = 0, .storedText = "alpha"};
-    const std::vector<std::string> alpha = termsOf("alpha");
+    REQUIRE(writer->AddSource({.path = "-", .stored_only = true}) == 0);
+    REQUIRE(writer->AddDistinct("alpha", std::array<float, 2>{1.F, 0.F}) == 0);
+    const CorpusLine line{.line_number = 2, .distinct_id = 0, .stored_text = "alpha"};
+    const std::vector<std::string> alpha = TermsOf("alpha");
 
     SECTION("term count mismatch")
     {
         const std::array<std::vector<std::string>, 2> terms{alpha, alpha};
-        const auto rejected = writer->addLines(std::span{&line, 1}, terms);
+        const auto rejected = writer->AddLines(std::span{&line, 1}, terms);
         REQUIRE_FALSE(rejected);
         CHECK(rejected.error() == EngineError::CorruptDatabase);
     }
     SECTION("empty term")
     {
         const std::vector<std::string> terms{""};
-        const auto rejected = writer->addLines(std::span{&line, 1}, std::span{&terms, 1});
+        const auto rejected = writer->AddLines(std::span{&line, 1}, std::span{&terms, 1});
         REQUIRE_FALSE(rejected);
         CHECK(rejected.error() == EngineError::CorruptDatabase);
     }
     SECTION("NUL term")
     {
         const std::vector<std::string> terms{std::string{"a\0b", 3}};
-        const auto rejected = writer->addLines(std::span{&line, 1}, std::span{&terms, 1});
+        const auto rejected = writer->AddLines(std::span{&line, 1}, std::span{&terms, 1});
         REQUIRE_FALSE(rejected);
         CHECK(rejected.error() == EngineError::CorruptDatabase);
     }
     SECTION("terms on a skipped line")
     {
-        const CorpusLine skipped{.lineNumber = 2, .distinctId = NO_DISTINCT, .storedText = ""};
-        const auto rejected = writer->addLines(std::span{&skipped, 1}, std::span{&alpha, 1});
+        const CorpusLine skipped{.line_number = 2, .distinct_id = NO_DISTINCT, .stored_text = ""};
+        const auto rejected = writer->AddLines(std::span{&skipped, 1}, std::span{&alpha, 1});
         REQUIRE_FALSE(rejected);
         CHECK(rejected.error() == EngineError::CorruptDatabase);
     }
     SECTION("line order")
     {
         const std::array<CorpusLine, 2> lines{line,
-                                              CorpusLine{.lineNumber = 1, .distinctId = 0, .storedText = "alpha"}};
+                                              CorpusLine{.line_number = 1, .distinct_id = 0, .stored_text = "alpha"}};
         const std::array<std::vector<std::string>, 2> terms{alpha, alpha};
-        const auto rejected = writer->addLines(lines, terms);
+        const auto rejected = writer->AddLines(lines, terms);
         REQUIRE_FALSE(rejected);
         CHECK(rejected.error() == EngineError::CorruptDatabase);
     }
-    CHECK(readBytes(path) == "old corpus");
+    CHECK(ReadBytes(path) == "old corpus");
 }
 
 TEST_CASE("v3 file open failures stay distinct from corrupt corpora", "[corpus][core]")
@@ -807,34 +807,34 @@ TEST_CASE("v3 file open failures stay distinct from corrupt corpora", "[corpus][
     const TempDir dir;
     SECTION("directory destination")
     {
-        const auto rejected = CorpusWriter::create(dir.path(), policy());
+        const auto rejected = CorpusWriter::Create(dir.Path(), Policy());
         REQUIRE_FALSE(rejected);
         CHECK(rejected.error() == EngineError::FileOpenFailure);
     }
     SECTION("missing corpus")
     {
-        const auto mapped = nesso::core::mapCorpusFile(dir.path() / "missing.nesso");
+        const auto mapped = nesso::core::MapCorpusFile(dir.Path() / "missing.nesso");
         REQUIRE_FALSE(mapped);
         CHECK(mapped.error() == EngineError::FileOpenFailure);
     }
     SECTION("finish cannot reopen a spill")
     {
-        const auto path = dir.path() / "corpus.nesso";
-        auto writer = CorpusWriter::create(path, policy());
+        const auto path = dir.Path() / "corpus.nesso";
+        auto writer = CorpusWriter::Create(path, Policy());
         REQUIRE(writer);
-        REQUIRE(writer->addSource({.path = "-", .storedOnly = true}) == 0);
-        REQUIRE(writer->addDistinct("alpha", std::array<float, 2>{1.F, 0.F}) == 0);
-        const CorpusLine line{.lineNumber = 1, .distinctId = 0, .storedText = "alpha"};
-        const std::vector<std::string> terms = termsOf("alpha");
-        REQUIRE(writer->addLines(std::span{&line, 1}, std::span{&terms, 1}));
-        for (const auto &entry : std::filesystem::directory_iterator(dir.path()))
+        REQUIRE(writer->AddSource({.path = "-", .stored_only = true}) == 0);
+        REQUIRE(writer->AddDistinct("alpha", std::array<float, 2>{1.F, 0.F}) == 0);
+        const CorpusLine line{.line_number = 1, .distinct_id = 0, .stored_text = "alpha"};
+        const std::vector<std::string> terms = TermsOf("alpha");
+        REQUIRE(writer->AddLines(std::span{&line, 1}, std::span{&terms, 1}));
+        for (const auto &entry : std::filesystem::directory_iterator(dir.Path()))
         {
             if (entry.path().filename().string().find(".lines.") != std::string::npos)
             {
                 std::filesystem::remove(entry.path());
             }
         }
-        const auto rejected = writer->finish();
+        const auto rejected = writer->Finish();
         REQUIRE_FALSE(rejected);
         CHECK(rejected.error() == EngineError::FileOpenFailure);
     }
@@ -843,15 +843,15 @@ TEST_CASE("v3 file open failures stay distinct from corrupt corpora", "[corpus][
 TEST_CASE("v3 map rejects a policy dimension that disagrees with the header", "[corpus][core]")
 {
     const TempDir dir;
-    const auto path = dir.path() / "corpus.nesso";
-    writeExample(path, dir.path() / "app.log");
-    std::string bytes = readBytes(path);
+    const auto path = dir.Path() / "corpus.nesso";
+    WriteExample(path, dir.Path() / "app.log");
+    std::string bytes = ReadBytes(path);
     const auto field = bytes.find("dimensions=2\n");
     REQUIRE(field != std::string::npos);
     bytes[field + std::string_view{"dimensions="}.size()] = '3';
-    reseal(bytes);
-    writeBytes(path, bytes);
-    const auto mapped = nesso::core::mapCorpusFile(path);
+    Reseal(bytes);
+    WriteBytes(path, bytes);
+    const auto mapped = nesso::core::MapCorpusFile(path);
     REQUIRE_FALSE(mapped);
     CHECK(mapped.error() == EngineError::CorruptDatabase);
 }

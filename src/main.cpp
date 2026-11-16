@@ -18,14 +18,14 @@ int main(int argc, char *argv[]) noexcept
     {
         std::ios_base::sync_with_stdio(false);
 
-        const auto parsed = nesso::cli::parseCommandLine(argc, argv);
+        const auto parsed = nesso::cli::ParseCommandLine(argc, argv);
         if (!parsed)
         {
             return parsed.error();
         }
 
         const nesso::Nesso nesso{parsed->config};
-        return std::visit([&nesso](const auto &request) { return nesso::cli::execute(nesso, request); },
+        return std::visit([&nesso](const auto &request) { return nesso::cli::Execute(nesso, request); },
                           parsed->request);
     }
     catch (const std::format_error &e)

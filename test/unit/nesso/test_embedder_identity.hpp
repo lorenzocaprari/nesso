@@ -8,11 +8,11 @@
 
 #include <string>
 
-inline nesso::embed::EmbedderIdentity testEmbedderIdentity()
+inline nesso::embed::EmbedderIdentity TestEmbedderIdentity()
 {
-    return {.modelId = "test/model",
-            .modelSha256 = std::string(64, 'a'),
-            .vocabSha256 = std::string(64, 'b'),
+    return {.model_id = "test/model",
+            .model_sha256 = std::string(64, 'a'),
+            .vocab_sha256 = std::string(64, 'b'),
             .quantized = true,
             .dimensions = 4};
 }

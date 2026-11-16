@@ -12,7 +12,8 @@
 namespace nesso::core
 {
 
-/// Query class used by `--mode auto` routing ([ADR 0011](docs/adr/0011-hybrid-search-and-identifier-routing.md)).
+/// Query class used by `--mode auto` routing ([ADR
+/// 0011](docs/adr/0011-hybrid-search-and-identifier-routing.md)).
 enum class QueryClass : std::uint8_t
 {
     Identifier,
@@ -29,15 +30,15 @@ struct QueryTokens
 };
 
 /// Strip one surrounding `"…"` pair from the whole query when present, split on
-/// ASCII whitespace (`0x09`, `0x0A`, `0x0D`, `0x20`), drop empty tokens, and strip
-/// one surrounding `"…"` pair from each token.
-[[nodiscard]] QueryTokens tokenizeQuery(std::string_view query);
+/// ASCII whitespace (`0x09`, `0x0A`, `0x0D`, `0x20`), drop empty tokens, and
+/// strip one surrounding `"…"` pair from each token.
+[[nodiscard]] QueryTokens TokenizeQuery(std::string_view query);
 
 /// True when `token` fully matches one identifier pattern from ADR 0011.
-[[nodiscard]] bool isIdentifierToken(std::string_view token);
+[[nodiscard]] bool IsIdentifierToken(std::string_view token);
 
 /// Classify a query. Empty after tokenization is natural language.
-[[nodiscard]] QueryClass classifyQuery(std::string_view query);
+[[nodiscard]] QueryClass ClassifyQuery(std::string_view query);
 
 } // namespace nesso::core
 

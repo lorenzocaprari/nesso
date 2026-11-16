@@ -11,32 +11,32 @@
 namespace nesso::parser
 {
 
-static bool isDigit(char character) noexcept { return character >= '0' && character <= '9'; }
+static bool IsDigit(char character) noexcept { return character >= '0' && character <= '9'; }
 
-static bool isHex(char character) noexcept
+static bool IsHex(char character) noexcept
 {
-    return isDigit(character) || (character >= 'a' && character <= 'f') || (character >= 'A' && character <= 'F');
+    return IsDigit(character) || (character >= 'a' && character <= 'f') || (character >= 'A' && character <= 'F');
 }
 
-static bool isLetter(char character) noexcept
+static bool IsLetter(char character) noexcept
 {
     return (character >= 'a' && character <= 'z') || (character >= 'A' && character <= 'Z');
 }
 
-static bool isWord(char character) noexcept { return isLetter(character) || isDigit(character) || character == '_'; }
+static bool IsWord(char character) noexcept { return IsLetter(character) || IsDigit(character) || character == '_'; }
 
-static bool isPathChar(char character) noexcept
+static bool IsPathChar(char character) noexcept
 {
-    return isWord(character) || character == '/' || character == '.' || character == '-' || character == '+' ||
+    return IsWord(character) || character == '/' || character == '.' || character == '-' || character == '+' ||
            character == '~' || character == '%';
 }
 
-static int decimalValue(char character) noexcept
+static int DecimalValue(char character) noexcept
 {
     return static_cast<unsigned char>(character) - static_cast<unsigned char>('0');
 }
 
-static bool readDigits(std::string_view text, std::size_t index, std::size_t count, int &value) noexcept
+static bool ReadDigits(std::string_view text, std::size_t index, std::size_t count, int &value) noexcept
 {
     if (index + count > text.size())
     {
@@ -46,32 +46,32 @@ static bool readDigits(std::string_view text, std::size_t index, std::size_t cou
     for (std::size_t offset = 0; offset < count; ++offset)
     {
         const char character = text[index + offset];
-        if (!isDigit(character))
+        if (!IsDigit(character))
         {
             return false;
         }
-        parsed = (parsed * 10) + decimalValue(character);
+        parsed = (parsed * 10) + DecimalValue(character);
     }
     value = parsed;
     return true;
 }
 
-static bool readOctet(std::string_view text, std::size_t index, std::size_t &end) noexcept
+static bool ReadOctet(std::string_view text, std::size_t index, std::size_t &end) noexcept
 {
-    if (index >= text.size() || !isDigit(text[index]))
+    if (index >= text.size() || !IsDigit(text[index]))
     {
         return false;
     }
     int value = 0;
     std::size_t cursor = index;
     int digits = 0;
-    while (cursor < text.size() && isDigit(text[cursor]) && digits < 3)
+    while (cursor < text.size() && IsDigit(text[cursor]) && digits < 3)
     {
-        value = (value * 10) + decimalValue(text[cursor]);
+        value = (value * 10) + DecimalValue(text[cursor]);
         ++cursor;
         ++digits;
     }
-    if (cursor < text.size() && isDigit(text[cursor]))
+    if (cursor < text.size() && IsDigit(text[cursor]))
     {
         return false;
     }
@@ -83,22 +83,22 @@ static bool readOctet(std::string_view text, std::size_t index, std::size_t &end
     return true;
 }
 
-static std::size_t matchPort(std::string_view text, std::size_t index) noexcept
+static std::size_t MatchPort(std::string_view text, std::size_t index) noexcept
 {
-    if (index >= text.size() || !isDigit(text[index]))
+    if (index >= text.size() || !IsDigit(text[index]))
     {
         return 0;
     }
     int value = 0;
     std::size_t cursor = index;
     int digits = 0;
-    while (cursor < text.size() && isDigit(text[cursor]) && digits < 5)
+    while (cursor < text.size() && IsDigit(text[cursor]) && digits < 5)
     {
-        value = (value * 10) + decimalValue(text[cursor]);
+        value = (value * 10) + DecimalValue(text[cursor]);
         ++cursor;
         ++digits;
     }
-    if (cursor < text.size() && isDigit(text[cursor]))
+    if (cursor < text.size() && IsDigit(text[cursor]))
     {
         return 0;
     }
@@ -109,10 +109,10 @@ static std::size_t matchPort(std::string_view text, std::size_t index) noexcept
     return cursor - index;
 }
 
-static std::size_t matchIpv4At(std::string_view text, std::size_t begin, bool checkLead, bool allowPort) noexcept
+static std::size_t MatchIpv4At(std::string_view text, std::size_t begin, bool check_lead, bool allow_port) noexcept
 {
     const std::size_t size = text.size();
-    if (checkLead && begin > 0 && (isDigit(text[begin - 1]) || text[begin - 1] == '.'))
+    if (check_lead && begin > 0 && (IsDigit(text[begin - 1]) || text[begin - 1] == '.'))
     {
         return 0;
     }
@@ -128,7 +128,7 @@ static std::size_t matchIpv4At(std::string_view text, std::size_t begin, bool ch
             ++cursor;
         }
         std::size_t end = cursor;
-        if (!readOctet(text, cursor, end))
+        if (!ReadOctet(text, cursor, end))
         {
             return 0;
         }
@@ -138,16 +138,16 @@ static std::size_t matchIpv4At(std::string_view text, std::size_t begin, bool ch
     {
         return 0;
     }
-    if (allowPort && cursor < size && text[cursor] == ':')
+    if (allow_port && cursor < size && text[cursor] == ':')
     {
-        const std::size_t port = matchPort(text, cursor + 1);
+        const std::size_t port = MatchPort(text, cursor + 1);
         if (port == 0)
         {
             return 0;
         }
         cursor += 1 + port;
     }
-    if (cursor < size && (isWord(text[cursor]) || text[cursor] == '.'))
+    if (cursor < size && (IsWord(text[cursor]) || text[cursor] == '.'))
     {
         return 0;
     }
@@ -161,7 +161,7 @@ enum class Ipv6Step : unsigned char
     Fail
 };
 
-static bool ipv6ScanStart(std::string_view text, std::size_t begin, std::size_t &cursor, bool &bracket) noexcept
+static bool Ipv6ScanStart(std::string_view text, std::size_t begin, std::size_t &cursor, bool &bracket) noexcept
 {
     const std::size_t size = text.size();
     cursor = begin;
@@ -171,21 +171,21 @@ static bool ipv6ScanStart(std::string_view text, std::size_t begin, std::size_t 
         ++cursor;
         return true;
     }
-    if (begin > 0 && isWord(text[begin - 1]))
+    if (begin > 0 && IsWord(text[begin - 1]))
     {
         return false;
     }
     return true;
 }
 
-static Ipv6Step ipv6TakeCompression(std::string_view text, std::size_t scanEnd, std::size_t &cursor,
+static Ipv6Step Ipv6TakeCompression(std::string_view text, std::size_t scan_end, std::size_t &cursor,
                                     bool &compressed) noexcept
 {
     if (text[cursor] != ':')
     {
         return Ipv6Step::Continue;
     }
-    if (compressed || cursor + 1 >= scanEnd || text[cursor + 1] != ':')
+    if (compressed || cursor + 1 >= scan_end || text[cursor + 1] != ':')
     {
         return Ipv6Step::Fail;
     }
@@ -194,20 +194,20 @@ static Ipv6Step ipv6TakeCompression(std::string_view text, std::size_t scanEnd, 
     return Ipv6Step::Break;
 }
 
-static bool ipv6EmbeddedIpv4Ahead(std::string_view text, std::size_t cursor, std::size_t scanEnd) noexcept
+static bool Ipv6EmbeddedIpv4Ahead(std::string_view text, std::size_t cursor, std::size_t scan_end) noexcept
 {
-    if (!isDigit(text[cursor]))
+    if (!IsDigit(text[cursor]))
     {
         return false;
     }
-    const std::size_t lookEnd = cursor + 16 < scanEnd ? cursor + 16 : scanEnd;
-    for (std::size_t look = cursor; look < lookEnd; ++look)
+    const std::size_t look_end = cursor + 16 < scan_end ? cursor + 16 : scan_end;
+    for (std::size_t look = cursor; look < look_end; ++look)
     {
         if (text[look] == '.')
         {
             return true;
         }
-        if (!isDigit(text[look]))
+        if (!IsDigit(text[look]))
         {
             return false;
         }
@@ -215,45 +215,45 @@ static bool ipv6EmbeddedIpv4Ahead(std::string_view text, std::size_t cursor, std
     return false;
 }
 
-static Ipv6Step ipv6TakeEmbeddedIpv4(std::string_view text, std::size_t &cursor, int &groups, bool &sawHex) noexcept
+static Ipv6Step Ipv6TakeEmbeddedIpv4(std::string_view text, std::size_t &cursor, int &groups, bool &saw_hex) noexcept
 {
-    const std::size_t tail = matchIpv4At(text, cursor, false, false);
+    const std::size_t tail = MatchIpv4At(text, cursor, false, false);
     if (tail == 0 || groups > 6)
     {
         return Ipv6Step::Fail;
     }
     groups += 2;
-    sawHex = true;
+    saw_hex = true;
     cursor += tail;
     return Ipv6Step::Break;
 }
 
-static Ipv6Step ipv6TakeHextet(std::string_view text, std::size_t scanEnd, std::size_t &cursor, int &groups,
-                               bool &sawHex) noexcept
+static Ipv6Step Ipv6TakeHextet(std::string_view text, std::size_t scan_end, std::size_t &cursor, int &groups,
+                               bool &saw_hex) noexcept
 {
-    if (!isHex(text[cursor]))
+    if (!IsHex(text[cursor]))
     {
         return Ipv6Step::Break;
     }
     std::size_t hexes = 0;
-    while (hexes < 4 && cursor < scanEnd && isHex(text[cursor]))
+    while (hexes < 4 && cursor < scan_end && IsHex(text[cursor]))
     {
         ++cursor;
         ++hexes;
     }
-    if (hexes == 0 || (cursor < scanEnd && isHex(text[cursor])))
+    if (hexes == 0 || (cursor < scan_end && IsHex(text[cursor])))
     {
         return Ipv6Step::Fail;
     }
-    sawHex = true;
+    saw_hex = true;
     ++groups;
     if (groups > 8)
     {
         return Ipv6Step::Fail;
     }
-    if (cursor < scanEnd && text[cursor] == ':')
+    if (cursor < scan_end && text[cursor] == ':')
     {
-        if (cursor + 1 < scanEnd && text[cursor + 1] == ':')
+        if (cursor + 1 < scan_end && text[cursor + 1] == ':')
         {
             return Ipv6Step::Continue;
         }
@@ -262,7 +262,7 @@ static Ipv6Step ipv6TakeHextet(std::string_view text, std::size_t scanEnd, std::
             return Ipv6Step::Fail;
         }
         ++cursor;
-        if (cursor >= scanEnd)
+        if (cursor >= scan_end)
         {
             return Ipv6Step::Fail;
         }
@@ -271,12 +271,12 @@ static Ipv6Step ipv6TakeHextet(std::string_view text, std::size_t scanEnd, std::
     return Ipv6Step::Break;
 }
 
-static bool ipv6BodyValid(bool sawHex, bool compressed, int groups) noexcept
+static bool Ipv6BodyValid(bool saw_hex, bool compressed, int groups) noexcept
 {
-    return sawHex && ((compressed && groups < 8) || (!compressed && groups == 8));
+    return saw_hex && ((compressed && groups < 8) || (!compressed && groups == 8));
 }
 
-static std::size_t ipv6Finish(std::string_view text, std::size_t begin, std::size_t cursor, bool bracket) noexcept
+static std::size_t Ipv6Finish(std::string_view text, std::size_t begin, std::size_t cursor, bool bracket) noexcept
 {
     const std::size_t size = text.size();
     if (bracket)
@@ -288,7 +288,7 @@ static std::size_t ipv6Finish(std::string_view text, std::size_t begin, std::siz
         ++cursor;
         if (cursor < size && text[cursor] == ':')
         {
-            const std::size_t port = matchPort(text, cursor + 1);
+            const std::size_t port = MatchPort(text, cursor + 1);
             if (port == 0)
             {
                 return 0;
@@ -299,7 +299,7 @@ static std::size_t ipv6Finish(std::string_view text, std::size_t begin, std::siz
     else if (cursor < size)
     {
         const char next = text[cursor];
-        if (isWord(next) || next == ':' || next == '.')
+        if (IsWord(next) || next == ':' || next == '.')
         {
             return 0;
         }
@@ -307,24 +307,24 @@ static std::size_t ipv6Finish(std::string_view text, std::size_t begin, std::siz
     return cursor > begin ? cursor - begin : 0;
 }
 
-static std::size_t matchIpv6(std::string_view text, std::size_t begin) noexcept
+static std::size_t MatchIpv6(std::string_view text, std::size_t begin) noexcept
 {
     std::size_t cursor = begin;
     bool bracket = false;
-    if (!ipv6ScanStart(text, begin, cursor, bracket))
+    if (!Ipv6ScanStart(text, begin, cursor, bracket))
     {
         return 0;
     }
 
     const std::size_t size = text.size();
-    const std::size_t scanEnd = cursor + 64 < size ? cursor + 64 : size;
+    const std::size_t scan_end = cursor + 64 < size ? cursor + 64 : size;
     int groups = 0;
     bool compressed = false;
-    bool sawHex = false;
+    bool saw_hex = false;
 
-    while (cursor < scanEnd)
+    while (cursor < scan_end)
     {
-        const Ipv6Step compression = ipv6TakeCompression(text, scanEnd, cursor, compressed);
+        const Ipv6Step compression = Ipv6TakeCompression(text, scan_end, cursor, compressed);
         if (compression == Ipv6Step::Fail)
         {
             return 0;
@@ -333,15 +333,15 @@ static std::size_t matchIpv6(std::string_view text, std::size_t begin) noexcept
         {
             continue;
         }
-        if (ipv6EmbeddedIpv4Ahead(text, cursor, scanEnd))
+        if (Ipv6EmbeddedIpv4Ahead(text, cursor, scan_end))
         {
-            if (ipv6TakeEmbeddedIpv4(text, cursor, groups, sawHex) == Ipv6Step::Fail)
+            if (Ipv6TakeEmbeddedIpv4(text, cursor, groups, saw_hex) == Ipv6Step::Fail)
             {
                 return 0;
             }
             break;
         }
-        const Ipv6Step hextet = ipv6TakeHextet(text, scanEnd, cursor, groups, sawHex);
+        const Ipv6Step hextet = Ipv6TakeHextet(text, scan_end, cursor, groups, saw_hex);
         if (hextet == Ipv6Step::Fail)
         {
             return 0;
@@ -352,26 +352,26 @@ static std::size_t matchIpv6(std::string_view text, std::size_t begin) noexcept
         }
     }
 
-    if (!ipv6BodyValid(sawHex, compressed, groups))
+    if (!Ipv6BodyValid(saw_hex, compressed, groups))
     {
         return 0;
     }
-    return ipv6Finish(text, begin, cursor, bracket);
+    return Ipv6Finish(text, begin, cursor, bracket);
 }
 
-static std::size_t matchUuid(std::string_view text, std::size_t begin) noexcept
+static std::size_t MatchUuid(std::string_view text, std::size_t begin) noexcept
 {
-    if (begin > 0 && isWord(text[begin - 1]))
+    if (begin > 0 && IsWord(text[begin - 1]))
     {
         return 0;
     }
-    if (begin >= text.size() || !isHex(text[begin]))
+    if (begin >= text.size() || !IsHex(text[begin]))
     {
         return 0;
     }
-    static constexpr std::array<int, 5> widths = {8, 4, 4, 4, 12};
+    static constexpr std::array<int, 5> WIDTHS = {8, 4, 4, 4, 12};
     std::size_t cursor = begin;
-    for (std::size_t group = 0; group < widths.size(); ++group)
+    for (std::size_t group = 0; group < WIDTHS.size(); ++group)
     {
         if (group > 0)
         {
@@ -381,26 +381,27 @@ static std::size_t matchUuid(std::string_view text, std::size_t begin) noexcept
             }
             ++cursor;
         }
-        for (int digit = 0; digit < widths.at(group); ++digit)
+        for (int digit = 0; digit < WIDTHS.at(group); ++digit)
         {
-            if (cursor >= text.size() || !isHex(text[cursor]))
+            if (cursor >= text.size() || !IsHex(text[cursor]))
             {
                 return 0;
             }
             ++cursor;
         }
     }
-    if (cursor < text.size() && (isHex(text[cursor]) || text[cursor] == '-'))
+    if (cursor < text.size() && (IsHex(text[cursor]) || text[cursor] == '-'))
     {
         return 0;
     }
     return cursor - begin;
 }
 
-static std::size_t matchBlk(std::string_view text, std::size_t begin) noexcept
+static std::size_t MatchBlk(std::string_view text, std::size_t begin) noexcept
 {
-    // A digit may end the previous id (blk_1blk_2). A letter or '_' glues a prefix (myblk_1).
-    if (begin > 0 && (isLetter(text[begin - 1]) || text[begin - 1] == '_'))
+    // A digit may end the previous id (blk_1blk_2). A letter or '_' glues a
+    // prefix (myblk_1).
+    if (begin > 0 && (IsLetter(text[begin - 1]) || text[begin - 1] == '_'))
     {
         return 0;
     }
@@ -414,20 +415,20 @@ static std::size_t matchBlk(std::string_view text, std::size_t begin) noexcept
     {
         ++cursor;
     }
-    if (cursor >= text.size() || !isDigit(text[cursor]))
+    if (cursor >= text.size() || !IsDigit(text[cursor]))
     {
         return 0;
     }
-    while (cursor < text.size() && isDigit(text[cursor]))
+    while (cursor < text.size() && IsDigit(text[cursor]))
     {
         ++cursor;
     }
-    if (cursor < text.size() && isWord(text[cursor]))
+    if (cursor < text.size() && IsWord(text[cursor]))
     {
         // blk_1blk_2 is two ids. A letter suffix such as blk_1abc is not an id.
-        const bool nextId = cursor + 4 <= text.size() && text[cursor] == 'b' && text[cursor + 1] == 'l' &&
-                            text[cursor + 2] == 'k' && text[cursor + 3] == '_';
-        if (!nextId)
+        const bool next_id = cursor + 4 <= text.size() && text[cursor] == 'b' && text[cursor + 1] == 'l' &&
+                             text[cursor + 2] == 'k' && text[cursor + 3] == '_';
+        if (!next_id)
         {
             return 0;
         }
@@ -435,24 +436,24 @@ static std::size_t matchBlk(std::string_view text, std::size_t begin) noexcept
     return cursor - begin;
 }
 
-static std::size_t matchHms(std::string_view text, std::size_t begin, bool leadBoundary) noexcept
+static std::size_t MatchHms(std::string_view text, std::size_t begin, bool lead_boundary) noexcept
 {
-    if (leadBoundary && begin > 0 && isDigit(text[begin - 1]))
+    if (lead_boundary && begin > 0 && IsDigit(text[begin - 1]))
     {
         return 0;
     }
     int hour = 0;
     int minute = 0;
     int second = 0;
-    if (!readDigits(text, begin, 2, hour) || hour > 23 || begin + 2 >= text.size() || text[begin + 2] != ':')
+    if (!ReadDigits(text, begin, 2, hour) || hour > 23 || begin + 2 >= text.size() || text[begin + 2] != ':')
     {
         return 0;
     }
-    if (!readDigits(text, begin + 3, 2, minute) || minute > 59 || begin + 5 >= text.size() || text[begin + 5] != ':')
+    if (!ReadDigits(text, begin + 3, 2, minute) || minute > 59 || begin + 5 >= text.size() || text[begin + 5] != ':')
     {
         return 0;
     }
-    if (!readDigits(text, begin + 6, 2, second) || second > 60)
+    if (!ReadDigits(text, begin + 6, 2, second) || second > 60)
     {
         return 0;
     }
@@ -461,24 +462,24 @@ static std::size_t matchHms(std::string_view text, std::size_t begin, bool leadB
     {
         std::size_t fraction = cursor + 1;
         int digits = 0;
-        while (digits < 9 && fraction < text.size() && isDigit(text[fraction]))
+        while (digits < 9 && fraction < text.size() && IsDigit(text[fraction]))
         {
             ++fraction;
             ++digits;
         }
-        if (digits > 0 && (fraction >= text.size() || !isDigit(text[fraction])))
+        if (digits > 0 && (fraction >= text.size() || !IsDigit(text[fraction])))
         {
             cursor = fraction;
         }
     }
-    if (cursor < text.size() && isDigit(text[cursor]))
+    if (cursor < text.size() && IsDigit(text[cursor]))
     {
         return 0;
     }
     return cursor - begin;
 }
 
-static std::size_t matchZone(std::string_view text, std::size_t begin) noexcept
+static std::size_t MatchZone(std::string_view text, std::size_t begin) noexcept
 {
     if (begin >= text.size())
     {
@@ -487,7 +488,7 @@ static std::size_t matchZone(std::string_view text, std::size_t begin) noexcept
     const char sign = text[begin];
     if (sign == 'Z' || sign == 'z')
     {
-        if (begin + 1 < text.size() && isWord(text[begin + 1]))
+        if (begin + 1 < text.size() && IsWord(text[begin + 1]))
         {
             return 0;
         }
@@ -499,7 +500,7 @@ static std::size_t matchZone(std::string_view text, std::size_t begin) noexcept
     }
     int hour = 0;
     int minute = 0;
-    if (!readDigits(text, begin + 1, 2, hour) || hour > 23)
+    if (!ReadDigits(text, begin + 1, 2, hour) || hour > 23)
     {
         return 0;
     }
@@ -508,41 +509,41 @@ static std::size_t matchZone(std::string_view text, std::size_t begin) noexcept
     {
         ++cursor;
     }
-    if (!readDigits(text, cursor, 2, minute) || minute > 59)
+    if (!ReadDigits(text, cursor, 2, minute) || minute > 59)
     {
         return 0;
     }
     cursor += 2;
-    if (cursor < text.size() && isDigit(text[cursor]))
+    if (cursor < text.size() && IsDigit(text[cursor]))
     {
         return 0;
     }
     return cursor - begin;
 }
 
-static std::size_t matchIso(std::string_view text, std::size_t begin) noexcept
+static std::size_t MatchIso(std::string_view text, std::size_t begin) noexcept
 {
-    if (begin > 0 && isWord(text[begin - 1]))
+    if (begin > 0 && IsWord(text[begin - 1]))
     {
         return 0;
     }
-    if (begin >= text.size() || !isDigit(text[begin]))
+    if (begin >= text.size() || !IsDigit(text[begin]))
     {
         return 0;
     }
     int month = 0;
     int day = 0;
     int year = 0;
-    if (!readDigits(text, begin, 4, year) || begin + 4 >= text.size() || text[begin + 4] != '-')
+    if (!ReadDigits(text, begin, 4, year) || begin + 4 >= text.size() || text[begin + 4] != '-')
     {
         return 0;
     }
-    if (!readDigits(text, begin + 5, 2, month) || month < 1 || month > 12 || begin + 7 >= text.size() ||
+    if (!ReadDigits(text, begin + 5, 2, month) || month < 1 || month > 12 || begin + 7 >= text.size() ||
         text[begin + 7] != '-')
     {
         return 0;
     }
-    if (!readDigits(text, begin + 8, 2, day) || day < 1 || day > 31)
+    if (!ReadDigits(text, begin + 8, 2, day) || day < 1 || day > 31)
     {
         return 0;
     }
@@ -551,7 +552,7 @@ static std::size_t matchIso(std::string_view text, std::size_t begin) noexcept
     if (cursor < text.size() && (text[cursor] == 'T' || text[cursor] == 't' || text[cursor] == ' '))
     {
         const bool required = text[cursor] == 'T' || text[cursor] == 't';
-        const std::size_t time = matchHms(text, cursor + 1, false);
+        const std::size_t time = MatchHms(text, cursor + 1, false);
         if (time == 0)
         {
             if (required)
@@ -562,35 +563,35 @@ static std::size_t matchIso(std::string_view text, std::size_t begin) noexcept
         else
         {
             cursor += 1 + time;
-            const std::size_t zone = matchZone(text, cursor);
+            const std::size_t zone = MatchZone(text, cursor);
             if (zone > 0)
             {
                 cursor += zone;
             }
         }
     }
-    if (cursor < text.size() && isWord(text[cursor]))
+    if (cursor < text.size() && IsWord(text[cursor]))
     {
         return 0;
     }
     return cursor - begin;
 }
 
-static std::size_t matchSyslog(std::string_view text, std::size_t begin) noexcept
+static std::size_t MatchSyslog(std::string_view text, std::size_t begin) noexcept
 {
-    if (begin > 0 && isLetter(text[begin - 1]))
+    if (begin > 0 && IsLetter(text[begin - 1]))
     {
         return 0;
     }
-    if (begin + 3 > text.size() || !isLetter(text[begin]))
+    if (begin + 3 > text.size() || !IsLetter(text[begin]))
     {
         return 0;
     }
-    static constexpr std::array<std::string_view, 12> months = {"Jan", "Feb", "Mar", "Apr", "May", "Jun",
+    static constexpr std::array<std::string_view, 12> MONTHS = {"Jan", "Feb", "Mar", "Apr", "May", "Jun",
                                                                 "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"};
     const std::string_view month = text.substr(begin, 3);
     bool known = false;
-    for (const std::string_view candidate : months)
+    for (const std::string_view candidate : MONTHS)
     {
         if (month == candidate)
         {
@@ -611,18 +612,18 @@ static std::size_t matchSyslog(std::string_view text, std::size_t begin) noexcep
     {
         ++cursor;
     }
-    if (cursor >= text.size() || !isDigit(text[cursor]))
+    if (cursor >= text.size() || !IsDigit(text[cursor]))
     {
         return 0;
     }
-    int day = decimalValue(text[cursor]);
+    int day = DecimalValue(text[cursor]);
     ++cursor;
-    if (cursor < text.size() && isDigit(text[cursor]))
+    if (cursor < text.size() && IsDigit(text[cursor]))
     {
-        day = (day * 10) + decimalValue(text[cursor]);
+        day = (day * 10) + DecimalValue(text[cursor]);
         ++cursor;
     }
-    if (day < 1 || day > 31 || (cursor < text.size() && isDigit(text[cursor])))
+    if (day < 1 || day > 31 || (cursor < text.size() && IsDigit(text[cursor])))
     {
         return 0;
     }
@@ -634,7 +635,7 @@ static std::size_t matchSyslog(std::string_view text, std::size_t begin) noexcep
     {
         ++cursor;
     }
-    const std::size_t time = matchHms(text, cursor, false);
+    const std::size_t time = MatchHms(text, cursor, false);
     if (time == 0)
     {
         return 0;
@@ -642,37 +643,37 @@ static std::size_t matchSyslog(std::string_view text, std::size_t begin) noexcep
     return cursor + time - begin;
 }
 
-static std::size_t matchHex(std::string_view text, std::size_t begin) noexcept
+static std::size_t MatchHex(std::string_view text, std::size_t begin) noexcept
 {
     const std::size_t size = text.size();
-    if (begin >= size || !isHex(text[begin]))
+    if (begin >= size || !IsHex(text[begin]))
     {
         return 0;
     }
     if (text[begin] == '0' && begin + 1 < size && (text[begin + 1] == 'x' || text[begin + 1] == 'X'))
     {
-        if (begin > 0 && isWord(text[begin - 1]))
+        if (begin > 0 && IsWord(text[begin - 1]))
         {
             return 0;
         }
         std::size_t cursor = begin + 2;
-        const std::size_t hexStart = cursor;
-        while (cursor < size && isHex(text[cursor]))
+        const std::size_t hex_start = cursor;
+        while (cursor < size && IsHex(text[cursor]))
         {
             ++cursor;
         }
-        if (cursor - hexStart >= 6)
+        if (cursor - hex_start >= 6)
         {
             return cursor - begin;
         }
         return 0;
     }
-    if (begin > 0 && isHex(text[begin - 1]))
+    if (begin > 0 && IsHex(text[begin - 1]))
     {
         return 0;
     }
     std::size_t cursor = begin;
-    while (cursor < size && isHex(text[cursor]))
+    while (cursor < size && IsHex(text[cursor]))
     {
         ++cursor;
     }
@@ -683,7 +684,7 @@ static std::size_t matchHex(std::string_view text, std::size_t begin) noexcept
     bool letter = false;
     for (std::size_t index = begin; index < cursor; ++index)
     {
-        if (!isDigit(text[index]))
+        if (!IsDigit(text[index]))
         {
             letter = true;
             break;
@@ -696,110 +697,111 @@ static std::size_t matchHex(std::string_view text, std::size_t begin) noexcept
     return cursor - begin;
 }
 
-static std::size_t matchDecimal(std::string_view text, std::size_t begin) noexcept
+static std::size_t MatchDecimal(std::string_view text, std::size_t begin) noexcept
 {
     if (begin >= text.size())
     {
         return 0;
     }
     std::size_t cursor = begin;
-    if ((text[cursor] == '+' || text[cursor] == '-') && cursor + 1 < text.size() && isDigit(text[cursor + 1]))
+    if ((text[cursor] == '+' || text[cursor] == '-') && cursor + 1 < text.size() && IsDigit(text[cursor + 1]))
     {
-        if (begin > 0 && isWord(text[begin - 1]))
+        if (begin > 0 && IsWord(text[begin - 1]))
         {
             return 0;
         }
         ++cursor;
     }
-    else if (!isDigit(text[cursor]) || (begin > 0 && isWord(text[begin - 1])))
+    else if (!IsDigit(text[cursor]) || (begin > 0 && IsWord(text[begin - 1])))
     {
         return 0;
     }
-    if (cursor >= text.size() || !isDigit(text[cursor]))
+    if (cursor >= text.size() || !IsDigit(text[cursor]))
     {
         return 0;
     }
-    while (cursor < text.size() && isDigit(text[cursor]))
+    while (cursor < text.size() && IsDigit(text[cursor]))
     {
         ++cursor;
     }
-    if (cursor < text.size() && isWord(text[cursor]))
+    if (cursor < text.size() && IsWord(text[cursor]))
     {
         return 0;
     }
     return cursor - begin;
 }
 
-static std::size_t pathSpan(std::string_view text, std::size_t begin, bool &hasDigit) noexcept
+static std::size_t PathSpan(std::string_view text, std::size_t begin, bool &has_digit) noexcept
 {
-    hasDigit = false;
+    has_digit = false;
     std::size_t length = 0;
-    while (begin + length < text.size() && isPathChar(text[begin + length]))
+    while (begin + length < text.size() && IsPathChar(text[begin + length]))
     {
-        if (isDigit(text[begin + length]))
+        if (IsDigit(text[begin + length]))
         {
-            hasDigit = true;
+            has_digit = true;
         }
         ++length;
     }
     return length;
 }
 
-static void appendMasked(std::string &out) { out.append(MASKED_TOKEN); }
+static void AppendMasked(std::string &out) { out.append(MASKED_TOKEN); }
 
-static std::size_t variableLength(std::string_view text, std::size_t index) noexcept
+static std::size_t VariableLength(std::string_view text, std::size_t index) noexcept
 {
-    if (const std::size_t taken = matchUuid(text, index); taken > 0)
+    if (const std::size_t taken = MatchUuid(text, index); taken > 0)
     {
         return taken;
     }
-    if (const std::size_t taken = matchBlk(text, index); taken > 0)
+    if (const std::size_t taken = MatchBlk(text, index); taken > 0)
     {
         return taken;
     }
-    if (const std::size_t taken = matchIpv6(text, index); taken > 0)
+    if (const std::size_t taken = MatchIpv6(text, index); taken > 0)
     {
         return taken;
     }
-    if (const std::size_t taken = matchIpv4At(text, index, true, true); taken > 0)
+    if (const std::size_t taken = MatchIpv4At(text, index, true, true); taken > 0)
     {
         return taken;
     }
-    if (const std::size_t taken = matchIso(text, index); taken > 0)
+    if (const std::size_t taken = MatchIso(text, index); taken > 0)
     {
         return taken;
     }
-    if (const std::size_t taken = matchSyslog(text, index); taken > 0)
+    if (const std::size_t taken = MatchSyslog(text, index); taken > 0)
     {
         return taken;
     }
-    if (const std::size_t taken = matchHms(text, index, true); taken > 0)
+    if (const std::size_t taken = MatchHms(text, index, true); taken > 0)
     {
         return taken;
     }
-    if (const std::size_t taken = matchHex(text, index); taken > 0)
+    if (const std::size_t taken = MatchHex(text, index); taken > 0)
     {
         return taken;
     }
-    return matchDecimal(text, index);
+    return MatchDecimal(text, index);
 }
 
-static bool tryMaskPath(std::string_view text, std::size_t &index, std::string &out)
+static bool TryMaskPath(std::string_view text, std::size_t &index, std::string &out)
 {
-    if (text[index] != '/' || (index != 0 && isPathChar(text[index - 1])))
+    if (text[index] != '/' || (index != 0 && IsPathChar(text[index - 1])))
     {
         return false;
     }
     bool digit = false;
-    const std::size_t length = pathSpan(text, index, digit);
-    // A path with no digit is copied in one span so a long literal path is not rescanned.
+    const std::size_t length = PathSpan(text, index, digit);
+    // A path with no digit is copied in one span so a long literal path is not
+    // rescanned.
     if (length <= 1)
     {
         return false;
     }
     if (digit)
     {
-        appendMasked(out);
+        AppendMasked(out);
     }
     else
     {
@@ -809,20 +811,20 @@ static bool tryMaskPath(std::string_view text, std::size_t &index, std::string &
     return true;
 }
 
-std::string maskTemplate(std::string_view text)
+std::string MaskTemplate(std::string_view text)
 {
     std::string out;
     out.reserve(text.size());
     std::size_t index = 0;
     while (index < text.size())
     {
-        if (tryMaskPath(text, index, out))
+        if (TryMaskPath(text, index, out))
         {
             continue;
         }
-        if (const std::size_t taken = variableLength(text, index); taken > 0)
+        if (const std::size_t taken = VariableLength(text, index); taken > 0)
         {
-            appendMasked(out);
+            AppendMasked(out);
             index += taken;
             continue;
         }

@@ -10,15 +10,15 @@
 TEST_CASE("json rows keep schema version 2 and append occurrences", "[json]")
 {
     const nesso::TextMatch first{
-        .source = "app.log", .line = 2, .score = 0.5F, .text = "same", .arrayElement = false, .occurrences = 3};
+        .source = "app.log", .line = 2, .score = 0.5F, .text = "same", .array_element = false, .occurrences = 3};
     const nesso::TextMatch second{
-        .source = "rows.json", .line = 4, .score = -0.25F, .text = "only", .arrayElement = true, .occurrences = 1};
+        .source = "rows.json", .line = 4, .score = -0.25F, .text = "only", .array_element = true, .occurrences = 1};
 
     CHECK(
-        nesso::cli::renderMatchJson(first, 1) ==
+        nesso::cli::RenderMatchJson(first, 1) ==
         R"({"schema_version":2,"rank":1,"source":"app.log","kind":"line","line":2,"score":0.5,"text":"same","occurrences":3,"mode":"dense","dense":null,"lexical":null})");
     CHECK(
-        nesso::cli::renderMatchJson(second, 2) ==
+        nesso::cli::RenderMatchJson(second, 2) ==
         R"({"schema_version":2,"rank":2,"source":"rows.json","kind":"element","line":4,"score":-0.25,"text":"only","occurrences":1,"mode":"dense","dense":null,"lexical":null})");
 }
 
@@ -46,8 +46,8 @@ TEST_CASE("json escapes controls and replaces invalid utf-8", "[json]")
     text.push_back('\xC3');
 
     const nesso::TextMatch match{
-        .source = "a\xFF", .line = 1, .score = 1.0F, .text = text, .arrayElement = false, .occurrences = 1};
-    const std::string json = nesso::cli::renderMatchJson(match, 1);
+        .source = "a\xFF", .line = 1, .score = 1.0F, .text = text, .array_element = false, .occurrences = 1};
+    const std::string json = nesso::cli::RenderMatchJson(match, 1);
     const std::string expected = std::string(R"({"schema_version":2,"rank":1,"source":"a)") + "\uFFFD" +
                                  R"(","kind":"line","line":1,"score":1,"text":")";
     CHECK(json.find(expected) == 0);
@@ -66,57 +66,57 @@ TEST_CASE("json escapes controls and replaces invalid utf-8", "[json]")
     CHECK(replacements == 13);
 
     const nesso::TextMatch empty{
-        .source = "", .line = 1, .score = 0.0F, .text = "", .arrayElement = false, .occurrences = 1};
+        .source = "", .line = 1, .score = 0.0F, .text = "", .array_element = false, .occurrences = 1};
     CHECK(
-        nesso::cli::renderMatchJson(empty, 1) ==
+        nesso::cli::RenderMatchJson(empty, 1) ==
         R"({"schema_version":2,"rank":1,"source":"","kind":"line","line":1,"score":0,"text":"","occurrences":1,"mode":"dense","dense":null,"lexical":null})");
 }
 
 TEST_CASE("json score is the shortest round-trip form in any locale", "[json]")
 {
     const nesso::TextMatch tenth{
-        .source = "a", .line = 1, .score = 0.1F, .text = "t", .arrayElement = false, .occurrences = 1};
-    const std::string underClassic = nesso::cli::renderMatchJson(tenth, 1);
+        .source = "a", .line = 1, .score = 0.1F, .text = "t", .array_element = false, .occurrences = 1};
+    const std::string under_classic = nesso::cli::RenderMatchJson(tenth, 1);
     CHECK(
-        underClassic ==
+        under_classic ==
         R"({"schema_version":2,"rank":1,"source":"a","kind":"line","line":1,"score":0.1,"text":"t","occurrences":1,"mode":"dense","dense":null,"lexical":null})");
-    CHECK(underClassic.find("0.10000000149011612") == std::string::npos);
+    CHECK(under_classic.find("0.10000000149011612") == std::string::npos);
 
     const nesso::TextMatch whole{
-        .source = "a", .line = 1, .score = 1.0F, .text = "t", .arrayElement = false, .occurrences = 1};
-    const std::string wholeJson = nesso::cli::renderMatchJson(whole, 1);
-    CHECK(wholeJson.find("\"score\":1,") != std::string::npos);
-    CHECK(wholeJson.find("\"score\":1.0") == std::string::npos);
+        .source = "a", .line = 1, .score = 1.0F, .text = "t", .array_element = false, .occurrences = 1};
+    const std::string whole_json = nesso::cli::RenderMatchJson(whole, 1);
+    CHECK(whole_json.find("\"score\":1,") != std::string::npos);
+    CHECK(whole_json.find("\"score\":1.0") == std::string::npos);
 
-    const char *savedLocale = std::setlocale(LC_ALL, nullptr);
-    const std::string saved = savedLocale == nullptr ? "C" : savedLocale;
+    const char *saved_locale = std::setlocale(LC_ALL, nullptr);
+    const std::string saved = saved_locale == nullptr ? "C" : saved_locale;
     REQUIRE(std::setlocale(LC_ALL, "C") != nullptr);
-    CHECK(nesso::cli::renderMatchJson(tenth, 1) == underClassic);
+    CHECK(nesso::cli::RenderMatchJson(tenth, 1) == under_classic);
     if (std::setlocale(LC_ALL, "C.UTF-8") == nullptr)
     {
         REQUIRE(std::setlocale(LC_ALL, "C.utf8") != nullptr);
     }
-    CHECK(nesso::cli::renderMatchJson(tenth, 1) == underClassic);
+    CHECK(nesso::cli::RenderMatchJson(tenth, 1) == under_classic);
     REQUIRE(std::setlocale(LC_ALL, saved.c_str()) != nullptr);
 }
 
 TEST_CASE("a truncated multi-byte tail becomes one replacement character", "[json]")
 {
     const nesso::TextMatch match{
-        .source = "log", .line = 7, .score = 0.1F, .text = "\xE2\x82", .arrayElement = false, .occurrences = 1};
-    const std::string json = nesso::cli::renderMatchJson(match, 4);
+        .source = "log", .line = 7, .score = 0.1F, .text = "\xE2\x82", .array_element = false, .occurrences = 1};
+    const std::string json = nesso::cli::RenderMatchJson(match, 4);
     const std::string expected =
         std::string(R"({"schema_version":2,"rank":4,"source":"log","kind":"line","line":7,"score":0.1,"text":")") +
         "\uFFFD" + R"(","occurrences":1,"mode":"dense","dense":null,"lexical":null})";
     CHECK(json == expected);
 
     const nesso::TextMatch interrupted{
-        .source = "log", .line = 8, .score = -0.5F, .text = "\xE2\x82!", .arrayElement = true, .occurrences = 2};
-    const std::string interruptedJson = nesso::cli::renderMatchJson(interrupted, 1);
-    CHECK(interruptedJson.find(std::string("\"text\":\"") + "\uFFFD" + "!\"") != std::string::npos);
-    CHECK(interruptedJson.find("\"kind\":\"element\"") != std::string::npos);
+        .source = "log", .line = 8, .score = -0.5F, .text = "\xE2\x82!", .array_element = true, .occurrences = 2};
+    const std::string interrupted_json = nesso::cli::RenderMatchJson(interrupted, 1);
+    CHECK(interrupted_json.find(std::string("\"text\":\"") + "\uFFFD" + "!\"") != std::string::npos);
+    CHECK(interrupted_json.find("\"kind\":\"element\"") != std::string::npos);
     std::size_t replacements = 0;
-    for (std::size_t position = 0; (position = interruptedJson.find("\uFFFD", position)) != std::string::npos;
+    for (std::size_t position = 0; (position = interrupted_json.find("\uFFFD", position)) != std::string::npos;
          position += std::string("\uFFFD").size())
     {
         ++replacements;
@@ -130,12 +130,12 @@ TEST_CASE("json rows expose hybrid mode and raw scores", "[json]")
                                   .line = 3,
                                   .score = 1.25F,
                                   .text = "blk_-1608999687919862906",
-                                  .arrayElement = false,
+                                  .array_element = false,
                                   .occurrences = 1,
                                   .mode = "hybrid",
                                   .dense = 0.42F,
                                   .lexical = 3.5F};
     CHECK(
-        nesso::cli::renderMatchJson(hybrid, 1) ==
+        nesso::cli::RenderMatchJson(hybrid, 1) ==
         R"({"schema_version":2,"rank":1,"source":"blk.log","kind":"line","line":3,"score":1.25,"text":"blk_-1608999687919862906","occurrences":1,"mode":"hybrid","dense":0.42,"lexical":3.5})");
 }

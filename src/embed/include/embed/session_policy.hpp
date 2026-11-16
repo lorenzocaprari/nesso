@@ -31,7 +31,7 @@ inline constexpr size_t INT8_NARROW_BUDGET = 4;
 /// GCC 15 emits two ComputeImpl copies in ORT 1.18.1 and only the intra-op 1
 /// copy fuses multiply-add, so intra-op 1 gives different bytes than 2 or more.
 /// aarch64 stays at 2 or more. Other architectures keep 1.
-[[nodiscard]] constexpr int intraOpThreadFloor() noexcept
+[[nodiscard]] constexpr int IntraOpThreadFloor() noexcept
 {
 #ifdef __aarch64__
     return 2;
@@ -42,48 +42,53 @@ inline constexpr size_t INT8_NARROW_BUDGET = 4;
 
 struct MachineResources
 {
-    /// Physical cores in the affinity mask, then reduced by a cgroup cpu.max quota.
-    size_t physicalCores = 1;
-    size_t logicalThreads = 1;
+    /// Physical cores in the affinity mask, then reduced by a cgroup cpu.max
+    /// quota.
+    size_t physical_cores = 1;
+    size_t logical_threads = 1;
     /// Memory the process can use: MemAvailable, else total RAM. 0 is unknown.
-    std::uintmax_t memoryLimitBytes = 0;
+    std::uintmax_t memory_limit_bytes = 0;
 };
 
 struct SessionPolicy
 {
     bool quantized = false;
     size_t sessions = 1;
-    int intraOpThreads = 1;
-    /// int8 sessions that fit the memory limit. 0 when the limit is unknown or the model is fp32.
-    size_t memoryCap = 0;
+    int intra_op_threads = 1;
+    /// int8 sessions that fit the memory limit. 0 when the limit is unknown or
+    /// the model is fp32.
+    size_t memory_cap = 0;
     /// Shrink the CPU arena after each run. x86 single-thread sessions leave it.
-    bool shrinkArena = false;
+    bool shrink_arena = false;
 };
 
-/// `requestedThreads` of 0 selects the usable physical cores. A positive value is
-/// that CPU budget. On x86, a budget of 4 or less is one intra-op thread and
+/// `requestedThreads` of 0 selects the usable physical cores. A positive value
+/// is that CPU budget. On x86, a budget of 4 or less is one intra-op thread and
 /// that many sessions, and the arena is not shrunk. A larger x86 budget uses
 /// `I = min(4, N/2)` and `S = max(1, N/I)` and shrinks the arena. aarch64 keeps
-/// intra-op threads at least intraOpThreadFloor(). fp32 keeps one session and
+/// intra-op threads at least IntraOpThreadFloor(). fp32 keeps one session and
 /// uses the budget as its intra-op thread count, with the same floor.
-[[nodiscard]] SessionPolicy MakeSessionPolicy(bool quantized, size_t requestedThreads, const MachineResources &machine);
+[[nodiscard]] SessionPolicy MakeSessionPolicy(bool quantized, size_t requested_threads,
+                                              const MachineResources &machine);
 
-[[nodiscard]] std::string sessionPolicyText(size_t requestedThreads, const MachineResources &machine);
+[[nodiscard]] std::string SessionPolicyText(size_t requested_threads, const MachineResources &machine);
 
-/// Empty unless an explicit int8 budget asks for more sessions than the memory cap.
-[[nodiscard]] std::string overrideWarning(const SessionPolicy &policy, size_t requestedThreads);
+/// Empty unless an explicit int8 budget asks for more sessions than the memory
+/// cap.
+[[nodiscard]] std::string OverrideWarning(const SessionPolicy &policy, size_t requested_threads);
 
-/// MemAvailable from /proc/meminfo, in bytes. 0 when the key is missing or unreadable.
-[[nodiscard]] std::uintmax_t memAvailableBytes(std::istream &meminfo);
+/// MemAvailable from /proc/meminfo, in bytes. 0 when the key is missing or
+/// unreadable.
+[[nodiscard]] std::uintmax_t MemAvailableBytes(std::istream &meminfo);
 
 struct MachineFsRoots
 {
-    std::filesystem::path procRoot{"/proc"};
-    std::filesystem::path sysRoot{"/sys"};
-    std::filesystem::path cgroupRoot{"/sys/fs/cgroup"};
+    std::filesystem::path proc_root{"/proc"};
+    std::filesystem::path sys_root{"/sys"};
+    std::filesystem::path cgroup_root{"/sys/fs/cgroup"};
 };
 
-[[nodiscard]] MachineResources readMachine(const MachineFsRoots &roots = {});
+[[nodiscard]] MachineResources ReadMachine(const MachineFsRoots &roots = {});
 
 } // namespace nesso::embed
 

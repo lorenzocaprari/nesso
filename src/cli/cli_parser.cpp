@@ -31,7 +31,7 @@
 namespace nesso::cli
 {
 
-static CLI::Validator inputFile()
+static CLI::Validator InputFile()
 {
     return CLI::Validator{[](std::string &value)
                           {
@@ -50,7 +50,7 @@ static CLI::Validator inputFile()
                           "FILE", "existing file or directory, or - for stdin"};
 }
 
-static CLI::Validator positiveCount()
+static CLI::Validator PositiveCount()
 {
     return CLI::Validator{[](std::string &value)
                           {
@@ -69,7 +69,7 @@ static constexpr const char *MODEL_DIR_HELP = "Directory containing model.onnx a
 
 static constexpr const char *TEXT_FILES_HELP = "Text files, directories, or tar/zip bundles. - reads stdin as lines";
 
-static CLI::Validator positiveUint64()
+static CLI::Validator PositiveUint64()
 {
     return CLI::Validator{[](std::string &value)
                           {
@@ -91,20 +91,20 @@ static CLI::Validator positiveUint64()
                           "POSITIVE", "positive integer"};
 }
 
-static void addArchiveLimits(CLI::App *command, nesso::parser::ArchiveLimits &limits)
+static void AddArchiveLimits(CLI::App *command, nesso::parser::ArchiveLimits &limits)
 {
-    command->add_option("--archive-max-entry-bytes", limits.maxEntryBytes, "Maximum bytes of one archive entry")
-        ->default_val(limits.maxEntryBytes)
-        ->check(positiveUint64());
-    command->add_option("--archive-max-bytes", limits.maxTotalBytes, "Maximum uncompressed bytes from one archive")
-        ->default_val(limits.maxTotalBytes)
-        ->check(positiveUint64());
-    command->add_option("--archive-max-entries", limits.maxEntries, "Maximum regular-file entries in one archive")
-        ->default_val(limits.maxEntries)
-        ->check(positiveUint64());
-    command->add_option("--archive-max-ratio", limits.maxRatio, "Maximum uncompressed-to-archive size ratio")
-        ->default_val(limits.maxRatio)
-        ->check(positiveUint64());
+    command->add_option("--archive-max-entry-bytes", limits.max_entry_bytes, "Maximum bytes of one archive entry")
+        ->default_val(limits.max_entry_bytes)
+        ->check(PositiveUint64());
+    command->add_option("--archive-max-bytes", limits.max_total_bytes, "Maximum uncompressed bytes from one archive")
+        ->default_val(limits.max_total_bytes)
+        ->check(PositiveUint64());
+    command->add_option("--archive-max-entries", limits.max_entries, "Maximum regular-file entries in one archive")
+        ->default_val(limits.max_entries)
+        ->check(PositiveUint64());
+    command->add_option("--archive-max-ratio", limits.max_ratio, "Maximum uncompressed-to-archive size ratio")
+        ->default_val(limits.max_ratio)
+        ->check(PositiveUint64());
 }
 
 static constexpr const char *THREADS_HELP = "CPU budget N from 1 to 1024. Default and layout rules: docs/usage.md.";
@@ -113,7 +113,7 @@ static CLI::Validator MakeThreadCountValidator()
 {
     return CLI::Validator{[](std::string &value)
                           {
-                              const auto parsed = ThreadCount::parse(value);
+                              const auto parsed = ThreadCount::Parse(value);
                               if (!parsed)
                               {
                                   if (parsed.error() == ThreadCountError::OutOfRange)
@@ -127,7 +127,7 @@ static CLI::Validator MakeThreadCountValidator()
                           "THREADS", "integer from 1 to 1024"};
 }
 
-static void printThreadsEnvironmentError(ThreadCountError error)
+static void PrintThreadsEnvironmentError(ThreadCountError error)
 {
     if (error == ThreadCountError::OutOfRange)
     {
@@ -152,19 +152,19 @@ struct TextOptions
     std::vector<std::string> files;
     std::string output;
     std::string index;
-    size_t topK = DEFAULT_TEXT_TOP_K;
-    std::string modelDir;
-    std::string jsonField = "message";
+    size_t top_k = DEFAULT_TEXT_TOP_K;
+    std::string model_dir;
+    std::string json_field = "message";
     bool quiet = false;
     bool json = false;
     bool group = false;
     size_t threads = 0;
     std::string mode = "auto";
-    nesso::parser::ArchiveLimits grepArchiveLimits{};
-    nesso::parser::ArchiveLimits indexArchiveLimits{};
+    nesso::parser::ArchiveLimits grep_archive_limits{};
+    nesso::parser::ArchiveLimits index_archive_limits{};
 };
 
-static SearchMode parseSearchMode(std::string_view mode)
+static SearchMode ParseSearchMode(std::string_view mode)
 {
     if (mode == "hybrid")
     {
@@ -181,23 +181,23 @@ static SearchMode parseSearchMode(std::string_view mode)
     return SearchMode::Auto;
 }
 
-static std::vector<std::filesystem::path> toPaths(const std::vector<std::string> &args)
+static std::vector<std::filesystem::path> ToPaths(const std::vector<std::string> &args)
 {
     return {args.begin(), args.end()};
 }
 
-static Config configFrom(const CLI::Option &modelDirOpt, const TextOptions &text, size_t threads)
+static Config ConfigFrom(const CLI::Option &model_dir_opt, const TextOptions &text, size_t threads)
 {
     Config config;
-    if (!modelDirOpt.empty())
+    if (!model_dir_opt.empty())
     {
-        config.modelDir = text.modelDir;
+        config.model_dir = text.model_dir;
     }
     config.threads = threads;
     return config;
 }
 
-static std::expected<size_t, ThreadCountError> threadsFromEnvironment()
+static std::expected<size_t, ThreadCountError> ThreadsFromEnvironment()
 {
     // getenv is not thread-safe. The CLI reads the environment once on the main
     // thread. NOLINTNEXTLINE(concurrency-mt-unsafe)
@@ -206,32 +206,32 @@ static std::expected<size_t, ThreadCountError> threadsFromEnvironment()
     {
         return 0;
     }
-    const auto parsed = ThreadCount::parse(value);
+    const auto parsed = ThreadCount::Parse(value);
     if (!parsed)
     {
         return std::unexpected(parsed.error());
     }
-    return parsed->get();
+    return parsed->Get();
 }
 
-static void configureAppVersion(CLI::App &app, bool &verbose)
+static void ConfigureAppVersion(CLI::App &app, bool &verbose)
 {
     app.add_flag("--verbose", verbose, "With --version, print the embedding session policy");
     app.set_version_flag("-V,--version",
                          [&verbose]()
                          {
-                             const auto fromEnv = threadsFromEnvironment();
-                             if (!fromEnv)
+                             const auto from_env = ThreadsFromEnvironment();
+                             if (!from_env)
                              {
-                                 printThreadsEnvironmentError(fromEnv.error());
+                                 PrintThreadsEnvironmentError(from_env.error());
                                  throw CLI::RuntimeError(2);
                              }
-                             const size_t threads = *fromEnv;
+                             const size_t threads = *from_env;
                              std::string version{NESSO_VERSION};
                              if (verbose)
                              {
                                  version.push_back('\n');
-                                 version += nesso::embed::sessionPolicyText(threads, nesso::embed::readMachine());
+                                 version += nesso::embed::SessionPolicyText(threads, nesso::embed::ReadMachine());
                              }
                              return version;
                          });
@@ -240,54 +240,54 @@ static void configureAppVersion(CLI::App &app, bool &verbose)
 struct TextSubcommand
 {
     CLI::App *cmd = nullptr;
-    const CLI::Option *threadsOpt = nullptr;
-    const CLI::Option *modelDirOpt = nullptr;
+    const CLI::Option *threads_opt = nullptr;
+    const CLI::Option *model_dir_opt = nullptr;
 };
 
-static TextSubcommand addGrepSubcommand(CLI::App &app, TextOptions &text)
+static TextSubcommand AddGrepSubcommand(CLI::App &app, TextOptions &text)
 {
     auto *cmd = app.add_subcommand("grep", "Semantic search of text files. See docs/usage.md.");
     cmd->add_option("query", text.query, "Natural-language query")->required();
-    cmd->add_option("files", text.files, TEXT_FILES_HELP)->required()->expected(1, -1)->check(inputFile());
-    cmd->add_option("--json-field", text.jsonField, "JSON object field to read")->default_val("message");
-    cmd->add_option("-k,--top-k", text.topK, "Maximum number of matches to return, or groups with --group")
+    cmd->add_option("files", text.files, TEXT_FILES_HELP)->required()->expected(1, -1)->check(InputFile());
+    cmd->add_option("--json-field", text.json_field, "JSON object field to read")->default_val("message");
+    cmd->add_option("-k,--top-k", text.top_k, "Maximum number of matches to return, or groups with --group")
         ->default_val(5)
-        ->check(positiveCount());
+        ->check(PositiveCount());
     cmd->add_flag("--quiet", text.quiet, "Suppress interactive progress output");
     cmd->add_flag("--json", text.json, "Print one JSON object per match");
     cmd->add_flag("--group", text.group, "Print one row per masked dedup group");
     cmd->add_option("--mode", text.mode, "Ranking mode: auto, hybrid, dense, or lexical")
         ->default_val("auto")
         ->check(CLI::IsMember({"auto", "hybrid", "dense", "lexical"}));
-    addArchiveLimits(cmd, text.grepArchiveLimits);
+    AddArchiveLimits(cmd, text.grep_archive_limits);
     return TextSubcommand{
         .cmd = cmd,
-        .threadsOpt = cmd->add_option("--threads", text.threads, THREADS_HELP)->check(MakeThreadCountValidator()),
-        .modelDirOpt = cmd->add_option("--model-dir", text.modelDir, MODEL_DIR_HELP)};
+        .threads_opt = cmd->add_option("--threads", text.threads, THREADS_HELP)->check(MakeThreadCountValidator()),
+        .model_dir_opt = cmd->add_option("--model-dir", text.model_dir, MODEL_DIR_HELP)};
 }
 
-static TextSubcommand addIndexSubcommand(CLI::App &app, TextOptions &text)
+static TextSubcommand AddIndexSubcommand(CLI::App &app, TextOptions &text)
 {
     auto *cmd = app.add_subcommand("index", "Embed text into a corpus file. See docs/usage.md.");
     cmd->add_option("-o,--output", text.output, "Corpus file to write")->required();
-    cmd->add_option("files", text.files, TEXT_FILES_HELP)->required()->expected(1, -1)->check(inputFile());
-    cmd->add_option("--json-field", text.jsonField, "JSON object field to read")->default_val("message");
+    cmd->add_option("files", text.files, TEXT_FILES_HELP)->required()->expected(1, -1)->check(InputFile());
+    cmd->add_option("--json-field", text.json_field, "JSON object field to read")->default_val("message");
     cmd->add_flag("--quiet", text.quiet, "Suppress interactive progress output");
-    addArchiveLimits(cmd, text.indexArchiveLimits);
+    AddArchiveLimits(cmd, text.index_archive_limits);
     return TextSubcommand{
         .cmd = cmd,
-        .threadsOpt = cmd->add_option("--threads", text.threads, THREADS_HELP)->check(MakeThreadCountValidator()),
-        .modelDirOpt = cmd->add_option("--model-dir", text.modelDir, MODEL_DIR_HELP)};
+        .threads_opt = cmd->add_option("--threads", text.threads, THREADS_HELP)->check(MakeThreadCountValidator()),
+        .model_dir_opt = cmd->add_option("--model-dir", text.model_dir, MODEL_DIR_HELP)};
 }
 
-static TextSubcommand addSearchSubcommand(CLI::App &app, TextOptions &text)
+static TextSubcommand AddSearchSubcommand(CLI::App &app, TextOptions &text)
 {
     auto *cmd = app.add_subcommand("search", "Semantic search of a corpus file. Prints matches only.");
     cmd->add_option("query", text.query, "Natural-language query")->required();
     cmd->add_option("-i,--index", text.index, "Corpus file to search")->required()->check(CLI::ExistingFile);
-    cmd->add_option("-k,--top-k", text.topK, "Maximum number of matches to return, or groups with --group")
+    cmd->add_option("-k,--top-k", text.top_k, "Maximum number of matches to return, or groups with --group")
         ->default_val(5)
-        ->check(positiveCount());
+        ->check(PositiveCount());
     cmd->add_flag("--json", text.json, "Print one JSON object per match");
     cmd->add_flag("--group", text.group, "Print one row per masked dedup group");
     cmd->add_option("--mode", text.mode, "Ranking mode: auto, hybrid, dense, or lexical")
@@ -295,60 +295,60 @@ static TextSubcommand addSearchSubcommand(CLI::App &app, TextOptions &text)
         ->check(CLI::IsMember({"auto", "hybrid", "dense", "lexical"}));
     return TextSubcommand{
         .cmd = cmd,
-        .threadsOpt = cmd->add_option("--threads", text.threads, THREADS_HELP)->check(MakeThreadCountValidator()),
-        .modelDirOpt = cmd->add_option("--model-dir", text.modelDir, MODEL_DIR_HELP)};
+        .threads_opt = cmd->add_option("--threads", text.threads, THREADS_HELP)->check(MakeThreadCountValidator()),
+        .model_dir_opt = cmd->add_option("--model-dir", text.model_dir, MODEL_DIR_HELP)};
 }
 
-static std::expected<size_t, int> resolveThreads(const CLI::Option &threadsOpt, size_t flagged)
+static std::expected<size_t, int> ResolveThreads(const CLI::Option &threads_opt, size_t flagged)
 {
-    if (!threadsOpt.empty())
+    if (!threads_opt.empty())
     {
         return flagged;
     }
-    const auto fromEnv = threadsFromEnvironment();
-    if (!fromEnv)
+    const auto from_env = ThreadsFromEnvironment();
+    if (!from_env)
     {
-        printThreadsEnvironmentError(fromEnv.error());
+        PrintThreadsEnvironmentError(from_env.error());
         return std::unexpected(2);
     }
-    return *fromEnv;
+    return *from_env;
 }
 
-static ParsedCommand makeParsedCommand(const CLI::App &grepCmd, const CLI::App &indexCmd,
-                                       const CLI::Option &modelDirOpt, const TextOptions &text, size_t threads)
+static ParsedCommand MakeParsedCommand(const CLI::App &grep_cmd, const CLI::App &index_cmd,
+                                       const CLI::Option &model_dir_opt, const TextOptions &text, size_t threads)
 {
-    if (grepCmd.parsed())
+    if (grep_cmd.parsed())
     {
-        return ParsedCommand{.config = configFrom(modelDirOpt, text, threads),
+        return ParsedCommand{.config = ConfigFrom(model_dir_opt, text, threads),
                              .request = GrepRequest{.query = text.query,
-                                                    .files = toPaths(text.files),
-                                                    .topK = text.topK,
-                                                    .jsonField = text.jsonField,
+                                                    .files = ToPaths(text.files),
+                                                    .top_k = text.top_k,
+                                                    .json_field = text.json_field,
                                                     .progress = !text.quiet,
                                                     .json = text.json,
-                                                    .mode = parseSearchMode(text.mode),
+                                                    .mode = ParseSearchMode(text.mode),
                                                     .group = text.group,
-                                                    .archiveLimits = text.grepArchiveLimits}};
+                                                    .archive_limits = text.grep_archive_limits}};
     }
-    if (indexCmd.parsed())
+    if (index_cmd.parsed())
     {
-        return ParsedCommand{.config = configFrom(modelDirOpt, text, threads),
-                             .request = IndexRequest{.files = toPaths(text.files),
+        return ParsedCommand{.config = ConfigFrom(model_dir_opt, text, threads),
+                             .request = IndexRequest{.files = ToPaths(text.files),
                                                      .output = text.output,
-                                                     .jsonField = text.jsonField,
+                                                     .json_field = text.json_field,
                                                      .progress = !text.quiet,
-                                                     .archiveLimits = text.indexArchiveLimits}};
+                                                     .archive_limits = text.index_archive_limits}};
     }
-    return ParsedCommand{.config = configFrom(modelDirOpt, text, threads),
+    return ParsedCommand{.config = ConfigFrom(model_dir_opt, text, threads),
                          .request = SearchRequest{.query = text.query,
                                                   .index = text.index,
-                                                  .topK = text.topK,
+                                                  .top_k = text.top_k,
                                                   .json = text.json,
-                                                  .mode = parseSearchMode(text.mode),
+                                                  .mode = ParseSearchMode(text.mode),
                                                   .group = text.group}};
 }
 
-std::expected<ParsedCommand, int> parseCommandLine(int argc, char **argv)
+std::expected<ParsedCommand, int> ParseCommandLine(int argc, char **argv)
 {
     TextOptions text;
     CLI::App app{"Nesso - local semantic search for unstructured text"};
@@ -361,14 +361,14 @@ std::expected<ParsedCommand, int> parseCommandLine(int argc, char **argv)
             verbose = true;
         }
     }
-    configureAppVersion(app, verbose);
+    ConfigureAppVersion(app, verbose);
     app.get_formatter()->enable_footer_formatting(false);
     app.footer(HELP_FOOTER);
     app.require_subcommand(1);
 
-    const TextSubcommand grep = addGrepSubcommand(app, text);
-    const TextSubcommand index = addIndexSubcommand(app, text);
-    const TextSubcommand search = addSearchSubcommand(app, text);
+    const TextSubcommand grep = AddGrepSubcommand(app, text);
+    const TextSubcommand index = AddIndexSubcommand(app, text);
+    const TextSubcommand search = AddSearchSubcommand(app, text);
 
     try
     {
@@ -380,25 +380,25 @@ std::expected<ParsedCommand, int> parseCommandLine(int argc, char **argv)
         return std::unexpected(code == 0 ? 0 : 2);
     }
 
-    const CLI::Option *threadsOpt = grep.threadsOpt;
-    const CLI::Option *modelDirOpt = grep.modelDirOpt;
+    const CLI::Option *threads_opt = grep.threads_opt;
+    const CLI::Option *model_dir_opt = grep.model_dir_opt;
     if (index.cmd->parsed())
     {
-        threadsOpt = index.threadsOpt;
-        modelDirOpt = index.modelDirOpt;
+        threads_opt = index.threads_opt;
+        model_dir_opt = index.model_dir_opt;
     }
     else if (search.cmd->parsed())
     {
-        threadsOpt = search.threadsOpt;
-        modelDirOpt = search.modelDirOpt;
+        threads_opt = search.threads_opt;
+        model_dir_opt = search.model_dir_opt;
     }
 
-    const auto threads = resolveThreads(*threadsOpt, text.threads);
+    const auto threads = ResolveThreads(*threads_opt, text.threads);
     if (!threads)
     {
         return std::unexpected(threads.error());
     }
-    return makeParsedCommand(*grep.cmd, *index.cmd, *modelDirOpt, text, *threads);
+    return MakeParsedCommand(*grep.cmd, *index.cmd, *model_dir_opt, text, *threads);
 }
 
 } // namespace nesso::cli

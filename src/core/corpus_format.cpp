@@ -23,17 +23,17 @@
 namespace nesso::core::detail
 {
 
-bool rangeInside(std::uint64_t offset, std::uint64_t length, std::uint64_t limit)
+bool RangeInside(std::uint64_t offset, std::uint64_t length, std::uint64_t limit)
 {
     return offset <= limit && length <= limit - offset;
 }
 
-std::uint64_t alignUp(std::uint64_t value, std::uint64_t alignment)
+std::uint64_t AlignUp(std::uint64_t value, std::uint64_t alignment)
 {
     return (value + alignment - 1) & ~(alignment - 1);
 }
 
-bool writeRaw(std::ostream &output, const void *data, std::size_t size)
+bool WriteRaw(std::ostream &output, const void *data, std::size_t size)
 {
     if (size == 0)
     {
@@ -44,25 +44,25 @@ bool writeRaw(std::ostream &output, const void *data, std::size_t size)
     return static_cast<bool>(output);
 }
 
-bool writeU32(std::ostream &output, std::uint32_t value)
+bool WriteU32(std::ostream &output, std::uint32_t value)
 {
     const std::array<unsigned char, 4> bytes{static_cast<unsigned char>(value), static_cast<unsigned char>(value >> 8U),
                                              static_cast<unsigned char>(value >> 16U),
                                              static_cast<unsigned char>(value >> 24U)};
-    return writeRaw(output, bytes.data(), bytes.size());
+    return WriteRaw(output, bytes.data(), bytes.size());
 }
 
-bool writeU64(std::ostream &output, std::uint64_t value)
+bool WriteU64(std::ostream &output, std::uint64_t value)
 {
     const std::array<unsigned char, 8> bytes{
         static_cast<unsigned char>(value),        static_cast<unsigned char>(value >> 8U),
         static_cast<unsigned char>(value >> 16U), static_cast<unsigned char>(value >> 24U),
         static_cast<unsigned char>(value >> 32U), static_cast<unsigned char>(value >> 40U),
         static_cast<unsigned char>(value >> 48U), static_cast<unsigned char>(value >> 56U)};
-    return writeRaw(output, bytes.data(), bytes.size());
+    return WriteRaw(output, bytes.data(), bytes.size());
 }
 
-bool readExact(std::istream &input, void *data, std::size_t size)
+bool ReadExact(std::istream &input, void *data, std::size_t size)
 {
     if (size == 0)
     {
@@ -73,10 +73,10 @@ bool readExact(std::istream &input, void *data, std::size_t size)
     return std::cmp_equal(input.gcount(), size);
 }
 
-bool readU32Stream(std::istream &input, std::uint32_t &value)
+bool ReadU32Stream(std::istream &input, std::uint32_t &value)
 {
     std::array<unsigned char, 4> bytes{};
-    if (!readExact(input, bytes.data(), bytes.size()))
+    if (!ReadExact(input, bytes.data(), bytes.size()))
     {
         return false;
     }
@@ -85,11 +85,11 @@ bool readU32Stream(std::istream &input, std::uint32_t &value)
     return true;
 }
 
-bool readU64Stream(std::istream &input, std::uint64_t &value)
+bool ReadU64Stream(std::istream &input, std::uint64_t &value)
 {
     std::uint32_t low = 0;
     std::uint32_t high = 0;
-    if (!readU32Stream(input, low) || !readU32Stream(input, high))
+    if (!ReadU32Stream(input, low) || !ReadU32Stream(input, high))
     {
         return false;
     }
@@ -97,9 +97,9 @@ bool readU64Stream(std::istream &input, std::uint64_t &value)
     return true;
 }
 
-bool readU32(std::span<const std::byte> bytes, std::uint64_t offset, std::uint32_t &value)
+bool ReadU32(std::span<const std::byte> bytes, std::uint64_t offset, std::uint32_t &value)
 {
-    if (!rangeInside(offset, sizeof(value), bytes.size()))
+    if (!RangeInside(offset, sizeof(value), bytes.size()))
     {
         return false;
     }
@@ -111,9 +111,9 @@ bool readU32(std::span<const std::byte> bytes, std::uint64_t offset, std::uint32
     return true;
 }
 
-bool readU64(std::span<const std::byte> bytes, std::uint64_t offset, std::uint64_t &value)
+bool ReadU64(std::span<const std::byte> bytes, std::uint64_t offset, std::uint64_t &value)
 {
-    if (!rangeInside(offset, sizeof(value), bytes.size()))
+    if (!RangeInside(offset, sizeof(value), bytes.size()))
     {
         return false;
     }
@@ -125,7 +125,7 @@ bool readU64(std::span<const std::byte> bytes, std::uint64_t offset, std::uint64
     return true;
 }
 
-std::string_view viewBytes(std::span<const std::byte> bytes, std::uint64_t offset, std::uint64_t length)
+std::string_view ViewBytes(std::span<const std::byte> bytes, std::uint64_t offset, std::uint64_t length)
 {
     const std::span<const std::byte> slice =
         bytes.subspan(static_cast<std::size_t>(offset), static_cast<std::size_t>(length));
@@ -133,30 +133,30 @@ std::string_view viewBytes(std::span<const std::byte> bytes, std::uint64_t offse
     return {reinterpret_cast<const char *>(slice.data()), slice.size()};
 }
 
-bool atEnd(std::istream &input) { return input.peek() == std::char_traits<char>::eof() && input.eof() && !input.bad(); }
+bool AtEnd(std::istream &input) { return input.peek() == std::char_traits<char>::eof() && input.eof() && !input.bad(); }
 
-bool copyBytes(std::istream &input, std::ostream &output, std::uint64_t bytes)
+bool CopyBytes(std::istream &input, std::ostream &output, std::uint64_t bytes)
 {
     std::array<char, 64ULL * 1024ULL> buffer{};
     while (bytes > 0)
     {
         const auto count = static_cast<std::size_t>(std::min<std::uint64_t>(bytes, buffer.size()));
-        if (!readExact(input, buffer.data(), count) || !writeRaw(output, buffer.data(), count))
+        if (!ReadExact(input, buffer.data(), count) || !WriteRaw(output, buffer.data(), count))
         {
             return false;
         }
         bytes -= count;
     }
-    return atEnd(input);
+    return AtEnd(input);
 }
 
-bool writePadding(std::ostream &output, std::uint64_t count)
+bool WritePadding(std::ostream &output, std::uint64_t count)
 {
     constexpr std::array<char, 64> zeros{};
     while (count > 0)
     {
         const auto part = static_cast<std::size_t>(std::min<std::uint64_t>(count, zeros.size()));
-        if (!writeRaw(output, zeros.data(), part))
+        if (!WriteRaw(output, zeros.data(), part))
         {
             return false;
         }
@@ -165,7 +165,7 @@ bool writePadding(std::ostream &output, std::uint64_t count)
     return true;
 }
 
-bool isZero(std::span<const std::byte> bytes, std::uint64_t begin, std::uint64_t end)
+bool IsZero(std::span<const std::byte> bytes, std::uint64_t begin, std::uint64_t end)
 {
     if (begin > end || end > bytes.size())
     {

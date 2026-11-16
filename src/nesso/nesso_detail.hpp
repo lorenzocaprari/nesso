@@ -40,19 +40,19 @@ class ProgressReporter
     {
     }
 
-    void update(size_t completed, size_t total)
+    void Update(size_t completed, size_t total)
     {
         if (!enabled_)
         {
             return;
         }
         const std::chrono::duration<double> elapsed = std::chrono::steady_clock::now() - started_;
-        const double linesPerSecond = elapsed.count() > 0.0 ? static_cast<double>(completed) / elapsed.count() : 0.0;
-        std::print(stderr, "\rEmbedded {}/{} lines ({:.0f} lines/s)", completed, total, linesPerSecond);
+        const double lines_per_second = elapsed.count() > 0.0 ? static_cast<double>(completed) / elapsed.count() : 0.0;
+        std::print(stderr, "\rEmbedded {}/{} lines ({:.0f} lines/s)", completed, total, lines_per_second);
         static_cast<void>(std::fflush(stderr));
     }
 
-    void finish() const
+    void Finish() const
     {
         if (enabled_)
         {
@@ -68,24 +68,24 @@ class ProgressReporter
 struct LineCounts
 {
     size_t skipped = 0;
-    size_t emptyLines = 0;
-    size_t malformedLines = 0;
-    size_t missingFieldLines = 0;
+    size_t empty_lines = 0;
+    size_t malformed_lines = 0;
+    size_t missing_field_lines = 0;
     size_t truncated = 0;
-    size_t binaryEntries = 0;
-    std::string jsonField = "message";
+    size_t binary_entries = 0;
+    std::string json_field = "message";
 };
 
-inline bool noKeptLines(const LineCounts &counts) { return counts.skipped == 0 && counts.binaryEntries == 0; }
+inline bool NoKeptLines(const LineCounts &counts) { return counts.skipped == 0 && counts.binary_entries == 0; }
 
 struct Scan
 {
     size_t chunks = 0;
     LineCounts counts{};
     // Stdin cannot be rewound. The count pass keeps it for the embedding pass.
-    std::vector<nesso::parser::ParsedChunk> stdinChunks;
+    std::vector<nesso::parser::ParsedChunk> stdin_chunks;
     std::vector<nesso::core::SourceInfo> sources;
-    std::vector<BundleSkipSummary> bundleSkips;
+    std::vector<BundleSkipSummary> bundle_skips;
 };
 
 enum class EffectiveMode : uint8_t
@@ -95,50 +95,50 @@ enum class EffectiveMode : uint8_t
     Lexical
 };
 
-[[nodiscard]] Error makeError(ErrorKind kind, ErrorCause cause, std::filesystem::path path, LineCounts counts,
-                              std::vector<BundleSkipSummary> bundleSkips = {});
+[[nodiscard]] Error MakeError(ErrorKind kind, ErrorCause cause, std::filesystem::path path, LineCounts counts,
+                              std::vector<BundleSkipSummary> bundle_skips = {});
 
-[[nodiscard]] Error parseFailure(nesso::parser::ParseError code, std::filesystem::path path, const LineCounts &counts,
-                                 const nesso::parser::ArchiveLimits &limits, std::string_view encryptedEntry = {},
-                                 std::vector<BundleSkipSummary> bundleSkips = {});
+[[nodiscard]] Error ParseFailure(nesso::parser::ParseError code, std::filesystem::path path, const LineCounts &counts,
+                                 const nesso::parser::ArchiveLimits &limits, std::string_view encrypted_entry = {},
+                                 std::vector<BundleSkipSummary> bundle_skips = {});
 
-[[nodiscard]] bool sameSource(const nesso::core::SourceInfo &left, const nesso::core::SourceInfo &right);
+[[nodiscard]] bool SameSource(const nesso::core::SourceInfo &left, const nesso::core::SourceInfo &right);
 
-[[nodiscard]] std::expected<Scan, Error> scanFiles(std::span<const std::filesystem::path> files,
-                                                   std::string_view jsonField,
-                                                   const nesso::parser::ArchiveLimits &limits, bool forIndex = false);
+[[nodiscard]] std::expected<Scan, Error> ScanFiles(std::span<const std::filesystem::path> files,
+                                                   std::string_view json_field,
+                                                   const nesso::parser::ArchiveLimits &limits, bool for_index = false);
 
 [[nodiscard]] std::expected<std::vector<std::filesystem::path>, Error>
-expandRequestFiles(std::span<const std::filesystem::path> files);
+ExpandRequestFiles(std::span<const std::filesystem::path> files);
 
-[[nodiscard]] size_t streamBatch();
+[[nodiscard]] size_t StreamBatch();
 
 struct EmbedProgressSpan
 {
-    size_t linesBefore = 0;
-    size_t linesInFlush = 0;
+    size_t lines_before = 0;
+    size_t lines_in_flush = 0;
     size_t total = 0;
 };
 
 [[nodiscard]] std::expected<std::vector<std::vector<float>>, Error>
-embedDistinct(std::span<const std::string> texts, const nesso::embed::Embedder &embedder, ProgressReporter &progress,
+EmbedDistinct(std::span<const std::string> texts, const nesso::embed::Embedder &embedder, ProgressReporter &progress,
               const EmbedProgressSpan &span, const LineCounts &counts);
 
 [[nodiscard]] std::expected<nesso::core::CorpusPolicy, Error> MakeCorpusPolicy(const nesso::embed::Embedder &embedder,
                                                                                const LineCounts &counts);
 
-[[nodiscard]] std::string_view effectiveModeName(EffectiveMode mode) noexcept;
+[[nodiscard]] std::string_view EffectiveModeName(EffectiveMode mode) noexcept;
 
-[[nodiscard]] EffectiveMode resolveEffectiveMode(SearchMode requested, nesso::core::QueryClass queryClass) noexcept;
+[[nodiscard]] EffectiveMode ResolveEffectiveMode(SearchMode requested, nesso::core::QueryClass query_class) noexcept;
 
-[[nodiscard]] std::vector<std::string_view> queryTermViews(const std::vector<std::string> &terms);
+[[nodiscard]] std::vector<std::string_view> QueryTermViews(const std::vector<std::string> &terms);
 
-[[nodiscard]] bool betterHit(float leftScore, uint64_t leftIndex, float rightScore, uint64_t rightIndex) noexcept;
+[[nodiscard]] bool BetterHit(float left_score, uint64_t left_index, float right_score, uint64_t right_index) noexcept;
 
 template <typename E>
-[[nodiscard]] std::unexpected<Error> textFailure(ErrorKind kind, E cause, const LineCounts &counts)
+[[nodiscard]] std::unexpected<Error> TextFailure(ErrorKind kind, E cause, const LineCounts &counts)
 {
-    return std::unexpected(makeError(kind, causeOf(cause), {}, counts));
+    return std::unexpected(MakeError(kind, CauseOf(cause), {}, counts));
 }
 
 } // namespace nesso::detail

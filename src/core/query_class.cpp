@@ -15,24 +15,24 @@ namespace nesso::core
 static constexpr std::array<std::size_t, 5> UUID_GROUP_LENGTHS{8U, 4U, 4U, 4U, 12U};
 static constexpr std::array<char, 4> UUID_SEPS{'-', '-', '-', '-'};
 
-static bool isAsciiWhitespace(unsigned char byte) noexcept
+static bool IsAsciiWhitespace(unsigned char byte) noexcept
 {
     return byte == 0x09U || byte == 0x0AU || byte == 0x0DU || byte == 0x20U;
 }
 
-static bool isAsciiHex(unsigned char byte) noexcept
+static bool IsAsciiHex(unsigned char byte) noexcept
 {
     return (byte >= '0' && byte <= '9') || (byte >= 'a' && byte <= 'f') || (byte >= 'A' && byte <= 'F');
 }
 
-static bool isAsciiDigit(unsigned char byte) noexcept { return byte >= '0' && byte <= '9'; }
+static bool IsAsciiDigit(unsigned char byte) noexcept { return byte >= '0' && byte <= '9'; }
 
-static bool isAsciiLetter(unsigned char byte) noexcept
+static bool IsAsciiLetter(unsigned char byte) noexcept
 {
     return (byte >= 'a' && byte <= 'z') || (byte >= 'A' && byte <= 'Z');
 }
 
-static bool stripOneSurroundingQuotes(std::string_view &text) noexcept
+static bool StripOneSurroundingQuotes(std::string_view &text) noexcept
 {
     if (text.size() < 2U || text.front() != '"' || text.back() != '"')
     {
@@ -43,7 +43,7 @@ static bool stripOneSurroundingQuotes(std::string_view &text) noexcept
     return true;
 }
 
-static bool matchUuid(std::string_view token) noexcept
+static bool MatchUuid(std::string_view token) noexcept
 {
     if (token.size() != 36U)
     {
@@ -55,7 +55,7 @@ static bool matchUuid(std::string_view token) noexcept
     {
         for (std::size_t digit = 0; digit < UUID_GROUP_LENGTHS.at(group); ++digit)
         {
-            if (!isAsciiHex(static_cast<unsigned char>(token[index++])))
+            if (!IsAsciiHex(static_cast<unsigned char>(token[index++])))
             {
                 return false;
             }
@@ -71,7 +71,7 @@ static bool matchUuid(std::string_view token) noexcept
     return index == token.size();
 }
 
-static bool matchLongHex(std::string_view token) noexcept
+static bool MatchLongHex(std::string_view token) noexcept
 {
     std::string_view body = token;
     if (body.size() >= 2U && body[0] == '0' && (body[1] == 'x' || body[1] == 'X'))
@@ -84,31 +84,31 @@ static bool matchLongHex(std::string_view token) noexcept
     }
 
     if (!std::ranges::all_of(body,
-                             [](const char codeUnit) { return isAsciiHex(static_cast<unsigned char>(codeUnit)); }))
+                             [](const char code_unit) { return IsAsciiHex(static_cast<unsigned char>(code_unit)); }))
     {
         return false;
     }
-    return std::ranges::any_of(body,
-                               [](const char codeUnit) { return isAsciiDigit(static_cast<unsigned char>(codeUnit)); });
+    return std::ranges::any_of(body, [](const char code_unit)
+                               { return IsAsciiDigit(static_cast<unsigned char>(code_unit)); });
 }
 
-static bool matchDecimalDigits(std::string_view token) noexcept
+static bool MatchDecimalDigits(std::string_view token) noexcept
 {
     if (token.size() < 4U)
     {
         return false;
     }
-    return std::ranges::all_of(token,
-                               [](const char codeUnit) { return isAsciiDigit(static_cast<unsigned char>(codeUnit)); });
+    return std::ranges::all_of(token, [](const char code_unit)
+                               { return IsAsciiDigit(static_cast<unsigned char>(code_unit)); });
 }
 
-static bool matchPrefixedCode(std::string_view token) noexcept
+static bool MatchPrefixedCode(std::string_view token) noexcept
 {
     std::size_t index = 0;
     const std::size_t size = token.size();
 
     std::size_t letters = 0;
-    while (index < size && isAsciiLetter(static_cast<unsigned char>(token[index])) && letters < 10U)
+    while (index < size && IsAsciiLetter(static_cast<unsigned char>(token[index])) && letters < 10U)
     {
         ++letters;
         ++index;
@@ -129,7 +129,7 @@ static bool matchPrefixedCode(std::string_view token) noexcept
         ++index;
     }
 
-    if (index < size && isAsciiLetter(static_cast<unsigned char>(token[index])))
+    if (index < size && IsAsciiLetter(static_cast<unsigned char>(token[index])))
     {
         ++index;
     }
@@ -137,7 +137,7 @@ static bool matchPrefixedCode(std::string_view token) noexcept
     std::size_t digits = 0;
     while (index < size)
     {
-        if (!isAsciiDigit(static_cast<unsigned char>(token[index])))
+        if (!IsAsciiDigit(static_cast<unsigned char>(token[index])))
         {
             return false;
         }
@@ -147,20 +147,20 @@ static bool matchPrefixedCode(std::string_view token) noexcept
     return digits >= 3U;
 }
 
-static bool parseDecimalPort(std::string_view text, std::uint32_t &port) noexcept
+static bool ParseDecimalPort(std::string_view text, std::uint32_t &port) noexcept
 {
     if (text.empty())
     {
         return false;
     }
     std::uint32_t value = 0;
-    for (const char codeUnit : text)
+    for (const char code_unit : text)
     {
-        if (!isAsciiDigit(static_cast<unsigned char>(codeUnit)))
+        if (!IsAsciiDigit(static_cast<unsigned char>(code_unit)))
         {
             return false;
         }
-        value = (value * 10U) + static_cast<std::uint32_t>(codeUnit - '0');
+        value = (value * 10U) + static_cast<std::uint32_t>(code_unit - '0');
         if (value > 65535U)
         {
             return false;
@@ -170,7 +170,7 @@ static bool parseDecimalPort(std::string_view text, std::uint32_t &port) noexcep
     return true;
 }
 
-static bool parseIpv4Dotted(std::string_view text) noexcept
+static bool ParseIpv4Dotted(std::string_view text) noexcept
 {
     if (text.empty())
     {
@@ -190,13 +190,13 @@ static bool parseIpv4Dotted(std::string_view text) noexcept
         {
             return false;
         }
-        if (!isAsciiDigit(static_cast<unsigned char>(text[index])))
+        if (!IsAsciiDigit(static_cast<unsigned char>(text[index])))
         {
             return false;
         }
 
         const std::size_t begin = index;
-        while (index < size && isAsciiDigit(static_cast<unsigned char>(text[index])))
+        while (index < size && IsAsciiDigit(static_cast<unsigned char>(text[index])))
         {
             ++index;
         }
@@ -230,7 +230,7 @@ static bool parseIpv4Dotted(std::string_view text) noexcept
     return octets == 4;
 }
 
-static bool matchIpv4(std::string_view token) noexcept
+static bool MatchIpv4(std::string_view token) noexcept
 {
     if (token.empty() || token.front() == '+')
     {
@@ -239,7 +239,7 @@ static bool matchIpv4(std::string_view token) noexcept
 
     const std::size_t colon = token.find(':');
     const std::string_view host = colon == std::string_view::npos ? token : token.substr(0, colon);
-    if (!parseIpv4Dotted(host))
+    if (!ParseIpv4Dotted(host))
     {
         return false;
     }
@@ -250,20 +250,20 @@ static bool matchIpv4(std::string_view token) noexcept
     }
 
     std::uint32_t port = 0;
-    return parseDecimalPort(token.substr(colon + 1), port);
+    return ParseDecimalPort(token.substr(colon + 1), port);
 }
 
-static bool parseIpv6HexGroup(std::string_view group) noexcept
+static bool ParseIpv6HexGroup(std::string_view group) noexcept
 {
     if (group.empty() || group.size() > 4U)
     {
         return false;
     }
     return std::ranges::all_of(group,
-                               [](const char codeUnit) { return isAsciiHex(static_cast<unsigned char>(codeUnit)); });
+                               [](const char code_unit) { return IsAsciiHex(static_cast<unsigned char>(code_unit)); });
 }
 
-static int countIpv6Pieces(std::string_view text, bool allowIpv4Tail) noexcept
+static int CountIpv6Pieces(std::string_view text, bool allow_ipv4_tail) noexcept
 {
     if (text.empty())
     {
@@ -279,9 +279,9 @@ static int countIpv6Pieces(std::string_view text, bool allowIpv4Tail) noexcept
         const std::string_view piece =
             colon == std::string_view::npos ? text.substr(index) : text.substr(index, colon - index);
 
-        if (allowIpv4Tail && colon == std::string_view::npos && piece.find('.') != std::string_view::npos)
+        if (allow_ipv4_tail && colon == std::string_view::npos && piece.find('.') != std::string_view::npos)
         {
-            if (!parseIpv4Dotted(piece))
+            if (!ParseIpv4Dotted(piece))
             {
                 return -1;
             }
@@ -289,7 +289,7 @@ static int countIpv6Pieces(std::string_view text, bool allowIpv4Tail) noexcept
             return groups;
         }
 
-        if (!parseIpv6HexGroup(piece))
+        if (!ParseIpv6HexGroup(piece))
         {
             return -1;
         }
@@ -304,7 +304,7 @@ static int countIpv6Pieces(std::string_view text, bool allowIpv4Tail) noexcept
     return groups;
 }
 
-static bool parseIpv6Address(std::string_view addr) noexcept
+static bool ParseIpv6Address(std::string_view addr) noexcept
 {
     if (addr.empty() || addr.find('%') != std::string_view::npos)
     {
@@ -316,40 +316,40 @@ static bool parseIpv6Address(std::string_view addr) noexcept
     }
 
     const std::size_t compression = addr.find("::");
-    const bool hasCompression = compression != std::string_view::npos;
-    if (hasCompression && addr.find("::", compression + 2) != std::string_view::npos)
+    const bool has_compression = compression != std::string_view::npos;
+    if (has_compression && addr.find("::", compression + 2) != std::string_view::npos)
     {
         return false;
     }
 
-    const std::string_view left = hasCompression ? addr.substr(0, compression) : addr;
-    const std::string_view right = hasCompression ? addr.substr(compression + 2) : std::string_view{};
+    const std::string_view left = has_compression ? addr.substr(0, compression) : addr;
+    const std::string_view right = has_compression ? addr.substr(compression + 2) : std::string_view{};
 
-    const int leftGroups = countIpv6Pieces(left, false);
-    if (leftGroups < 0)
+    const int left_groups = CountIpv6Pieces(left, false);
+    if (left_groups < 0)
     {
         return false;
     }
-    const int rightGroups = countIpv6Pieces(right, true);
-    if (rightGroups < 0)
-    {
-        return false;
-    }
-
-    const int explicitGroups = leftGroups + rightGroups;
-    if (explicitGroups > 8)
+    const int right_groups = CountIpv6Pieces(right, true);
+    if (right_groups < 0)
     {
         return false;
     }
 
-    if (hasCompression)
+    const int explicit_groups = left_groups + right_groups;
+    if (explicit_groups > 8)
     {
-        return explicitGroups < 8;
+        return false;
     }
-    return explicitGroups == 8;
+
+    if (has_compression)
+    {
+        return explicit_groups < 8;
+    }
+    return explicit_groups == 8;
 }
 
-static bool matchIpv6(std::string_view token) noexcept
+static bool MatchIpv6(std::string_view token) noexcept
 {
     if (token.starts_with('['))
     {
@@ -360,7 +360,7 @@ static bool matchIpv6(std::string_view token) noexcept
         }
 
         const std::string_view addr = token.substr(1, close - 1);
-        if (!parseIpv6Address(addr))
+        if (!ParseIpv6Address(addr))
         {
             return false;
         }
@@ -375,7 +375,7 @@ static bool matchIpv6(std::string_view token) noexcept
         }
 
         std::uint32_t port = 0;
-        return parseDecimalPort(token.substr(close + 2), port);
+        return ParseDecimalPort(token.substr(close + 2), port);
     }
 
     if (token.find(':') == std::string_view::npos)
@@ -383,34 +383,34 @@ static bool matchIpv6(std::string_view token) noexcept
         return false;
     }
 
-    if (parseIpv6Address(token))
+    if (ParseIpv6Address(token))
     {
         return true;
     }
 
-    const std::size_t lastColon = token.rfind(':');
-    const std::string_view tail = token.substr(lastColon + 1);
+    const std::size_t last_colon = token.rfind(':');
+    const std::string_view tail = token.substr(last_colon + 1);
     if (tail.empty())
     {
         return false;
     }
 
     if (!std::ranges::all_of(tail,
-                             [](const char codeUnit) { return isAsciiDigit(static_cast<unsigned char>(codeUnit)); }))
+                             [](const char code_unit) { return IsAsciiDigit(static_cast<unsigned char>(code_unit)); }))
     {
         return false;
     }
 
     std::uint32_t port = 0;
-    const std::string_view head = token.substr(0, lastColon);
-    if (parseDecimalPort(tail, port) && parseIpv6Address(head))
+    const std::string_view head = token.substr(0, last_colon);
+    if (ParseDecimalPort(tail, port) && ParseIpv6Address(head))
     {
         return false;
     }
     return false;
 }
 
-static bool matchUnixAbsolutePath(std::string_view token) noexcept
+static bool MatchUnixAbsolutePath(std::string_view token) noexcept
 {
     if (!token.starts_with('/'))
     {
@@ -440,18 +440,18 @@ static bool matchUnixAbsolutePath(std::string_view token) noexcept
     return segments >= 2U;
 }
 
-QueryTokens tokenizeQuery(std::string_view query)
+QueryTokens TokenizeQuery(std::string_view query)
 {
     QueryTokens result;
-    std::string_view strippedView = query;
-    stripOneSurroundingQuotes(strippedView);
-    result.stripped.assign(strippedView);
+    std::string_view stripped_view = query;
+    StripOneSurroundingQuotes(stripped_view);
+    result.stripped.assign(stripped_view);
 
     std::size_t index = 0;
-    const std::size_t size = strippedView.size();
+    const std::size_t size = stripped_view.size();
     while (index < size)
     {
-        while (index < size && isAsciiWhitespace(static_cast<unsigned char>(strippedView[index])))
+        while (index < size && IsAsciiWhitespace(static_cast<unsigned char>(stripped_view[index])))
         {
             ++index;
         }
@@ -461,13 +461,13 @@ QueryTokens tokenizeQuery(std::string_view query)
         }
 
         const std::size_t begin = index;
-        while (index < size && !isAsciiWhitespace(static_cast<unsigned char>(strippedView[index])))
+        while (index < size && !IsAsciiWhitespace(static_cast<unsigned char>(stripped_view[index])))
         {
             ++index;
         }
 
-        std::string_view token = strippedView.substr(begin, index - begin);
-        stripOneSurroundingQuotes(token);
+        std::string_view token = stripped_view.substr(begin, index - begin);
+        StripOneSurroundingQuotes(token);
         if (!token.empty())
         {
             result.tokens.emplace_back(token);
@@ -476,31 +476,31 @@ QueryTokens tokenizeQuery(std::string_view query)
     return result;
 }
 
-bool isIdentifierToken(std::string_view token)
+bool IsIdentifierToken(std::string_view token)
 {
-    return matchUuid(token) || matchLongHex(token) || matchDecimalDigits(token) || matchPrefixedCode(token) ||
-           matchIpv4(token) || matchIpv6(token) || matchUnixAbsolutePath(token);
+    return MatchUuid(token) || MatchLongHex(token) || MatchDecimalDigits(token) || MatchPrefixedCode(token) ||
+           MatchIpv4(token) || MatchIpv6(token) || MatchUnixAbsolutePath(token);
 }
 
-QueryClass classifyQuery(std::string_view query)
+QueryClass ClassifyQuery(std::string_view query)
 {
-    const QueryTokens tokens = tokenizeQuery(query);
+    const QueryTokens tokens = TokenizeQuery(query);
     if (tokens.tokens.empty())
     {
         return QueryClass::NaturalLanguage;
     }
 
-    bool anyIdentifier = false;
+    bool any_identifier = false;
     for (const std::string &token : tokens.tokens)
     {
-        if (isIdentifierToken(token))
+        if (IsIdentifierToken(token))
         {
-            anyIdentifier = true;
+            any_identifier = true;
             break;
         }
     }
 
-    if (!anyIdentifier)
+    if (!any_identifier)
     {
         return QueryClass::NaturalLanguage;
     }

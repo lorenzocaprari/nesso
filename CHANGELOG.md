@@ -10,7 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - `.clang-tidy` documents alias disables (which primary check stays on), sets `FormatStyle: file`, and turns off irrelevant `google-objc-*` / `clang-analyzer-osx*` / MPI / fuchsia / webkit checkers for this Linux CLI.
-- `readability-identifier-naming` covers enums, namespaces, parameters, members, macros, and type aliases. Factory/compute helpers matching `Make|Get|Compute|Read|Write` stay CamelCase via `FunctionIgnoredRegexp`; temporary `readability-identifier-naming` NOLINT directives are removed.
+- `readability-identifier-naming` uses Google-style names: CamelCase functions and methods, snake_case variables/parameters/members (private members keep a trailing `_`), snake_case local constants (no `k` prefix), and UPPER_CASE for global/namespace/class/static constants. Types stay CamelCase. `main`, `LLVMFuzzerTestOneInput`, `swap`, `hash`, std-protocol members, and `std::streambuf` overrides are ignored.
 - `misc-include-cleaner` is enabled. Translation units under `src/` include the headers they use directly.
 - `scripts/clang-tidy` analyzes `test/` as well as `src/`. [`test/.clang-tidy`](test/.clang-tidy) inherits the root profile and disables Catch2/fuzz-oriented noise while keeping the production gate on `src/`.
 - `portability-restrict-system-includes` uses a comma-separated inventory of allowed system and third-party angle includes under `src/` and `test/` instead of `*`.

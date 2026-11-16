@@ -17,7 +17,7 @@ namespace nesso::core::math
 namespace detail
 {
 
-template <SupportedScalar T> T dotProductScalar(std::span<const T> a, std::span<const T> b) noexcept
+template <SupportedScalar T> T DotProductScalar(std::span<const T> a, std::span<const T> b) noexcept
 {
     T sum{};
     for (size_t i = 0; i < a.size(); ++i)
@@ -27,7 +27,7 @@ template <SupportedScalar T> T dotProductScalar(std::span<const T> a, std::span<
     return sum;
 }
 
-template <SupportedScalar T> T l2SquaredDistanceScalar(std::span<const T> a, std::span<const T> b) noexcept
+template <SupportedScalar T> T L2SquaredDistanceScalar(std::span<const T> a, std::span<const T> b) noexcept
 {
     T sum{};
     for (size_t i = 0; i < a.size(); ++i)
@@ -38,9 +38,9 @@ template <SupportedScalar T> T l2SquaredDistanceScalar(std::span<const T> a, std
     return sum;
 }
 
-DistanceKernel selectedKernel() noexcept
+DistanceKernel SelectedKernel() noexcept
 {
-    static const DistanceKernel kernel = []
+    static const DistanceKernel KERNEL = []
     {
 #ifdef _MSC_VER
         // Phase 6 selects AVX2 with __cpuidex and _xgetbv under /arch:AVX2.
@@ -55,45 +55,45 @@ DistanceKernel selectedKernel() noexcept
         return DistanceKernel::Scalar;
 #endif
     }();
-    return kernel;
+    return KERNEL;
 }
 
-float dotProductKernel(DistanceKernel kernel, std::span<const float> a, std::span<const float> b) noexcept
+float DotProductKernel(DistanceKernel kernel, std::span<const float> a, std::span<const float> b) noexcept
 {
 #ifdef __x86_64__
     if (kernel == DistanceKernel::Avx2Fma)
     {
-        return dotProductAvx2Fma(a, b);
+        return DotProductAvx2Fma(a, b);
     }
 #else
     static_cast<void>(kernel);
 #endif
-    return dotProductScalar<float>(a, b);
+    return DotProductScalar<float>(a, b);
 }
 
-float l2SquaredDistanceKernel(DistanceKernel kernel, std::span<const float> a, std::span<const float> b) noexcept
+float L2SquaredDistanceKernel(DistanceKernel kernel, std::span<const float> a, std::span<const float> b) noexcept
 {
 #ifdef __x86_64__
     if (kernel == DistanceKernel::Avx2Fma)
     {
-        return l2SquaredDistanceAvx2Fma(a, b);
+        return L2SquaredDistanceAvx2Fma(a, b);
     }
 #else
     static_cast<void>(kernel);
 #endif
-    return l2SquaredDistanceScalar<float>(a, b);
+    return L2SquaredDistanceScalar<float>(a, b);
 }
 
-template float dotProductScalar<float>(std::span<const float>, std::span<const float>) noexcept;
-template double dotProductScalar<double>(std::span<const double>, std::span<const double>) noexcept;
-template float l2SquaredDistanceScalar<float>(std::span<const float>, std::span<const float>) noexcept;
-template double l2SquaredDistanceScalar<double>(std::span<const double>, std::span<const double>) noexcept;
+template float DotProductScalar<float>(std::span<const float>, std::span<const float>) noexcept;
+template double DotProductScalar<double>(std::span<const double>, std::span<const double>) noexcept;
+template float L2SquaredDistanceScalar<float>(std::span<const float>, std::span<const float>) noexcept;
+template double L2SquaredDistanceScalar<double>(std::span<const double>, std::span<const double>) noexcept;
 
 } // namespace detail
 
 template <SupportedScalar T>
 // cppcheck-suppress unusedFunction
-std::expected<T, EngineError> CosineSimilarity::calculate(std::span<const T> a, std::span<const T> b) noexcept
+std::expected<T, EngineError> CosineSimilarity::Calculate(std::span<const T> a, std::span<const T> b) noexcept
 {
     if (a.size() != b.size()) [[unlikely]]
     {
@@ -104,32 +104,32 @@ std::expected<T, EngineError> CosineSimilarity::calculate(std::span<const T> a, 
         return std::unexpected(EngineError::DatabaseNotInitialized);
     }
 
-    T dotProduct{};
-    T normA{};
-    T normB{};
+    T dot_product{};
+    T norm_a{};
+    T norm_b{};
 
     for (size_t i = 0; i < a.size(); ++i)
     {
-        dotProduct += a[i] * b[i];
-        normA += a[i] * a[i];
-        normB += b[i] * b[i];
+        dot_product += a[i] * b[i];
+        norm_a += a[i] * a[i];
+        norm_b += b[i] * b[i];
     }
 
-    if (normA == T{} || normB == T{}) [[unlikely]]
+    if (norm_a == T{} || norm_b == T{}) [[unlikely]]
     {
         return T{};
     }
 
-    return dotProduct / (std::sqrt(normA) * std::sqrt(normB));
+    return dot_product / (std::sqrt(norm_a) * std::sqrt(norm_b));
 }
 
-template std::expected<float, EngineError> CosineSimilarity::calculate<float>(std::span<const float>,
+template std::expected<float, EngineError> CosineSimilarity::Calculate<float>(std::span<const float>,
                                                                               std::span<const float>) noexcept;
-template std::expected<double, EngineError> CosineSimilarity::calculate<double>(std::span<const double>,
+template std::expected<double, EngineError> CosineSimilarity::Calculate<double>(std::span<const double>,
                                                                                 std::span<const double>) noexcept;
 
 template <SupportedScalar T>
-std::expected<T, EngineError> DistanceMetrics::dotProduct(std::span<const T> a, std::span<const T> b) noexcept
+std::expected<T, EngineError> DistanceMetrics::DotProduct(std::span<const T> a, std::span<const T> b) noexcept
 {
     if (a.size() != b.size()) [[unlikely]]
     {
@@ -142,19 +142,19 @@ std::expected<T, EngineError> DistanceMetrics::dotProduct(std::span<const T> a, 
 
     if constexpr (std::same_as<T, float>)
     {
-        return detail::dotProductKernel(detail::selectedKernel(), a, b);
+        return detail::DotProductKernel(detail::SelectedKernel(), a, b);
     }
-    return detail::dotProductScalar(a, b);
+    return detail::DotProductScalar(a, b);
 }
 
-template std::expected<float, EngineError> DistanceMetrics::dotProduct<float>(std::span<const float>,
+template std::expected<float, EngineError> DistanceMetrics::DotProduct<float>(std::span<const float>,
                                                                               std::span<const float>) noexcept;
-template std::expected<double, EngineError> DistanceMetrics::dotProduct<double>(std::span<const double>,
+template std::expected<double, EngineError> DistanceMetrics::DotProduct<double>(std::span<const double>,
                                                                                 std::span<const double>) noexcept;
 
 template <SupportedScalar T>
 // cppcheck-suppress unusedFunction
-std::expected<T, EngineError> DistanceMetrics::l2SquaredDistance(std::span<const T> a, std::span<const T> b) noexcept
+std::expected<T, EngineError> DistanceMetrics::L2SquaredDistance(std::span<const T> a, std::span<const T> b) noexcept
 {
     if (a.size() != b.size()) [[unlikely]]
     {
@@ -167,14 +167,14 @@ std::expected<T, EngineError> DistanceMetrics::l2SquaredDistance(std::span<const
 
     if constexpr (std::same_as<T, float>)
     {
-        return detail::l2SquaredDistanceKernel(detail::selectedKernel(), a, b);
+        return detail::L2SquaredDistanceKernel(detail::SelectedKernel(), a, b);
     }
-    return detail::l2SquaredDistanceScalar(a, b);
+    return detail::L2SquaredDistanceScalar(a, b);
 }
 
-template std::expected<float, EngineError> DistanceMetrics::l2SquaredDistance<float>(std::span<const float>,
+template std::expected<float, EngineError> DistanceMetrics::L2SquaredDistance<float>(std::span<const float>,
                                                                                      std::span<const float>) noexcept;
 template std::expected<double, EngineError>
-    DistanceMetrics::l2SquaredDistance<double>(std::span<const double>, std::span<const double>) noexcept;
+    DistanceMetrics::L2SquaredDistance<double>(std::span<const double>, std::span<const double>) noexcept;
 
 } // namespace nesso::core::math

@@ -26,24 +26,24 @@ class OnnxEmbedder
     using ProgressCallback = std::function<void(size_t completed, size_t total)>;
 
     [[nodiscard]] static std::expected<std::unique_ptr<OnnxEmbedder>, EmbedError>
-    create(const std::filesystem::path &modelDir, size_t threads = 0);
+    Create(const std::filesystem::path &model_dir, size_t threads = 0);
 
-    /// One session at this intra-op width, raised to intraOpThreadFloor().
+    /// One session at this intra-op width, raised to IntraOpThreadFloor().
     /// The product path is create(). This pins a width the policy would not.
     [[nodiscard]] static std::expected<std::unique_ptr<OnnxEmbedder>, EmbedError>
-    createWithIntraOp(const std::filesystem::path &modelDir, int intraOpThreads);
+    CreateWithIntraOp(const std::filesystem::path &model_dir, int intra_op_threads);
 
-    OnnxEmbedder(WordPieceTokenizer tokenizer, const std::filesystem::path &modelPath, size_t threads);
+    OnnxEmbedder(WordPieceTokenizer tokenizer, const std::filesystem::path &model_path, size_t threads);
 
-    [[nodiscard]] const SessionPolicy &policy() const noexcept;
+    [[nodiscard]] const SessionPolicy &Policy() const noexcept;
 
     /// int8 session count, or 1 for an fp32 model.
-    [[nodiscard]] size_t sessions() const noexcept;
+    [[nodiscard]] size_t Sessions() const noexcept;
 
-    [[nodiscard]] std::expected<std::vector<float>, EmbedError> embed(std::string_view text) const;
+    [[nodiscard]] std::expected<std::vector<float>, EmbedError> Embed(std::string_view text) const;
 
     [[nodiscard]] std::expected<std::vector<std::vector<float>>, EmbedError>
-    embedBatch(std::span<const std::string> texts, ProgressCallback progress = {}) const;
+    EmbedBatch(std::span<const std::string> texts, ProgressCallback progress = {}) const;
 
     OnnxEmbedder(const OnnxEmbedder &) = delete;
     OnnxEmbedder &operator=(const OnnxEmbedder &) = delete;
@@ -52,10 +52,10 @@ class OnnxEmbedder
     ~OnnxEmbedder();
 
     /// The first embedder environment, including the AMX guard.
-    static void prepareEmbedderEnv();
+    static void PrepareEmbedderEnv();
 
   private:
-    OnnxEmbedder(WordPieceTokenizer tokenizer, const std::filesystem::path &modelPath, const SessionPolicy &policy);
+    OnnxEmbedder(WordPieceTokenizer tokenizer, const std::filesystem::path &model_path, const SessionPolicy &policy);
     class SessionImpl;
     std::unique_ptr<SessionImpl> session_;
     WordPieceTokenizer tokenizer_;
