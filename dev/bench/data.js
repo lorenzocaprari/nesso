@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794869700897,
+  "lastUpdate": 1794870458106,
   "repoUrl": "https://github.com/lorenzocaprari/nesso",
   "entries": {
     "nesso": [
@@ -8585,6 +8585,60 @@ window.BENCHMARK_DATA = {
           {
             "name": "grep-100000-rss",
             "value": 145350656,
+            "unit": "bytes"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "caprarilorenzo5@gmail.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "committer": {
+            "email": "85455384+lorenzocaprari@users.noreply.github.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "distinct": true,
+          "id": "26a1e2aa748379bdd92820cbb6258cc0f0b42fe2",
+          "message": "docs: refresh the README demo GIF storyboard\n\nRecord keyword miss, nesso grep, index, and search without long on-camera\nstalls, and align the README samples with the new recording.",
+          "timestamp": "2026-11-16T23:51:21+01:00",
+          "tree_id": "75b668b52e677501ae5d06ef9e73a0ac0ad5e211",
+          "url": "https://github.com/lorenzocaprari/nesso/commit/26a1e2aa748379bdd92820cbb6258cc0f0b42fe2"
+        },
+        "date": 1794870457486,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "grep-1000-wall",
+            "value": 0.18,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-1000-rss",
+            "value": 119689216,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-10000-wall",
+            "value": 0.19,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-10000-rss",
+            "value": 119914496,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-100000-wall",
+            "value": 0.42,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-100000-rss",
+            "value": 146112512,
             "unit": "bytes"
           }
         ]
