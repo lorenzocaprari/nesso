@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794776973218,
+  "lastUpdate": 1794815506359,
   "repoUrl": "https://github.com/lorenzocaprari/nesso",
   "entries": {
     "nesso": [
@@ -7613,6 +7613,60 @@ window.BENCHMARK_DATA = {
           {
             "name": "grep-100000-rss",
             "value": 144986112,
+            "unit": "bytes"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "85455384+lorenzocaprari@users.noreply.github.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "075b12f9f3559aa243fcc6235f2f4cf20e7d2457",
+          "message": "refactor: adopt Google naming for functions and variables (#288)\n\n* refactor: adopt Google naming for functions and variables\n\nApply readability-identifier-naming (CamelCase functions, snake_case locals/members) across src, test, and bench via clang-tidy export-fixes.\n\n* fix(test): rename aarch64-only session policy call sites\n\nThe #ifdef __aarch64__ branches still used pre-rename APIs, which broke build-gcc-26-arm64.",
+          "timestamp": "2026-11-16T08:46:49+01:00",
+          "tree_id": "9957a4da75f2b2f2c1483a69fe28d7ca1e88a58b",
+          "url": "https://github.com/lorenzocaprari/nesso/commit/075b12f9f3559aa243fcc6235f2f4cf20e7d2457"
+        },
+        "date": 1794815505877,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "grep-1000-wall",
+            "value": 1.22,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-1000-rss",
+            "value": 118558720,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-10000-wall",
+            "value": 1.23,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-10000-rss",
+            "value": 120205312,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-100000-wall",
+            "value": 1.47,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-100000-rss",
+            "value": 144424960,
             "unit": "bytes"
           }
         ]
