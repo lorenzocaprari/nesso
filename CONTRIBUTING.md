@@ -35,15 +35,15 @@ Profiles in `conan/profiles/`:
 | --- | --- |
 | `gcc-26` | CI/package Release (`-O3`, `-march=x86-64-v2`, `-flto=auto`) |
 | `gcc-26-dev` | Local Release without LTO (`-O3`, `-march=x86-64-v2`, `link_jobs=1`) |
-| `gcc-26-debug` | Debug with ASan and UBSan (`-fno-sanitize-recover=all`) |
+| `gcc-26-debug` | Debug with ASan and UBSan (`-fno-sanitize-recover=all`) and `_GLIBCXX_ASSERTIONS` |
 | `gcc-26-fuzz` | AFL++ library harnesses |
 | `gcc-26-armv8` | arm64 Release (`-O3`, `-march=armv8-a`, LTO) |
 | `gcc-26-el9` | EL9 amd64 Release, GCC Toolset 15 (`-O3`, `-march=x86-64-v2`, LTO) |
 | `gcc-26-el9-armv8` | EL9 arm64 Release, GCC Toolset 15 (`-O3`, `-march=armv8-a`, LTO) |
 | `clang-26` | Clang 21 Release with libstdc++, no LTO (`-O3`, `-march=x86-64-v2`) |
-| `code-coverage` | Debug plus `--coverage` |
+| `code-coverage` | Debug plus `--coverage` and `_GLIBCXX_ASSERTIONS` |
 
-`nesso_options` in `CMakeLists.txt` is the INTERFACE target every nesso target links. It requires C++26 with compiler extensions off and sets the warning flags. `-Werror` is off unless `NESSO_WERROR` is ON. Profiles do not set that. `conanfile.py` copies `user.nesso:werror` into the cache variable, and `conan -c user.nesso:werror=True` turns it on. `conan build` generates the toolchain again, so the flag has to be on that command too. Optimization, sanitizer, and LTO flags stay in `user.nesso:cxxflags` so they are not applied to dependency builds. `user.nesso:link_jobs` (or `NESSO_LINK_JOBS`) caps concurrent Ninja links when set; CI leaves it unset.
+`nesso_options` in `CMakeLists.txt` is the INTERFACE target every nesso target links. It requires C++26 with compiler extensions off and sets the warning flags. `-Werror` is off unless `NESSO_WERROR` is ON. Profiles do not set that. `conanfile.py` copies `user.nesso:werror` into the cache variable, and `conan -c user.nesso:werror=True` turns it on. `conan build` generates the toolchain again, so the flag has to be on that command too. Optimization, sanitizer, and LTO flags stay in `user.nesso:cxxflags` so they are not applied to dependency builds. `gcc-26-debug` and `code-coverage` pass `-D_GLIBCXX_ASSERTIONS` there and do not pass `-D_GLIBCXX_DEBUG`. Debug-mode containers would be an ABI break against Catch2, abseil, and ONNX Runtime, which stay on the shared Debug package ID those profiles do not rebuild. `user.nesso:link_jobs` (or `NESSO_LINK_JOBS`) caps concurrent Ninja links when set; CI leaves it unset.
 
 `conanfile.py` uses Conan `cmake_layout` and `CMakeToolchain` and sets the generator to Ninja. `conan install` writes `CMakeUserPresets.json` at the repo root; that file includes `build/<Config>/generators/CMakePresets.json`. Both are generated and should stay uncommitted. `cmake --list-presets` prints the names (Conan uses `conan-<build type>` in lowercase, so `conan-debug` and `conan-release` for these two profiles). `cmake --preset` and `cmake --build --preset` drive those presets. CI and [docs/building.md](docs/building.md) call `conan build`, which configures and builds through the same toolchain.
 

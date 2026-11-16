@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `conan/profiles/gcc-26-debug` and `conan/profiles/code-coverage` pass `-D_GLIBCXX_ASSERTIONS` instead of `-D_GLIBCXX_DEBUG` and `-D_GLIBCXX_DEBUG_PEDANTIC`. Libstdc++ precondition checks stay on for nesso. Standard containers keep the ABI of the shared Debug Catch2, abseil, and ONNX Runtime packages, which those profiles do not rebuild.
 - `.clang-tidy` documents alias disables (which primary check stays on), sets `FormatStyle: file`, and turns off irrelevant `google-objc-*` / `clang-analyzer-osx*` / MPI / fuchsia / webkit checkers for this Linux CLI.
 - `readability-identifier-naming` uses Google-style names: CamelCase functions and methods, snake_case variables/parameters/members (private members keep a trailing `_`), snake_case local constants (no `k` prefix), and UPPER_CASE for global/namespace/class/static constants. Types stay CamelCase. `main`, `LLVMFuzzerTestOneInput`, `swap`, `hash`, std-protocol members, and `std::streambuf` overrides are ignored.
 - `misc-include-cleaner` is enabled. Translation units under `src/` include the headers they use directly.
