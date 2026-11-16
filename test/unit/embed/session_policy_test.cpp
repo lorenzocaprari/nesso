@@ -414,3 +414,91 @@ TEST_CASE("usable cores follow affinity and cgroup cpu.max", "[session-policy]")
         nesso::embed::ReadMachine({.proc_root = proc, .sys_root = sys, .cgroup_root = cgroup});
     CHECK(zero_period.physical_cores == 4);
 }
+
+TEST_CASE("memory_limit_bytes follows the tightest cgroup memory headroom", "[session-policy]")
+{
+    const TempDir dir{"nesso_session_policy_memory"};
+    const auto proc = dir.Path() / "proc";
+    const auto sys = dir.Path() / "sys";
+    const auto cgroup = dir.Path() / "cgroup";
+    constexpr std::uintmax_t available = 64 * GIB;
+    WriteText(proc / "meminfo", std::format("MemAvailable: {} kB\n", available / 1024));
+    WriteCpu(sys, "cpu0", 0, 0);
+    WriteCpu(sys, "cpu1", 0, 1);
+    WriteCpu(sys, "cpu2", 0, 2);
+    WriteCpu(sys, "cpu3", 0, 3);
+    WriteText(proc / "self/status", "Cpus_allowed_list:\t0-3\n");
+
+    WriteText(proc / "self/cgroup", "0::/slice/leaf\n");
+    WriteText(cgroup / "slice/leaf/memory.max", std::format("{}\n", GIB));
+    WriteText(cgroup / "slice/leaf/memory.current", "0\n");
+    WriteText(cgroup / "slice/memory.max", "max\n");
+    WriteText(cgroup / "slice/memory.current", "0\n");
+    WriteText(cgroup / "memory.max", "max\n");
+    const MachineResources v2_limited =
+        nesso::embed::ReadMachine({.proc_root = proc, .sys_root = sys, .cgroup_root = cgroup});
+    CHECK(v2_limited.memory_limit_bytes == GIB);
+
+    WriteText(cgroup / "slice/leaf/memory.max", "max\n");
+    WriteText(cgroup / "slice/memory.max", std::format("{}\n", GIB / 2));
+    WriteText(cgroup / "slice/memory.current", "0\n");
+    const MachineResources v2_parent =
+        nesso::embed::ReadMachine({.proc_root = proc, .sys_root = sys, .cgroup_root = cgroup});
+    CHECK(v2_parent.memory_limit_bytes == GIB / 2);
+
+    WriteText(cgroup / "slice/memory.max", "max\n");
+    WriteText(cgroup / "memory.max", "max\n");
+    const MachineResources v2_max =
+        nesso::embed::ReadMachine({.proc_root = proc, .sys_root = sys, .cgroup_root = cgroup});
+    CHECK(v2_max.memory_limit_bytes == available);
+
+    WriteText(proc / "self/cgroup", "3:memory:/limited\n");
+    WriteText(cgroup / "memory/limited/memory.limit_in_bytes", std::format("{}\n", 2 * GIB));
+    WriteText(cgroup / "memory/limited/memory.usage_in_bytes", std::format("{}\n", GIB));
+    WriteText(cgroup / "memory/memory.limit_in_bytes", std::format("{}\n", std::uintmax_t{1} << 62U));
+    WriteText(cgroup / "memory/memory.usage_in_bytes", "0\n");
+    const MachineResources v1_limited =
+        nesso::embed::ReadMachine({.proc_root = proc, .sys_root = sys, .cgroup_root = cgroup});
+    CHECK(v1_limited.memory_limit_bytes == GIB);
+
+    WriteText(cgroup / "memory/limited/memory.limit_in_bytes", std::format("{}\n", std::uintmax_t{1} << 62U));
+    WriteText(cgroup / "memory/limited/memory.usage_in_bytes", "0\n");
+    const MachineResources v1_unlimited =
+        nesso::embed::ReadMachine({.proc_root = proc, .sys_root = sys, .cgroup_root = cgroup});
+    CHECK(v1_unlimited.memory_limit_bytes == available);
+
+    WriteText(proc / "self/cgroup", "0::/over\n");
+    WriteText(cgroup / "over/memory.max", std::format("{}\n", GIB));
+    WriteText(cgroup / "over/memory.current", std::format("{}\n", 2 * GIB));
+    const MachineResources over =
+        nesso::embed::ReadMachine({.proc_root = proc, .sys_root = sys, .cgroup_root = cgroup});
+    CHECK(over.memory_limit_bytes == 1);
+
+    WriteText(proc / "self/cgroup", "0::/missing\n");
+    const MachineResources missing =
+        nesso::embed::ReadMachine({.proc_root = proc, .sys_root = sys, .cgroup_root = cgroup});
+    CHECK(missing.memory_limit_bytes == available);
+
+    WriteText(proc / "self/cgroup", "0::/bad\n");
+    WriteText(cgroup / "bad/memory.max", "nope\n");
+    WriteText(cgroup / "bad/memory.current", "0\n");
+    const MachineResources unreadable =
+        nesso::embed::ReadMachine({.proc_root = proc, .sys_root = sys, .cgroup_root = cgroup});
+    CHECK(unreadable.memory_limit_bytes == available);
+
+    WriteText(proc / "self/cgroup", "0::/cap\n");
+    WriteText(cgroup / "cap/memory.max", std::format("{}\n", GIB));
+    WriteText(cgroup / "cap/memory.current", "0\n");
+    const MachineResources capped =
+        nesso::embed::ReadMachine({.proc_root = proc, .sys_root = sys, .cgroup_root = cgroup});
+    CHECK(capped.memory_limit_bytes == GIB);
+    // 16 cores: arm64 would stay at one session with the fixture's 4 cores, so
+    // the cgroup vs MemAvailable comparison would be 1 < 1.
+    const MachineResources capped_wide{
+        .physical_cores = 16, .logical_threads = 32, .memory_limit_bytes = capped.memory_limit_bytes};
+    const SessionPolicy with_cgroup = nesso::embed::MakeSessionPolicy(true, 0, capped_wide);
+    const MachineResources host_only{.physical_cores = 16, .logical_threads = 32, .memory_limit_bytes = available};
+    const SessionPolicy without_cgroup = nesso::embed::MakeSessionPolicy(true, 0, host_only);
+    CHECK(with_cgroup.sessions < without_cgroup.sessions);
+    CHECK(with_cgroup.memory_cap == (GIB / 2) / INT8_SESSION_BYTES);
+}
