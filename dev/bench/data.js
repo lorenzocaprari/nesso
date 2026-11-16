@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794822815714,
+  "lastUpdate": 1794824190145,
   "repoUrl": "https://github.com/lorenzocaprari/nesso",
   "entries": {
     "nesso": [
@@ -7721,6 +7721,60 @@ window.BENCHMARK_DATA = {
           {
             "name": "grep-100000-rss",
             "value": 144531456,
+            "unit": "bytes"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "85455384+lorenzocaprari@users.noreply.github.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "c213dd96bb527cea79a1c34ed2e31bbbdb23e8cc",
+          "message": "build(core): compile only the AVX2 kernels for AVX2 (#289)\n\n* build(core): compile only the AVX2 kernels for AVX2\n\nDrop the translation-unit -mavx2 -mfma flags on distance_avx2.cpp. The\nkernels and HorizontalSum already carry target(\"avx2,fma\"), so the\nintrinsics stay legal and LTO still cannot inline them into a generic\ncaller. A file-wide flag also compiled emitted inline functions with\nAVX2 encodings, and the linker could select that COMDAT for a CPU\nwithout AVX2.\n\nA unit test fails when compile_commands.json compiles that file with\n-mavx2 or -mfma.\n\nCo-authored-by: Lorenzo Caprari <lorenzocaprari@users.noreply.github.com>\n\n* test(core): check AVX2 flags where compile_commands.json exists\n\nTest jobs unpack a build archive that omits compile_commands.json, so\nctest skips the live check when that file is absent. The build runs the\nsame check and fails if the database is missing or distance_avx2.cpp is\ncompiled with -mavx2 or -mfma.\n\nCo-authored-by: Lorenzo Caprari <lorenzocaprari@users.noreply.github.com>\n\n---------\n\nCo-authored-by: Lorenzo Caprari <lorenzocaprari@users.noreply.github.com>",
+          "timestamp": "2026-11-16T11:11:07+01:00",
+          "tree_id": "a3c76e87d9a94f8de80c01eca92bc7e95bc430db",
+          "url": "https://github.com/lorenzocaprari/nesso/commit/c213dd96bb527cea79a1c34ed2e31bbbdb23e8cc"
+        },
+        "date": 1794824189311,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "grep-1000-wall",
+            "value": 0.13,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-1000-rss",
+            "value": 117706752,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-10000-wall",
+            "value": 0.15,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-10000-rss",
+            "value": 117137408,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-100000-wall",
+            "value": 0.32,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-100000-rss",
+            "value": 144969728,
             "unit": "bytes"
           }
         ]
