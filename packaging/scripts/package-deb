@@ -134,7 +134,7 @@ Version: ${VERSION}
 Section: utils
 Priority: optional
 Architecture: ${DEB_ARCH}
-Depends: libc6 (>= ${LIBC_MIN}), libstdc++6, libgomp1
+Depends: libc6 (>= ${LIBC_MIN}), libstdc++6
 Maintainer: Lorenzo Caprari <lorenzocaprari@users.noreply.github.com>
 Description: Local semantic search for unstructured text
  Nesso is a Linux CLI that searches .log, .json, and .jsonl files by meaning

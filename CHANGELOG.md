@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Package and Release build the `.deb` and the GHCR runtime image from the EL9 binary (`nesso-build-env-el9`, `NESSO_ABI_BASELINE`). `scripts/check-abi-baseline` gates that binary, and the `.deb` `libc6` dependency stays at or below 2.34. The package does not depend on `libgomp1`: the binary does not need it. `dpkg-deb` still runs on the Ubuntu runner. The install smoke covers Ubuntu 22.04, 24.04, 26.04, and 26.10, and Debian 12, on amd64 and arm64.
 - ClusterFuzzLite pull requests, manual runs, and the weekly batch build and run every fuzz target under `address` and `undefined`. Each job keeps the 60 minute timeout. Fuzzing stays 180 seconds on pull requests and manual runs, and 600 seconds on the weekly batch.
 - `conan/profiles/gcc-26-debug` and `conan/profiles/code-coverage` pass `-D_GLIBCXX_ASSERTIONS` instead of `-D_GLIBCXX_DEBUG` and `-D_GLIBCXX_DEBUG_PEDANTIC`. Libstdc++ precondition checks stay on for nesso. Standard containers keep the ABI of the shared Debug Catch2, abseil, and ONNX Runtime packages, which those profiles do not rebuild.
 - `.clang-tidy` documents alias disables (which primary check stays on), sets `FormatStyle: file`, and turns off irrelevant `google-objc-*` / `clang-analyzer-osx*` / MPI / fuchsia / webkit checkers for this Linux CLI.
