@@ -563,4 +563,18 @@ func TestSmokeDebRecordsInstallAndPurge(t *testing.T) {
 	if !strings.Contains(string(args), "ubuntu:26.04") {
 		t.Fatalf("default image: %s", args)
 	}
+
+	pinned := "ubuntu:22.04@sha256:" + strings.Repeat("ab", 32)
+	cmd = exec.Command(filepath.Join(root, "packaging", "scripts", "smoke-deb"), deb, pinned)
+	cmd.Env = append(envWithout("PATH"), "PATH="+stubDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("pinned image: %v\n%s", err, out)
+	}
+	args, err = os.ReadFile(argsPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(args), pinned) {
+		t.Fatalf("pinned image: %s", args)
+	}
 }

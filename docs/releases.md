@@ -6,7 +6,7 @@ A `vX.Y.Z` tag publishes `nesso_<version>_amd64.deb` and `nesso_<version>_arm64.
 
 Both v0.2.1 packages depend on `libc6` (>= 2.43), `libstdc++6`, and `libgomp1`, and need Ubuntu 26.04+ (glibc 2.43+). Each ships the MiniLM files in `/usr/share/nesso`. An omitted `--model-dir` uses `NESSO_MODEL_DIR`, then `./models` when both files are present, then `$XDG_DATA_HOME/nesso` (or `~/.local/share/nesso`), then `/usr/share/nesso`.
 
-The Package workflow builds each architecture's `.deb` twice and requires the bytes to match. amd64 builds on `ubuntu-latest`. arm64 builds on `ubuntu-24.04-arm`. It then installs that package with apt on Ubuntu 26.04 and Ubuntu 26.10, on the runner for that architecture. The release image job builds the runtime image, then packs the `.deb` the GitHub Release uploads from that image. That job runs on `ubuntu-24.04` for amd64 and `ubuntu-24.04-arm` for arm64.
+The Package workflow builds each architecture's release binary twice in `nesso-build-env-el9` and packs the `.deb` on the Ubuntu runner. The two packages have to match byte for byte. amd64 builds on `ubuntu-latest`. arm64 builds on `ubuntu-24.04-arm`. It then installs that package with apt on Ubuntu 22.04, 24.04, 26.04, and 26.10, and on Debian 12, on the runner for that architecture. The release image job builds the runtime image from that same EL9 image, then packs the `.deb` the GitHub Release uploads from that image. That job runs on `ubuntu-24.04` for amd64 and `ubuntu-24.04-arm` for arm64.
 
 ## Image
 
@@ -19,7 +19,7 @@ docker run --rm -v "$PWD:/data:ro" -w /data ghcr.io/lorenzocaprari/nesso:v0.2.1 
   grep "the disk is full" app.log
 ```
 
-The runtime stage is Ubuntu 26.04 (`packaging/Dockerfile.runtime`). The image job builds it on the native runner for that architecture, from the `nesso-build-env` image CI has already published.
+The runtime stage is Ubuntu 26.04 (`packaging/Dockerfile.runtime`). The image job builds the binary in the published `nesso-build-env-el9` image on the native runner for that architecture.
 
 ## Signing and provenance
 
@@ -33,4 +33,4 @@ A release pull request bumps `version` in `conanfile.py`. After that commit is o
 
 `workflow_dispatch` builds, runs the package and image gates, and uploads workflow artifacts. Approval on the `release` environment, the image push, cosign, provenance, and the GitHub Release run on a `vX.Y.Z` tag push.
 
-The runtime image build pulls the published `nesso-build-env` tag for amd64 (`deps-<hash>`) and arm64 (`deps-<hash>-arm64`).
+The runtime image build pulls the published `nesso-build-env-el9` tag for amd64 (`deps-<hash>`) and arm64 (`deps-<hash>-arm64`).

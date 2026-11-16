@@ -31,7 +31,7 @@ func TestRuntimeScanDockerfileUsesFinalStageOnly(t *testing.T) {
 		t.Fatalf("scan FROM = %q, final stage FROM = %q\n%s", gotFrom, fromLine, got)
 	}
 	for _, needle := range []string{
-		"apt-get install -y --no-install-recommends ca-certificates libstdc++6 libgomp1",
+		"apt-get install -y --no-install-recommends ca-certificates libstdc++6",
 		"COPY nesso /usr/local/bin/nesso\n",
 		"COPY models /usr/share/nesso\n",
 		"COPY doc /usr/share/doc/nesso\n",

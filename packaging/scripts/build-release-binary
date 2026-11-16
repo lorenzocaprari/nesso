@@ -77,6 +77,30 @@ fi
 
 echo "build-release-binary: SOURCE_DATE_EPOCH=${SOURCE_DATE_EPOCH} ROOT=${ROOT}"
 
+# aarch64 GCC emits -latomic. The EL9 toolset image does not install it.
+# gcc-toolset-15-libatomic-devel's libatomic.so is a linker script for
+# /usr/lib64/libatomic.so.1, and that SONAME is outside the baseline NEEDED
+# set. Remove the script so the driver links the static archive beside it.
+if [[ -n "${NESSO_ABI_BASELINE:-}" && "$(uname -m)" == aarch64 ]]; then
+  if ! command -v dnf >/dev/null 2>&1; then
+    echo "error: aarch64 baseline link needs gcc-toolset-15-libatomic-devel and dnf" >&2
+    exit 1
+  fi
+  dnf -y install gcc-toolset-15-libatomic-devel
+  archive="$(g++ -print-file-name=libatomic.a)"
+  if [[ "${archive}" == libatomic.a || ! -f "${archive}" ]]; then
+    echo "error: g++ did not find libatomic.a after installing gcc-toolset-15-libatomic-devel" >&2
+    exit 1
+  fi
+  if ! ar t "${archive}" >/dev/null 2>&1; then
+    echo "error: ${archive} is not a static archive" >&2
+    exit 1
+  fi
+  rm -f "$(dirname "${archive}")/libatomic.so"
+  echo "build-release-binary: static libatomic ${archive}"
+  rpm -q gcc-toolset-15-libatomic-devel
+fi
+
 PROFILE="$(release_conan_profile)"
 echo "build-release-binary: profile=${PROFILE} machine=$(uname -m)"
 conan profile detect --force

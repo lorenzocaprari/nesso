@@ -94,7 +94,7 @@ class PackageDebTest(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertEqual(
                 depends(out / "nesso_0.1.0_amd64.deb"),
-                "libc6 (>= 2.43), libstdc++6, libgomp1",
+                "libc6 (>= 2.43), libstdc++6",
             )
 
     def test_rejects_a_binary_with_no_glibc_symbols(self) -> None:

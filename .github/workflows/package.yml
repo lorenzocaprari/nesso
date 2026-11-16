@@ -1,19 +1,21 @@
 name: Package
 
 # Byte-compare two clean release .debs per architecture, then apt-install that
-# package on the Ubuntu releases README claims. amd64 runs on ubuntu-latest.
-# arm64 runs on ubuntu-24.04-arm. Both use the native build-env image, so
-# neither build nor the distro smoke goes through QEMU. Nightly is 03:47 UTC,
-# after Pipeline's 03:17 run. Pull requests run only when packaging inputs
-# change, so the rest of Pipeline stays the fast path. The arm64 jobs run in
-# parallel with amd64. release.yml calls this workflow and its image jobs
-# wait for it: a tag does not push the image or publish the GitHub Release
-# when a job here fails. The same wait applies to a release workflow_dispatch.
+# package on Ubuntu 22.04, 24.04, 26.04, and 26.10, and on Debian 12. The binary is built in the
+# native nesso-build-env-el9 image with NESSO_ABI_BASELINE, so the glibc 2.34
+# gate runs. amd64 runs on ubuntu-latest. arm64 runs on ubuntu-24.04-arm.
+# Neither build nor the distro smoke goes through QEMU. EL9 has no dpkg-deb,
+# so pack-deb runs on the Ubuntu runner. Nightly is 03:47 UTC, after
+# Pipeline's 03:17 run. Pull requests run only when packaging inputs change,
+# so the rest of Pipeline stays the fast path. The arm64 jobs run in parallel
+# with amd64. release.yml calls this workflow and its image jobs wait for it:
+# a tag does not push the image or publish the GitHub Release when a job here
+# fails. The same wait applies to a release workflow_dispatch.
 #
-# resolve-image does not build nesso-build-env. On a pull request it polls
+# resolve-image does not build nesso-build-env-el9. On a pull request it polls
 # for the deps-<hash> tag for up to 350 minutes so a base-image digest bump
-# can wait for prepare-image-amd64 and prepare-image-arm64 in that same
-# Pipeline run. The job timeout is 360 minutes, the same budget as those
+# can wait for prepare-image-el9-amd64 and prepare-image-el9-arm64 in that
+# same Pipeline run. The job timeout is 360 minutes, the same budget as those
 # image jobs. An image that already exists returns on the first inspect.
 # Schedule, workflow_dispatch, and a caller such as release.yml fail on the
 # first miss: the called workflow sees the caller's event, not pull_request.
@@ -108,9 +110,9 @@ jobs:
         run: |
           set -euo pipefail
           owner_lc="$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')"
-          reg="${{ env.REGISTRY }}/${owner_lc}/nesso-build-env"
+          reg="${{ env.REGISTRY }}/${owner_lc}/nesso-build-env-el9"
           for arch in amd64 arm64; do
-            deps_hash="$(./scripts/ci/build-env-hash "${arch}")"
+            deps_hash="$(./scripts/ci/build-env-hash "el9-${arch}")"
             suffix=""
             if [[ "${arch}" == "arm64" ]]; then
               suffix="-arm64"
@@ -186,6 +188,7 @@ jobs:
     env:
       CONAN_HOME: /opt/conan2
       NESSO_REPRODUCIBLE: "1"
+      NESSO_ABI_BASELINE: "1"
       LC_ALL: C
       TZ: UTC
       CCACHE_DIR: ${{ github.workspace }}/.ccache
@@ -245,9 +248,7 @@ jobs:
           mkdir -p "${WORKDIR}"
           git archive HEAD | tar -x -C "${WORKDIR}"
           chmod +x "${WORKDIR}/packaging/scripts/build-release-binary" \
-            "${WORKDIR}/packaging/scripts/package-deb" \
-            "${WORKDIR}/scripts/fetch-model" \
-            "${WORKDIR}/scripts/check-versions"
+            "${WORKDIR}/scripts/check-abi-baseline"
           # Slot b is a later clock and fresh mtimes. Slot a keeps the
           # commit mtimes git archive records. SOURCE_DATE_EPOCH stays the
           # commit timestamp for both.
@@ -261,45 +262,26 @@ jobs:
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ github.workspace }}/.ccache
-          key: ccache-${{ runner.arch }}-repro-${{ matrix.slot }}-${{ github.sha }}
+          key: ccache-${{ runner.arch }}-el9-repro-${{ matrix.slot }}-${{ github.sha }}
           restore-keys: |
-            ccache-${{ runner.arch }}-repro-${{ matrix.slot }}-
+            ccache-${{ runner.arch }}-el9-repro-${{ matrix.slot }}-
 
       - name: Zero ccache statistics
         run: ccache --zero-stats
-
-      - name: Restore MiniLM
-        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: models
-          key: minilm-${{ hashFiles('scripts/fetch-model') }}
 
       - name: Build release binary
         id: build
         run: |
           set -euo pipefail
           "${WORKDIR}/packaging/scripts/build-release-binary" "${WORKDIR}/out/nesso"
-
-      - name: Stage model
-        run: |
-          set -euo pipefail
-          if [[ ! -f models/model.onnx || ! -f models/vocab.txt ]]; then
-            ./scripts/fetch-model models
+          mkdir -p "${GITHUB_WORKSPACE}/repro-bin/doc"
+          cp -a "${WORKDIR}/out/nesso" "${GITHUB_WORKSPACE}/repro-bin/nesso"
+          cp -a "${WORKDIR}/out/doc/." "${GITHUB_WORKSPACE}/repro-bin/doc/"
+          libc="$(objdump -T "${GITHUB_WORKSPACE}/repro-bin/nesso" | grep -oE 'GLIBC_[0-9]+(\.[0-9]+)+' | sed 's/^GLIBC_//' | sort -Vu | tail -n1)"
+          echo "highest GLIBC_${libc} arch=${ARCH} slot=${SLOT}"
+          if [[ -n "${GITHUB_STEP_SUMMARY:-}" ]]; then
+            echo "EL9 binary ${ARCH} ${SLOT}: highest \`GLIBC_${libc}\`." >> "${GITHUB_STEP_SUMMARY}"
           fi
-          mkdir -p "${WORKDIR}/models"
-          cp -a models/model.onnx models/vocab.txt "${WORKDIR}/models/"
-          if [[ "${SLOT}" == "b" ]]; then
-            touch "${WORKDIR}/models/model.onnx" "${WORKDIR}/models/vocab.txt"
-          fi
-
-      - name: Package .deb
-        run: |
-          set -euo pipefail
-          ver="$("${WORKDIR}/scripts/check-versions")"
-          "${WORKDIR}/packaging/scripts/package-deb" "${ver}" "${WORKDIR}/out/nesso" "${WORKDIR}/models" "${WORKDIR}/deb"
-          mkdir -p "${GITHUB_WORKSPACE}/repro-deb"
-          cp -a "${WORKDIR}/deb/"*.deb "${GITHUB_WORKSPACE}/repro-deb/"
-          sha256sum "${GITHUB_WORKSPACE}/repro-deb/"*.deb
 
       - name: ccache statistics
         if: always() && !cancelled()
@@ -311,8 +293,15 @@ jobs:
           ccache --version
           ccache -s | tee /tmp/ccache-stats.txt
           ccache -sv
-          cacheable=$(awk '/^Cacheable calls:/ {print $3; found=1} END {if (!found) print 0}' /tmp/ccache-stats.txt)
-          uncacheable=$(awk '/^Uncacheable calls:/ {print $3; found=1} END {if (!found) print 0}' /tmp/ccache-stats.txt)
+          # Ubuntu's ccache prints "Cacheable calls". ccache 4.5 on EL9 prints
+          # "Hits: <hits> / <total>" and counts only calls it could cache.
+          if grep -q 'Cacheable calls:' /tmp/ccache-stats.txt; then
+            cacheable=$(awk '/^Cacheable calls:/ {print $3; found=1} END {if (!found) print 0}' /tmp/ccache-stats.txt)
+            uncacheable=$(awk '/^Uncacheable calls:/ {print $3; found=1} END {if (!found) print 0}' /tmp/ccache-stats.txt)
+          else
+            cacheable=$(awk '$1 == "Hits:" {print $4; found=1} END {if (!found) print 0}' /tmp/ccache-stats.txt)
+            uncacheable=$(awk '$1 == "Uncacheable:" {getline; if ($1 == "Calls:") print $2; found=1} END {if (!found) print 0}' /tmp/ccache-stats.txt)
+          fi
           echo "ccache cacheable calls: ${cacheable}"
           echo "ccache uncacheable calls: ${uncacheable}"
           if [[ "${BUILD_OUTCOME}" != "success" ]]; then
@@ -338,7 +327,148 @@ jobs:
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ github.workspace }}/.ccache
-          key: ccache-${{ runner.arch }}-repro-${{ matrix.slot }}-${{ github.sha }}
+          key: ccache-${{ runner.arch }}-el9-repro-${{ matrix.slot }}-${{ github.sha }}
+
+      - name: Upload binary
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: repro-bin-${{ matrix.arch }}-${{ matrix.slot }}
+          path: repro-bin
+          retention-days: 14
+          if-no-files-found: error
+
+  # dpkg-deb is not in the EL9 image. Two host runs still have to match:
+  # slot b touches the binary, notices, and model before packing.
+  pack-deb:
+    name: pack-deb (${{ matrix.arch }} ${{ matrix.slot }})
+    needs: repro-build
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      actions: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            slot: a
+            runner: ubuntu-latest
+          - arch: amd64
+            slot: b
+            runner: ubuntu-latest
+          - arch: arm64
+            slot: a
+            runner: ubuntu-24.04-arm
+          - arch: arm64
+            slot: b
+            runner: ubuntu-24.04-arm
+    env:
+      ARCH: ${{ matrix.arch }}
+      SLOT: ${{ matrix.slot }}
+    steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
+        with:
+          egress-policy: audit
+
+      - name: Checkout Repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Require the native architecture
+        run: |
+          set -euo pipefail
+          case "${ARCH}:$(uname -m)" in
+            amd64:x86_64|arm64:aarch64) ;;
+            *)
+              echo "error: ${ARCH} pack is running on $(uname -m)" >&2
+              exit 1
+              ;;
+          esac
+
+      - name: Pin SOURCE_DATE_EPOCH
+        run: |
+          set -euo pipefail
+          epoch="$(git log -1 --format=%ct)"
+          if [[ ! "${epoch}" =~ ^[0-9]+$ ]]; then
+            echo "error: commit timestamp is '${epoch}'" >&2
+            exit 1
+          fi
+          echo "SOURCE_DATE_EPOCH=${epoch}" >> "${GITHUB_ENV}"
+
+      - name: Download binary
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: repro-bin-${{ matrix.arch }}-${{ matrix.slot }}
+          path: repro-bin
+
+      - name: Require objdump
+        run: |
+          set -euo pipefail
+          if ! command -v objdump >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo apt-get install -y --no-install-recommends binutils
+          fi
+
+      - name: Restore MiniLM
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: models
+          key: minilm-${{ hashFiles('scripts/fetch-model') }}
+
+      - name: Package .deb
+        run: |
+          set -euo pipefail
+          if [[ ! -f models/model.onnx || ! -f models/vocab.txt ]]; then
+            ./scripts/fetch-model models
+          fi
+          mapfile -t bins < <(find repro-bin -type f -name nesso | sort)
+          if [[ "${#bins[@]}" -ne 1 ]]; then
+            echo "error: expected 1 binary, found ${#bins[@]}" >&2
+            find repro-bin -print >&2
+            exit 1
+          fi
+          binary="${bins[0]}"
+          chmod +x "${binary}"
+          doc="$(dirname "${binary}")/doc"
+          if [[ ! -s "${doc}/copyright" || ! -s "${doc}/THIRD_PARTY_NOTICES" ]]; then
+            echo "error: notices missing next to ${binary}" >&2
+            find repro-bin -print >&2
+            exit 1
+          fi
+          # Slot b is a later clock. package-deb clamps mtimes to
+          # SOURCE_DATE_EPOCH, so the archive still has to match slot a.
+          if [[ "${SLOT}" == "b" ]]; then
+            touch "${binary}" "${doc}/copyright" "${doc}/THIRD_PARTY_NOTICES" \
+              models/model.onnx models/vocab.txt
+          fi
+          ver="$(./scripts/check-versions)"
+          chmod +x packaging/scripts/package-deb
+          DOC_DIR="${doc}" packaging/scripts/package-deb "${ver}" "${binary}" models repro-deb
+          deb="$(find repro-deb -type f -name "nesso_*_${ARCH}.deb" -print -quit)"
+          if [[ -z "${deb}" || ! -f "${deb}" ]]; then
+            echo "error: package-deb did not write a ${ARCH} deb" >&2
+            find repro-deb -print >&2 || true
+            exit 1
+          fi
+          depends="$(dpkg-deb -f "${deb}" Depends)"
+          echo "${depends}"
+          libc="$(printf '%s\n' "${depends}" | sed -n 's/.*libc6 (>= \([0-9][0-9.]*\)).*/\1/p')"
+          if [[ -z "${libc}" ]]; then
+            echo "error: no libc6 dependency in '${depends}'" >&2
+            exit 1
+          fi
+          highest="$(printf '%s\n%s\n' "${libc}" "2.34" | sort -Vu | tail -n1)"
+          if [[ "${highest}" != "2.34" ]]; then
+            echo "error: libc6 dependency ${libc} is above 2.34" >&2
+            exit 1
+          fi
+          sha256sum "${deb}"
+          if [[ -n "${GITHUB_STEP_SUMMARY:-}" ]]; then
+            echo "Packed \`${deb}\` (${ARCH} ${SLOT}): \`${depends}\`." >> "${GITHUB_STEP_SUMMARY}"
+          fi
 
       - name: Upload .deb
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -349,7 +479,7 @@ jobs:
           if-no-files-found: error
 
   compare:
-    needs: repro-build
+    needs: pack-deb
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
@@ -410,7 +540,7 @@ jobs:
           if-no-files-found: error
 
   distro:
-    name: distro (${{ matrix.arch }}, ${{ matrix.image }})
+    name: distro (${{ matrix.arch }}, ${{ matrix.distro }})
     needs: compare
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 30
@@ -420,24 +550,50 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # README says Ubuntu 26.04+. These are the official images at or
-        # above that floor. The .deb's libc comes from the Ubuntu 26.04
-        # build-env image, so older Ubuntu and Debian are outside the claim.
-        # The arm64 rows run on ubuntu-24.04-arm so apt installs the arm64
-        # package without QEMU. The official tags are multi-arch; Docker
-        # pulls the runner's platform.
+        # OCI index digests, the same shape as packaging/Dockerfile.runtime.
+        # Docker selects linux/amd64 or linux/arm64 from the index. The
+        # arm64 rows run on ubuntu-24.04-arm so apt installs the arm64
+        # package without QEMU. distro is the check name; image is the pin.
         include:
           - arch: amd64
-            image: ubuntu:26.04
+            distro: ubuntu:22.04
+            image: ubuntu:22.04@sha256:9abcaffc92a5279fff3a6a41635c0800ea33e528425fb389658806476e7defde
             runner: ubuntu-latest
           - arch: amd64
-            image: ubuntu:26.10
+            distro: ubuntu:24.04
+            image: ubuntu:24.04@sha256:73b999393d07f2bf65a40373778a44dc9a6d54ad7718d29247d8ff9413c4d6a8
+            runner: ubuntu-latest
+          - arch: amd64
+            distro: ubuntu:26.04
+            image: ubuntu:26.04@sha256:d66b366dac61b575bee2aef07e9c26e8070096fbe84a3d4d3eb0da069b5d76db
+            runner: ubuntu-latest
+          - arch: amd64
+            distro: ubuntu:26.10
+            image: ubuntu:26.10@sha256:c4ca31b6e93261c5dd773826f789738a49e414ca04fc094b1ccd0f91e07329a2
+            runner: ubuntu-latest
+          - arch: amd64
+            distro: debian:12
+            image: debian:12@sha256:268fb24c39bca92d326dd83ea3abebe4a3f7751c804ffef23bb6d857dd343ff8
             runner: ubuntu-latest
           - arch: arm64
-            image: ubuntu:26.04
+            distro: ubuntu:22.04
+            image: ubuntu:22.04@sha256:9abcaffc92a5279fff3a6a41635c0800ea33e528425fb389658806476e7defde
             runner: ubuntu-24.04-arm
           - arch: arm64
-            image: ubuntu:26.10
+            distro: ubuntu:24.04
+            image: ubuntu:24.04@sha256:73b999393d07f2bf65a40373778a44dc9a6d54ad7718d29247d8ff9413c4d6a8
+            runner: ubuntu-24.04-arm
+          - arch: arm64
+            distro: ubuntu:26.04
+            image: ubuntu:26.04@sha256:d66b366dac61b575bee2aef07e9c26e8070096fbe84a3d4d3eb0da069b5d76db
+            runner: ubuntu-24.04-arm
+          - arch: arm64
+            distro: ubuntu:26.10
+            image: ubuntu:26.10@sha256:c4ca31b6e93261c5dd773826f789738a49e414ca04fc094b1ccd0f91e07329a2
+            runner: ubuntu-24.04-arm
+          - arch: arm64
+            distro: debian:12
+            image: debian:12@sha256:268fb24c39bca92d326dd83ea3abebe4a3f7751c804ffef23bb6d857dd343ff8
             runner: ubuntu-24.04-arm
     steps:
       - name: Harden runner
@@ -488,7 +644,7 @@ jobs:
           fi
 
   # Final stage of packaging/Dockerfile.runtime plus the binary and models from the
-  # .deb repro-build just produced. The compiler stage is not published.
+  # .deb pack-deb just produced. The compiler stage is not published.
   # Rebuilding it here would compile nesso again. ci runtime-scan-dockerfile
   # fails if that final stage gains an instruction this plan does not copy.
   # scan_runtime defaults to true. Release passes false: its image job scans
@@ -504,7 +660,7 @@ jobs:
   # that at startup.
   scan-runtime:
     name: scan-runtime (${{ matrix.arch }})
-    needs: repro-build
+    needs: pack-deb
     if: success() && format('{0}', inputs.scan_runtime) != 'false'
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 30
@@ -584,6 +740,15 @@ jobs:
             --json trivy.json \
             --ci /tmp/nesso-ci
           /tmp/nesso-ci trivy-summary --json trivy.json --arch "${ARCH}"
+
+      # scan-runtime-image tags the final stage it just built. Same files as
+      # the published image: the EL9 binary, the model, and the Ubuntu 26.04
+      # runtime libraries.
+      - name: Smoke runtime image
+        run: |
+          set -euo pipefail
+          chmod +x packaging/scripts/smoke-runtime-image
+          ./packaging/scripts/smoke-runtime-image nesso-runtime-scan:local
 
       - name: Upload Trivy SARIF
         if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository

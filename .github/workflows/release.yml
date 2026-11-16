@@ -1,9 +1,11 @@
 name: Release
 
 # Each architecture is built on a native runner (ubuntu-24.04 for amd64,
-# ubuntu-24.04-arm for arm64) from that architecture's nesso-build-env image.
-# There is no QEMU. BuildKit attestations are off so the pushed arch image is
-# one platform manifest. packaging/scripts/publish-runtime-index merges those digests
+# ubuntu-24.04-arm for arm64) from that architecture's nesso-build-env-el9
+# image. packaging/Dockerfile.runtime sets NESSO_ABI_BASELINE, so the binary
+# is the glibc 2.34 EL9 build. There is no QEMU. BuildKit attestations are
+# off so the pushed arch image is one platform manifest.
+# packaging/scripts/publish-runtime-index merges those digests
 # into one manifest list and tags it vX.Y.Z, X.Y.Z, and latest. The arch tags
 # vX.Y.Z-amd64 and vX.Y.Z-arm64 stay so each platform digest remains
 # addressable; they are not the tags users pull.
@@ -25,8 +27,8 @@ name: Release
 # approve-release too.
 #
 # The image jobs wait on Package (.github/workflows/package.yml). That
-# workflow builds each .deb twice and installs it on Ubuntu 26.04 and 26.10
-# for both architectures. A failed check does not push the image or publish
+# workflow builds each .deb twice and installs it on Ubuntu 22.04, 24.04,
+# 26.04, and 26.10, and on Debian 12, for both architectures. A failed check does not push the image or publish
 # the GitHub Release. Package also runs on its own nightly schedule and when
 # its packaging files change.
 #
@@ -185,12 +187,16 @@ jobs:
         run: |
           set -euo pipefail
           owner_lc="$(printf '%s' "${OWNER}" | tr '[:upper:]' '[:lower:]')"
-          reg="${REGISTRY}/${owner_lc}/nesso-build-env"
-          deps_hash="$(./scripts/ci/build-env-hash "${ARCH}")"
-          suffix=""
-          if [[ "${ARCH}" == "arm64" ]]; then
-            suffix="-arm64"
-          fi
+          reg="${REGISTRY}/${owner_lc}/nesso-build-env-el9"
+          case "${ARCH}" in
+            amd64) variant="el9-amd64"; suffix="" ;;
+            arm64) variant="el9-arm64"; suffix="-arm64" ;;
+            *)
+              echo "error: no EL9 build-env image for ${ARCH}" >&2
+              exit 1
+              ;;
+          esac
+          deps_hash="$(./scripts/ci/build-env-hash "${variant}")"
           {
             echo "build_image=${reg}:deps-${deps_hash}${suffix}"
             echo "runtime_image=${REGISTRY}/${owner_lc}/nesso"
@@ -206,13 +212,13 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
-      - name: Require nesso-build-env
+      - name: Require nesso-build-env-el9
         env:
           BUILD_IMAGE: ${{ steps.select.outputs.build_image }}
         run: |
           set -euo pipefail
           if ! docker pull "${BUILD_IMAGE}"; then
-            echo "error: missing ${BUILD_IMAGE}; run CI on main so nesso-build-env is published first" >&2
+            echo "error: missing ${BUILD_IMAGE}; run CI on main so nesso-build-env-el9 is published first" >&2
             exit 1
           fi
 
@@ -301,8 +307,9 @@ jobs:
       - name: Fetch fp32 MiniLM
         run: ./scripts/fetch-model models-fp32 fp32
 
-      # The published binary needs the runtime image's glibc. A failure here
-      # stops the job before the image push and the GitHub release.
+      # The published binary is the EL9 glibc 2.34 build. It has to run on
+      # this image's newer glibc. A failure here stops the job before the
+      # image push and the GitHub release.
       # stress-ng stays. scripts/check-determinism defaults to it for CPU load.
       # The slim runtime image does not ship it. This install is inside the
       # throwaway gate container, not the image that gets pushed. The smoke
@@ -365,6 +372,18 @@ jobs:
           fi
           chmod +x packaging/scripts/package-deb
           packaging/scripts/package-deb "${VER}" "./nesso-${ARCH}" ./models .
+          depends="$(dpkg-deb -f "./nesso_${VER}_${ARCH}.deb" Depends)"
+          echo "${depends}"
+          libc="$(printf '%s\n' "${depends}" | sed -n 's/.*libc6 (>= \([0-9][0-9.]*\)).*/\1/p')"
+          if [[ -z "${libc}" ]]; then
+            echo "error: no libc6 dependency in '${depends}'" >&2
+            exit 1
+          fi
+          highest="$(printf '%s\n%s\n' "${libc}" "2.34" | sort -Vu | tail -n1)"
+          if [[ "${highest}" != "2.34" ]]; then
+            echo "error: libc6 dependency ${libc} is above 2.34" >&2
+            exit 1
+          fi
 
       - name: Smoke-test image and .deb
         env:
