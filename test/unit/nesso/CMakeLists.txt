@@ -31,9 +31,9 @@ target_link_libraries(
   nesso_flush_test PRIVATE nesso_options nesso_lib nesso_embed nesso_core
                            Catch2::Catch2WithMain)
 # The harness throws and returns embed errors so nesso.cpp's flush edges run.
-# gcc expands --coverage after -fno-profile-arcs, and _GLIBCXX_DEBUG then adds
-# uncoverable branches that drop the branch floor. Strip those flags for this
-# harness only. nesso.cpp stays in the floor.
+# gcc expands --coverage after -fno-profile-arcs, and _GLIBCXX_ASSERTIONS then
+# adds uncoverable branches that drop the branch floor. Strip those flags for
+# this harness only. nesso.cpp stays in the floor.
 set_property(
   TARGET nesso_flush_test
   PROPERTY CXX_COMPILER_LAUNCHER

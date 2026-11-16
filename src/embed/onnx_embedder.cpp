@@ -92,11 +92,9 @@ struct ModelIo
     std::string output;
 };
 
-// Debug builds define _GLIBCXX_DEBUG. Copying the model through
-// istreambuf_iterator checks every byte, which takes about five seconds under
-// ASan for the 22 MiB int8 MiniLM. grep, index, and search each load the model,
-// so that copy dominated the Debug BDD suite. The overlap keeps a marker that
-// straddles two reads.
+// A per-byte istreambuf_iterator copy of the 22 MiB int8 MiniLM dominated the
+// Debug BDD suite under ASan. grep, index, and search each load the model.
+// The overlap keeps a marker that straddles two reads.
 static bool ModelIsQuantized(const std::filesystem::path &model_path)
 {
     constexpr std::string_view k_mat_mul_integer = "MatMulInteger";
