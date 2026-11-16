@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794825505625,
+  "lastUpdate": 1794839439937,
   "repoUrl": "https://github.com/lorenzocaprari/nesso",
   "entries": {
     "nesso": [
@@ -7883,6 +7883,60 @@ window.BENCHMARK_DATA = {
           {
             "name": "grep-100000-rss",
             "value": 145534976,
+            "unit": "bytes"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "caprarilorenzo5@gmail.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "committer": {
+            "email": "85455384+lorenzocaprari@users.noreply.github.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "distinct": true,
+          "id": "358f06944373d294aa1b81edce0661ebcf67c318",
+          "message": "test(fuzz): add a corpus reader fuzz target with UBSan and library assertions\n\nMapCorpusFile is fuzzed from untrusted corpus bytes. The harness recomputes\nthe checksum so the reader is reached; the production check is unchanged.\nAFL++ builds enable UBSan and libstdc++ assertions. ClusterFuzzLite lists\nthe undefined sanitizer and compiles with extensive libc++ hardening.",
+          "timestamp": "2026-11-16T15:25:34+01:00",
+          "tree_id": "28a7401e015cb6e91bee7d55f40661b307f85c16",
+          "url": "https://github.com/lorenzocaprari/nesso/commit/358f06944373d294aa1b81edce0661ebcf67c318"
+        },
+        "date": 1794839439487,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "grep-1000-wall",
+            "value": 1.23,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-1000-rss",
+            "value": 119156736,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-10000-wall",
+            "value": 1.22,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-10000-rss",
+            "value": 119181312,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-100000-wall",
+            "value": 1.46,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-100000-rss",
+            "value": 146296832,
             "unit": "bytes"
           }
         ]
