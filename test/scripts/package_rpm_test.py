@@ -157,8 +157,10 @@ class PackageRpmTest(unittest.TestCase):
             ).stdout.splitlines()
             for path in (
                 "/usr/bin/nesso",
+                "/usr/share/nesso",
                 "/usr/share/nesso/vocab.txt",
                 "/usr/share/nesso/model.onnx",
+                "/usr/share/doc/nesso",
                 "/usr/share/doc/nesso/copyright",
                 "/usr/share/doc/nesso/THIRD_PARTY_NOTICES",
             ):

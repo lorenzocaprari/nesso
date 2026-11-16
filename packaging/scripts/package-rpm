@@ -136,6 +136,9 @@ install -D -m 0644 %{SOURCE3} %{buildroot}/usr/share/doc/nesso/copyright
 install -D -m 0644 %{SOURCE4} %{buildroot}/usr/share/doc/nesso/THIRD_PARTY_NOTICES
 
 %files
+# %dir so dnf remove deletes the empty parents; file-only %files leaves them.
+%dir /usr/share/nesso
+%dir /usr/share/doc/nesso
 %license /usr/share/doc/nesso/copyright
 %doc /usr/share/doc/nesso/THIRD_PARTY_NOTICES
 /usr/bin/nesso
