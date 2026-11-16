@@ -12,8 +12,10 @@ namespace nesso::core::math::detail
 namespace
 {
 
-// Keep the ISA on this function so LTO cannot inline AVX2 into a generic
-// caller.
+// This translation unit is compiled for the baseline ISA. The attribute makes
+// the AVX2 and FMA intrinsics legal, and it stops LTO from inlining these
+// bodies into a generic caller. HorizontalSum uses the intrinsics. FloatAddr
+// is always_inline into the kernels and carries the same target.
 #ifdef __GNUC__
 #define NESSO_TARGET_AVX2_FMA __attribute__((target("avx2,fma")))
 #else

@@ -68,6 +68,14 @@ if(NESSO_PYTHON_EXECUTABLE)
            COMMAND "${NESSO_PYTHON_EXECUTABLE}"
                    "${CMAKE_CURRENT_SOURCE_DIR}/check_abi_baseline_test.py")
   set_tests_properties(check_abi_baseline_test PROPERTIES LABELS unit)
+  add_test(NAME distance_avx2_flags_test
+           COMMAND "${NESSO_PYTHON_EXECUTABLE}"
+                   "${CMAKE_CURRENT_SOURCE_DIR}/distance_avx2_flags_test.py")
+  set_tests_properties(
+    distance_avx2_flags_test
+    PROPERTIES
+      LABELS unit ENVIRONMENT
+      "NESSO_COMPILE_COMMANDS=${CMAKE_BINARY_DIR}/compile_commands.json")
 endif()
 
 find_program(NESSO_GO_EXECUTABLE go)
