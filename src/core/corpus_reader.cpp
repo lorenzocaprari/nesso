@@ -6,6 +6,7 @@
 
 #include <core/corpus_index.hpp>
 #include <cstddef>
+#include <platform/assert.hpp>
 #include <platform/file.hpp>
 
 #include <algorithm>
@@ -85,6 +86,34 @@ struct MappedCorpus::Impl
     LexicalStatus lexical_status = LexicalStatus::Missing;
     std::string corpus_lexical_terms_version;
 };
+
+struct MappedShape
+{
+    std::size_t sources = 0;
+    std::size_t texts = 0;
+    std::size_t lines = 0;
+    std::size_t matrix = 0;
+    std::size_t postings = 0;
+    std::size_t dictionary = 0;
+    std::size_t stored_terms = 0;
+};
+
+static void AssertMappedShape(const MappedShape &shape, const Layout &layout, bool has_lexical)
+{
+    NESSO_ASSERT(shape.sources == layout.source_count);
+    NESSO_ASSERT(shape.texts == layout.distinct_count);
+    NESSO_ASSERT(shape.lines == layout.line_count);
+    NESSO_ASSERT(shape.matrix == layout.distinct_count * layout.dimensions);
+    if (layout.distinct_count != 0)
+    {
+        NESSO_ASSERT(layout.dimensions > 0);
+    }
+    if (has_lexical)
+    {
+        NESSO_ASSERT(shape.postings == layout.line_count);
+        NESSO_ASSERT(shape.dictionary == shape.stored_terms);
+    }
+}
 
 MappedCorpus::MappedCorpus(std::unique_ptr<Impl> impl) : impl_(std::move(impl)) {}
 MappedCorpus::~MappedCorpus() = default;
@@ -260,6 +289,7 @@ static std::expected<void, EngineError> LoadMappedSources(std::span<const std::b
     {
         return std::unexpected(EngineError::CorruptDatabase);
     }
+    NESSO_ASSERT(sources.size() == layout.source_count);
     return {};
 }
 
@@ -293,6 +323,7 @@ static std::expected<void, EngineError> LoadMappedDistinctTexts(std::span<const 
     {
         return std::unexpected(EngineError::CorruptDatabase);
     }
+    NESSO_ASSERT(texts.size() == layout.distinct_count);
     return {};
 }
 
@@ -343,6 +374,19 @@ static std::expected<void, EngineError> TakeStoredLineText(CorpusLine &line, std
         return std::unexpected(EngineError::CorruptDatabase);
     }
     return {};
+}
+
+static void AssertLoadedLines(const Layout &layout, std::span<const SourceInfo> sources,
+                              std::span<const CorpusLine> lines)
+{
+    NESSO_ASSERT(lines.size() == layout.line_count);
+    NESSO_ASSERT(std::ranges::all_of(lines,
+                                     [&](const CorpusLine &line)
+                                     {
+                                         return line.source_index < sources.size() &&
+                                                (line.distinct_id == NO_DISTINCT ||
+                                                 line.distinct_id < layout.distinct_count);
+                                     }));
 }
 
 static std::expected<void, EngineError> LoadMappedLines(std::span<const std::byte> bytes, const Layout &layout,
@@ -396,6 +440,7 @@ static std::expected<void, EngineError> LoadMappedLines(std::span<const std::byt
     {
         return std::unexpected(EngineError::CorruptDatabase);
     }
+    AssertLoadedLines(layout, sources, lines);
     return {};
 }
 
@@ -484,6 +529,14 @@ std::expected<MappedCorpus, EngineError> MapCorpusFile(const std::filesystem::pa
     const std::span<const std::byte> matrix_bytes = stable.subspan(static_cast<std::size_t>(layout->matrix_offset));
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
     impl->matrix = {reinterpret_cast<const float *>(matrix_bytes.data()), layout->distinct_count * layout->dimensions};
+    AssertMappedShape(MappedShape{.sources = impl->sources.size(),
+                                  .texts = impl->texts.size(),
+                                  .lines = impl->lines.size(),
+                                  .matrix = impl->matrix.size(),
+                                  .postings = impl->lexical_postings.size(),
+                                  .dictionary = impl->lexical_dictionary.size(),
+                                  .stored_terms = impl->lexical_term_storage.size()},
+                      *layout, has_lexical);
     return MappedCorpus{std::move(impl)};
 }
 
@@ -493,6 +546,11 @@ std::expected<std::vector<CorpusChunk>, EngineError> ReadCorpusFile(const std::f
     if (!mapped)
     {
         return std::unexpected(mapped.error());
+    }
+    NESSO_ASSERT(mapped->Matrix().size() == mapped->Texts().size() * mapped->Dimensions());
+    if (!mapped->Texts().empty())
+    {
+        NESSO_ASSERT(mapped->Dimensions() > 0);
     }
     std::vector<CorpusChunk> chunks;
     for (const CorpusLine &line : mapped->Lines())

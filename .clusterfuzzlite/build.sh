@@ -135,6 +135,7 @@ flags="${CXXFLAGS:-} -std=c++26 -DNESSO_LIBFUZZER -U_LIBCPP_HARDENING_MODE -D_LI
   -I"${root}/src/core/include" \
   -I"${root}/src/core" \
   -I"${root}/src/platform/include" \
+  "${root}/src/platform/assert.cpp" \
   "${root}/src/platform/file.cpp" \
   "${root}/src/core/sha256.cpp" \
   "${root}/src/core/corpus_format.cpp" \

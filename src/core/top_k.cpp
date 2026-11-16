@@ -6,6 +6,7 @@
 #include <core/top_k.hpp>
 
 #include <core/distance.hpp>
+#include <platform/assert.hpp>
 
 #include <condition_variable>
 #include <cstddef>
@@ -210,6 +211,12 @@ class TopScan
 
     void Run(size_t begin, size_t end)
     {
+        NESSO_ASSERT(dims_ > 0);
+        NESSO_ASSERT(query_.size() == dims_);
+        NESSO_ASSERT(matrix_.size() % dims_ == 0);
+        NESSO_ASSERT(k_ > 0);
+        NESSO_ASSERT(begin <= end);
+        NESSO_ASSERT(end <= matrix_.size() / dims_);
         std::vector<Hit> local;
         if (end > begin)
         {
@@ -263,6 +270,10 @@ class RankScan
 
     void Run(size_t begin, size_t end)
     {
+        NESSO_ASSERT(k_ > 0);
+        NESSO_ASSERT(score_ != nullptr);
+        NESSO_ASSERT(keep_ != nullptr);
+        NESSO_ASSERT(begin <= end);
         std::vector<Hit> local;
         if (end > begin)
         {
@@ -332,6 +343,8 @@ static Pool &GetPool()
 
 static std::vector<Range> SplitRows(size_t rows, size_t workers)
 {
+    NESSO_ASSERT(workers > 0);
+    NESSO_ASSERT(rows > 0);
     std::vector<Range> ranges;
     ranges.reserve(workers);
     const size_t base = rows / workers;
@@ -343,6 +356,7 @@ static std::vector<Range> SplitRows(size_t rows, size_t workers)
         ranges.push_back(Range{.begin = cursor, .end = cursor + count});
         cursor += count;
     }
+    NESSO_ASSERT(cursor == rows);
     return ranges;
 }
 
