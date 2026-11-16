@@ -67,7 +67,8 @@ static void Emit(TraceState &current)
         {
             std::cerr << ',';
         }
-        const Stage &stage = current.stages.at(index);
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-constant-array-index)
+        const Stage &stage = current.stages[index];
         std::cerr << R"({"name":")" << stage.name << R"(","us":)" << stage.microseconds << '}';
     }
     std::cerr << "]}\n";
