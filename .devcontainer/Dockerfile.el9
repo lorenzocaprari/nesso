@@ -22,6 +22,7 @@ RUN dnf -y install dnf-plugins-core \
       python3.12 \
       python3.12-pip \
       ninja-build \
+      rpm-build \
       gcc-toolset-15-gcc-15.2.1-7.1.el9_8 \
       gcc-toolset-15-gcc-c++-15.2.1-7.1.el9_8 \
     && dnf clean all \

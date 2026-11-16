@@ -35,3 +35,7 @@ slsa-verifier verify-image \
 To verify one platform, read its digest from `docker buildx imagetools inspect ghcr.io/lorenzocaprari/nesso:v${version}` and pass that digest to `cosign verify` and to `slsa-verifier verify-image`. The matching file on the release is `nesso_${version}_ghcr_amd64.intoto.jsonl` or `nesso_${version}_ghcr_arm64.intoto.jsonl`.
 
 `cosign` 2.x checks the signature. `slsa-verifier` v2.7.1 or later checks the provenance. `verify-image` reads the attestation from GHCR. When the registry asks for credentials, set `GH_TOKEN` for that command.
+
+## RPM packages
+
+Package builds `nesso-<version>-1.x86_64.rpm` and `nesso-<version>-1.aarch64.rpm` with `rpmbuild` in the EL9 image (`SOURCE_DATE_EPOCH`, clamped mtimes, fixed build host). Two clean builds per architecture must match byte-for-byte, and `/usr/bin/nesso` inside the RPM must match the same architecture's `.deb`. Install smoke runs `dnf install` on Rocky Linux 9 and UBI 9 (amd64 and arm64), then `nesso -V`, a fixture grep, and `dnf remove`. RPMs are not GPG-signed. Publishing RPMs on a GitHub Release (SBOM, `SHA256SUMS`, SLSA subjects) is a separate change; until then, trust the Package workflow gates above rather than release artifacts.

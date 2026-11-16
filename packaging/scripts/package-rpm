@@ -1,0 +1,176 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [[ $# -lt 3 || $# -gt 4 ]]; then
+  echo "usage: package-rpm VERSION BINARY MODEL_DIR [OUT_DIR]" >&2
+  echo "       DOC_DIR (default: BINARY's directory/doc) holds copyright and THIRD_PARTY_NOTICES" >&2
+  exit 2
+fi
+
+VERSION="$1"
+BINARY="$2"
+MODEL_DIR="$3"
+OUT_DIR="${4:-.}"
+# packaging/scripts/build-release-binary writes the notices to doc/ next to the binary.
+DOC_DIR="${DOC_DIR:-$(dirname "${BINARY}")/doc}"
+
+if [[ ! "${VERSION}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+  echo "error: VERSION must be X.Y.Z, got ${VERSION}" >&2
+  exit 2
+fi
+if [[ ! -f "${BINARY}" ]]; then
+  echo "error: binary not found: ${BINARY}" >&2
+  exit 2
+fi
+if [[ ! -f "${MODEL_DIR}/vocab.txt" || ! -f "${MODEL_DIR}/model.onnx" ]]; then
+  echo "error: ${MODEL_DIR} must contain vocab.txt and model.onnx" >&2
+  exit 2
+fi
+
+# RPM architecture follows the binary, not the host. e_machine is the ELF
+# field at byte 18.
+rpm_architecture() {
+  local binary="$1"
+  if ! command -v od >/dev/null 2>&1; then
+    echo "error: od is required to read the ELF machine" >&2
+    return 1
+  fi
+  local magic
+  magic="$(od -An -t x1 -N 4 -- "${binary}" | tr -d '[:space:]')"
+  if [[ "${magic}" != "7f454c46" ]]; then
+    echo "error: ${binary} is not an ELF file" >&2
+    return 1
+  fi
+  local class data
+  class="$(od -An -t u1 -j 4 -N 1 -- "${binary}" | tr -d '[:space:]')"
+  data="$(od -An -t u1 -j 5 -N 1 -- "${binary}" | tr -d '[:space:]')"
+  if [[ "${class}" != "2" || "${data}" != "1" ]]; then
+    echo "error: ${binary} is not a little-endian ELF64" >&2
+    return 1
+  fi
+  local lo hi machine
+  lo="$(od -An -t u1 -j 18 -N 1 -- "${binary}" | tr -d '[:space:]')"
+  hi="$(od -An -t u1 -j 19 -N 1 -- "${binary}" | tr -d '[:space:]')"
+  machine=$((10#${lo} + 10#${hi} * 256))
+  case "${machine}" in
+    62) printf '%s\n' x86_64 ;;
+    183) printf '%s\n' aarch64 ;;
+    *)
+      echo "error: unsupported ELF e_machine ${machine} in ${binary}" >&2
+      return 1
+      ;;
+  esac
+}
+
+RPM_ARCH="$(rpm_architecture "${BINARY}")"
+
+# Unset means "this clock". Two packages then differ. Callers that compare
+# bytes, including the package workflow, pass the commit timestamp.
+if [[ -n "${SOURCE_DATE_EPOCH:-}" ]]; then
+  if [[ ! "${SOURCE_DATE_EPOCH}" =~ ^[0-9]+$ ]]; then
+    echo "error: SOURCE_DATE_EPOCH must be a unix timestamp, got ${SOURCE_DATE_EPOCH}" >&2
+    exit 2
+  fi
+else
+  SOURCE_DATE_EPOCH="$(date +%s)"
+fi
+export SOURCE_DATE_EPOCH
+export TZ=UTC
+export LC_ALL=C
+umask 022
+
+if [[ ! -s "${DOC_DIR}/copyright" || ! -s "${DOC_DIR}/THIRD_PARTY_NOTICES" ]]; then
+  echo "error: ${DOC_DIR} must contain copyright and THIRD_PARTY_NOTICES (packaging/scripts/third-party-notices)" >&2
+  exit 2
+fi
+
+if ! command -v rpmbuild >/dev/null 2>&1; then
+  echo "error: rpmbuild is required" >&2
+  exit 1
+fi
+
+WORKDIR="$(mktemp -d)"
+trap 'rm -rf "${WORKDIR}"' EXIT
+
+TOPDIR="${WORKDIR}/rpmbuild"
+mkdir -p "${TOPDIR}"/{BUILD,BUILDROOT,RPMS,SOURCES,SPECS,SRPMS}
+
+install -D -m 0755 "${BINARY}" "${TOPDIR}/SOURCES/nesso"
+install -D -m 0644 "${MODEL_DIR}/vocab.txt" "${TOPDIR}/SOURCES/vocab.txt"
+install -D -m 0644 "${MODEL_DIR}/model.onnx" "${TOPDIR}/SOURCES/model.onnx"
+install -D -m 0644 "${DOC_DIR}/copyright" "${TOPDIR}/SOURCES/copyright"
+install -D -m 0644 "${DOC_DIR}/THIRD_PARTY_NOTICES" "${TOPDIR}/SOURCES/THIRD_PARTY_NOTICES"
+find "${TOPDIR}/SOURCES" -exec touch -h -d "@${SOURCE_DATE_EPOCH}" {} +
+
+# Fixed build host, SOURCE_DATE_EPOCH as buildtime, clamped mtimes, no %dist,
+# no debuginfo, no brp strip, no build-id links: the payload binary must stay
+# byte-identical to the one packaged in the .deb.
+cat >"${TOPDIR}/SPECS/nesso.spec" <<EOF
+Name:           nesso
+Version:        ${VERSION}
+Release:        1
+Summary:        Local semantic search for unstructured text
+License:        Apache-2.0
+URL:            https://github.com/lorenzocaprari/nesso
+Source0:        nesso
+Source1:        vocab.txt
+Source2:        model.onnx
+Source3:        copyright
+Source4:        THIRD_PARTY_NOTICES
+BuildArch:      ${RPM_ARCH}
+AutoReqProv:    yes
+
+%description
+Nesso is a Linux CLI that searches .log, .json, and .jsonl files by meaning
+using a local ONNX MiniLM model.
+
+%prep
+
+%build
+
+%install
+install -D -m 0755 %{SOURCE0} %{buildroot}/usr/bin/nesso
+install -D -m 0644 %{SOURCE1} %{buildroot}/usr/share/nesso/vocab.txt
+install -D -m 0644 %{SOURCE2} %{buildroot}/usr/share/nesso/model.onnx
+install -D -m 0644 %{SOURCE3} %{buildroot}/usr/share/doc/nesso/copyright
+install -D -m 0644 %{SOURCE4} %{buildroot}/usr/share/doc/nesso/THIRD_PARTY_NOTICES
+
+%files
+%license /usr/share/doc/nesso/copyright
+%doc /usr/share/doc/nesso/THIRD_PARTY_NOTICES
+/usr/bin/nesso
+/usr/share/nesso/vocab.txt
+/usr/share/nesso/model.onnx
+EOF
+
+# Macros the unit test and ADR require by name.
+RPM_MACROS=(
+  --define "_topdir ${TOPDIR}"
+  --define "_buildhost reproducible"
+  --define "use_source_date_epoch_as_buildtime 1"
+  --define "clamp_mtime_to_source_date_epoch 1"
+  --define "source_date_epoch_from_changelog 0"
+  --define "debug_package %{nil}"
+  --define "_build_id_links none"
+  --define "dist %{nil}"
+  --define "__brp_strip %{nil}"
+  --define "__brp_strip_comment_note %{nil}"
+  --define "__brp_strip_lto %{nil}"
+  --define "__os_install_post %{nil}"
+  --define "_binary_payload w19.xzdio"
+  --define "_source_payload w0.gzdio"
+  --target "${RPM_ARCH}"
+)
+
+rpmbuild -bb "${RPM_MACROS[@]}" "${TOPDIR}/SPECS/nesso.spec"
+
+mkdir -p "${OUT_DIR}"
+OUT_RPM="$(cd "${OUT_DIR}" && pwd)/nesso-${VERSION}-1.${RPM_ARCH}.rpm"
+BUILT="$(find "${TOPDIR}/RPMS" -type f -name "nesso-${VERSION}-1.${RPM_ARCH}.rpm" -print -quit)"
+if [[ -z "${BUILT}" || ! -f "${BUILT}" ]]; then
+  echo "error: rpmbuild did not write nesso-${VERSION}-1.${RPM_ARCH}.rpm" >&2
+  find "${TOPDIR}/RPMS" -type f -print >&2 || true
+  exit 1
+fi
+cp -a "${BUILT}" "${OUT_RPM}"
+echo "${OUT_RPM}"

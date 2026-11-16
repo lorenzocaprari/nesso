@@ -1,0 +1,47 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [[ $# -lt 1 || $# -gt 2 ]]; then
+  echo "usage: smoke-rpm RPM [IMAGE]" >&2
+  exit 2
+fi
+
+RPM="$1"
+IMAGE="${2:-rockylinux:9}"
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+
+if [[ ! -f "${RPM}" ]]; then
+  echo "error: rpm not found: ${RPM}" >&2
+  exit 2
+fi
+if [[ ! "${IMAGE}" =~ ^[A-Za-z0-9][A-Za-z0-9._:/@-]*$ ]]; then
+  echo "error: refusing image ${IMAGE}" >&2
+  exit 2
+fi
+
+RPM_ABS="$(cd "$(dirname "${RPM}")" && pwd)/$(basename "${RPM}")"
+
+# Same grep as the release smoke. remove starts from an installed package so
+# leftover files cannot hide a failed remove.
+docker run --rm \
+  -v "${RPM_ABS}:/tmp/nesso.rpm:ro" \
+  -v "${ROOT}/test/fixtures:/data:ro" \
+  "${IMAGE}" \
+  bash -euo pipefail -c '
+    dnf -y install /tmp/nesso.rpm
+    nesso -V
+    nesso grep "connection refused" /data/grep_sample.log -k 3
+    test -x /usr/bin/nesso
+    test -f /usr/share/nesso/model.onnx
+    test -s /usr/share/doc/nesso/copyright
+    grep -q "nesso third-party notices" /usr/share/doc/nesso/copyright
+    # grep -q exits at the first match and SIGPIPE-kills rpm. pipefail
+    # then fails the smoke even though the notices file is in the package.
+    rpm -qlp /tmp/nesso.rpm | grep "/usr/share/doc/nesso/THIRD_PARTY_NOTICES$" >/dev/null
+    dnf -y remove nesso
+    if [[ -e /usr/bin/nesso || -e /usr/share/nesso || -e /usr/share/doc/nesso ]]; then
+      echo "error: dnf remove left nesso files behind" >&2
+      ls -la /usr/bin/nesso /usr/share/nesso /usr/share/doc/nesso >&2 || true
+      exit 1
+    fi
+  '
