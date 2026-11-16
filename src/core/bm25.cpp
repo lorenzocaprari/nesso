@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include <core/bm25.hpp>
+#include <core/lexical_terms.hpp>
 
 #include <algorithm>
 #include <cmath>
@@ -17,21 +18,6 @@
 
 namespace nesso::core
 {
-
-static bool TermLess(std::string_view left, std::string_view right) noexcept
-{
-    const std::size_t count = left.size() < right.size() ? left.size() : right.size();
-    for (std::size_t index = 0; index < count; ++index)
-    {
-        const auto left_byte = static_cast<unsigned char>(left[index]);
-        const auto right_byte = static_cast<unsigned char>(right[index]);
-        if (left_byte != right_byte)
-        {
-            return left_byte < right_byte;
-        }
-    }
-    return left.size() < right.size();
-}
 
 static std::uint32_t FrequencyOf(std::span<const std::pair<std::uint32_t, std::uint32_t>> frequencies,
                                  std::uint32_t term_id) noexcept
@@ -76,7 +62,7 @@ static std::vector<std::string> DistinctQueryTerms(std::span<const std::string_v
     {
         distinct.emplace_back(term);
     }
-    std::ranges::sort(distinct, TermLess);
+    std::ranges::sort(distinct, TermByteLess);
     std::vector<std::string> unique_terms;
     unique_terms.reserve(distinct.size());
     for (std::string &term : distinct)
@@ -92,7 +78,7 @@ static std::vector<std::string> DistinctQueryTerms(std::span<const std::string_v
 static std::optional<std::uint32_t> DictionaryId(std::span<const std::string_view> dictionary,
                                                  std::string_view term) noexcept
 {
-    const auto found = std::ranges::lower_bound(dictionary, term, TermLess);
+    const auto found = std::ranges::lower_bound(dictionary, term, TermByteLess);
     if (found == dictionary.end() || *found != term)
     {
         return std::nullopt;
