@@ -6,7 +6,7 @@ Matches go to stdout. Skipped lines, the index summary, and errors go to stderr.
 
 ## Model
 
-The `.deb` and the container image ship the MiniLM files in `/usr/share/nesso`. A source build downloads them once:
+The `.deb`, the `.rpm`, and the container image ship the MiniLM files in `/usr/share/nesso`. A source build downloads them once:
 
 ```bash
 ./scripts/fetch-model
@@ -41,7 +41,7 @@ From a source tree the binary is `build/Debug/src/nesso` or `build/Release/src/n
 
 ## Version
 
-`nesso --version` reports the package version. Builds from an untagged commit also include `+g` and the first 12 characters of its commit SHA, for example `0.2.1+g0123456789ab`. A build from its matching `vX.Y.Z` release tag reports only `X.Y.Z`.
+`nesso --version` reports the package version. Builds from an untagged commit also include `+g` and the first 12 characters of its commit SHA, for example `0.3.0+g0123456789ab`. A build from its matching `vX.Y.Z` release tag reports only `X.Y.Z`.
 
 ## Threads
 
