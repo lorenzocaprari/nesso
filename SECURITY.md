@@ -4,10 +4,11 @@
 
 | Version | Supported |
 | ------- | --------- |
-| 0.2.x   | Yes       |
-| 0.1.x   | Yes       |
+| 0.3.x   | Yes       |
+| 0.2.x   | No        |
+| 0.1.x   | No        |
 
-`0.2.x` is the upcoming release. `0.1.0` is the only published release. Fixes for `0.1.x` go into the next `0.1.x` tag. Untagged commits are not a supported version.
+`0.3.x` is the current release. Security fixes go into the next `0.3.x` tag. Older versions are not supported; upgrade to the latest `0.3.x`. Untagged commits are not a supported version.
 
 ## Reporting a vulnerability
 
