@@ -1,0 +1,136 @@
+#!/usr/bin/env bash
+# Measure nesso index peak RSS on a Loghub HDFS-like input and fail above a budget.
+#
+#   ./scripts/check-index-rss
+#   ./scripts/check-index-rss --lines 1000000 --threads 1 --threads 8
+#
+# Requires a Release binary, models/, GNU time, and network once for fetch-loghub.
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+LINES=1000000
+BUDGET_MIB=1536
+BINARY="${NESSO_BINARY:-}"
+MODEL_DIR="${NESSO_MODEL_DIR:-${ROOT}/models}"
+THREADS=()
+
+die() {
+  echo "error: $*" >&2
+  exit 2
+}
+
+usage() {
+  cat <<'EOF'
+usage: scripts/check-index-rss [--lines N] [--budget-mib N] [--binary PATH]
+                               [--model-dir PATH] [--threads N]...
+EOF
+}
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --lines)
+      [[ $# -ge 2 ]] || die "--lines needs a value"
+      LINES="$2"
+      shift 2
+      ;;
+    --budget-mib)
+      [[ $# -ge 2 ]] || die "--budget-mib needs a value"
+      BUDGET_MIB="$2"
+      shift 2
+      ;;
+    --binary)
+      [[ $# -ge 2 ]] || die "--binary needs a value"
+      BINARY="$2"
+      shift 2
+      ;;
+    --model-dir)
+      [[ $# -ge 2 ]] || die "--model-dir needs a value"
+      MODEL_DIR="$2"
+      shift 2
+      ;;
+    --threads)
+      [[ $# -ge 2 ]] || die "--threads needs a value"
+      THREADS+=("$2")
+      shift 2
+      ;;
+    -h | --help)
+      usage
+      exit 0
+      ;;
+    *)
+      die "unknown argument: $1"
+      ;;
+  esac
+done
+
+if [[ ${#THREADS[@]} -eq 0 ]]; then
+  THREADS=(1 8)
+fi
+
+if [[ -z "${BINARY}" ]]; then
+  if [[ -x "${ROOT}/build/Release/src/nesso" ]]; then
+    BINARY="${ROOT}/build/Release/src/nesso"
+  elif [[ -x "${ROOT}/build/Release/nesso" ]]; then
+    BINARY="${ROOT}/build/Release/nesso"
+  else
+    die "nesso binary not found; set --binary or NESSO_BINARY"
+  fi
+fi
+[[ -x "${BINARY}" ]] || die "binary is not executable: ${BINARY}"
+[[ -f "${MODEL_DIR}/model.onnx" && -f "${MODEL_DIR}/vocab.txt" ]] ||
+  die "${MODEL_DIR} must contain model.onnx and vocab.txt"
+[[ -x /usr/bin/time ]] || die "GNU time (/usr/bin/time) is required"
+
+python3 "${ROOT}/scripts/fetch-loghub"
+SAMPLE="${ROOT}/build/bench/HDFS_2k.log"
+[[ -f "${SAMPLE}" ]] || die "fetch-loghub did not write ${SAMPLE}"
+
+WORKDIR="$(mktemp -d "${TMPDIR:-/tmp}/nesso-index-rss.XXXXXX")"
+cleanup() {
+  rm -rf "${WORKDIR}"
+}
+trap cleanup EXIT
+
+LOG="${WORKDIR}/hdfs.log"
+python3 - "${SAMPLE}" "${LOG}" "${LINES}" <<'PY'
+import pathlib
+import sys
+
+sample = pathlib.Path(sys.argv[1])
+dest = pathlib.Path(sys.argv[2])
+lines = int(sys.argv[3])
+text = sample.read_bytes()
+if not text.endswith(b"\n"):
+    text += b"\n"
+rows = text.splitlines(keepends=True)
+if not rows:
+    raise SystemExit("empty HDFS sample")
+out = bytearray()
+for index in range(lines):
+    out.extend(rows[index % len(rows)])
+dest.write_bytes(out)
+PY
+
+BUDGET_KB=$((BUDGET_MIB * 1024))
+failed=0
+for thread_count in "${THREADS[@]}"; do
+  corpus="${WORKDIR}/corpus.${thread_count}.nesso"
+  time_file="${WORKDIR}/time.${thread_count}.txt"
+  echo "check-index-rss: NESSO_THREADS=${thread_count} lines=${LINES} budget=${BUDGET_MIB}MiB"
+  set +e
+  env NESSO_THREADS="${thread_count}" /usr/bin/time -f "%e %M" -o "${time_file}" \
+    "${BINARY}" index -o "${corpus}" "${LOG}" --model-dir "${MODEL_DIR}" --quiet
+  status=$?
+  set -e
+  [[ ${status} -eq 0 ]] || die "nesso index failed (exit ${status}) at NESSO_THREADS=${thread_count}"
+  [[ -s "${corpus}" ]] || die "corpus missing after index at NESSO_THREADS=${thread_count}"
+  read -r wall_seconds peak_kb <"${time_file}" || die "failed to read ${time_file}"
+  [[ -n "${peak_kb}" ]] || die "missing peak RSS in ${time_file}"
+  echo "check-index-rss: threads=${thread_count} wall=${wall_seconds}s peakRssKiB=${peak_kb}"
+  if ((peak_kb > BUDGET_KB)); then
+    echo "error: peak RSS ${peak_kb} KiB exceeds budget ${BUDGET_KB} KiB (${BUDGET_MIB} MiB)" >&2
+    failed=1
+  fi
+done
+
+exit "${failed}"

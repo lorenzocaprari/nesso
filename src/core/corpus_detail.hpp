@@ -10,6 +10,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <expected>
+#include <filesystem>
 #include <iosfwd>
 #include <span>
 #include <string>
@@ -30,6 +31,8 @@ inline constexpr std::uint64_t MAX_LINES = 10'000'000;
 inline constexpr std::uint64_t MAX_DISTINCT = 1'000'000;
 inline constexpr std::uint64_t MAX_LEXICAL_TERMS = 4'000'000;
 inline constexpr std::uint64_t MAX_LEXICAL_BYTES = 512ULL * 1024ULL * 1024ULL;
+// Finish-time working set for unique-term runs, merge, and posting encode.
+inline constexpr std::uint64_t CORPUS_WRITER_MEMORY_BUDGET_BYTES = 1536ULL * 1024ULL * 1024ULL;
 inline constexpr std::uint32_t MAX_DIMENSIONS = 65536;
 inline constexpr std::array<char, 4> MAGIC{'N', 'E', 'S', 'C'};
 inline constexpr std::uint32_t SOURCE_TRACKED = 1U;
@@ -63,6 +66,21 @@ inline constexpr std::uint32_t LINE_SKIPPED = 4U;
 [[nodiscard]] std::expected<CorpusPolicy, EngineError> ParsePolicy(std::string_view text);
 
 [[nodiscard]] std::vector<std::byte> EncodeLexicalSection(std::span<const std::vector<std::string>> line_terms);
+
+struct LexicalSpillFile
+{
+    std::filesystem::path path;
+    std::uint64_t bytes = 0;
+};
+
+// Streams the terms spill into a lexical spill with bounded unique-term runs.
+// Bytes match EncodeLexicalSection on the same term rows. memory_budget sizes
+// the in-memory unique-term chunk (default CORPUS_WRITER_MEMORY_BUDGET_BYTES).
+[[nodiscard]] std::expected<LexicalSpillFile, EngineError>
+EncodeLexicalSectionSpilled(const std::filesystem::path &terms_path, std::uint64_t line_count,
+                            const std::filesystem::path &spill_prefix,
+                            std::uint64_t memory_budget = CORPUS_WRITER_MEMORY_BUDGET_BYTES);
+
 [[nodiscard]] std::expected<void, EngineError>
 DecodeLexicalSection(std::span<const std::byte> bytes, std::uint64_t line_count, std::vector<std::string> &owned_terms,
                      std::vector<std::string_view> &dictionary, std::vector<LexicalLinePostings> &postings);

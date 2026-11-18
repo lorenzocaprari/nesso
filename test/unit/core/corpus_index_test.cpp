@@ -231,6 +231,7 @@ bool HasSpill(const std::filesystem::path &directory)
         const std::string name = entry.path().filename().string();
         if (name.find(".lines.") != std::string::npos || name.find(".texts.") != std::string::npos ||
             name.find(".vectors.") != std::string::npos || name.find(".terms.") != std::string::npos ||
+            name.find(".lexrun.") != std::string::npos || name.find(".lexical.") != std::string::npos ||
             name.find(".tmp.") != std::string::npos)
         {
             return true;

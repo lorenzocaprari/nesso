@@ -9,14 +9,23 @@
 
 #include <algorithm>
 #include <array>
+#include <atomic>
+#include <cerrno>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
 #include <expected>
+#include <filesystem>
+#include <fstream>
+#include <ios>
+#include <istream>
 #include <optional>
+#include <ostream>
 #include <span>
 #include <string>
 #include <string_view>
+#include <system_error>
+#include <unistd.h>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
@@ -161,6 +170,434 @@ std::vector<std::byte> EncodeLexicalSection(std::span<const std::vector<std::str
     }
     return out;
 }
+
+inline constexpr std::uint64_t TERM_NODE_OVERHEAD = 64;
+
+static void RemovePath(const std::filesystem::path &path)
+{
+    if (path.empty())
+    {
+        return;
+    }
+    std::error_code error;
+    std::filesystem::remove(path, error);
+}
+
+static void RemovePaths(const std::vector<std::filesystem::path> &paths)
+{
+    for (const std::filesystem::path &path : paths)
+    {
+        RemovePath(path);
+    }
+}
+
+static std::expected<std::filesystem::path, EngineError> CreateLexicalTemp(const std::filesystem::path &spill_prefix,
+                                                                           std::string_view suffix)
+{
+    static std::atomic<std::uint64_t> counter{0};
+    for (unsigned attempt = 0; attempt < 16; ++attempt)
+    {
+        const auto number = counter.fetch_add(1, std::memory_order_relaxed);
+        std::filesystem::path path = spill_prefix.string() + "." + std::string{suffix} + "." +
+                                     std::to_string(getpid()) + "." + std::to_string(number);
+        errno = 0;
+        std::ofstream output(path, std::ios::binary | std::ios::out | std::ios::noreplace);
+        if (output)
+        {
+            output.close();
+            if (!output)
+            {
+                RemovePath(path);
+                return std::unexpected(EngineError::FileOpenFailure);
+            }
+            return path;
+        }
+        if (errno != EEXIST)
+        {
+            return std::unexpected(EngineError::FileOpenFailure);
+        }
+    }
+    return std::unexpected(EngineError::FileOpenFailure);
+}
+
+static bool ReadSpilledTermRow(std::istream &terms, std::vector<std::string> &row)
+{
+    std::uint32_t count = 0;
+    if (!ReadU32Stream(terms, count))
+    {
+        return false;
+    }
+    row.clear();
+    row.reserve(count);
+    for (std::uint32_t index = 0; index < count; ++index)
+    {
+        std::uint32_t length = 0;
+        if (!ReadU32Stream(terms, length) || length > MAX_TEXT_BYTES)
+        {
+            return false;
+        }
+        std::string term(length, '\0');
+        if (length != 0 && !terms.read(term.data(), static_cast<std::streamsize>(length)))
+        {
+            return false;
+        }
+        row.push_back(std::move(term));
+    }
+    return true;
+}
+
+static std::uint64_t RowUniqueFootprint(std::span<const std::string> row, const std::unordered_set<std::string> &seen)
+{
+    std::uint64_t bytes = 0;
+    std::unordered_set<std::string_view> local;
+    local.reserve(row.size());
+    for (const std::string &term : row)
+    {
+        if (!local.insert(term).second || seen.contains(term))
+        {
+            continue;
+        }
+        bytes += term.size() + TERM_NODE_OVERHEAD;
+    }
+    return bytes;
+}
+
+static bool WriteSortedRun(const std::filesystem::path &path, std::unordered_set<std::string> &seen)
+{
+    std::vector<std::string> terms(seen.begin(), seen.end());
+    seen.clear();
+    std::ranges::sort(terms, TermByteLess);
+    std::ofstream output(path, std::ios::binary | std::ios::out | std::ios::trunc);
+    if (!output || !WriteU64(output, terms.size()))
+    {
+        return false;
+    }
+    for (const std::string &term : terms)
+    {
+        if (!WriteU32(output, static_cast<std::uint32_t>(term.size())) || !WriteRaw(output, term.data(), term.size()))
+        {
+            return false;
+        }
+    }
+    output.close();
+    return static_cast<bool>(output);
+}
+
+static bool FlushUniqueRun(const std::filesystem::path &spill_prefix, std::unordered_set<std::string> &seen,
+                           std::vector<std::filesystem::path> &runs)
+{
+    auto run = CreateLexicalTemp(spill_prefix, "lexrun");
+    if (!run)
+    {
+        return false;
+    }
+    runs.push_back(*run);
+    return WriteSortedRun(*run, seen);
+}
+
+static std::expected<std::vector<std::filesystem::path>, EngineError>
+BuildUniqueTermRuns(std::istream &terms, std::uint64_t line_count, const std::filesystem::path &spill_prefix,
+                    std::uint64_t chunk_budget)
+{
+    std::vector<std::filesystem::path> runs;
+    std::unordered_set<std::string> seen;
+    std::uint64_t seen_bytes = 0;
+    std::vector<std::string> row;
+    for (std::uint64_t index = 0; index < line_count; ++index)
+    {
+        if (!ReadSpilledTermRow(terms, row))
+        {
+            RemovePaths(runs);
+            return std::unexpected(EngineError::FileOpenFailure);
+        }
+        const std::uint64_t added = RowUniqueFootprint(row, seen);
+        if (!seen.empty() && seen_bytes + added > chunk_budget)
+        {
+            if (!FlushUniqueRun(spill_prefix, seen, runs))
+            {
+                RemovePaths(runs);
+                return std::unexpected(EngineError::FileOpenFailure);
+            }
+            seen_bytes = 0;
+        }
+        for (std::string &term : row)
+        {
+            const std::uint64_t cost = term.size() + TERM_NODE_OVERHEAD;
+            if (seen.insert(std::move(term)).second)
+            {
+                seen_bytes += cost;
+            }
+        }
+    }
+    if (!AtEnd(terms))
+    {
+        RemovePaths(runs);
+        return std::unexpected(EngineError::CorruptDatabase);
+    }
+    if (!seen.empty() || runs.empty())
+    {
+        // Always emit at least one run when there were no prior flushes so merge
+        // sees a defined (possibly empty) dictionary input.
+        if (!FlushUniqueRun(spill_prefix, seen, runs))
+        {
+            RemovePaths(runs);
+            return std::unexpected(EngineError::FileOpenFailure);
+        }
+    }
+    return runs;
+}
+
+static bool ReadRunTerm(std::istream &input, std::uint64_t &remaining, std::string &term)
+{
+    if (remaining == 0)
+    {
+        return false;
+    }
+    std::uint32_t length = 0;
+    if (!ReadU32Stream(input, length) || length > MAX_TEXT_BYTES)
+    {
+        return false;
+    }
+    term.assign(length, '\0');
+    if (length != 0 && !input.read(term.data(), static_cast<std::streamsize>(length)))
+    {
+        return false;
+    }
+    --remaining;
+    return true;
+}
+
+struct LexicalRunCursor
+{
+    std::ifstream input;
+    std::uint64_t remaining = 0;
+    std::string term;
+    bool active = false;
+};
+
+static std::optional<std::size_t> SmallestActiveRun(std::span<const LexicalRunCursor> cursors)
+{
+    std::optional<std::size_t> best;
+    for (std::size_t index = 0; index < cursors.size(); ++index)
+    {
+        if (!cursors[index].active)
+        {
+            continue;
+        }
+        if (!best || TermByteLess(cursors[index].term, cursors[*best].term))
+        {
+            best = index;
+        }
+    }
+    return best;
+}
+
+static std::expected<std::vector<std::string>, EngineError>
+MergeSortedRuns(const std::vector<std::filesystem::path> &runs)
+{
+    if (runs.empty())
+    {
+        return std::vector<std::string>{};
+    }
+
+    std::vector<LexicalRunCursor> cursors(runs.size());
+    for (std::size_t index = 0; index < runs.size(); ++index)
+    {
+        cursors[index].input.open(runs[index], std::ios::binary);
+        std::uint64_t count = 0;
+        if (!cursors[index].input || !ReadU64Stream(cursors[index].input, count))
+        {
+            return std::unexpected(EngineError::FileOpenFailure);
+        }
+        cursors[index].remaining = count;
+        if (count == 0)
+        {
+            continue;
+        }
+        if (!ReadRunTerm(cursors[index].input, cursors[index].remaining, cursors[index].term))
+        {
+            return std::unexpected(EngineError::FileOpenFailure);
+        }
+        cursors[index].active = true;
+    }
+
+    std::vector<std::string> dictionary;
+    std::string previous;
+    while (const std::optional<std::size_t> best = SmallestActiveRun(cursors))
+    {
+        LexicalRunCursor &cursor = cursors[*best];
+        if (previous.empty() || previous != cursor.term)
+        {
+            if (dictionary.size() >= MAX_LEXICAL_TERMS)
+            {
+                return std::unexpected(EngineError::CorruptDatabase);
+            }
+            previous = cursor.term;
+            dictionary.push_back(cursor.term);
+        }
+        if (cursor.remaining == 0)
+        {
+            cursor.active = false;
+            continue;
+        }
+        if (!ReadRunTerm(cursor.input, cursor.remaining, cursor.term))
+        {
+            return std::unexpected(EngineError::FileOpenFailure);
+        }
+    }
+    for (LexicalRunCursor &cursor : cursors)
+    {
+        if (cursor.remaining != 0 || !AtEnd(cursor.input))
+        {
+            return std::unexpected(EngineError::CorruptDatabase);
+        }
+    }
+    return dictionary;
+}
+
+static bool WriteLexicalHeaderAndDictionary(std::ostream &output, std::span<const std::string> dictionary,
+                                            std::uint64_t line_count, std::uint64_t &written)
+{
+    std::vector<std::byte> prefix;
+    prefix.reserve(16 + (dictionary.size() * 8));
+    AppendU64(prefix, dictionary.size());
+    AppendU64(prefix, line_count);
+    AppendLexicalDictionaryBytes(prefix, dictionary);
+    if (!WriteRaw(output, prefix.data(), prefix.size()))
+    {
+        return false;
+    }
+    written += prefix.size();
+    return true;
+}
+
+enum class PostingWriteStatus : std::uint8_t
+{
+    Ok,
+    TooLarge,
+    IoError
+};
+
+static PostingWriteStatus WriteLinePostings(std::ostream &output, std::span<const std::string> terms,
+                                            const std::unordered_map<std::string, std::uint32_t> &ids,
+                                            std::uint64_t &written)
+{
+    std::vector<std::byte> row;
+    AppendLexicalLinePostings(row, terms, ids);
+    if (written > MAX_LEXICAL_BYTES || MAX_LEXICAL_BYTES - written < row.size())
+    {
+        return PostingWriteStatus::TooLarge;
+    }
+    if (!WriteRaw(output, row.data(), row.size()))
+    {
+        return PostingWriteStatus::IoError;
+    }
+    written += row.size();
+    return PostingWriteStatus::Ok;
+}
+
+static std::expected<LexicalSpillFile, EngineError> WriteLexicalSpill(std::istream &terms, std::uint64_t line_count,
+                                                                      std::span<const std::string> dictionary,
+                                                                      const std::filesystem::path &spill_prefix)
+{
+    auto lexical_path = CreateLexicalTemp(spill_prefix, "lexical");
+    if (!lexical_path)
+    {
+        return std::unexpected(lexical_path.error());
+    }
+    std::ofstream lexical(*lexical_path, std::ios::binary | std::ios::out | std::ios::trunc);
+    if (!lexical)
+    {
+        RemovePath(*lexical_path);
+        return std::unexpected(EngineError::FileOpenFailure);
+    }
+
+    std::uint64_t written = 0;
+    const auto ids = LexicalTermIds(dictionary);
+    if (!WriteLexicalHeaderAndDictionary(lexical, dictionary, line_count, written))
+    {
+        lexical.close();
+        RemovePath(*lexical_path);
+        return std::unexpected(EngineError::FileOpenFailure);
+    }
+
+    std::vector<std::string> row;
+    for (std::uint64_t index = 0; index < line_count; ++index)
+    {
+        if (!ReadSpilledTermRow(terms, row))
+        {
+            lexical.close();
+            RemovePath(*lexical_path);
+            return std::unexpected(EngineError::FileOpenFailure);
+        }
+        switch (WriteLinePostings(lexical, row, ids, written))
+        {
+        case PostingWriteStatus::Ok:
+            break;
+        case PostingWriteStatus::TooLarge:
+            lexical.close();
+            RemovePath(*lexical_path);
+            return std::unexpected(EngineError::CorruptDatabase);
+        case PostingWriteStatus::IoError:
+            lexical.close();
+            RemovePath(*lexical_path);
+            return std::unexpected(EngineError::FileOpenFailure);
+        }
+    }
+    if (!AtEnd(terms))
+    {
+        lexical.close();
+        RemovePath(*lexical_path);
+        return std::unexpected(EngineError::CorruptDatabase);
+    }
+    lexical.close();
+    if (!lexical || written > MAX_LEXICAL_BYTES)
+    {
+        RemovePath(*lexical_path);
+        return std::unexpected(written > MAX_LEXICAL_BYTES ? EngineError::CorruptDatabase
+                                                           : EngineError::FileOpenFailure);
+    }
+    return LexicalSpillFile{.path = std::move(*lexical_path), .bytes = written};
+}
+
+std::expected<LexicalSpillFile, EngineError> EncodeLexicalSectionSpilled(const std::filesystem::path &terms_path,
+                                                                         std::uint64_t line_count,
+                                                                         const std::filesystem::path &spill_prefix,
+                                                                         std::uint64_t memory_budget)
+{
+    if (memory_budget == 0)
+    {
+        return std::unexpected(EngineError::CorruptDatabase);
+    }
+    const std::uint64_t chunk_budget = std::max<std::uint64_t>(memory_budget / 4, 1);
+
+    std::ifstream terms(terms_path, std::ios::binary);
+    if (!terms)
+    {
+        return std::unexpected(EngineError::FileOpenFailure);
+    }
+
+    auto runs = BuildUniqueTermRuns(terms, line_count, spill_prefix, chunk_budget);
+    if (!runs)
+    {
+        return std::unexpected(runs.error());
+    }
+    auto dictionary = MergeSortedRuns(*runs);
+    RemovePaths(*runs);
+    if (!dictionary)
+    {
+        return std::unexpected(dictionary.error());
+    }
+
+    terms.clear();
+    terms.seekg(0);
+    if (!terms)
+    {
+        return std::unexpected(EngineError::FileOpenFailure);
+    }
+    return WriteLexicalSpill(terms, line_count, *dictionary, spill_prefix);
+}
+
 static std::expected<void, EngineError> DecodeLexicalDictionary(std::span<const std::byte> bytes, std::uint64_t &cursor,
                                                                 std::uint64_t term_count,
                                                                 std::vector<std::string> &owned_terms,
