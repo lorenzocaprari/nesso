@@ -1,19 +1,28 @@
 #!/usr/bin/env python3
-"""Download the Loghub HDFS_v1 2k sample into build/bench/.
+"""Download pinned Loghub inputs into build/bench/.
 
-The file is HDFS/HDFS_2k.log from logpai/loghub at a pinned commit. Loghub
-data is for research use and must stay out of the repository. A file already
-at the destination is kept when its sha256 matches the pin; otherwise it is
-downloaded again and rejected when the bytes do not match.
+The default dataset is the HDFS_v1 2k sample (HDFS/HDFS_2k.log) from
+logpai/loghub at a pinned commit. Full sets come from Zenodo record 8196385:
+HDFS_v1, BGL, and Thunderbird. Each full set is checked against a sha256 pin,
+then the first N lines of the raw log are written and the archive is deleted.
+Thunderbird is streamed from the tar member so the 29 GiB log is never
+extracted. Loghub data is for research use and must stay out of the repository.
+
+A file already at the destination is kept when its sha256 matches the pin.
+The 2k sample pin is the file itself. A full set's cache pin is the sha256 of
+the default 1_000_000-line prefix.
 """
 
 import argparse
 import hashlib
 import shutil
 import sys
+import tarfile
 import time
 import urllib.error
 import urllib.request
+import zipfile
+from dataclasses import dataclass
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -22,6 +31,61 @@ HDFS_COMMIT = "374038faa4ca122dd7ca0730372c0b78f76f8597"
 HDFS_URL = f"https://raw.githubusercontent.com/logpai/loghub/{HDFS_COMMIT}/HDFS/HDFS_2k.log"
 HDFS_SHA256 = "7c967000980c086ed55fa6544ba4f05fe66d44622795e890c68caf8bbb635035"
 DEFAULT_DEST = ROOT / "build" / "bench" / "HDFS_2k.log"
+DEFAULT_PREFIX_LINES = 1_000_000
+# Loghub full logs (ISSRE 2023). Not the concept DOI and not /latest.
+ZENODO_RECORD = "8196385"
+ZENODO_FILES = f"https://zenodo.org/records/{ZENODO_RECORD}/files"
+
+
+@dataclass(frozen=True)
+class FullSet:
+    name: str
+    url: str
+    # sha256 of the compressed archive. Zenodo publishes md5 only; that md5 is
+    # the comment on archive_md5.
+    archive_sha256: str
+    archive_md5: str
+    kind: str
+    member: str
+    dest_name: str
+    # sha256 of the first DEFAULT_PREFIX_LINES lines. Empty until pinned.
+    prefix_sha256: str
+
+
+# archive_sha256 is the compressed Zenodo file. prefix_sha256 is the first
+# DEFAULT_PREFIX_LINES lines of the raw member, newline-terminated.
+FULL_SETS: dict[str, FullSet] = {
+    "hdfs-v1": FullSet(
+        name="hdfs-v1",
+        url=f"{ZENODO_FILES}/HDFS_v1.zip?download=1",
+        archive_sha256="04f919f2185821f23f045dca611a7586429bdabc601bd7b43f30005f8e289b01",
+        archive_md5="76a24b4d9a6164d543fb275f89773260",
+        kind="zip",
+        member="HDFS.log",
+        dest_name="HDFS_1m.log",
+        prefix_sha256="8a441b0651dae0b01ffd74636a582f83e604d6b7cab2ea5b674cdcfea5710654",
+    ),
+    "bgl": FullSet(
+        name="bgl",
+        url=f"{ZENODO_FILES}/BGL.zip?download=1",
+        archive_sha256="d67fd82a711aea0157a9b83175892c6ee60e384a2ddf5bc51f39118453816da8",
+        archive_md5="4452953c470f2d95fcb32d5f6e733f7a",
+        kind="zip",
+        member="BGL.log",
+        dest_name="BGL_1m.log",
+        prefix_sha256="51cdd00c485ba0f1af049e3dbce93027e4814432e97bb2e05ddfe69bb3c4bd65",
+    ),
+    "thunderbird": FullSet(
+        name="thunderbird",
+        url=f"{ZENODO_FILES}/Thunderbird.tar.gz?download=1",
+        archive_sha256="228f8589b7cd569b727c5da654c647aa538dd3dd95541e675a40523c5fff37cf",
+        archive_md5="0891b048df2919dc78c99c4428686b44",
+        kind="tar",
+        member="Thunderbird.log",
+        dest_name="Thunderbird_1m.log",
+        prefix_sha256="5cb50133190d4ff80af30dca611b6c4b37d88421e7d5c54786e9ae8bcc6b1d9f",
+    ),
+}
 
 
 def sha256_file(path: Path) -> str:
@@ -39,7 +103,7 @@ def normalize_sha256(value: str) -> str:
     return digest
 
 
-def download(url: str, dest: Path) -> None:
+def download(url: str, dest: Path, timeout: int = 120) -> None:
     parsed = urllib.request.urlparse(url)
     if parsed.scheme not in {"https", "file"}:
         raise SystemExit(f"error: unsupported URL scheme: {parsed.scheme or url}")
@@ -47,7 +111,7 @@ def download(url: str, dest: Path) -> None:
     last_error: Exception | None = None
     for attempt in range(3):
         try:
-            with urllib.request.urlopen(request, timeout=120) as response, dest.open("wb") as handle:
+            with urllib.request.urlopen(request, timeout=timeout) as response, dest.open("wb") as handle:
                 shutil.copyfileobj(response, handle)
             return
         except urllib.error.URLError as exc:
@@ -77,13 +141,166 @@ def fetch(dest: Path, url: str = HDFS_URL, expected: str = HDFS_SHA256) -> Path:
     return dest
 
 
+def write_line_prefix(source, dest: Path, lines: int) -> int:
+    if lines <= 0:
+        raise SystemExit("error: --lines must be a positive integer")
+    written = 0
+    with dest.open("wb") as handle:
+        while written < lines:
+            raw = source.readline()
+            if not raw:
+                break
+            if not raw.endswith(b"\n"):
+                raw += b"\n"
+            handle.write(raw)
+            written += 1
+    if written != lines:
+        raise SystemExit(f"error: {dest.name} has {written} lines, need {lines}")
+    return written
+
+
+def _unique_member(names: list[str], member: str) -> str:
+    if member in names:
+        return member
+    matches = [name for name in names if name.endswith("/" + member) or name.endswith(member)]
+    if len(matches) == 1:
+        return matches[0]
+    raise SystemExit(f"error: member {member} not in {names}")
+
+
+def open_member(archive: Path, kind: str, member: str):
+    if kind == "zip":
+        handle = zipfile.ZipFile(archive)
+    elif kind == "tar":
+        handle = tarfile.open(archive, "r:*")
+    else:
+        raise SystemExit(f"error: unsupported archive kind: {kind}")
+    try:
+        if kind == "zip":
+            name = _unique_member(handle.namelist(), member)
+            raw = handle.open(name, "r")
+        else:
+            names = [info.name for info in handle.getmembers() if info.isfile()]
+            name = _unique_member(names, member)
+            raw = handle.extractfile(name)
+            if raw is None:
+                raise SystemExit(f"error: cannot read tar member {name}")
+    except BaseException:
+        handle.close()
+        raise
+    return raw, handle
+
+
+def count_lines(path: Path) -> int:
+    with path.open("rb") as handle:
+        return sum(1 for _ in handle)
+
+
+def fetch_full(
+    spec: FullSet,
+    dest: Path,
+    lines: int = DEFAULT_PREFIX_LINES,
+    url: str | None = None,
+    expected: str | None = None,
+    prefix_expected: str | None = None,
+    member: str | None = None,
+    kind: str | None = None,
+) -> Path:
+    archive_pin = normalize_sha256(expected if expected is not None else spec.archive_sha256)
+    explicit_prefix = prefix_expected is not None
+    prefix_pin = prefix_expected if explicit_prefix else spec.prefix_sha256
+    check_prefix = bool(prefix_pin) and (explicit_prefix or lines == DEFAULT_PREFIX_LINES)
+    if (
+        check_prefix
+        and dest.is_file()
+        and sha256_file(dest) == normalize_sha256(prefix_pin)
+        and count_lines(dest) == lines
+    ):
+        print(f"fetch-loghub: cached {dest}")
+        return dest
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    archive = dest.with_name(dest.name + ".archive")
+    partial = dest.with_name(dest.name + ".partial")
+    source_url = url or spec.url
+    try:
+        download(source_url, archive, timeout=600)
+        actual = sha256_file(archive)
+        if actual != archive_pin:
+            raise SystemExit(f"error: sha256 mismatch for {source_url}: expected {archive_pin}, got {actual}")
+        raw, handle = open_member(archive, kind or spec.kind, member or spec.member)
+        try:
+            write_line_prefix(raw, partial, lines)
+        finally:
+            raw.close()
+            handle.close()
+        if check_prefix:
+            prefix_actual = sha256_file(partial)
+            pin = normalize_sha256(prefix_pin)
+            if prefix_actual != pin:
+                raise SystemExit(
+                    f"error: prefix sha256 mismatch for {dest.name}: expected {pin}, got {prefix_actual}"
+                )
+        partial.replace(dest)
+    finally:
+        archive.unlink(missing_ok=True)
+        partial.unlink(missing_ok=True)
+    print(f"fetch-loghub: wrote {dest}")
+    return dest
+
+
+def default_dest(spec: FullSet, dest_dir: Path) -> Path:
+    return dest_dir / spec.dest_name
+
+
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--dest", type=Path, default=DEFAULT_DEST, help="Output path (default: build/bench/HDFS_2k.log)")
-    parser.add_argument("--url", default=HDFS_URL, help="Pinned sample URL")
-    parser.add_argument("--sha256", default=HDFS_SHA256, help="Expected sha256 of the sample")
+    parser.add_argument(
+        "--dataset",
+        choices=("hdfs-2k", "hdfs-v1", "bgl", "thunderbird", "all-full"),
+        default="hdfs-2k",
+        help="hdfs-2k is the pinned 2k sample. Full sets are the first --lines of the Zenodo log",
+    )
+    parser.add_argument("--dest", type=Path, default=None, help="Output path for a single dataset")
+    parser.add_argument(
+        "--dest-dir",
+        type=Path,
+        default=ROOT / "build" / "bench",
+        help="Directory for --dataset all-full (default: build/bench)",
+    )
+    parser.add_argument("--lines", type=int, default=DEFAULT_PREFIX_LINES, help="Prefix length for a full set")
+    parser.add_argument("--url", default=None, help="Override the pinned URL")
+    parser.add_argument("--sha256", default=None, help="Override the pinned archive or sample sha256")
+    parser.add_argument("--prefix-sha256", default=None, help="Override the pinned prefix sha256")
+    parser.add_argument("--member", default=None, help="Override the archive member name")
+    parser.add_argument("--kind", choices=("zip", "tar"), default=None, help="Override the archive kind")
     args = parser.parse_args(argv)
-    fetch(args.dest, args.url, args.sha256)
+    if args.dataset == "hdfs-2k":
+        if args.lines != DEFAULT_PREFIX_LINES:
+            raise SystemExit("error: --lines applies to a full Loghub set, not hdfs-2k")
+        if args.member is not None or args.kind is not None or args.prefix_sha256 is not None:
+            raise SystemExit("error: --member, --kind, and --prefix-sha256 apply to a full Loghub set")
+        fetch(args.dest or DEFAULT_DEST, args.url or HDFS_URL, args.sha256 or HDFS_SHA256)
+        return
+    if args.lines <= 0:
+        raise SystemExit("error: --lines must be a positive integer")
+    names = list(FULL_SETS) if args.dataset == "all-full" else [args.dataset]
+    if args.dataset == "all-full" and args.dest is not None:
+        raise SystemExit("error: --dest applies to one dataset; use --dest-dir for all-full")
+    if args.dataset == "all-full" and (args.url or args.sha256 or args.member or args.kind or args.prefix_sha256):
+        raise SystemExit("error: URL and pin overrides apply to one dataset, not all-full")
+    for name in names:
+        spec = FULL_SETS[name]
+        dest = args.dest if args.dataset != "all-full" and args.dest is not None else default_dest(spec, args.dest_dir)
+        fetch_full(
+            spec,
+            dest,
+            lines=args.lines,
+            url=args.url,
+            expected=args.sha256,
+            prefix_expected=args.prefix_sha256,
+            member=args.member,
+            kind=args.kind,
+        )
 
 
 if __name__ == "__main__":

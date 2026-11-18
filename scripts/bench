@@ -13,6 +13,10 @@ NESSO_TRACE=1 splits that search into corpus-read, model-load, query-embed,
 and distance. A second search without NESSO_TRACE must print the same stdout.
 The result is bench/results/<sha>.search-profile.json and is not compared
 with bench/baseline.json.
+--dataset real-log times index, grep, search, and search --mode dense on the
+first N lines of the Loghub HDFS_v1, BGL, and Thunderbird logs (never repeated)
+at NESSO_THREADS=1 and NESSO_THREADS=8. The result is
+bench/results/<sha>.real-log.json.
 """
 
 import argparse
@@ -33,6 +37,18 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_SIZES = (1000, 10_000, 100_000)
 HDFS_DEFAULT_LINES = 100_000
+REAL_LOG_DEFAULT_LINES = 1_000_000
+REAL_LOG_THREAD_COUNTS = (1, 8)
+REAL_LOG_QUERIES = {
+    "hdfs-v1": "block replication",
+    "bgl": "kernel fatal",
+    "thunderbird": "authentication failure",
+}
+REAL_LOG_FILES = {
+    "hdfs-v1": "HDFS_1m.log",
+    "bgl": "BGL_1m.log",
+    "thunderbird": "Thunderbird_1m.log",
+}
 LOGDIR_DEFAULT_LINES = 256
 TTFA_DEFAULT_LINES = 256
 SEARCH_PROFILE_DEFAULT_LINES = 1000
@@ -1449,18 +1465,284 @@ def run_search_profile(args: argparse.Namespace) -> None:
         raise SystemExit(1)
 
 
+def prepare_real_log(source: Path, work: Path, count: int) -> tuple[Path, int]:
+    """Use the first count lines of source. A short file is an error, never cycled."""
+    if count <= 0:
+        raise SystemExit("error: --lines must be a positive integer")
+    if not source.is_file():
+        raise SystemExit(f"error: sample not found: {source}")
+    total = 0
+    with source.open("rb") as handle:
+        for _ in handle:
+            total += 1
+            if total > count:
+                break
+    if total < count:
+        raise SystemExit(f"error: {source} has {total} lines, need {count}")
+    if total == count:
+        return source, source.stat().st_size
+    dest = work / source.name
+    written = 0
+    size = 0
+    with source.open("rb") as handle, dest.open("wb") as out:
+        while written < count:
+            raw = handle.readline()
+            if not raw:
+                break
+            if not raw.endswith(b"\n"):
+                raw += b"\n"
+            out.write(raw)
+            written += 1
+            size += len(raw)
+    if written != count:
+        raise SystemExit(f"error: {source} has {written} lines, need {count}")
+    return dest, size
+
+
+def ensure_real_log_root(explicit: Path | None, lines: int) -> Path:
+    if explicit is not None:
+        missing = [name for name in REAL_LOG_FILES.values() if not (explicit / name).is_file()]
+        if missing:
+            raise SystemExit(f"error: missing real-log samples in {explicit}: {', '.join(missing)}")
+        return explicit
+    script = Path(__file__).resolve().parent / "fetch-loghub"
+    completed = subprocess.run(
+        [sys.executable, str(script), "--dataset", "all-full", "--lines", str(lines)],
+        check=False,
+    )
+    if completed.returncode != 0:
+        raise SystemExit(completed.returncode)
+    root = ROOT / "build" / "bench"
+    missing = [name for name in REAL_LOG_FILES.values() if not (root / name).is_file()]
+    if missing:
+        raise SystemExit(f"error: fetch-loghub did not write {', '.join(missing)}")
+    return root
+
+
+def real_log_command(
+    *,
+    name: str,
+    mode: str | None,
+    argv: list[str],
+    timeout: float | None,
+    time_path: Path,
+    env: dict[str, str],
+    lines: int,
+    input_bytes: int,
+    corpus: Path | None,
+    need_stdout: bool,
+) -> tuple[dict, int | None]:
+    result = execute_timed(argv, timeout, time_path, env=env)
+    error = command_error(result, corpus=corpus, need_stdout=need_stdout)
+    trace = parse_trace(result["stderr"])
+    if error is None and trace is None:
+        error = "missing trace"
+    corpus_bytes = corpus.stat().st_size if corpus is not None and corpus.is_file() else None
+    wall = result["wallSeconds"]
+    per_second = round(lines / wall, 6) if isinstance(wall, (int, float)) and wall > 0 else None
+    command = {
+        "name": name,
+        "mode": mode,
+        "ok": error is None,
+        "exitCode": result["exitCode"],
+        "wallSeconds": wall,
+        "peakRssBytes": result["peakRssBytes"],
+        "lines": lines,
+        "linesPerSecond": per_second,
+        "inputBytes": input_bytes,
+        "corpusBytes": corpus_bytes,
+        "stages": None if trace is None else trace.get("stages"),
+    }
+    if error is not None:
+        command["error"] = error
+    return command, corpus_bytes
+
+
+def real_log_payload(*, sha: str, binary: Path, cpu: str, nproc: int, lines: int, cases: list) -> dict:
+    return {
+        "sha": sha,
+        "binary": str(binary),
+        "dataset": "real-log",
+        "cpuModel": cpu,
+        "nproc": nproc,
+        "lines": lines,
+        "cases": cases,
+    }
+
+
+def run_real_log(args: argparse.Namespace) -> None:
+    if args.sizes is not None:
+        raise SystemExit("error: --sizes applies to the synthetic grep benchmark")
+    if args.sample is not None:
+        raise SystemExit("error: --sample applies to --dataset hdfs")
+    if args.mib is not None:
+        raise SystemExit("error: --mib applies to --dataset logdir or --dataset ttfa")
+    lines = REAL_LOG_DEFAULT_LINES if args.lines is None else args.lines
+    if lines <= 0:
+        raise SystemExit("error: --lines must be a positive integer")
+    binary = resolve_binary(args.binary)
+    if not binary.is_file():
+        raise SystemExit(f"error: binary not found: {binary}")
+    model_dir = resolve_model_dir(args.model_dir)
+    if not (model_dir / "model.onnx").is_file() or not (model_dir / "vocab.txt").is_file():
+        raise SystemExit(f"error: {model_dir} must contain model.onnx and vocab.txt")
+    time_bin = gnu_time_binary()
+    if not Path(time_bin).is_file():
+        raise SystemExit(f"error: {time_bin} is required")
+    root = ensure_real_log_root(args.real_log_root, lines)
+    cases = []
+    with tempfile.TemporaryDirectory(prefix="nesso-bench-real-log-") as tmp:
+        work = Path(tmp)
+        for corpus_name, filename in REAL_LOG_FILES.items():
+            log_path, input_bytes = prepare_real_log(root / filename, work, lines)
+            query = REAL_LOG_QUERIES[corpus_name]
+            for threads in REAL_LOG_THREAD_COUNTS:
+                env = {"NESSO_THREADS": str(threads), "NESSO_TRACE": "1"}
+                corpus = work / f"{corpus_name}.{threads}.nesso"
+                commands = []
+                corpus_bytes = None
+                specs = (
+                    (
+                        "index",
+                        None,
+                        [
+                            str(binary),
+                            "index",
+                            "-o",
+                            str(corpus),
+                            str(log_path),
+                            "--model-dir",
+                            str(model_dir),
+                            "--quiet",
+                        ],
+                        True,
+                        False,
+                    ),
+                    (
+                        "grep",
+                        None,
+                        [
+                            str(binary),
+                            "grep",
+                            query,
+                            str(log_path),
+                            "--model-dir",
+                            str(model_dir),
+                            "-k",
+                            "5",
+                            "--quiet",
+                        ],
+                        False,
+                        True,
+                    ),
+                    (
+                        "search",
+                        "auto",
+                        [
+                            str(binary),
+                            "search",
+                            query,
+                            "-i",
+                            str(corpus),
+                            "--model-dir",
+                            str(model_dir),
+                            "-k",
+                            "5",
+                        ],
+                        False,
+                        True,
+                    ),
+                    (
+                        "search",
+                        "dense",
+                        [
+                            str(binary),
+                            "search",
+                            query,
+                            "-i",
+                            str(corpus),
+                            "--mode",
+                            "dense",
+                            "--model-dir",
+                            str(model_dir),
+                            "-k",
+                            "5",
+                        ],
+                        False,
+                        True,
+                    ),
+                )
+                for name, mode, argv, track_corpus, need_stdout in specs:
+                    print(
+                        f"bench: real-log {corpus_name} threads={threads} {name}"
+                        + (f" mode={mode}" if mode else ""),
+                        flush=True,
+                    )
+                    command, measured = real_log_command(
+                        name=name,
+                        mode=mode,
+                        argv=argv,
+                        timeout=args.timeout,
+                        time_path=work / f"{corpus_name}.{threads}.{name}.{mode or 'none'}.time",
+                        env=env,
+                        lines=lines,
+                        input_bytes=input_bytes,
+                        corpus=corpus if track_corpus or corpus.is_file() else None,
+                        need_stdout=need_stdout,
+                    )
+                    if track_corpus and measured is not None:
+                        corpus_bytes = measured
+                    if corpus_bytes is not None and command["corpusBytes"] is None:
+                        command["corpusBytes"] = corpus_bytes
+                    status = "ok" if command["ok"] else command.get("error", "failed")
+                    print(
+                        f"bench: {corpus_name} threads={threads} {name} {status} "
+                        f"wall={command['wallSeconds']}s lines/s={command['linesPerSecond']} "
+                        f"peak={command['peakRssBytes']} corpusBytes={command['corpusBytes']}",
+                        flush=True,
+                    )
+                    commands.append(command)
+                cases.append(
+                    {
+                        "corpus": corpus_name,
+                        "threads": str(threads),
+                        "query": query,
+                        "lines": lines,
+                        "inputBytes": input_bytes,
+                        "corpusBytes": corpus_bytes,
+                        "commands": commands,
+                    }
+                )
+    sha = git_sha()
+    payload = real_log_payload(
+        sha=sha,
+        binary=binary,
+        cpu=cpu_model(),
+        nproc=logical_cpus(),
+        lines=lines,
+        cases=cases,
+    )
+    output = args.output or (ROOT / "bench" / "results" / f"{sha}.real-log.json")
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+    print(f"bench: wrote {output}")
+    if any(not command["ok"] for case in cases for command in case["commands"]):
+        raise SystemExit(1)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--binary", help="Path to the nesso executable")
     parser.add_argument("--model-dir", help="Directory with model.onnx and vocab.txt")
     parser.add_argument(
         "--dataset",
-        choices=("hdfs", "logdir", "ttfa", "search-profile"),
+        choices=("hdfs", "logdir", "ttfa", "search-profile", "real-log"),
         help=(
             "hdfs indexes the Loghub sample. logdir indexes a generated log directory "
             "and runs one search. ttfa indexes a generated bundle directory and runs one search. "
             "search-profile indexes one generated log and splits one search into corpus read, "
-            "model load, query embedding, and distance"
+            "model load, query embedding, and distance. real-log times index, grep, and search "
+            "on the first N lines of HDFS_v1, BGL, and Thunderbird"
         ),
     )
     parser.add_argument(
@@ -1475,7 +1757,8 @@ def main() -> None:
         help=(
             "Line count for --dataset hdfs (repeat the sample), --dataset logdir "
             "(generate the tree), --dataset ttfa / --ttfa (generate the bundle), "
-            "or --dataset search-profile (generate the log)"
+            "--dataset search-profile (generate the log), or --dataset real-log "
+            "(first N lines of each Loghub set, never repeated)"
         ),
     )
     parser.add_argument(
@@ -1485,6 +1768,11 @@ def main() -> None:
         help="Build the logdir or ttfa tree until the on-disk files reach this many MiB",
     )
     parser.add_argument("--sample", type=Path, help="HDFS sample to repeat (default: scripts/fetch-loghub)")
+    parser.add_argument(
+        "--real-log-root",
+        type=Path,
+        help="Directory of HDFS_1m.log, BGL_1m.log, and Thunderbird_1m.log (default: fetch into build/bench)",
+    )
     parser.add_argument(
         "--sizes",
         default=None,
@@ -1511,12 +1799,17 @@ def main() -> None:
     if args.dataset == "search-profile":
         run_search_profile(args)
         return
+    if args.dataset == "real-log":
+        run_real_log(args)
+        return
     if args.mib is not None:
         raise SystemExit("error: --mib applies to --dataset logdir or --dataset ttfa")
     if args.sample is not None:
         raise SystemExit("error: --sample applies to --dataset hdfs")
     if args.lines is not None:
-        raise SystemExit("error: --lines applies to --dataset hdfs, --dataset logdir, or --dataset ttfa")
+        raise SystemExit(
+            "error: --lines applies to --dataset hdfs, --dataset logdir, --dataset ttfa, or --dataset real-log"
+        )
 
     binary = resolve_binary(args.binary)
     if not binary.is_file():

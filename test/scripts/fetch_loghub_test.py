@@ -1,11 +1,14 @@
 import hashlib
 import importlib.machinery
 import importlib.util
+import io
 import pathlib
 import subprocess
 import sys
+import tarfile
 import tempfile
 import unittest
+import zipfile
 
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
@@ -89,6 +92,142 @@ class FetchLoghubTest(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertIn("wrote", result.stdout)
             self.assertEqual(dest.read_text(encoding="utf-8"), payload)
+
+    def test_full_set_urls_are_pinned_to_the_zenodo_record(self) -> None:
+        module = load_fetch()
+        self.assertEqual(module.ZENODO_RECORD, "8196385")
+        self.assertEqual(set(module.FULL_SETS), {"hdfs-v1", "bgl", "thunderbird"})
+        for spec in module.FULL_SETS.values():
+            self.assertIn(f"/records/{module.ZENODO_RECORD}/", spec.url)
+            self.assertNotIn("/latest", spec.url)
+            self.assertEqual(len(spec.archive_md5), 32)
+            self.assertEqual(len(spec.archive_sha256), 64)
+            self.assertEqual(len(spec.prefix_sha256), 64)
+            self.assertNotIn("0" * 64, (spec.archive_sha256, spec.prefix_sha256))
+
+    def test_zip_prefix_keeps_the_first_lines_and_rejects_a_bad_archive_pin(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            directory = pathlib.Path(temp)
+            archive = directory / "sample.zip"
+            payload = b"one\ntwo\nthree\nfour\n"
+            with zipfile.ZipFile(archive, "w") as handle:
+                handle.writestr("HDFS.log", payload)
+            digest = hashlib.sha256(archive.read_bytes()).hexdigest()
+            dest = directory / "HDFS_1m.log"
+            bad = run_fetch(
+                "--dataset",
+                "hdfs-v1",
+                "--url",
+                archive.as_uri(),
+                "--sha256",
+                "0" * 64,
+                "--lines",
+                "2",
+                "--dest",
+                str(dest),
+            )
+            self.assertEqual(bad.returncode, 1, bad.stdout)
+            self.assertIn("sha256 mismatch", bad.stderr)
+            self.assertFalse(dest.exists())
+            self.assertFalse(list(directory.glob("*.partial")))
+            self.assertFalse(list(directory.glob("*.archive")))
+            good = run_fetch(
+                "--dataset",
+                "hdfs-v1",
+                "--url",
+                archive.as_uri(),
+                "--sha256",
+                digest,
+                "--lines",
+                "2",
+                "--dest",
+                str(dest),
+            )
+            self.assertEqual(good.returncode, 0, good.stderr)
+            self.assertEqual(dest.read_bytes(), b"one\ntwo\n")
+            short = run_fetch(
+                "--dataset",
+                "hdfs-v1",
+                "--url",
+                archive.as_uri(),
+                "--sha256",
+                digest,
+                "--lines",
+                "9",
+                "--dest",
+                str(directory / "short.log"),
+            )
+            self.assertEqual(short.returncode, 1, short.stdout)
+            self.assertIn("need 9", short.stderr)
+
+    def test_tar_prefix_and_prefix_pin_mismatch_and_cache(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            directory = pathlib.Path(temp)
+            archive = directory / "sample.tar.gz"
+            payload = b"alpha\nbeta\ngamma\n"
+            with tarfile.open(archive, "w:gz") as handle:
+                info = tarfile.TarInfo("nested/Thunderbird.log")
+                info.size = len(payload)
+                handle.addfile(info, io.BytesIO(payload))
+            digest = hashlib.sha256(archive.read_bytes()).hexdigest()
+            dest = directory / "Thunderbird_1m.log"
+            prefix = hashlib.sha256(b"alpha\nbeta\n").hexdigest()
+            mismatch = run_fetch(
+                "--dataset",
+                "thunderbird",
+                "--url",
+                archive.as_uri(),
+                "--sha256",
+                digest,
+                "--lines",
+                "2",
+                "--prefix-sha256",
+                "a" * 64,
+                "--dest",
+                str(dest),
+            )
+            self.assertEqual(mismatch.returncode, 1, mismatch.stdout)
+            self.assertIn("prefix sha256 mismatch", mismatch.stderr)
+            self.assertFalse(dest.exists())
+            first = run_fetch(
+                "--dataset",
+                "thunderbird",
+                "--url",
+                archive.as_uri(),
+                "--sha256",
+                digest,
+                "--lines",
+                "2",
+                "--prefix-sha256",
+                prefix,
+                "--dest",
+                str(dest),
+            )
+            self.assertEqual(first.returncode, 0, first.stderr)
+            self.assertEqual(dest.read_bytes(), b"alpha\nbeta\n")
+            archive.unlink()
+            second = run_fetch(
+                "--dataset",
+                "thunderbird",
+                "--url",
+                archive.as_uri(),
+                "--sha256",
+                digest,
+                "--lines",
+                "2",
+                "--prefix-sha256",
+                prefix,
+                "--dest",
+                str(dest),
+            )
+            self.assertEqual(second.returncode, 0, second.stderr)
+            self.assertIn("cached", second.stdout)
+            self.assertNotIn("wrote", second.stdout)
+
+    def test_hdfs_2k_rejects_a_line_prefix(self) -> None:
+        result = run_fetch("--dataset", "hdfs-2k", "--lines", "10")
+        self.assertEqual(result.returncode, 1, result.stdout)
+        self.assertIn("hdfs-2k", result.stderr)
 
 
 if __name__ == "__main__":

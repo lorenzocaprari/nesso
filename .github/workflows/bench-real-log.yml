@@ -1,0 +1,305 @@
+name: Real-log bench
+
+# Not a Pipeline job. Schedule and workflow_dispatch on main only.
+# Pull requests keep the synthetic bench in .github/workflows/ci.yml.
+on:
+  schedule:
+    # 05:47 UTC, after the Pipeline nightly at 03:17 UTC.
+    - cron: "47 5 * * *"
+  workflow_dispatch:
+    inputs:
+      force_log_refetch:
+        description: Ignore the truncated Loghub cache and download the prefixes again
+        type: boolean
+        default: false
+      record_history:
+        description: Append wall times to gh-pages under dev/bench-real-log
+        type: boolean
+        default: true
+
+concurrency:
+  group: real-log-bench-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  REGISTRY: ghcr.io
+  CONAN_HOME: /opt/conan2
+  CONAN_WERROR_ARGS: "-c user.nesso:werror=True"
+  NESSO_BENCH_RSS_TOLERANCE: "0.15"
+  NESSO_BENCH_WALL_TOLERANCE: "0.15"
+
+jobs:
+  guard:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
+        with:
+          egress-policy: audit
+
+      - name: Require schedule on main or a manual dispatch
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          set -euo pipefail
+          if [[ "${EVENT_NAME}" == "schedule" ]]; then
+            if [[ "${GITHUB_REF}" != "refs/heads/main" ]]; then
+              echo "bench-real-log: schedule refuses ${GITHUB_REF}" >&2
+              exit 1
+            fi
+            exit 0
+          fi
+          if [[ "${EVENT_NAME}" != "workflow_dispatch" ]]; then
+            echo "bench-real-log: refusing event ${EVENT_NAME}" >&2
+            exit 1
+          fi
+
+  resolve:
+    needs: [guard]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    outputs:
+      image: ${{ steps.select.outputs.image }}
+    steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
+        with:
+          egress-policy: audit
+
+      - name: Checkout Repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Resolve image reference
+        id: select
+        shell: bash
+        env:
+          REGISTRY_NAME: ${{ env.REGISTRY }}
+        run: |
+          set -euo pipefail
+          owner_lc="$(printf '%s' "${GITHUB_REPOSITORY_OWNER}" | tr '[:upper:]' '[:lower:]')"
+          deps_hash="$(./scripts/ci/build-env-hash amd64)"
+          echo "image=${REGISTRY_NAME}/${owner_lc}/nesso-build-env:deps-${deps_hash}" >> "${GITHUB_OUTPUT}"
+
+  bench:
+    needs: [guard, resolve]
+    if: github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    permissions:
+      contents: read
+      packages: read
+      actions: write
+    container:
+      image: ${{ needs.resolve.outputs.image }} # zizmor: ignore[unpinned-images] deps-<hash> tag, not a digest
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Restore MiniLM models
+        id: models
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: models
+          key: minilm-${{ hashFiles('scripts/fetch-model') }}
+
+      - name: Fetch MiniLM models
+        if: steps.models.outputs.cache-hit != 'true'
+        run: ./scripts/fetch-model models
+
+      - name: Restore truncated Loghub logs
+        id: logs
+        if: github.event_name != 'workflow_dispatch' || inputs.force_log_refetch != true
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            build/bench/HDFS_1m.log
+            build/bench/BGL_1m.log
+            build/bench/Thunderbird_1m.log
+          key: loghub-1m-${{ hashFiles('scripts/fetch-loghub') }}
+
+      - name: Fetch truncated Loghub logs
+        run: python3 scripts/fetch-loghub --dataset all-full
+
+      - name: Install Dependencies (Conan)
+        run: |
+          conan profile detect --force
+          conan install . -pr:h ./conan/profiles/gcc-26 -pr:b default --lockfile=conan.lock --build=missing --no-remote -o tests=False $CONAN_WERROR_ARGS
+
+      - name: Build
+        run: conan build . -pr:h ./conan/profiles/gcc-26 -pr:b default --lockfile=conan.lock --build=missing --no-remote -o tests=False $CONAN_WERROR_ARGS
+
+      - name: Run real-log benchmark
+        run: |
+          set -euo pipefail
+          mem_kb=$(awk '/^MemTotal:/ {print $2}' /proc/meminfo)
+          export NESSO_BENCH_AS_LIMIT_KB=$((mem_kb * 3 / 4))
+          python3 scripts/bench --dataset real-log --binary build/Release/src/nesso --timeout 3600 \
+            --output bench/results/real-log.json
+
+      - name: Gate peak RSS and report speed
+        if: always() && !cancelled()
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          HISTORY_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          if [[ ! -s bench/results/real-log.json ]]; then
+            echo "bench-real-log: missing bench/results/real-log.json" >&2
+            exit 1
+          fi
+          python3 scripts/bench-real-log-compare \
+            --result bench/results/real-log.json \
+            --repo "${HISTORY_REPO}"
+
+      - name: Note truncated logs are ready to cache
+        id: logfiles
+        if: always() && !cancelled()
+        shell: bash
+        run: |
+          set -euo pipefail
+          ready=false
+          if [[ -s build/bench/HDFS_1m.log && -s build/bench/BGL_1m.log && -s build/bench/Thunderbird_1m.log ]]; then
+            ready=true
+          fi
+          echo "ready=${ready}" >> "${GITHUB_OUTPUT}"
+
+      - name: Save truncated Loghub logs
+        if: always() && !cancelled() && steps.logs.outputs.cache-hit != 'true' && steps.logfiles.outputs.ready == 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            build/bench/HDFS_1m.log
+            build/bench/BGL_1m.log
+            build/bench/Thunderbird_1m.log
+          key: loghub-1m-${{ hashFiles('scripts/fetch-loghub') }}
+
+      - name: Upload benchmark results
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: real-log-bench
+          path: bench/results/real-log.json
+          if-no-files-found: warn
+
+  # Records wall time on gh-pages under dev/bench-real-log. Peak RSS stays a
+  # hard gate in the bench job. This chart is not a second gate.
+  history:
+    needs: [bench]
+    if: >-
+      always() &&
+      !cancelled() &&
+      github.ref == 'refs/heads/main' &&
+      (needs.bench.result == 'success' || needs.bench.result == 'failure') &&
+      (github.event_name == 'schedule' ||
+       (github.event_name == 'workflow_dispatch' && inputs.record_history))
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      actions: read
+      contents: write
+    steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
+        with:
+          egress-policy: audit
+
+      - name: Refuse to record history off main
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          set -euo pipefail
+          if [[ "${EVENT_NAME}" == "pull_request" || "${GITHUB_REF}" != "refs/heads/main" ]]; then
+            echo "bench-real-log: refusing to write gh-pages from ${EVENT_NAME} ${GITHUB_REF}" >&2
+            exit 1
+          fi
+
+      - name: Checkout Repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Download benchmark results
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        continue-on-error: true
+        with:
+          name: real-log-bench
+          path: bench/results
+
+      - name: Export benchmark history
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ ! -s bench/results/real-log.json ]]; then
+            echo "bench-real-log: no real-log.json; nothing to record"
+            exit 0
+          fi
+          python3 scripts/bench-real-log-compare \
+            --result bench/results/real-log.json \
+            --export-only \
+            --export-external bench/results/external.json
+
+      - name: Ensure gh-pages exists
+        if: hashFiles('bench/results/external.json') != ''
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          if gh api --silent "repos/${GITHUB_REPOSITORY}/branches/gh-pages"; then
+            echo "gh-pages exists"
+            exit 0
+          fi
+          payload="$(jq -n \
+            --arg readme $'Benchmark history for nesso. Real-log charts are dev/bench-real-log/index.html.\n' \
+            --arg nojekyll $'\n' \
+            '{tree: [
+              {path: "README.md", mode: "100644", type: "blob", content: $readme},
+              {path: ".nojekyll", mode: "100644", type: "blob", content: $nojekyll}
+            ]}')"
+          tree_sha="$(printf '%s' "${payload}" | gh api --method POST "repos/${GITHUB_REPOSITORY}/git/trees" --input - --jq .sha)"
+          commit_sha="$(gh api --method POST "repos/${GITHUB_REPOSITORY}/git/commits" \
+            -f message='init benchmark history' \
+            -f tree="${tree_sha}" \
+            --jq .sha)"
+          if ! gh api --method POST "repos/${GITHUB_REPOSITORY}/git/refs" \
+            -f ref='refs/heads/gh-pages' \
+            -f sha="${commit_sha}" >/dev/null; then
+            gh api --silent "repos/${GITHUB_REPOSITORY}/branches/gh-pages"
+          fi
+
+      # fail-on-alert and comment-on-alert stay off. Speed warnings are printed
+      # by scripts/bench-real-log-compare. This push only records the point.
+      - name: Store benchmark history
+        if: hashFiles('bench/results/external.json') != ''
+        uses: benchmark-action/github-action-benchmark@4322e5726e6334590d251fc4f92bec0efafc45dc # v1.22.2
+        with:
+          name: nesso real-log
+          tool: customSmallerIsBetter
+          output-file-path: bench/results/external.json
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          auto-push: "true"
+          comment-on-alert: "false"
+          fail-on-alert: "false"
+          summary-always: "true"
+          max-items-in-chart: "500"
+          gh-pages-branch: gh-pages
+          benchmark-data-dir-path: dev/bench-real-log
