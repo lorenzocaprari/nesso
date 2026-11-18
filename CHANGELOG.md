@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-11-18
+
 ### Added
 
 - A nightly real-log benchmark times `nesso index`, `nesso grep`, `nesso search`, and `nesso search --mode dense` on the first 1000000 lines of selected Loghub corpora (Zenodo record 8196385) at `NESSO_THREADS=1` and `8`. The lines are not repeated and are not committed. Thunderbird is streamed from its archive. Peak RSS fails the job when it exceeds 1.5 GiB plus the RSS tolerance. Wall time is compared with the median of recent nights and only warns. The run is `.github/workflows/bench-real-log.yml` (schedule and `workflow_dispatch` on `main`). The Pipeline `bench` job is unchanged.
@@ -233,7 +235,8 @@ First release. Items below are commits reachable from tag `v0.1.0` and the auto-
 - Deterministic embeddings (#72, `3b7a8c6`)
 - Exit codes 0/1/2 and readable failures (#73, `844954f`)
 
-[Unreleased]: https://github.com/lorenzocaprari/nesso/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/lorenzocaprari/nesso/compare/v0.3.1...HEAD
+[0.3.1]: https://github.com/lorenzocaprari/nesso/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/lorenzocaprari/nesso/compare/v0.2.1...v0.3.0
 [0.2.1]: https://github.com/lorenzocaprari/nesso/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/lorenzocaprari/nesso/compare/v0.1.0...v0.2.0
