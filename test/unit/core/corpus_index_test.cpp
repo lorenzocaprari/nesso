@@ -840,6 +840,27 @@ TEST_CASE("v3 file open failures stay distinct from corrupt corpora", "[corpus][
         REQUIRE_FALSE(rejected);
         CHECK(rejected.error() == EngineError::FileOpenFailure);
     }
+    SECTION("finish cannot encode after the terms spill is removed")
+    {
+        const auto path = dir.Path() / "corpus.nesso";
+        auto writer = CorpusWriter::Create(path, Policy());
+        REQUIRE(writer);
+        REQUIRE(writer->AddSource({.path = "-", .stored_only = true}) == 0);
+        REQUIRE(writer->AddDistinct("alpha", std::array<float, 2>{1.F, 0.F}) == 0);
+        const CorpusLine line{.line_number = 1, .distinct_id = 0, .stored_text = "alpha"};
+        const std::vector<std::string> terms = TermsOf("alpha");
+        REQUIRE(writer->AddLines(std::span{&line, 1}, std::span{&terms, 1}));
+        for (const auto &entry : std::filesystem::directory_iterator(dir.Path()))
+        {
+            if (entry.path().filename().string().find(".terms.") != std::string::npos)
+            {
+                std::filesystem::remove(entry.path());
+            }
+        }
+        const auto rejected = writer->Finish();
+        REQUIRE_FALSE(rejected);
+        CHECK(rejected.error() == EngineError::FileOpenFailure);
+    }
 }
 
 TEST_CASE("v3 map rejects a policy dimension that disagrees with the header", "[corpus][core]")
