@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- A nightly real-log benchmark times `nesso index`, `nesso grep`, `nesso search`, and `nesso search --mode dense` on the first 1000000 lines of Loghub HDFS_v1, BGL, and Thunderbird (Zenodo record 8196385) at `NESSO_THREADS=1` and `8`. The lines are not repeated and are not committed. Thunderbird is streamed from its archive. Peak RSS fails the job when it exceeds 1.5 GiB plus the RSS tolerance. Wall time is compared with the median of recent nights and only warns. The run is `.github/workflows/bench-real-log.yml` (schedule and `workflow_dispatch` on `main`). The Pipeline `bench` job is unchanged.
+
 ### Fixed
 
 - `nesso index` builds the corpus lexical section from the spilled per-line terms with bounded unique-term runs and a streamed spill copy, so Finish peak RSS no longer grows with input size. Corpus bytes stay identical to the previous in-memory encoder. The Finish working-set budget is the internal constant 1.5 GiB (`CORPUS_WRITER_MEMORY_BUDGET_BYTES`); there is no new CLI flag. On the public Loghub HDFS sample repeated to 1M lines, peak RSS was about 199 MiB at `NESSO_THREADS=1` and about 240 MiB at `8` (was about 1.3 GiB on v0.3.0). Reproduce with `./scripts/check-index-rss`.

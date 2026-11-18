@@ -1,0 +1,280 @@
+#!/usr/bin/env python3
+"""Gate a real-log bench result.
+
+Peak RSS is a hard failure when any timed command exceeds 1.5 GiB times
+(1 + the RSS tolerance). Wall time is compared with the median of recent
+nightly points and only warns. A missing history warns and does not fail.
+"""
+
+import argparse
+import json
+import os
+import sys
+import urllib.error
+import urllib.request
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+RSS_BUDGET_BYTES = 1536 * 1024 * 1024
+HISTORY_WINDOW = 20
+HISTORY_MARKER = "window.BENCHMARK_DATA ="
+HISTORY_PATH = "dev/bench-real-log/data.js"
+
+
+def load_json(path: Path) -> dict:
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise SystemExit(f"error: cannot read {path}: {exc}") from exc
+
+
+def resolve_tolerance(explicit: float | None, env_name: str) -> float:
+    raw = None if explicit is None else str(explicit)
+    if raw is None:
+        raw = os.environ.get(env_name, "0.15")
+    try:
+        value = float(raw)
+    except ValueError as exc:
+        raise SystemExit(f"error: invalid tolerance: {exc}") from exc
+    if value < 0:
+        raise SystemExit(f"error: invalid tolerance: {raw}")
+    return value
+
+
+def metric_name(case: dict, command: dict) -> str:
+    label = str(command.get("name", "command"))
+    if label == "search" and command.get("mode") == "dense":
+        label = "search-dense"
+    return f"real-log/{case.get('corpus')}/threads-{case.get('threads')}/{label}/wall"
+
+
+def median(values: list[float]) -> float:
+    ordered = sorted(values)
+    count = len(ordered)
+    mid = count // 2
+    if count % 2 == 1:
+        return ordered[mid]
+    return (ordered[mid - 1] + ordered[mid]) / 2.0
+
+
+def rss_ceiling(tolerance: float) -> float:
+    return RSS_BUDGET_BYTES * (1.0 + tolerance)
+
+
+def rss_errors(payload: dict, tolerance: float) -> list[str]:
+    ceiling = rss_ceiling(tolerance)
+    errors = []
+    for case in payload.get("cases", []):
+        if not isinstance(case, dict):
+            continue
+        for command in case.get("commands", []):
+            if not isinstance(command, dict):
+                continue
+            label = metric_name(case, command)
+            peak = command.get("peakRssBytes")
+            if isinstance(peak, bool) or not isinstance(peak, (int, float)):
+                errors.append(f"error: {label} missing peak RSS")
+                continue
+            if peak > ceiling:
+                errors.append(f"error: {label} peak RSS {int(peak)} bytes exceeds {int(ceiling)} bytes")
+    return errors
+
+
+def _append_wall(series: dict[str, list[float]], name: str, value: object) -> None:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return
+    series.setdefault(name, []).append(float(value))
+
+
+def walls_from_runs(runs: list) -> dict[str, list[float]]:
+    series: dict[str, list[float]] = {}
+    for payload in runs:
+        if not isinstance(payload, dict):
+            continue
+        for case in payload.get("cases", []):
+            if not isinstance(case, dict):
+                continue
+            for command in case.get("commands", []):
+                if not isinstance(command, dict):
+                    continue
+                _append_wall(series, metric_name(case, command), command.get("wallSeconds"))
+    return series
+
+
+def walls_from_benchmark_data(payload: dict) -> dict[str, list[float]]:
+    series: dict[str, list[float]] = {}
+    entries = payload.get("entries", {})
+    runs: list = []
+    if isinstance(entries, dict):
+        for value in entries.values():
+            if isinstance(value, list):
+                runs.extend(value)
+    for run in runs:
+        if not isinstance(run, dict):
+            continue
+        for bench in run.get("benches", []):
+            if not isinstance(bench, dict):
+                continue
+            name = bench.get("name")
+            if isinstance(name, str):
+                _append_wall(series, name, bench.get("value"))
+    return series
+
+
+def parse_history_text(text: str) -> dict[str, list[float]]:
+    raw = text.strip()
+    if raw.startswith(HISTORY_MARKER):
+        raw = raw[len(HISTORY_MARKER) :].strip()
+        if raw.endswith(";"):
+            raw = raw[:-1]
+    try:
+        payload = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise SystemExit(f"error: cannot read history: {exc}") from exc
+    if isinstance(payload, dict) and "runs" in payload:
+        runs = payload["runs"]
+        if not isinstance(runs, list):
+            raise SystemExit("error: history runs must be a list")
+        return walls_from_runs(runs)
+    if isinstance(payload, dict):
+        return walls_from_benchmark_data(payload)
+    raise SystemExit("error: history must be a JSON object")
+
+
+def load_history(path: Path | None) -> dict[str, list[float]] | None:
+    if path is None:
+        return None
+    if not path.is_file():
+        return None
+    return parse_history_text(path.read_text(encoding="utf-8"))
+
+
+def fetch_github_history(repo: str, token: str | None) -> str | None:
+    if repo.count("/") != 1 or not all(part and "/" not in part for part in repo.split("/")):
+        raise SystemExit("error: --repo must be owner/name")
+    url = f"https://api.github.com/repos/{repo}/contents/{HISTORY_PATH}?ref=gh-pages"
+    request = urllib.request.Request(
+        url,
+        headers={
+            "User-Agent": "nesso-bench-real-log",
+            "Accept": "application/vnd.github.raw",
+        },
+    )
+    if token:
+        request.add_header("Authorization", f"Bearer {token}")
+    try:
+        with urllib.request.urlopen(request, timeout=60) as response:
+            return response.read().decode("utf-8")
+    except urllib.error.HTTPError as exc:
+        if exc.code == 404:
+            return None
+        print(f"warning: history request failed: HTTP {exc.code}", file=sys.stderr)
+        return None
+    except urllib.error.URLError as exc:
+        print(f"warning: history request failed: {exc}", file=sys.stderr)
+        return None
+
+
+def speed_warnings(payload: dict, series: dict[str, list[float]] | None, tolerance: float) -> list[str]:
+    if not series:
+        return ["warning: no nightly history; speed comparison skipped"]
+    warnings = []
+    for case in payload.get("cases", []):
+        if not isinstance(case, dict):
+            continue
+        for command in case.get("commands", []):
+            if not isinstance(command, dict):
+                continue
+            key = metric_name(case, command)
+            samples = series.get(key, [])[-HISTORY_WINDOW:]
+            wall = command.get("wallSeconds")
+            if not samples:
+                warnings.append(f"warning: {key}: no history")
+                continue
+            if isinstance(wall, bool) or not isinstance(wall, (int, float)):
+                warnings.append(f"warning: {key}: missing wall time")
+                continue
+            mid = median(samples)
+            if mid > 0 and wall > mid * (1.0 + tolerance):
+                warnings.append(
+                    f"warning: {key} wall {wall}s is above the median {mid}s of the last {len(samples)} nights"
+                )
+    return warnings
+
+
+def external_entries(payload: dict) -> list[dict]:
+    entries = []
+    for case in payload.get("cases", []):
+        if not isinstance(case, dict):
+            continue
+        for command in case.get("commands", []):
+            if not isinstance(command, dict) or not command.get("ok"):
+                continue
+            wall = command.get("wallSeconds")
+            if isinstance(wall, bool) or not isinstance(wall, (int, float)):
+                continue
+            entries.append({"name": metric_name(case, command), "unit": "s", "value": float(wall)})
+    return entries
+
+
+def append_summary(text: str) -> None:
+    path = os.environ.get("GITHUB_STEP_SUMMARY")
+    if not path or not text:
+        return
+    with open(path, "a", encoding="utf-8") as handle:
+        handle.write(text)
+        if not text.endswith("\n"):
+            handle.write("\n")
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--result", type=Path, required=True, help="real-log bench JSON")
+    parser.add_argument("--history", type=Path, help="Previous nights as JSON or gh-pages data.js")
+    parser.add_argument("--repo", help="owner/name whose gh-pages dev/bench-real-log history is read")
+    parser.add_argument("--rss-tolerance", type=float, default=None, help="Fractional peak-RSS increase over 1.5 GiB")
+    parser.add_argument("--wall-tolerance", type=float, default=None, help="Fractional wall increase over the median")
+    parser.add_argument("--export-external", type=Path, help="Write customSmallerIsBetter JSON for benchmark history")
+    parser.add_argument("--export-only", action="store_true", help="Write --export-external and skip the gates")
+    args = parser.parse_args(argv)
+    if args.export_only and args.export_external is None:
+        raise SystemExit("error: --export-only requires --export-external")
+    payload = load_json(args.result)
+    if args.export_external is not None:
+        args.export_external.parent.mkdir(parents=True, exist_ok=True)
+        encoded = json.dumps(external_entries(payload), indent=2) + "\n"
+        args.export_external.write_text(encoded, encoding="utf-8")
+        print(f"bench-real-log: wrote {args.export_external}")
+    if args.export_only:
+        return 0
+    rss_tolerance = resolve_tolerance(args.rss_tolerance, "NESSO_BENCH_RSS_TOLERANCE")
+    wall_tolerance = resolve_tolerance(args.wall_tolerance, "NESSO_BENCH_WALL_TOLERANCE")
+    series: dict[str, list[float]] | None
+    if args.history is not None:
+        series = load_history(args.history)
+    elif args.repo:
+        token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
+        text = fetch_github_history(args.repo, token)
+        series = None if text is None else parse_history_text(text)
+    else:
+        series = None
+    errors = rss_errors(payload, rss_tolerance)
+    warnings = speed_warnings(payload, series, wall_tolerance)
+    lines = warnings + errors
+    if lines:
+        print("\n".join(lines))
+    append_summary("\n".join(["### Real-log benchmark", ""] + [f"- {line}" for line in lines]))
+    for error in errors:
+        print(error, file=sys.stderr)
+    return 1 if errors else 0
+
+
+if __name__ == "__main__":
+    try:
+        raise SystemExit(main())
+    except SystemExit as exc:
+        code = exc.code
+        if isinstance(code, str):
+            print(code, file=sys.stderr)
+            raise SystemExit(1) from exc
+        raise
