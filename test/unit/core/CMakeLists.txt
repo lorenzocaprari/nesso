@@ -34,6 +34,13 @@ add_test(NAME lexical_terms_test COMMAND lexical_terms_test)
 target_link_libraries(lexical_terms_test PRIVATE nesso_options nesso_core
                                                  Catch2::Catch2WithMain)
 
+add_executable(corpus_lexical_spill_test corpus_lexical_spill_test.cpp)
+add_test(NAME corpus_lexical_spill_test COMMAND corpus_lexical_spill_test)
+target_include_directories(corpus_lexical_spill_test
+                           PRIVATE "${CMAKE_SOURCE_DIR}/src/core")
+target_link_libraries(corpus_lexical_spill_test
+                      PRIVATE nesso_options nesso_core Catch2::Catch2WithMain)
+
 add_executable(bm25_test bm25_test.cpp)
 add_test(NAME bm25_test COMMAND bm25_test)
 target_link_libraries(bm25_test PRIVATE nesso_options nesso_core
@@ -63,6 +70,7 @@ set_tests_properties(
   dedup_test
   sha256_test
   lexical_terms_test
+  corpus_lexical_spill_test
   bm25_test
   query_class_test
   score_fusion_test

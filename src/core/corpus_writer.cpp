@@ -41,7 +41,7 @@ namespace nesso::core
 using detail::AlignUp;
 using detail::AtEnd;
 using detail::CopyBytes;
-using detail::EncodeLexicalSection;
+using detail::EncodeLexicalSectionSpilled;
 using detail::HEADER_BYTES;
 using detail::LINE_ARRAY_ELEMENT;
 using detail::LINE_RECORD_BYTES;
@@ -216,6 +216,7 @@ struct CorpusWriter::Impl
     SpillFile texts;
     SpillFile vectors;
     SpillFile terms;
+    std::filesystem::path lexical_spill;
     std::vector<SourceInfo> sources;
     std::unordered_set<std::string> distinct_texts;
     std::vector<std::uint32_t> uses;
@@ -245,6 +246,7 @@ void CorpusWriter::DiscardSpills(Impl *impl) noexcept
     RemoveFile(impl->texts.path);
     RemoveFile(impl->vectors.path);
     RemoveFile(impl->terms.path);
+    RemoveFile(impl->lexical_spill);
     RemoveFile(impl->temporary);
 }
 
@@ -522,43 +524,6 @@ struct CorpusOffsets
     std::uint64_t matrix_bytes = 0;
 };
 
-static std::expected<std::vector<std::vector<std::string>>, EngineError> ReadSpilledTerms(std::istream &terms,
-                                                                                          std::uint64_t line_count)
-{
-    std::vector<std::vector<std::string>> line_terms;
-    line_terms.reserve(static_cast<std::size_t>(line_count));
-    for (std::uint64_t index = 0; index < line_count; ++index)
-    {
-        std::uint32_t count = 0;
-        if (!ReadU32Stream(terms, count))
-        {
-            return std::unexpected(EngineError::FileOpenFailure);
-        }
-        std::vector<std::string> row;
-        row.reserve(count);
-        for (std::uint32_t term_index = 0; term_index < count; ++term_index)
-        {
-            std::uint32_t length = 0;
-            if (!ReadU32Stream(terms, length) || length > MAX_TEXT_BYTES)
-            {
-                return std::unexpected(EngineError::FileOpenFailure);
-            }
-            std::string term(length, '\0');
-            if (length != 0 && !terms.read(term.data(), static_cast<std::streamsize>(length)))
-            {
-                return std::unexpected(EngineError::FileOpenFailure);
-            }
-            row.push_back(std::move(term));
-        }
-        line_terms.push_back(std::move(row));
-    }
-    if (!AtEnd(terms))
-    {
-        return std::unexpected(EngineError::CorruptDatabase);
-    }
-    return line_terms;
-}
-
 struct CorpusLayoutSizes
 {
     std::uint64_t line_count = 0;
@@ -706,8 +671,8 @@ struct StoredMatrixCounts
     std::uint64_t stored_bytes = 0;
 };
 
-static bool WriteCorpusStoredAndMatrix(std::istream &lines, std::istream &vectors, std::ostream &output,
-                                       std::span<const std::byte> lexical, const CorpusOffsets &offsets,
+static bool WriteCorpusStoredAndMatrix(std::istream &lines, std::istream &vectors, std::istream &lexical,
+                                       std::ostream &output, const CorpusOffsets &offsets,
                                        const StoredMatrixCounts &counts)
 {
     SpilledLine line;
@@ -719,7 +684,7 @@ static bool WriteCorpusStoredAndMatrix(std::istream &lines, std::istream &vector
         }
     }
     return AtEnd(lines) && counts.stored_cursor == offsets.stored_offset + counts.stored_bytes &&
-           WriteRaw(output, lexical.data(), lexical.size()) &&
+           CopyBytes(lexical, output, offsets.lexical_bytes) && AtEnd(lexical) &&
            WritePadding(output, offsets.matrix_offset - (offsets.lexical_offset + offsets.lexical_bytes)) &&
            CopyBytes(vectors, output, offsets.matrix_bytes);
 }
@@ -732,7 +697,7 @@ struct CorpusEmitMeta
     std::uint64_t distinct_count = 0;
     std::uint64_t text_bytes = 0;
     std::uint64_t stored_bytes = 0;
-    std::span<const std::byte> lexical;
+    std::uint64_t lexical_bytes = 0;
 };
 
 struct CorpusSpillStreams
@@ -740,6 +705,7 @@ struct CorpusSpillStreams
     std::istream *lines = nullptr;
     std::istream *texts = nullptr;
     std::istream *vectors = nullptr;
+    std::istream *lexical = nullptr;
     std::ostream *output = nullptr;
 };
 
@@ -753,7 +719,7 @@ static bool WriteCorpusSections(const CorpusSpillStreams &streams, const CorpusP
                                   .stored_bytes = meta.stored_bytes,
                                   .dimensions = meta.dimensions,
                                   .policy_bytes = policy_text.size(),
-                                  .lexical_bytes = meta.lexical.size()};
+                                  .lexical_bytes = meta.lexical_bytes};
     const CorpusOffsets offsets = CorpusLayoutOffsets(meta.sources, sizes);
     const CorpusHeaderCounts counts{.dimensions = meta.dimensions,
                                     .source_count = meta.sources.size(),
@@ -774,7 +740,7 @@ static bool WriteCorpusSections(const CorpusSpillStreams &streams, const CorpusP
         return false;
     }
     return WriteCorpusStoredAndMatrix(
-        *streams.lines, *streams.vectors, *streams.output, meta.lexical, offsets,
+        *streams.lines, *streams.vectors, *streams.lexical, *streams.output, offsets,
         {.line_count = meta.line_count, .stored_cursor = stored_cursor, .stored_bytes = meta.stored_bytes});
 }
 
@@ -797,23 +763,28 @@ std::expected<void, EngineError> CorpusWriter::Finish()
     std::ifstream lines(impl_->lines.path, std::ios::binary);
     std::ifstream texts(impl_->texts.path, std::ios::binary);
     std::ifstream vectors(impl_->vectors.path, std::ios::binary);
-    std::ifstream terms(impl_->terms.path, std::ios::binary);
-    if (!lines || !texts || !vectors || !terms)
+    if (!lines || !texts || !vectors)
     {
         impl_->failed = true;
         return std::unexpected(EngineError::FileOpenFailure);
     }
-    auto line_terms = ReadSpilledTerms(terms, impl_->line_count);
-    if (!line_terms)
+    auto lexical = EncodeLexicalSectionSpilled(impl_->terms.path, impl_->line_count, impl_->destination);
+    if (!lexical)
     {
         impl_->failed = true;
-        return std::unexpected(line_terms.error());
+        return std::unexpected(lexical.error());
     }
-    const std::vector<std::byte> lexical = EncodeLexicalSection(*line_terms);
-    if (lexical.size() > MAX_LEXICAL_BYTES)
+    impl_->lexical_spill = lexical->path;
+    if (lexical->bytes > MAX_LEXICAL_BYTES)
     {
         impl_->failed = true;
         return std::unexpected(EngineError::CorruptDatabase);
+    }
+    std::ifstream lexical_input(lexical->path, std::ios::binary);
+    if (!lexical_input)
+    {
+        impl_->failed = true;
+        return std::unexpected(EngineError::FileOpenFailure);
     }
     auto temporary = CreateSpill(impl_->destination, "tmp");
     if (!temporary)
@@ -835,9 +806,10 @@ std::expected<void, EngineError> CorpusWriter::Finish()
                               .distinct_count = impl_->uses.size(),
                               .text_bytes = impl_->text_bytes,
                               .stored_bytes = impl_->stored_bytes,
-                              .lexical = lexical};
-    if (!WriteCorpusSections({.lines = &lines, .texts = &texts, .vectors = &vectors, .output = &output}, impl_->policy,
-                             meta))
+                              .lexical_bytes = lexical->bytes};
+    if (!WriteCorpusSections(
+            {.lines = &lines, .texts = &texts, .vectors = &vectors, .lexical = &lexical_input, .output = &output},
+            impl_->policy, meta))
     {
         return fail();
     }
