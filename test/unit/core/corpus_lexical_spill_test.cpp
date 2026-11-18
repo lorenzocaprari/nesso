@@ -14,7 +14,6 @@
 #include <span>
 #include <string>
 #include <string_view>
-#include <sys/stat.h>
 #include <unistd.h>
 #include <vector>
 
@@ -218,16 +217,12 @@ TEST_CASE("spilled lexical encode rejects truncated and overlong term rows", "[c
     }
 }
 
-TEST_CASE("spilled lexical encode rejects an unwritable spill prefix", "[corpus][lexical][spill]")
+TEST_CASE("spilled lexical encode rejects a missing spill parent directory", "[corpus][lexical][spill]")
 {
     const TempDir dir;
     const auto terms_path = dir.Path() / "terms.spill";
     WriteTermsSpill(terms_path, std::vector<std::vector<std::string>>{{"alpha"}, {"bravo"}});
-    const auto locked = dir.Path() / "locked";
-    REQUIRE(std::filesystem::create_directory(locked));
-    REQUIRE(::chmod(locked.c_str(), S_IRUSR | S_IXUSR) == 0);
-    const auto spilled = EncodeLexicalSectionSpilled(terms_path, 2, locked / "out", 96);
-    REQUIRE(::chmod(locked.c_str(), S_IRWXU) == 0);
+    const auto spilled = EncodeLexicalSectionSpilled(terms_path, 2, dir.Path() / "missing" / "out", 96);
     REQUIRE_FALSE(spilled);
     CHECK(spilled.error() == EngineError::FileOpenFailure);
 }
