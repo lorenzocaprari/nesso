@@ -7,27 +7,27 @@ Get a first answer from a sosreport, tarball, zip, or log directory without extr
 Ubuntu 22.04+, Debian 12+, and RHEL/Rocky 9, amd64/x86_64 or arm64/aarch64. The `.deb` and `.rpm` install `/usr/bin/nesso` and the MiniLM files in `/usr/share/nesso`.
 
 ```bash
-curl -fL -o nesso_0.3.0_amd64.deb \
-  https://github.com/lorenzocaprari/nesso/releases/download/v0.3.0/nesso_0.3.0_amd64.deb
-sudo apt install ./nesso_0.3.0_amd64.deb
+curl -fL -o nesso_0.3.1_amd64.deb \
+  https://github.com/lorenzocaprari/nesso/releases/download/v0.3.1/nesso_0.3.1_amd64.deb
+sudo apt install ./nesso_0.3.1_amd64.deb
 
-curl -fL -o nesso_0.3.0_arm64.deb \
-  https://github.com/lorenzocaprari/nesso/releases/download/v0.3.0/nesso_0.3.0_arm64.deb
-sudo apt install ./nesso_0.3.0_arm64.deb
+curl -fL -o nesso_0.3.1_arm64.deb \
+  https://github.com/lorenzocaprari/nesso/releases/download/v0.3.1/nesso_0.3.1_arm64.deb
+sudo apt install ./nesso_0.3.1_arm64.deb
 
-curl -fL -o nesso-0.3.0-1.x86_64.rpm \
-  https://github.com/lorenzocaprari/nesso/releases/download/v0.3.0/nesso-0.3.0-1.x86_64.rpm
-sudo dnf install ./nesso-0.3.0-1.x86_64.rpm
+curl -fL -o nesso-0.3.1-1.x86_64.rpm \
+  https://github.com/lorenzocaprari/nesso/releases/download/v0.3.1/nesso-0.3.1-1.x86_64.rpm
+sudo dnf install ./nesso-0.3.1-1.x86_64.rpm
 
-curl -fL -o nesso-0.3.0-1.aarch64.rpm \
-  https://github.com/lorenzocaprari/nesso/releases/download/v0.3.0/nesso-0.3.0-1.aarch64.rpm
-sudo dnf install ./nesso-0.3.0-1.aarch64.rpm
+curl -fL -o nesso-0.3.1-1.aarch64.rpm \
+  https://github.com/lorenzocaprari/nesso/releases/download/v0.3.1/nesso-0.3.1-1.aarch64.rpm
+sudo dnf install ./nesso-0.3.1-1.aarch64.rpm
 ```
 
 `ghcr.io/lorenzocaprari/nesso` stores the model at `/usr/share/nesso` and sets `NESSO_MODEL_DIR` to that directory. The entrypoint is `nesso` (`/usr/local/bin/nesso`). Mount the directory that holds the bundle:
 
 ```bash
-docker run --rm -v "$PWD:/data:ro" -w /data ghcr.io/lorenzocaprari/nesso:v0.3.0 \
+docker run --rm -v "$PWD:/data:ro" -w /data ghcr.io/lorenzocaprari/nesso:v0.3.1 \
   grep "the disk is full" sosreport-host.tar.xz
 ```
 
