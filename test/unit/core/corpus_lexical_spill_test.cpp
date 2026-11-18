@@ -4,6 +4,7 @@
 #include "corpus_detail.hpp"
 
 #include <catch2/catch_all.hpp>
+#include <core/corpus_index.hpp>
 #include <core/lexical_terms.hpp>
 
 #include <cstdint>
@@ -13,15 +14,18 @@
 #include <span>
 #include <string>
 #include <string_view>
+#include <sys/stat.h>
 #include <unistd.h>
 #include <vector>
 
 namespace
 {
 
+using nesso::core::EngineError;
 using nesso::core::TermByteLess;
 using nesso::core::detail::EncodeLexicalSection;
 using nesso::core::detail::EncodeLexicalSectionSpilled;
+using nesso::core::detail::MAX_TEXT_BYTES;
 using nesso::core::detail::WriteRaw;
 using nesso::core::detail::WriteU32;
 
@@ -150,4 +154,85 @@ TEST_CASE("spilled lexical encode rejects a zero memory budget", "[corpus][lexic
     WriteTermsSpill(terms_path, std::vector<std::vector<std::string>>{{"a"}});
     const auto spilled = EncodeLexicalSectionSpilled(terms_path, 1, dir.Path() / "out", 0);
     REQUIRE_FALSE(spilled);
+    CHECK(spilled.error() == EngineError::CorruptDatabase);
+}
+
+TEST_CASE("spilled lexical encode rejects a missing terms spill", "[corpus][lexical][spill]")
+{
+    const TempDir dir;
+    const auto spilled = EncodeLexicalSectionSpilled(dir.Path() / "missing.terms", 1, dir.Path() / "out", 1024);
+    REQUIRE_FALSE(spilled);
+    CHECK(spilled.error() == EngineError::FileOpenFailure);
+}
+
+TEST_CASE("spilled lexical encode rejects truncated and overlong term rows", "[corpus][lexical][spill]")
+{
+    const TempDir dir;
+    SECTION("empty spill with a claimed line")
+    {
+        const auto terms_path = dir.Path() / "empty.spill";
+        REQUIRE(std::ofstream(terms_path, std::ios::binary | std::ios::trunc));
+        const auto spilled = EncodeLexicalSectionSpilled(terms_path, 1, dir.Path() / "out", 1024);
+        REQUIRE_FALSE(spilled);
+        CHECK(spilled.error() == EngineError::FileOpenFailure);
+    }
+    SECTION("term length past MAX_TEXT_BYTES")
+    {
+        const auto terms_path = dir.Path() / "overlong.spill";
+        std::ofstream output(terms_path, std::ios::binary | std::ios::trunc);
+        REQUIRE(output);
+        REQUIRE(WriteU32(output, 1));
+        REQUIRE(WriteU32(output, static_cast<std::uint32_t>(MAX_TEXT_BYTES + 1)));
+        output.close();
+        REQUIRE(output);
+        const auto spilled = EncodeLexicalSectionSpilled(terms_path, 1, dir.Path() / "out", 1024);
+        REQUIRE_FALSE(spilled);
+        CHECK(spilled.error() == EngineError::FileOpenFailure);
+    }
+    SECTION("term body shorter than the length prefix")
+    {
+        const auto terms_path = dir.Path() / "short-body.spill";
+        std::ofstream output(terms_path, std::ios::binary | std::ios::trunc);
+        REQUIRE(output);
+        REQUIRE(WriteU32(output, 1));
+        REQUIRE(WriteU32(output, 8));
+        REQUIRE(WriteRaw(output, "ab", 2));
+        output.close();
+        REQUIRE(output);
+        const auto spilled = EncodeLexicalSectionSpilled(terms_path, 1, dir.Path() / "out", 1024);
+        REQUIRE_FALSE(spilled);
+        CHECK(spilled.error() == EngineError::FileOpenFailure);
+    }
+    SECTION("trailing bytes after complete rows")
+    {
+        const auto terms_path = dir.Path() / "trailing.spill";
+        WriteTermsSpill(terms_path, std::vector<std::vector<std::string>>{{"alpha"}});
+        {
+            std::ofstream output(terms_path, std::ios::binary | std::ios::app);
+            REQUIRE(output);
+            REQUIRE(WriteRaw(output, "x", 1));
+        }
+        const auto spilled = EncodeLexicalSectionSpilled(terms_path, 1, dir.Path() / "out", 1024);
+        REQUIRE_FALSE(spilled);
+        CHECK(spilled.error() == EngineError::CorruptDatabase);
+    }
+}
+
+TEST_CASE("spilled lexical encode rejects an unwritable spill prefix", "[corpus][lexical][spill]")
+{
+    const TempDir dir;
+    const auto terms_path = dir.Path() / "terms.spill";
+    WriteTermsSpill(terms_path, std::vector<std::vector<std::string>>{{"alpha"}, {"bravo"}});
+    const auto locked = dir.Path() / "locked";
+    REQUIRE(std::filesystem::create_directory(locked));
+    REQUIRE(::chmod(locked.c_str(), S_IRUSR | S_IXUSR) == 0);
+    const auto spilled = EncodeLexicalSectionSpilled(terms_path, 2, locked / "out", 96);
+    REQUIRE(::chmod(locked.c_str(), S_IRWXU) == 0);
+    REQUIRE_FALSE(spilled);
+    CHECK(spilled.error() == EngineError::FileOpenFailure);
+}
+
+TEST_CASE("spilled lexical encode keeps duplicate terms in one row", "[corpus][lexical][spill]")
+{
+    ExpectSpilledMatchesOracle(std::vector<std::vector<std::string>>{{"same", "same", "other"}}, 1024);
 }
