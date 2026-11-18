@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795004625657,
+  "lastUpdate": 1795005979276,
   "repoUrl": "https://github.com/lorenzocaprari/nesso",
   "entries": {
     "nesso": [
@@ -8963,6 +8963,60 @@ window.BENCHMARK_DATA = {
           {
             "name": "grep-100000-rss",
             "value": 145096704,
+            "unit": "bytes"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "caprarilorenzo5@gmail.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "committer": {
+            "email": "85455384+lorenzocaprari@users.noreply.github.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "distinct": true,
+          "id": "26ca407a7eeab74be6604d9ba0445d602d566d8b",
+          "message": "ci(bench): run a nightly real-log benchmark with speed and peak-RSS gates",
+          "timestamp": "2026-11-18T13:41:56+01:00",
+          "tree_id": "9422721e6135bf3f881703ff5ea786ee9f4a8270",
+          "url": "https://github.com/lorenzocaprari/nesso/commit/26ca407a7eeab74be6604d9ba0445d602d566d8b"
+        },
+        "date": 1795005978357,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "grep-1000-wall",
+            "value": 0.16,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-1000-rss",
+            "value": 118386688,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-10000-wall",
+            "value": 0.17,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-10000-rss",
+            "value": 118312960,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-100000-wall",
+            "value": 0.37,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-100000-rss",
+            "value": 146612224,
             "unit": "bytes"
           }
         ]
