@@ -1,0 +1,18 @@
+# Seed queries for scripts/eval-retrieval on Loghub Linux_2k.
+# exact_id uses relevant_lines; paraphrase and cause use relevant_events.
+# Not the published benchmark.
+{"id":"exact_01","class":"exact_id","query":"19939","relevant_lines":[1]}
+{"id":"exact_02","class":"exact_id","query":"28568","relevant_lines":[301]}
+{"id":"exact_03","class":"exact_id","query":"19630","relevant_lines":[605]}
+{"id":"exact_04","class":"exact_id","query":"12786","relevant_lines":[905]}
+{"id":"exact_05","class":"exact_id","query":"agpgart","relevant_lines":[2000]}
+{"id":"para_01","class":"paraphrase","query":"process exited abnormally with status 1","relevant_events":["E8"]}
+{"id":"para_02","class":"paraphrase","query":"ticket-based login was rejected","relevant_events":["E61"]}
+{"id":"para_03","class":"paraphrase","query":"DNS notify payload omitted the SOA record","relevant_events":["E75"]}
+{"id":"para_04","class":"paraphrase","query":"authentication aborted by a software connection reset","relevant_events":["E14"]}
+{"id":"para_05","class":"paraphrase","query":"printing daemon finished shutting down","relevant_events":["E37"]}
+{"id":"cause_01","class":"cause","query":"monitored service process crashed with exit code 1","relevant_events":["E8"]}
+{"id":"cause_02","class":"cause","query":"Kerberos ticket check rejected the login","relevant_events":["E61"]}
+{"id":"cause_03","class":"cause","query":"DNS notify message had an empty question SOA","relevant_events":["E75"]}
+{"id":"cause_04","class":"cause","query":"remote auth session aborted mid-handshake","relevant_events":["E14"]}
+{"id":"cause_05","class":"cause","query":"printing daemon completed a clean shutdown","relevant_events":["E37"]}

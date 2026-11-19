@@ -60,6 +60,59 @@ class FetchLoghubTest(unittest.TestCase):
         )
         self.assertEqual(module.HDFS_COMMIT, module.HDFS_URL.split("/")[5])
         self.assertEqual(module.HDFS_COMMIT, module.HDFS_STRUCTURED_URL.split("/")[5])
+        self.assertEqual(module.LOGHUB_COMMIT, module.HDFS_COMMIT)
+
+    def test_samples_2k_pins_and_names(self) -> None:
+        module = load_fetch()
+        self.assertEqual(
+            set(module.SAMPLES_2K),
+            {"hdfs-2k", "bgl-2k", "thunderbird-2k", "openssh-2k", "linux-2k"},
+        )
+        self.assertEqual(set(module.SAMPLES_2K) & set(module.FULL_SETS), set())
+        expected = {
+            "hdfs-2k": (
+                "HDFS",
+                "HDFS_2k.log",
+                PINNED_SHA256,
+                PINNED_STRUCTURED_SHA256,
+            ),
+            "bgl-2k": (
+                "BGL",
+                "BGL_2k.log",
+                "2a819ea540909db682005c9cf948387a40729b5c2e9f19d430e29ce704825496",
+                "3fe74103c0b02a28514534e2a47257a3f770135ca61afd425bbd3b9d6a31fe26",
+            ),
+            "thunderbird-2k": (
+                "Thunderbird",
+                "Thunderbird_2k.log",
+                "903bbfa61c34d4803e4adcb0d726ff2eeb9a2e11971243269a2035fa6c3bbeb0",
+                "c62196d8a3449de765501bbf58c2093452e9d1add439053301d29fdad8a06809",
+            ),
+            "openssh-2k": (
+                "OpenSSH",
+                "OpenSSH_2k.log",
+                "1e4912727fa88245113d41b16a0cd25ceadba7f931e1c406542885b91254264f",
+                "c0996a11545f4b94b435993760afa441a9e373f7bfc9e787afdb8e62f65acb4f",
+            ),
+            "linux-2k": (
+                "Linux",
+                "Linux_2k.log",
+                "b3e20bc1afe732ab1bf3ed1de4bf9c809e4194e02f7dea911d918e5342e8e173",
+                "7c86d7b0ecb961a25f00d9475a154df97613b9974f31ce142a146caa2017c71e",
+            ),
+        }
+        for name, (folder, log_name, log_sha, structured_sha) in expected.items():
+            spec = module.SAMPLES_2K[name]
+            self.assertEqual(spec.folder, folder)
+            self.assertEqual(spec.log_name, log_name)
+            self.assertEqual(spec.log_sha256, log_sha)
+            self.assertEqual(spec.structured_sha256, structured_sha)
+            self.assertEqual(spec.log_url.split("/")[5], module.LOGHUB_COMMIT)
+            self.assertEqual(spec.structured_url.split("/")[5], module.LOGHUB_COMMIT)
+            self.assertIn(f"/{folder}/{log_name}", spec.log_url)
+            self.assertIn(f"/{folder}/{log_name}_structured.csv", spec.structured_url)
+            self.assertNotIn("/master/", spec.log_url)
+            self.assertNotIn("/main/", spec.log_url)
 
     def test_hash_mismatch_fails_and_keeps_no_file(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
@@ -242,6 +295,67 @@ class FetchLoghubTest(unittest.TestCase):
         result = run_fetch("--dataset", "hdfs-2k", "--lines", "10")
         self.assertEqual(result.returncode, 1, result.stdout)
         self.assertIn("hdfs-2k", result.stderr)
+
+    def test_bgl_2k_rejects_a_line_prefix(self) -> None:
+        result = run_fetch("--dataset", "bgl-2k", "--lines", "10")
+        self.assertEqual(result.returncode, 1, result.stdout)
+        self.assertIn("bgl-2k", result.stderr)
+
+    def test_all_2k_fetches_offline_fixtures(self) -> None:
+        module = load_fetch()
+        with tempfile.TemporaryDirectory() as temp:
+            directory = pathlib.Path(temp)
+            dest_dir = directory / "bench"
+            dest_dir.mkdir()
+            fixtures: dict[str, bytes] = {}
+            samples: dict[str, object] = {}
+            for name, old in module.SAMPLES_2K.items():
+                log_payload = f"{name}-log\n".encode()
+                csv_payload = f"{name}-csv\n".encode()
+                log_src = directory / f"{name}.log"
+                csv_src = directory / f"{name}.csv"
+                log_src.write_bytes(log_payload)
+                csv_src.write_bytes(csv_payload)
+                spec = module.Sample2k(
+                    name=name,
+                    folder=old.folder,
+                    log_name=old.log_name,
+                    log_sha256=hashlib.sha256(log_payload).hexdigest(),
+                    structured_sha256=hashlib.sha256(csv_payload).hexdigest(),
+                )
+                samples[name] = spec
+                fixtures[spec.log_url] = log_payload
+                fixtures[spec.structured_url] = csv_payload
+
+            def fake_download(url: str, dest: pathlib.Path, timeout: int = 120) -> None:
+                del timeout
+                if url not in fixtures:
+                    raise AssertionError(f"unexpected url {url}")
+                dest.write_bytes(fixtures[url])
+
+            original_samples = module.SAMPLES_2K
+            original_download = module.download
+            module.SAMPLES_2K = samples
+            module.download = fake_download
+            try:
+                module.main(["--dataset", "all-2k", "--dest-dir", str(dest_dir)])
+            finally:
+                module.SAMPLES_2K = original_samples
+                module.download = original_download
+            for spec in samples.values():
+                self.assertEqual((dest_dir / spec.log_name).read_bytes(), fixtures[spec.log_url])
+                self.assertEqual(
+                    (dest_dir / f"{spec.log_name}_structured.csv").read_bytes(),
+                    fixtures[spec.structured_url],
+                )
+
+    def test_all_2k_rejects_dest_and_overrides(self) -> None:
+        bad_dest = run_fetch("--dataset", "all-2k", "--dest", "/tmp/x.log")
+        self.assertEqual(bad_dest.returncode, 1, bad_dest.stdout)
+        self.assertIn("all-2k", bad_dest.stderr)
+        bad_url = run_fetch("--dataset", "all-2k", "--url", "https://example.invalid/x")
+        self.assertEqual(bad_url.returncode, 1, bad_url.stdout)
+        self.assertIn("all-2k", bad_url.stderr)
 
 
 if __name__ == "__main__":

@@ -11,8 +11,8 @@
 {"id":"para_03","class":"paraphrase","query":"block verification succeeded","relevant_events":["E14"]}
 {"id":"para_04","class":"paraphrase","query":"exception while serving a block","relevant_events":["E3"]}
 {"id":"para_05","class":"paraphrase","query":"ask datanode to delete block","relevant_events":["E4"]}
-{"id":"cause_01","class":"cause","query":"why did PacketResponder stop","relevant_events":["E10"]}
-{"id":"cause_02","class":"cause","query":"why was a new HDFS block allocated","relevant_events":["E7"]}
-{"id":"cause_03","class":"cause","query":"why did block verification succeed","relevant_events":["E14"]}
-{"id":"cause_04","class":"cause","query":"why did serving a block fail","relevant_events":["E3"]}
-{"id":"cause_05","class":"cause","query":"why was a block asked to be deleted","relevant_events":["E4"]}
+{"id":"cause_01","class":"cause","query":"PacketResponder exited before the transfer finished","relevant_events":["E10"]}
+{"id":"cause_02","class":"cause","query":"client needed a fresh block for a write","relevant_events":["E7"]}
+{"id":"cause_03","class":"cause","query":"replica passed checksum verification","relevant_events":["E14"]}
+{"id":"cause_04","class":"cause","query":"datanode threw while serving a block","relevant_events":["E3"]}
+{"id":"cause_05","class":"cause","query":"NameNode instructed a datanode to drop a block","relevant_events":["E4"]}

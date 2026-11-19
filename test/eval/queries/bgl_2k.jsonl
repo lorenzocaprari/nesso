@@ -1,0 +1,18 @@
+# Seed queries for scripts/eval-retrieval on Loghub BGL_2k.
+# exact_id uses relevant_lines; paraphrase and cause use relevant_events.
+# Not the published benchmark.
+{"id":"exact_01","class":"exact_id","query":"0x0b85eee0","relevant_lines":[8]}
+{"id":"exact_02","class":"exact_id","query":"testQboxhang","relevant_lines":[362]}
+{"id":"exact_03","class":"exact_id","query":"0x0d09f1c0","relevant_lines":[821]}
+{"id":"exact_04","class":"exact_id","query":"0x155e28e0","relevant_lines":[1151]}
+{"id":"exact_05","class":"exact_id","query":"SPaSM_mini","relevant_lines":[2000]}
+{"id":"para_01","class":"paraphrase","query":"corrected an instruction cache parity error","relevant_events":["E77"]}
+{"id":"para_02","class":"paraphrase","query":"data TLB error interrupt fired","relevant_events":["E55"]}
+{"id":"para_03","class":"paraphrase","query":"data storage interrupt occurred","relevant_events":["E52"]}
+{"id":"para_04","class":"paraphrase","query":"ciod could not load a program image","relevant_events":["E28"]}
+{"id":"para_05","class":"paraphrase","query":"idoproxydb hit an ASSERT in SendPacket","relevant_events":["E74"]}
+{"id":"cause_01","class":"cause","query":"node reported a corrected instruction-cache parity fault","relevant_events":["E77"]}
+{"id":"cause_02","class":"cause","query":"compute node took a data TLB error interrupt","relevant_events":["E55"]}
+{"id":"cause_03","class":"cause","query":"application image missing when ciod tried to load it","relevant_events":["E28"]}
+{"id":"cause_04","class":"cause","query":"proxy asserted while sending a control packet","relevant_events":["E74"]}
+{"id":"cause_05","class":"cause","query":"login chdir target directory does not exist","relevant_events":["E37"]}
