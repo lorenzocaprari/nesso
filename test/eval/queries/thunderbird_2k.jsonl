@@ -1,0 +1,18 @@
+# Seed queries for scripts/eval-retrieval on Loghub Thunderbird_2k.
+# exact_id uses relevant_lines; paraphrase and cause use relevant_events.
+# Not the published benchmark.
+{"id":"exact_01","class":"exact_id","query":"182379","relevant_lines":[460]}
+{"id":"exact_02","class":"exact_id","query":"0xfee00000","relevant_lines":[1205]}
+{"id":"exact_03","class":"exact_id","query":"e1000_watchdog","relevant_lines":[1307]}
+{"id":"exact_04","class":"exact_id","query":"Thunderbird_D2","relevant_lines":[1430]}
+{"id":"exact_05","class":"exact_id","query":"1131567332","relevant_lines":[2000]}
+{"id":"para_01","class":"paraphrase","query":"root shell session was closed","relevant_events":["E117"]}
+{"id":"para_02","class":"paraphrase","query":"root session opened by uid 0","relevant_events":["E118"]}
+{"id":"para_03","class":"paraphrase","query":"DHCP discover found no free leases on A_net","relevant_events":["E37"]}
+{"id":"para_04","class":"paraphrase","query":"failed to resolve a ganglia data source name","relevant_events":["E146"]}
+{"id":"para_05","class":"paraphrase","query":"host could not qualify its own domain name","relevant_events":["E131"]}
+{"id":"cause_01","class":"cause","query":"interactive root session ended on the admin node","relevant_events":["E117"]}
+{"id":"cause_02","class":"cause","query":"DHCP pool for A_net had no addresses left","relevant_events":["E37"]}
+{"id":"cause_03","class":"cause","query":"gmetad could not resolve a configured data source","relevant_events":["E146"]}
+{"id":"cause_04","class":"cause","query":"mailer could not fully qualify the local hostname","relevant_events":["E131"]}
+{"id":"cause_05","class":"cause","query":"RRD update skipped because the step was under one second","relevant_events":["E111"]}

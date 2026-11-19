@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Score nesso search ranking against labelled Loghub queries.
 
-Indexes the pinned HDFS_2k log once, runs every query with
+Indexes each selected Loghub 2k sample once, runs every query with
 `nesso search --json -k 10` for each requested mode, and reports recall@10,
 MRR, and nDCG@10. Relevance is a set of lines: the listed LineIds, or every
 line whose EventId is listed. Report-only: exit 0 for any scores; non-zero
@@ -22,14 +22,50 @@ from dataclasses import dataclass
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-DEFAULT_QUERIES = ROOT / "test" / "eval" / "queries" / "hdfs_2k.jsonl"
-DEFAULT_LOG = ROOT / "build" / "bench" / "HDFS_2k.log"
-DEFAULT_STRUCTURED = ROOT / "build" / "bench" / "HDFS_2k.log_structured.csv"
+BENCH_DIR = ROOT / "build" / "bench"
+QUERIES_DIR = ROOT / "test" / "eval" / "queries"
+DEFAULT_QUERIES = QUERIES_DIR / "hdfs_2k.jsonl"
+DEFAULT_LOG = BENCH_DIR / "HDFS_2k.log"
+DEFAULT_STRUCTURED = BENCH_DIR / "HDFS_2k.log_structured.csv"
 DEFAULT_MODES = ("auto", "hybrid", "dense", "lexical")
 VALID_CLASSES = frozenset({"exact_id", "paraphrase", "cause"})
 K = 10
 FLOAT_DIGITS = 6
+SCHEMA_VERSION = 3
 TOKEN_CHARS = frozenset("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_")
+ALL_2K = "all-2k"
+
+
+@dataclass(frozen=True)
+class DatasetSpec:
+    name: str
+    log_name: str
+    queries_name: str
+
+    @property
+    def log_path(self) -> Path:
+        return BENCH_DIR / self.log_name
+
+    @property
+    def structured_path(self) -> Path:
+        return BENCH_DIR / f"{self.log_name}_structured.csv"
+
+    @property
+    def queries_path(self) -> Path:
+        return QUERIES_DIR / self.queries_name
+
+    @property
+    def corpus_name(self) -> str:
+        return self.name.replace("-", "_") + ".nesso"
+
+
+DATASETS_2K: dict[str, DatasetSpec] = {
+    "hdfs-2k": DatasetSpec("hdfs-2k", "HDFS_2k.log", "hdfs_2k.jsonl"),
+    "bgl-2k": DatasetSpec("bgl-2k", "BGL_2k.log", "bgl_2k.jsonl"),
+    "thunderbird-2k": DatasetSpec("thunderbird-2k", "Thunderbird_2k.log", "thunderbird_2k.jsonl"),
+    "openssh-2k": DatasetSpec("openssh-2k", "OpenSSH_2k.log", "openssh_2k.jsonl"),
+    "linux-2k": DatasetSpec("linux-2k", "Linux_2k.log", "linux_2k.jsonl"),
+}
 
 
 @dataclass(frozen=True)
@@ -173,11 +209,16 @@ def contains_whole_token(text: str, query: str) -> bool:
         start = index + 1
 
 
-def validate_relevant_lines(queries: list[Query], log_path: Path) -> None:
+def read_log_lines(log_path: Path) -> list[str]:
     try:
-        lines = log_path.read_text(encoding="utf-8").splitlines()
+        return log_path.read_text(encoding="utf-8").splitlines()
     except OSError as exc:
         raise SystemExit(f"error: cannot read {log_path}: {exc}") from exc
+
+
+def validate_relevant_lines(queries: list[Query], log_path: Path, lines: list[str] | None = None) -> None:
+    if lines is None:
+        lines = read_log_lines(log_path)
     for query in queries:
         if query.relevant_lines is None:
             continue
@@ -216,6 +257,24 @@ def load_event_ids(path: Path) -> dict[int, str]:
     if not mapping:
         raise SystemExit(f"error: {path}: no rows")
     return mapping
+
+
+def assert_line_id_alignment(log_path: Path, event_by_line: dict[int, str], lines: list[str] | None = None) -> None:
+    if lines is None:
+        lines = read_log_lines(log_path)
+    line_count = len(lines)
+    if len(event_by_line) != line_count:
+        raise SystemExit(
+            f"error: structured CSV row count {len(event_by_line)} does not match "
+            f"log line count {line_count} for {log_path}"
+        )
+    expected = set(range(1, line_count + 1))
+    actual = set(event_by_line)
+    if actual != expected:
+        raise SystemExit(
+            f"error: structured CSV LineIds for {log_path} must be 1..{line_count} "
+            f"(missing {sorted(expected - actual)[:5]}, extra {sorted(actual - expected)[:5]})"
+        )
 
 
 def relevant_set(query: Query, event_by_line: dict[int, str]) -> frozenset[int]:
@@ -338,10 +397,10 @@ def metrics_dict(metrics: Metrics) -> dict[str, float]:
     }
 
 
-def format_table(payload: dict) -> str:
+def format_mode_table(modes: list[dict]) -> str:
     headers = ("mode", "class", "n", "recall@10", "MRR", "nDCG@10")
     rows: list[tuple[str, str, str, str, str, str]] = []
-    for mode in payload["modes"]:
+    for mode in modes:
         mode_name = mode["mode"]
         for bucket in mode["by_class"]:
             metrics = bucket["metrics"]
@@ -379,8 +438,61 @@ def format_table(payload: dict) -> str:
     return "\n".join(lines)
 
 
-def ensure_inputs(log_path: Path, structured_path: Path) -> None:
+def format_report(payload: dict) -> str:
+    sections: list[str] = []
+    for dataset in payload["datasets"]:
+        sections.append(f"=== {dataset['dataset']} ===")
+        sections.append(format_mode_table(dataset["modes"]))
+    sections.append("=== overall ===")
+    sections.append(format_mode_table(payload["overall"]["modes"]))
+    return "\n".join(sections)
+
+
+def parse_datasets(raw: str | None) -> list[DatasetSpec] | None:
+    if raw is None:
+        return None
+    parts = [part.strip() for part in raw.split(",") if part.strip()]
+    if not parts:
+        raise SystemExit("error: --dataset must list at least one dataset")
+    names: list[str] = []
+    for part in parts:
+        if part == ALL_2K:
+            names.extend(DATASETS_2K)
+            continue
+        if part not in DATASETS_2K:
+            raise SystemExit(
+                f"error: unknown dataset {part!r}; expected one of "
+                f"{sorted(DATASETS_2K) + [ALL_2K]}"
+            )
+        names.append(part)
+    # Preserve order, drop duplicates.
+    seen: set[str] = set()
+    ordered: list[DatasetSpec] = []
+    for name in names:
+        if name in seen:
+            continue
+        seen.add(name)
+        ordered.append(DATASETS_2K[name])
+    return ordered
+
+
+def ensure_inputs(
+    log_path: Path,
+    structured_path: Path,
+    *,
+    fetch_dataset: str | None = None,
+) -> None:
     if log_path.is_file() and structured_path.is_file():
+        return
+    fetch = ROOT / "scripts" / "fetch-loghub"
+    if fetch_dataset is not None:
+        if not fetch.is_file():
+            raise SystemExit(f"error: missing log or structured CSV and {fetch} is absent")
+        run_checked([sys.executable, str(fetch), "--dataset", fetch_dataset], label="fetch-loghub")
+        if not log_path.is_file():
+            raise SystemExit(f"error: log still missing after fetch-loghub: {log_path}")
+        if not structured_path.is_file():
+            raise SystemExit(f"error: structured CSV still missing after fetch-loghub: {structured_path}")
         return
     if log_path != DEFAULT_LOG or structured_path != DEFAULT_STRUCTURED:
         missing = []
@@ -393,7 +505,6 @@ def ensure_inputs(log_path: Path, structured_path: Path) -> None:
             + ", ".join(missing)
             + "; pass existing paths or use the default build/bench locations"
         )
-    fetch = ROOT / "scripts" / "fetch-loghub"
     if not fetch.is_file():
         raise SystemExit(f"error: missing log or structured CSV and {fetch} is absent")
     run_checked([sys.executable, str(fetch), "--dataset", "hdfs-2k"], label="fetch-loghub")
@@ -403,7 +514,7 @@ def ensure_inputs(log_path: Path, structured_path: Path) -> None:
         raise SystemExit(f"error: structured CSV still missing after fetch-loghub: {structured_path}")
 
 
-def evaluate(
+def evaluate_modes(
     *,
     binary: Path,
     model_dir: Path,
@@ -411,10 +522,8 @@ def evaluate(
     event_by_line: dict[int, str],
     log_path: Path,
     modes: list[str],
-    workdir: Path,
-) -> dict:
-    workdir.mkdir(parents=True, exist_ok=True)
-    corpus = workdir / "hdfs_2k.nesso"
+    corpus: Path,
+) -> list[dict]:
     run_checked(
         [
             str(binary),
@@ -487,11 +596,74 @@ def evaluate(
                 "queries": per_query,
             }
         )
+    return mode_results
+
+
+def aggregate_overall(dataset_results: list[dict], modes: list[str]) -> dict:
+    mode_rows: list[dict] = []
+    total_queries = sum(item["query_count"] for item in dataset_results)
+    for mode_name in modes:
+        by_class: dict[str, list[Metrics]] = {name: [] for name in sorted(VALID_CLASSES)}
+        all_metrics: list[Metrics] = []
+        for dataset in dataset_results:
+            mode_payload = next(item for item in dataset["modes"] if item["mode"] == mode_name)
+            for query in mode_payload["queries"]:
+                metrics = Metrics(
+                    recall_at_10=query["metrics"]["recall_at_10"],
+                    mrr=query["metrics"]["mrr"],
+                    ndcg_at_10=query["metrics"]["ndcg_at_10"],
+                )
+                all_metrics.append(metrics)
+                by_class[query["class"]].append(metrics)
+        class_rows = []
+        for class_name in sorted(VALID_CLASSES):
+            items = by_class[class_name]
+            class_rows.append(
+                {
+                    "class": class_name,
+                    "metrics": metrics_dict(mean_metrics(items)),
+                    "n": len(items),
+                }
+            )
+        mode_rows.append(
+            {
+                "by_class": class_rows,
+                "mode": mode_name,
+                "overall": {
+                    "metrics": metrics_dict(mean_metrics(all_metrics)),
+                    "n": len(all_metrics),
+                },
+            }
+        )
+    return {"modes": mode_rows, "query_count": total_queries}
+
+
+def evaluate_dataset(
+    *,
+    binary: Path,
+    model_dir: Path,
+    queries: list[Query],
+    event_by_line: dict[int, str],
+    log_path: Path,
+    modes: list[str],
+    workdir: Path,
+    corpus_name: str,
+    dataset_name: str,
+) -> dict:
+    workdir.mkdir(parents=True, exist_ok=True)
+    modes_payload = evaluate_modes(
+        binary=binary,
+        model_dir=model_dir,
+        queries=queries,
+        event_by_line=event_by_line,
+        log_path=log_path,
+        modes=modes,
+        corpus=workdir / corpus_name,
+    )
     return {
-        "k": K,
-        "modes": mode_results,
+        "dataset": dataset_name,
+        "modes": modes_payload,
         "query_count": len(queries),
-        "schema_version": 2,
     }
 
 
@@ -509,13 +681,18 @@ def parse_modes(raw: str) -> list[str]:
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--out", type=Path, required=True, help="Deterministic JSON report path")
+    parser.add_argument(
+        "--dataset",
+        default=None,
+        help="Comma-separated 2k datasets or all-2k (maps log, CSV, and query file)",
+    )
     parser.add_argument("--queries", type=Path, default=DEFAULT_QUERIES, help="JSONL query set")
-    parser.add_argument("--log", type=Path, default=DEFAULT_LOG, help="HDFS_2k.log path")
+    parser.add_argument("--log", type=Path, default=DEFAULT_LOG, help="Loghub 2k log path")
     parser.add_argument(
         "--structured",
         type=Path,
         default=DEFAULT_STRUCTURED,
-        help="HDFS_2k.log_structured.csv path",
+        help="Loghub 2k structured CSV path",
     )
     parser.add_argument(
         "--modes",
@@ -539,26 +716,71 @@ def main(argv: list[str] | None = None) -> None:
     binary = resolve_binary(args.binary)
     model_dir = resolve_model_dir(args.model_dir)
     modes = parse_modes(args.modes)
-    queries = load_queries(args.queries)
-    if not args.skip_fetch:
-        ensure_inputs(args.log, args.structured)
-    elif not args.log.is_file() or not args.structured.is_file():
-        raise SystemExit("error: --log and --structured must exist when --skip-fetch is set")
-    event_by_line = load_event_ids(args.structured)
-    validate_relevant_lines(queries, args.log)
-    payload = evaluate(
-        binary=binary,
-        model_dir=model_dir,
-        queries=queries,
-        event_by_line=event_by_line,
-        log_path=args.log,
-        modes=modes,
-        workdir=args.workdir,
-    )
+    dataset_specs = parse_datasets(args.dataset)
+
+    dataset_results: list[dict] = []
+    if dataset_specs is None:
+        queries = load_queries(args.queries)
+        if not args.skip_fetch:
+            ensure_inputs(args.log, args.structured)
+        elif not args.log.is_file() or not args.structured.is_file():
+            raise SystemExit("error: --log and --structured must exist when --skip-fetch is set")
+        lines = read_log_lines(args.log)
+        event_by_line = load_event_ids(args.structured)
+        assert_line_id_alignment(args.log, event_by_line, lines)
+        validate_relevant_lines(queries, args.log, lines)
+        dataset_results.append(
+            evaluate_dataset(
+                binary=binary,
+                model_dir=model_dir,
+                queries=queries,
+                event_by_line=event_by_line,
+                log_path=args.log,
+                modes=modes,
+                workdir=args.workdir,
+                corpus_name="hdfs_2k.nesso",
+                dataset_name="hdfs-2k",
+            )
+        )
+    else:
+        for spec in dataset_specs:
+            if not args.skip_fetch:
+                ensure_inputs(spec.log_path, spec.structured_path, fetch_dataset=spec.name)
+            elif not spec.log_path.is_file() or not spec.structured_path.is_file():
+                raise SystemExit(
+                    f"error: --log and --structured must exist when --skip-fetch is set "
+                    f"({spec.log_path}, {spec.structured_path})"
+                )
+            queries = load_queries(spec.queries_path)
+            lines = read_log_lines(spec.log_path)
+            event_by_line = load_event_ids(spec.structured_path)
+            assert_line_id_alignment(spec.log_path, event_by_line, lines)
+            validate_relevant_lines(queries, spec.log_path, lines)
+            dataset_results.append(
+                evaluate_dataset(
+                    binary=binary,
+                    model_dir=model_dir,
+                    queries=queries,
+                    event_by_line=event_by_line,
+                    log_path=spec.log_path,
+                    modes=modes,
+                    workdir=args.workdir,
+                    corpus_name=spec.corpus_name,
+                    dataset_name=spec.name,
+                )
+            )
+
+    overall = aggregate_overall(dataset_results, modes)
+    payload = {
+        "datasets": dataset_results,
+        "k": K,
+        "overall": overall,
+        "schema_version": SCHEMA_VERSION,
+    }
     encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")) + "\n"
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(encoded, encoding="utf-8")
-    print(format_table(payload))
+    print(format_report(payload))
     print(f"wrote {args.out}")
 
 

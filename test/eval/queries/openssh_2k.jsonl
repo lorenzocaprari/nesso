@@ -1,0 +1,18 @@
+# Seed queries for scripts/eval-retrieval on Loghub OpenSSH_2k.
+# exact_id uses relevant_lines; paraphrase and cause use relevant_events.
+# Not the published benchmark.
+{"id":"exact_01","class":"exact_id","query":"38926","relevant_lines":[6]}
+{"id":"exact_02","class":"exact_id","query":"vivozap","relevant_lines":[147]}
+{"id":"exact_03","class":"exact_id","query":"64009","relevant_lines":[398]}
+{"id":"exact_04","class":"exact_id","query":"44414","relevant_lines":[650]}
+{"id":"exact_05","class":"exact_id","query":"52683","relevant_lines":[2000]}
+{"id":"para_01","class":"paraphrase","query":"login attempted with an invalid username","relevant_events":["E13"]}
+{"id":"para_02","class":"paraphrase","query":"reverse DNS lookup failed with a break-in warning","relevant_events":["E27"]}
+{"id":"para_03","class":"paraphrase","query":"client disconnected with no auth methods left","relevant_events":["E7"]}
+{"id":"para_04","class":"paraphrase","query":"peer sent no SSH identification string","relevant_events":["E3"]}
+{"id":"para_05","class":"paraphrase","query":"PAM ignored further retries past the max","relevant_events":["E18"]}
+{"id":"cause_01","class":"cause","query":"attacker probed SSH with a non-existent account name","relevant_events":["E13"]}
+{"id":"cause_02","class":"cause","query":"reverse DNS for the client hostname did not match","relevant_events":["E27"]}
+{"id":"cause_03","class":"cause","query":"SSH handshake ended after auth methods were exhausted","relevant_events":["E7"]}
+{"id":"cause_04","class":"cause","query":"remote peer never sent an SSH banner","relevant_events":["E3"]}
+{"id":"cause_05","class":"cause","query":"PAM saw more failures than the configured retry limit","relevant_events":["E18"]}

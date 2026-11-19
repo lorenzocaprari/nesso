@@ -84,6 +84,40 @@ class EvalRetrievalLabelsTest(unittest.TestCase):
         path.write_text(body, encoding="utf-8")
         return path
 
+    def test_line_id_alignment_requires_matching_row_count(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            directory = pathlib.Path(temp)
+            log = directory / "sample.log"
+            # Last line has no trailing newline; still counts as a line.
+            log.write_bytes(b"one\ntwo")
+            structured = directory / "structured.csv"
+            structured.write_text("LineId,EventId\n1,E1\n", encoding="utf-8")
+            mapping = self.mod.load_event_ids(structured)
+            with self.assertRaises(SystemExit) as ctx:
+                self.mod.assert_line_id_alignment(log, mapping)
+            self.assertIn("does not match", str(ctx.exception))
+
+    def test_line_id_alignment_accepts_last_line_without_newline(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            directory = pathlib.Path(temp)
+            log = directory / "sample.log"
+            log.write_bytes(b"one\ntwo")
+            structured = directory / "structured.csv"
+            structured.write_text("LineId,EventId\n1,E1\n2,E2\n", encoding="utf-8")
+            mapping = self.mod.load_event_ids(structured)
+            self.mod.assert_line_id_alignment(log, mapping)
+
+    def test_dataset_mapping_resolves_all_2k(self) -> None:
+        specs = self.mod.parse_datasets("all-2k")
+        self.assertIsNotNone(specs)
+        assert specs is not None
+        self.assertEqual([spec.name for spec in specs], list(self.mod.DATASETS_2K))
+        single = self.mod.parse_datasets("bgl-2k,openssh-2k,bgl-2k")
+        assert single is not None
+        self.assertEqual([spec.name for spec in single], ["bgl-2k", "openssh-2k"])
+        with self.assertRaises(SystemExit):
+            self.mod.parse_datasets("bgl")
+
     def test_wrong_line_label_fails(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             directory = pathlib.Path(temp)
@@ -232,10 +266,14 @@ class EvalRetrievalEndToEndTest(unittest.TestCase):
             self.assertEqual(second.returncode, 0, second.stderr + second.stdout)
             self.assertEqual(out.read_bytes(), payload)
             report = json.loads(payload.decode())
-            self.assertEqual(report["schema_version"], 2)
+            self.assertEqual(report["schema_version"], 3)
             self.assertEqual(report["k"], 10)
-            self.assertEqual(report["query_count"], 2)
-            mode = report["modes"][0]
+            self.assertEqual(len(report["datasets"]), 1)
+            dataset = report["datasets"][0]
+            self.assertEqual(dataset["dataset"], "hdfs-2k")
+            self.assertEqual(dataset["query_count"], 2)
+            self.assertEqual(report["overall"]["query_count"], 2)
+            mode = dataset["modes"][0]
             self.assertEqual(mode["mode"], "dense")
             self.assertEqual(mode["overall"]["n"], 2)
             q1 = mode["queries"][0]
@@ -248,6 +286,100 @@ class EvalRetrievalEndToEndTest(unittest.TestCase):
             self.assertEqual(q2["ranked_lines"], [4, 5, 2])
             self.assertEqual(q2["metrics"]["recall_at_10"], 1.0)
             self.assertEqual(q2["metrics"]["mrr"], 1.0)
+            overall_mode = report["overall"]["modes"][0]
+            self.assertEqual(overall_mode["mode"], "dense")
+            self.assertEqual(overall_mode["overall"]["n"], 2)
+
+    def test_multi_dataset_report_has_overall(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            directory = pathlib.Path(temp)
+            fake = directory / "fake-nesso"
+            fake.write_text(
+                textwrap.dedent(
+                    """\
+                    #!/usr/bin/env python3
+                    import json
+                    import sys
+                    args = sys.argv[1:]
+                    if args and args[0] == "index":
+                        out = args[args.index("-o") + 1]
+                        open(out, "w", encoding="utf-8").write("corpus\\n")
+                        sys.exit(0)
+                    if args and args[0] == "search":
+                        print(
+                            json.dumps(
+                                {
+                                    "schema_version": 2,
+                                    "rank": 1,
+                                    "source": "sample.log",
+                                    "kind": "line",
+                                    "line": 1,
+                                    "score": 1.0,
+                                    "text": "t",
+                                    "occurrences": 1,
+                                    "mode": "dense",
+                                    "dense": 1.0,
+                                    "lexical": None,
+                                },
+                                separators=(",", ":"),
+                            )
+                        )
+                        sys.exit(0)
+                    sys.exit(2)
+                    """
+                ),
+                encoding="utf-8",
+            )
+            fake.chmod(fake.stat().st_mode | stat.S_IEXEC)
+            mod = load_eval()
+            dataset_results = []
+            for name in ("hdfs-2k", "bgl-2k"):
+                log_path = directory / f"{name}.log"
+                structured = directory / f"{name}.csv"
+                queries_path = directory / f"{name}.jsonl"
+                log_path.write_bytes(b"token_a\ntoken_b")
+                structured.write_text("LineId,EventId\n1,E1\n2,E2\n", encoding="utf-8")
+                queries_path.write_text(
+                    '{"id":"exact_01","class":"exact_id","query":"token_a","relevant_lines":[1]}\n',
+                    encoding="utf-8",
+                )
+                queries = mod.load_queries(queries_path)
+                lines = mod.read_log_lines(log_path)
+                event_by_line = mod.load_event_ids(structured)
+                mod.assert_line_id_alignment(log_path, event_by_line, lines)
+                mod.validate_relevant_lines(queries, log_path, lines)
+                dataset_results.append(
+                    mod.evaluate_dataset(
+                        binary=fake,
+                        model_dir=directory,
+                        queries=queries,
+                        event_by_line=event_by_line,
+                        log_path=log_path,
+                        modes=["dense"],
+                        workdir=directory / "work",
+                        corpus_name=f"{name.replace('-', '_')}.nesso",
+                        dataset_name=name,
+                    )
+                )
+            overall = mod.aggregate_overall(dataset_results, ["dense"])
+            payload = {
+                "datasets": dataset_results,
+                "k": 10,
+                "overall": overall,
+                "schema_version": 3,
+            }
+            self.assertEqual(len(payload["datasets"]), 2)
+            self.assertEqual(payload["overall"]["query_count"], 2)
+            self.assertEqual(payload["overall"]["modes"][0]["overall"]["n"], 2)
+            text = mod.format_report(payload)
+            self.assertIn("=== hdfs-2k ===", text)
+            self.assertIn("=== bgl-2k ===", text)
+            self.assertIn("=== overall ===", text)
+            encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")) + "\n"
+            self.assertEqual(
+                json.dumps(payload, sort_keys=True, separators=(",", ":")) + "\n",
+                encoded,
+            )
 
     def test_missing_binary_fails(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
