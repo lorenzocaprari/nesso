@@ -19,10 +19,6 @@ func TestPipelineWorkflowSatisfiesGate(t *testing.T) {
 	var always []string
 	for _, job := range parsed.jobs {
 		switch job.id {
-		case "fuzz-test":
-			if job.class != classPullRequestOff {
-				t.Fatalf("fuzz-test class %d", job.class)
-			}
 		case "bench-history":
 			if job.class != classMainHistory {
 				t.Fatalf("bench-history class %d", job.class)
@@ -52,7 +48,7 @@ func TestSkipClassification(t *testing.T) {
 	parsed := mustPipeline(t)
 	docs := map[string]string{}
 	for _, job := range parsed.jobs {
-		if job.class == classDocs || job.class == classPullRequestOff || job.class == classMainHistory {
+		if job.class == classDocs || job.class == classMainHistory {
 			docs[job.id] = "skipped"
 		}
 	}
@@ -68,9 +64,8 @@ func TestSkipClassification(t *testing.T) {
 			name:  "code pull request",
 			event: "pull_request",
 			code:  "true",
-			patch: map[string]string{"fuzz-test": "skipped", "bench-history": "skipped"},
+			patch: map[string]string{"bench-history": "skipped"},
 			verdict: map[string]string{
-				"fuzz-test":     "skipped, pull request",
 				"bench-history": "skipped, not a push to main",
 				"lint":          "success",
 				"clang-tidy":    "success",
@@ -91,7 +86,6 @@ func TestSkipClassification(t *testing.T) {
 				"clang-tidy":              "skipped, docs-only pull request",
 				"test-gcc-26-amd64":       "skipped, docs-only pull request",
 				"prepare-image-arm64":     "skipped, docs-only pull request",
-				"fuzz-test":               "skipped, pull request",
 				"bench-history":           "skipped, not a push to main",
 			},
 		},
@@ -100,7 +94,6 @@ func TestSkipClassification(t *testing.T) {
 			event: "pull_request",
 			code:  "true",
 			patch: map[string]string{
-				"fuzz-test":           "skipped",
 				"bench-history":       "skipped",
 				"prepare-image-amd64": "failure",
 				"clang-tidy":          "skipped",
@@ -117,7 +110,7 @@ func TestSkipClassification(t *testing.T) {
 			wantErr: "lint cancelled\ncppcheck result \"neutral\"",
 		},
 		{
-			name:  "push runs fuzz and history",
+			name:  "push runs history",
 			event: "push",
 			code:  "true",
 		},
@@ -129,37 +122,16 @@ func TestSkipClassification(t *testing.T) {
 			wantErr: "bench-history skipped",
 		},
 		{
-			name:    "push skips fuzz",
-			event:   "push",
-			code:    "true",
-			patch:   map[string]string{"fuzz-test": "skipped"},
-			wantErr: "fuzz-test skipped",
-		},
-		{
 			name:  "schedule skips history only",
 			event: "schedule",
 			code:  "true",
 			patch: map[string]string{"bench-history": "skipped"},
 		},
 		{
-			name:    "schedule skips fuzz",
-			event:   "schedule",
-			code:    "true",
-			patch:   map[string]string{"fuzz-test": "skipped", "bench-history": "skipped"},
-			wantErr: "fuzz-test skipped",
-		},
-		{
 			name:  "dispatch skips history",
 			event: "workflow_dispatch",
 			code:  "true",
 			patch: map[string]string{"bench-history": "skipped"},
-		},
-		{
-			name:    "empty event does not excuse fuzz",
-			event:   "",
-			code:    "true",
-			patch:   map[string]string{"fuzz-test": "skipped"},
-			wantErr: "fuzz-test skipped",
 		},
 		{
 			name:    "failed changes is not docs-only",
@@ -192,7 +164,7 @@ func TestSkipClassification(t *testing.T) {
 					t.Errorf("missing %q in\n%s", want, joined)
 				}
 			}
-			if tc.name == "dependency failure is its own skip" && (strings.Contains(joined, "fuzz-test") || strings.Contains(joined, "bench-history")) {
+			if tc.name == "dependency failure is its own skip" && strings.Contains(joined, "bench-history") {
 				t.Fatalf("deliberate skips reported:\n%s", joined)
 			}
 			for job, verdict := range tc.verdict {
@@ -212,7 +184,7 @@ func TestMissingNeedsAndResultsFail(t *testing.T) {
 		{"      - clang-tidy\n", "", "ci-gate needs is missing clang-tidy"},
 		{"            clang-tidy=${{ needs.clang-tidy.result }}\n", "", "JOB_RESULTS is missing clang-tidy"},
 		{"clang-tidy=${{ needs.clang-tidy.result }}", "clang-tidy=${{ needs.lint.result }}", "JOB_RESULTS key clang-tidy reads needs.lint.result"},
-		{"    if: github.event_name != 'pull_request'\n", "    if: github.event_name == 'schedule'\n", "job fuzz-test has an unrecognized if"},
+		{"    if: needs.changes.outputs.code == 'true'\n", "    if: github.event_name == 'schedule'\n", "job clang-tidy has an unrecognized if"},
 	}
 	for _, check := range checks {
 		problems := joinProblems(strings.Replace(text, check.old, check.new, 1))

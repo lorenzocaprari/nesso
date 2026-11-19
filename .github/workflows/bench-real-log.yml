@@ -12,6 +12,10 @@ on:
         description: Ignore the truncated Loghub cache and download the prefixes again
         type: boolean
         default: false
+      corpora:
+        description: Real-log corpora (comma-separated, or all). Nightly default is hdfs-v1,thunderbird
+        type: string
+        default: "hdfs-v1,thunderbird"
       record_history:
         description: Append wall times to gh-pages under dev/bench-real-log
         type: boolean
@@ -123,19 +127,67 @@ jobs:
         if: steps.models.outputs.cache-hit != 'true'
         run: ./scripts/fetch-model models
 
+      - name: Select real-log corpora
+        id: corpora
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_CORPORA: ${{ inputs.corpora }}
+        run: |
+          set -euo pipefail
+          if [[ "${EVENT_NAME}" == "workflow_dispatch" && -n "${INPUT_CORPORA}" ]]; then
+            corpora="${INPUT_CORPORA}"
+          else
+            corpora="hdfs-v1,thunderbird"
+          fi
+          echo "corpora=${corpora}" >> "${GITHUB_OUTPUT}"
+          paths=()
+          IFS=',' read -r -a names <<< "${corpora}"
+          for name in "${names[@]}"; do
+            name="$(printf '%s' "${name}" | tr -d '[:space:]')"
+            case "${name}" in
+              all)
+                paths=(build/bench/HDFS_1m.log build/bench/BGL_1m.log build/bench/Thunderbird_1m.log)
+                break
+                ;;
+              hdfs-v1) paths+=("build/bench/HDFS_1m.log") ;;
+              bgl) paths+=("build/bench/BGL_1m.log") ;;
+              thunderbird) paths+=("build/bench/Thunderbird_1m.log") ;;
+              *)
+                echo "bench-real-log: unknown corpus ${name}" >&2
+                exit 1
+                ;;
+            esac
+          done
+          {
+            echo "paths<<EOF"
+            printf '%s\n' "${paths[@]}"
+            echo "EOF"
+          } >> "${GITHUB_OUTPUT}"
+
       - name: Restore truncated Loghub logs
         id: logs
         if: github.event_name != 'workflow_dispatch' || inputs.force_log_refetch != true
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: |
-            build/bench/HDFS_1m.log
-            build/bench/BGL_1m.log
-            build/bench/Thunderbird_1m.log
-          key: loghub-1m-${{ hashFiles('scripts/fetch-loghub') }}
+          path: ${{ steps.corpora.outputs.paths }}
+          key: loghub-1m-${{ steps.corpora.outputs.corpora }}-${{ hashFiles('scripts/fetch-loghub') }}
 
       - name: Fetch truncated Loghub logs
-        run: python3 scripts/fetch-loghub --dataset all-full
+        shell: bash
+        env:
+          CORPORA: ${{ steps.corpora.outputs.corpora }}
+        run: |
+          set -euo pipefail
+          if [[ "${CORPORA}" == "all" ]]; then
+            python3 scripts/fetch-loghub --dataset all-full
+            exit 0
+          fi
+          IFS=',' read -r -a names <<< "${CORPORA}"
+          for name in "${names[@]}"; do
+            name="$(printf '%s' "${name}" | tr -d '[:space:]')"
+            python3 scripts/fetch-loghub --dataset "${name}"
+          done
 
       - name: Install Dependencies (Conan)
         run: |
@@ -146,11 +198,13 @@ jobs:
         run: conan build . -pr:h ./conan/profiles/gcc-26 -pr:b default --lockfile=conan.lock --build=missing --no-remote -o tests=False $CONAN_WERROR_ARGS
 
       - name: Run real-log benchmark
+        env:
+          CORPORA: ${{ steps.corpora.outputs.corpora }}
         run: |
           set -euo pipefail
           mem_kb=$(awk '/^MemTotal:/ {print $2}' /proc/meminfo)
           export NESSO_BENCH_AS_LIMIT_KB=$((mem_kb * 3 / 4))
-          python3 scripts/bench --dataset real-log --binary build/Release/src/nesso --timeout 3600 \
+          python3 scripts/bench --dataset real-log --corpora "${CORPORA}" --binary build/Release/src/nesso --timeout 3600 \
             --output bench/results/real-log.json
 
       - name: Gate peak RSS and report speed
@@ -173,23 +227,26 @@ jobs:
         id: logfiles
         if: always() && !cancelled()
         shell: bash
+        env:
+          LOG_PATHS: ${{ steps.corpora.outputs.paths }}
         run: |
           set -euo pipefail
-          ready=false
-          if [[ -s build/bench/HDFS_1m.log && -s build/bench/BGL_1m.log && -s build/bench/Thunderbird_1m.log ]]; then
-            ready=true
-          fi
+          ready=true
+          while IFS= read -r path; do
+            [[ -n "${path}" ]] || continue
+            if [[ ! -s "${path}" ]]; then
+              ready=false
+              break
+            fi
+          done <<< "${LOG_PATHS}"
           echo "ready=${ready}" >> "${GITHUB_OUTPUT}"
 
       - name: Save truncated Loghub logs
         if: always() && !cancelled() && steps.logs.outputs.cache-hit != 'true' && steps.logfiles.outputs.ready == 'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: |
-            build/bench/HDFS_1m.log
-            build/bench/BGL_1m.log
-            build/bench/Thunderbird_1m.log
-          key: loghub-1m-${{ hashFiles('scripts/fetch-loghub') }}
+          path: ${{ steps.corpora.outputs.paths }}
+          key: loghub-1m-${{ steps.corpora.outputs.corpora }}-${{ hashFiles('scripts/fetch-loghub') }}
 
       - name: Upload benchmark results
         if: always()

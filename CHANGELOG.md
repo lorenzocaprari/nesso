@@ -9,7 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- A nightly real-log benchmark times `nesso index`, `nesso grep`, `nesso search`, and `nesso search --mode dense` on the first 1000000 lines of Loghub HDFS_v1, BGL, and Thunderbird (Zenodo record 8196385) at `NESSO_THREADS=1` and `8`. The lines are not repeated and are not committed. Thunderbird is streamed from its archive. Peak RSS fails the job when it exceeds 1.5 GiB plus the RSS tolerance. Wall time is compared with the median of recent nights and only warns. The run is `.github/workflows/bench-real-log.yml` (schedule and `workflow_dispatch` on `main`). The Pipeline `bench` job is unchanged.
+- A nightly real-log benchmark times `nesso index`, `nesso grep`, `nesso search`, and `nesso search --mode dense` on the first 1000000 lines of selected Loghub corpora (Zenodo record 8196385) at `NESSO_THREADS=1` and `8`. The lines are not repeated and are not committed. Thunderbird is streamed from its archive. Peak RSS fails the job when it exceeds 1.5 GiB plus the RSS tolerance. Wall time is compared with the median of recent nights and only warns. The run is `.github/workflows/bench-real-log.yml` (schedule and `workflow_dispatch` on `main`). The Pipeline `bench` job is unchanged.
+- `.github/workflows/index-rss.yml` runs `./scripts/check-index-rss` at 1M lines (threads 1 and 8, 1.5 GiB budget) on a nightly schedule and on `workflow_dispatch`. It is not a Pipeline job.
+
+### Changed
+
+- AFL++ `scripts/fuzz-test` moved out of Pipeline into `.github/workflows/fuzz-test.yml` (pushes to `main`, nightly, `workflow_dispatch`). Pull requests stay on ClusterFuzzLite. `ci-gate` intentional skips are docs-only pull requests and `bench-history` off a push to `main`.
+- Nightly real-log default corpora are `hdfs-v1` and `thunderbird`. BGL remains available with `scripts/bench --corpora all` or the workflow `corpora` input. HDFS is the cheap smoke; Thunderbird is the peak-RSS canary.
 
 ### Fixed
 

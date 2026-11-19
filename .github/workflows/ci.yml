@@ -828,56 +828,6 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
-  fuzz-test:
-    needs: prepare-image-amd64
-    # ClusterFuzzLite already fuzzes every pull request. This AFL++ job is
-    # about three minutes and runs beside the other jobs, so keep it on main
-    # pushes and the nightly schedule. It builds the LTO harnesses
-    # ClusterFuzzLite does not. The job id stays fuzz-test. The amd64 image
-    # already has afl++, Clang 21, the compiler-rt symlinks, lld-21, and llvm-21.
-    if: github.event_name != 'pull_request'
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    container:
-      image: ${{ needs.prepare-image-amd64.outputs.image }} # zizmor: ignore[unpinned-images] deps-<hash> tag, not a digest
-      credentials:
-        username: ${{ github.actor }}
-        password: ${{ secrets.GITHUB_TOKEN }}
-    steps:
-      - name: Checkout Repository
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-
-      - name: Ensure Conan default profile
-        run: conan profile detect --force
-
-      - name: Run fuzz-test (AFL++ library harnesses + ASan)
-        env:
-          NESSO_WERROR: "1"
-        run: |
-          chmod +x scripts/fuzz-test
-          NESSO_FUZZ_MAX_TOTAL_TIME=60 ./scripts/fuzz-test
-
-      # upload-artifact rejects ':' in paths, and every AFL finding is named id:NNNNNN,...
-      - name: Collect AFL crashes
-        if: failure()
-        run: |
-          mkdir -p build/fuzz/findings
-          for crash in build/fuzz/afl-out-*/default/crashes/id:*; do
-            [ -f "${crash}" ] || continue
-            target="$(basename "$(dirname "$(dirname "$(dirname "${crash}")")")")"
-            cp "${crash}" "build/fuzz/findings/${target}_$(basename "${crash}" | tr ':,' '__')"
-          done
-
-      - name: Upload AFL findings on failure
-        if: failure()
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: fuzz-test-findings
-          path: build/fuzz/findings
-          if-no-files-found: warn
-
   coverage:
     needs: [prepare-image-amd64, changes]
     if: needs.changes.outputs.code == 'true'
@@ -2856,8 +2806,9 @@ jobs:
   # or when a job's if is not one of the known skip shapes. always() runs
   # this job after failures, cancellations, and skips. The result check fails
   # on failure and cancelled. A skip passes only for the docs-only path
-  # filter, fuzz-test on a pull request, and bench-history off a push to
-  # main. A skip caused by a failed or cancelled dependency does not pass.
+  # filter and bench-history off a push to main. A skip caused by a failed
+  # or cancelled dependency does not pass. AFL++ fuzz-test and index-RSS
+  # soaks live in their own workflows and are not Pipeline jobs.
   ci-gate:
     name: CI gate
     needs:
@@ -2871,7 +2822,6 @@ jobs:
       - test-gcc-26-amd64
       - test-gcc-26-debug-amd64
       - test-gcc-26-debug-amd64-functional
-      - fuzz-test
       - coverage
       - bench
       - bench-history
@@ -2920,7 +2870,6 @@ jobs:
             test-gcc-26-amd64=${{ needs.test-gcc-26-amd64.result }}
             test-gcc-26-debug-amd64=${{ needs.test-gcc-26-debug-amd64.result }}
             test-gcc-26-debug-amd64-functional=${{ needs.test-gcc-26-debug-amd64-functional.result }}
-            fuzz-test=${{ needs.fuzz-test.result }}
             coverage=${{ needs.coverage.result }}
             bench=${{ needs.bench.result }}
             bench-history=${{ needs.bench-history.result }}

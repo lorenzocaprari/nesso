@@ -1,0 +1,133 @@
+name: Fuzz test
+
+# Not a Pipeline job. ClusterFuzzLite covers pull requests
+# (.github/workflows/cifuzz.yml). This workflow builds the AFL++ LTO harnesses
+# and runs them on pushes to main, the nightly schedule, and workflow_dispatch.
+on:
+  push:
+    branches: ["main"]
+  schedule:
+    # Same cadence fuzz-test had inside Pipeline (03:17 UTC).
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: fuzz-test-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  REGISTRY: ghcr.io
+  CONAN_HOME: /opt/conan2
+
+jobs:
+  guard:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
+        with:
+          egress-policy: audit
+
+      - name: Require push to main, schedule on main, or a manual dispatch
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          set -euo pipefail
+          if [[ "${EVENT_NAME}" == "workflow_dispatch" ]]; then
+            exit 0
+          fi
+          if [[ "${EVENT_NAME}" == "push" || "${EVENT_NAME}" == "schedule" ]]; then
+            if [[ "${GITHUB_REF}" != "refs/heads/main" ]]; then
+              echo "fuzz-test: ${EVENT_NAME} refuses ${GITHUB_REF}" >&2
+              exit 1
+            fi
+            exit 0
+          fi
+          echo "fuzz-test: refusing event ${EVENT_NAME}" >&2
+          exit 1
+
+  resolve:
+    needs: [guard]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    outputs:
+      image: ${{ steps.select.outputs.image }}
+    steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
+        with:
+          egress-policy: audit
+
+      - name: Checkout Repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Resolve image reference
+        id: select
+        shell: bash
+        env:
+          REGISTRY_NAME: ${{ env.REGISTRY }}
+        run: |
+          set -euo pipefail
+          owner_lc="$(printf '%s' "${GITHUB_REPOSITORY_OWNER}" | tr '[:upper:]' '[:lower:]')"
+          deps_hash="$(./scripts/ci/build-env-hash amd64)"
+          echo "image=${REGISTRY_NAME}/${owner_lc}/nesso-build-env:deps-${deps_hash}" >> "${GITHUB_OUTPUT}"
+
+  fuzz:
+    needs: [guard, resolve]
+    if: github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: read
+    container:
+      image: ${{ needs.resolve.outputs.image }} # zizmor: ignore[unpinned-images] deps-<hash> tag, not a digest
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Ensure Conan default profile
+        run: conan profile detect --force
+
+      - name: Run fuzz-test (AFL++ library harnesses + ASan)
+        env:
+          NESSO_WERROR: "1"
+        run: |
+          chmod +x scripts/fuzz-test
+          NESSO_FUZZ_MAX_TOTAL_TIME=60 ./scripts/fuzz-test
+
+      # upload-artifact rejects ':' in paths, and every AFL finding is named id:NNNNNN,...
+      - name: Collect AFL crashes
+        if: failure()
+        run: |
+          mkdir -p build/fuzz/findings
+          for crash in build/fuzz/afl-out-*/default/crashes/id:*; do
+            [ -f "${crash}" ] || continue
+            target="$(basename "$(dirname "$(dirname "$(dirname "${crash}")")")")"
+            cp "${crash}" "build/fuzz/findings/${target}_$(basename "${crash}" | tr ':,' '__')"
+          done
+
+      - name: Upload AFL findings on failure
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: fuzz-test-findings
+          path: build/fuzz/findings
+          if-no-files-found: warn

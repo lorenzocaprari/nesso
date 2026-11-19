@@ -66,6 +66,13 @@ class BenchRealLogTest(unittest.TestCase):
         bench = load_bench()
         self.assertEqual(bench.REAL_LOG_DEFAULT_LINES, 1_000_000)
         self.assertEqual(bench.REAL_LOG_THREAD_COUNTS, (1, 8))
+        self.assertEqual(bench.REAL_LOG_DEFAULT_CORPORA, ("hdfs-v1", "thunderbird"))
+        self.assertEqual(bench.parse_real_log_corpora(None), ("hdfs-v1", "thunderbird"))
+        self.assertEqual(bench.parse_real_log_corpora("all"), tuple(bench.REAL_LOG_FILES))
+        self.assertEqual(bench.parse_real_log_corpora("thunderbird"), ("thunderbird",))
+        with self.assertRaises(SystemExit):
+            bench.parse_real_log_corpora("nope")
+
         with tempfile.TemporaryDirectory() as temp:
             directory = pathlib.Path(temp)
             source = directory / "HDFS_1m.log"
@@ -131,9 +138,10 @@ class BenchRealLogTest(unittest.TestCase):
             payload = json.loads(output.read_text(encoding="utf-8"))
             self.assertEqual(payload["dataset"], "real-log")
             self.assertEqual(payload["lines"], 2)
-            self.assertEqual(len(payload["cases"]), len(bench.REAL_LOG_FILES) * len(bench.REAL_LOG_THREAD_COUNTS))
+            default = bench.REAL_LOG_DEFAULT_CORPORA
+            self.assertEqual(len(payload["cases"]), len(default) * len(bench.REAL_LOG_THREAD_COUNTS))
             names = [case["corpus"] for case in payload["cases"]]
-            self.assertEqual(names, [name for name in bench.REAL_LOG_FILES for _ in bench.REAL_LOG_THREAD_COUNTS])
+            self.assertEqual(names, [name for name in default for _ in bench.REAL_LOG_THREAD_COUNTS])
             threads = {case["threads"] for case in payload["cases"]}
             self.assertEqual(threads, {"1", "8"})
             case = payload["cases"][0]
@@ -155,6 +163,37 @@ class BenchRealLogTest(unittest.TestCase):
             self.assertIn("lines/s=", result.stdout)
             self.assertIn("mode=dense", result.stdout)
 
+            all_out = directory / "all.json"
+            all_result = subprocess.run(
+                [
+                    sys.executable,
+                    str(SCRIPT),
+                    "--dataset",
+                    "real-log",
+                    "--corpora",
+                    "all",
+                    "--lines",
+                    "2",
+                    "--real-log-root",
+                    str(root),
+                    "--binary",
+                    str(binary),
+                    "--model-dir",
+                    str(model),
+                    "--output",
+                    str(all_out),
+                ],
+                capture_output=True,
+                text=True,
+                check=False,
+                env=env,
+            )
+            self.assertEqual(all_result.returncode, 0, all_result.stderr + all_result.stdout)
+            all_payload = json.loads(all_out.read_text(encoding="utf-8"))
+            self.assertEqual(
+                len(all_payload["cases"]),
+                len(bench.REAL_LOG_FILES) * len(bench.REAL_LOG_THREAD_COUNTS),
+            )
 
 if __name__ == "__main__":
     unittest.main()
