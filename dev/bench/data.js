@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795124985224,
+  "lastUpdate": 1795126082672,
   "repoUrl": "https://github.com/lorenzocaprari/nesso",
   "entries": {
     "nesso": [
@@ -9395,6 +9395,60 @@ window.BENCHMARK_DATA = {
           {
             "name": "grep-100000-rss",
             "value": 143818752,
+            "unit": "bytes"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "caprarilorenzo5@gmail.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "committer": {
+            "email": "85455384+lorenzocaprari@users.noreply.github.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "distinct": true,
+          "id": "2ce451c3a921eff29ca2795e94d9b4ee0006a2c9",
+          "message": "test(eval): score grep, ripgrep and BM25 baselines with the retrieval eval",
+          "timestamp": "2026-11-19T23:03:08+01:00",
+          "tree_id": "869f9ed3863b50e2399b10576ae1bed1ca94212a",
+          "url": "https://github.com/lorenzocaprari/nesso/commit/2ce451c3a921eff29ca2795e94d9b4ee0006a2c9"
+        },
+        "date": 1795126081952,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "grep-1000-wall",
+            "value": 1.12,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-1000-rss",
+            "value": 118304768,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-10000-wall",
+            "value": 1.13,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-10000-rss",
+            "value": 119508992,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-100000-wall",
+            "value": 1.37,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-100000-rss",
+            "value": 143409152,
             "unit": "bytes"
           }
         ]
