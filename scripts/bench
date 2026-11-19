@@ -14,9 +14,9 @@ and distance. A second search without NESSO_TRACE must print the same stdout.
 The result is bench/results/<sha>.search-profile.json and is not compared
 with bench/baseline.json.
 --dataset real-log times index, grep, search, and search --mode dense on the
-first N lines of the Loghub HDFS_v1, BGL, and Thunderbird logs (never repeated)
-at NESSO_THREADS=1 and NESSO_THREADS=8. The result is
-bench/results/<sha>.real-log.json.
+first N lines of selected Loghub corpora (default hdfs-v1,thunderbird; --corpora
+all adds BGL) at NESSO_THREADS=1 and NESSO_THREADS=8. Lines are never repeated.
+The result is bench/results/<sha>.real-log.json.
 """
 
 import argparse
@@ -39,6 +39,10 @@ DEFAULT_SIZES = (1000, 10_000, 100_000)
 HDFS_DEFAULT_LINES = 100_000
 REAL_LOG_DEFAULT_LINES = 1_000_000
 REAL_LOG_THREAD_COUNTS = (1, 8)
+# Nightly default: HDFS is a cheap smoke; Thunderbird is the peak-RSS / wall
+# canary (~1.5 GiB). BGL is kept available via --corpora but skipped by default:
+# similar cost and stress class to Thunderbird without being the high-water mark.
+REAL_LOG_DEFAULT_CORPORA = ("hdfs-v1", "thunderbird")
 REAL_LOG_QUERIES = {
     "hdfs-v1": "block replication",
     "bgl": "kernel fatal",
@@ -1499,21 +1503,47 @@ def prepare_real_log(source: Path, work: Path, count: int) -> tuple[Path, int]:
     return dest, size
 
 
-def ensure_real_log_root(explicit: Path | None, lines: int) -> Path:
+def parse_real_log_corpora(raw: str | None) -> tuple[str, ...]:
+    if raw is None or raw.strip() == "":
+        return REAL_LOG_DEFAULT_CORPORA
+    text = raw.strip().lower()
+    if text == "all":
+        return tuple(REAL_LOG_FILES)
+    names: list[str] = []
+    seen: set[str] = set()
+    for part in raw.split(","):
+        name = part.strip()
+        if not name:
+            continue
+        if name not in REAL_LOG_FILES:
+            known = ", ".join(REAL_LOG_FILES)
+            raise SystemExit(f"error: unknown real-log corpus {name!r} (want all or {known})")
+        if name in seen:
+            raise SystemExit(f"error: duplicate real-log corpus {name!r}")
+        seen.add(name)
+        names.append(name)
+    if not names:
+        raise SystemExit("error: --corpora needs at least one corpus")
+    return tuple(names)
+
+
+def ensure_real_log_root(explicit: Path | None, lines: int, corpora: tuple[str, ...]) -> Path:
+    wanted = [REAL_LOG_FILES[name] for name in corpora]
     if explicit is not None:
-        missing = [name for name in REAL_LOG_FILES.values() if not (explicit / name).is_file()]
+        missing = [name for name in wanted if not (explicit / name).is_file()]
         if missing:
             raise SystemExit(f"error: missing real-log samples in {explicit}: {', '.join(missing)}")
         return explicit
     script = Path(__file__).resolve().parent / "fetch-loghub"
-    completed = subprocess.run(
-        [sys.executable, str(script), "--dataset", "all-full", "--lines", str(lines)],
-        check=False,
-    )
-    if completed.returncode != 0:
-        raise SystemExit(completed.returncode)
+    for corpus in corpora:
+        completed = subprocess.run(
+            [sys.executable, str(script), "--dataset", corpus, "--lines", str(lines)],
+            check=False,
+        )
+        if completed.returncode != 0:
+            raise SystemExit(completed.returncode)
     root = ROOT / "build" / "bench"
-    missing = [name for name in REAL_LOG_FILES.values() if not (root / name).is_file()]
+    missing = [name for name in wanted if not (root / name).is_file()]
     if missing:
         raise SystemExit(f"error: fetch-loghub did not write {', '.join(missing)}")
     return root
@@ -1580,6 +1610,7 @@ def run_real_log(args: argparse.Namespace) -> None:
     lines = REAL_LOG_DEFAULT_LINES if args.lines is None else args.lines
     if lines <= 0:
         raise SystemExit("error: --lines must be a positive integer")
+    corpora = parse_real_log_corpora(args.corpora)
     binary = resolve_binary(args.binary)
     if not binary.is_file():
         raise SystemExit(f"error: binary not found: {binary}")
@@ -1589,11 +1620,12 @@ def run_real_log(args: argparse.Namespace) -> None:
     time_bin = gnu_time_binary()
     if not Path(time_bin).is_file():
         raise SystemExit(f"error: {time_bin} is required")
-    root = ensure_real_log_root(args.real_log_root, lines)
+    root = ensure_real_log_root(args.real_log_root, lines, corpora)
     cases = []
     with tempfile.TemporaryDirectory(prefix="nesso-bench-real-log-") as tmp:
         work = Path(tmp)
-        for corpus_name, filename in REAL_LOG_FILES.items():
+        for corpus_name in corpora:
+            filename = REAL_LOG_FILES[corpus_name]
             log_path, input_bytes = prepare_real_log(root / filename, work, lines)
             query = REAL_LOG_QUERIES[corpus_name]
             for threads in REAL_LOG_THREAD_COUNTS:
@@ -1742,7 +1774,7 @@ def main() -> None:
             "and runs one search. ttfa indexes a generated bundle directory and runs one search. "
             "search-profile indexes one generated log and splits one search into corpus read, "
             "model load, query embedding, and distance. real-log times index, grep, and search "
-            "on the first N lines of HDFS_v1, BGL, and Thunderbird"
+            "on the first N lines of selected Loghub corpora (default: hdfs-v1,thunderbird)"
         ),
     )
     parser.add_argument(
@@ -1771,7 +1803,15 @@ def main() -> None:
     parser.add_argument(
         "--real-log-root",
         type=Path,
-        help="Directory of HDFS_1m.log, BGL_1m.log, and Thunderbird_1m.log (default: fetch into build/bench)",
+        help="Directory of selected real-log samples (default: fetch into build/bench)",
+    )
+    parser.add_argument(
+        "--corpora",
+        default=None,
+        help=(
+            "Comma-separated real-log corpora, or 'all' for hdfs-v1,bgl,thunderbird "
+            f"(default: {','.join(REAL_LOG_DEFAULT_CORPORA)})"
+        ),
     )
     parser.add_argument(
         "--sizes",
@@ -1785,6 +1825,8 @@ def main() -> None:
         if args.dataset is not None:
             raise SystemExit("error: pass only one of --ttfa and --dataset")
         args.dataset = "ttfa"
+    if args.corpora is not None and args.dataset != "real-log":
+        raise SystemExit("error: --corpora applies to --dataset real-log")
     if args.dataset == "hdfs":
         if args.mib is not None:
             raise SystemExit("error: --mib applies to --dataset logdir or --dataset ttfa")

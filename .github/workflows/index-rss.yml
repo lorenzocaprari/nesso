@@ -1,0 +1,140 @@
+name: Index RSS
+
+# Not a Pipeline job. Measures nesso index peak RSS on a 1M-line Loghub HDFS
+# sample and fails above 1.5 GiB. Schedule and workflow_dispatch only.
+on:
+  schedule:
+    # 04:47 UTC, after the Pipeline nightly at 03:17 UTC.
+    - cron: "47 4 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: index-rss-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  REGISTRY: ghcr.io
+  CONAN_HOME: /opt/conan2
+  CONAN_WERROR_ARGS: "-c user.nesso:werror=True"
+
+jobs:
+  guard:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
+        with:
+          egress-policy: audit
+
+      - name: Require schedule on main or a manual dispatch
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          set -euo pipefail
+          if [[ "${EVENT_NAME}" == "schedule" ]]; then
+            if [[ "${GITHUB_REF}" != "refs/heads/main" ]]; then
+              echo "index-rss: schedule refuses ${GITHUB_REF}" >&2
+              exit 1
+            fi
+            exit 0
+          fi
+          if [[ "${EVENT_NAME}" != "workflow_dispatch" ]]; then
+            echo "index-rss: refusing event ${EVENT_NAME}" >&2
+            exit 1
+          fi
+
+  resolve:
+    needs: [guard]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    outputs:
+      image: ${{ steps.select.outputs.image }}
+    steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
+        with:
+          egress-policy: audit
+
+      - name: Checkout Repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Resolve image reference
+        id: select
+        shell: bash
+        env:
+          REGISTRY_NAME: ${{ env.REGISTRY }}
+        run: |
+          set -euo pipefail
+          owner_lc="$(printf '%s' "${GITHUB_REPOSITORY_OWNER}" | tr '[:upper:]' '[:lower:]')"
+          deps_hash="$(./scripts/ci/build-env-hash amd64)"
+          echo "image=${REGISTRY_NAME}/${owner_lc}/nesso-build-env:deps-${deps_hash}" >> "${GITHUB_OUTPUT}"
+
+  index-rss:
+    needs: [guard, resolve]
+    if: github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    permissions:
+      contents: read
+      packages: read
+    container:
+      image: ${{ needs.resolve.outputs.image }} # zizmor: ignore[unpinned-images] deps-<hash> tag, not a digest
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Restore MiniLM models
+        id: models
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: models
+          key: minilm-${{ hashFiles('scripts/fetch-model') }}
+
+      - name: Fetch MiniLM models
+        if: steps.models.outputs.cache-hit != 'true'
+        run: ./scripts/fetch-model models
+
+      - name: Install Dependencies (Conan)
+        run: |
+          conan profile detect --force
+          conan install . -pr:h ./conan/profiles/gcc-26 -pr:b default --lockfile=conan.lock --build=missing --no-remote -o tests=False $CONAN_WERROR_ARGS
+
+      - name: Build
+        run: conan build . -pr:h ./conan/profiles/gcc-26 -pr:b default --lockfile=conan.lock --build=missing --no-remote -o tests=False $CONAN_WERROR_ARGS
+
+      - name: Gate index peak RSS (1M lines, 1.5 GiB)
+        run: |
+          set -euo pipefail
+          ./scripts/check-index-rss \
+            --binary build/Release/src/nesso \
+            --model-dir models \
+            --lines 1000000 \
+            --budget-mib 1536 \
+            --threads 1 \
+            --threads 8 \
+            | tee index-rss.txt
+
+      - name: Upload index-rss log
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: index-rss
+          path: index-rss.txt
+          if-no-files-found: warn

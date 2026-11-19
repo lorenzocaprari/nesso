@@ -24,7 +24,6 @@ const (
 	classUnknown = iota
 	classAlways
 	classDocs
-	classPullRequestOff
 	classMainHistory
 	classGate
 )
@@ -219,8 +218,6 @@ func skipOK(class int, event, changesResult, changesCode string) bool {
 	switch class {
 	case classDocs:
 		return event == "pull_request" && changesResult == "success" && changesCode == "false"
-	case classPullRequestOff:
-		return event == "pull_request"
 	case classMainHistory:
 		// A push must record history, including when the ref is missing.
 		// Pull requests, the nightly schedule, and workflow_dispatch skip it.
@@ -239,8 +236,6 @@ func skipVerdict(class int) string {
 	switch class {
 	case classDocs:
 		return "skipped, docs-only pull request"
-	case classPullRequestOff:
-		return "skipped, pull request"
 	case classMainHistory:
 		return "skipped, not a push to main"
 	default:
@@ -420,8 +415,6 @@ func classifyIf(ifText string, ids map[string]bool) (int, bool) {
 		return classAlways, true
 	case "needs.changes.outputs.code == 'true'":
 		return classDocs, true
-	case "github.event_name != 'pull_request'":
-		return classPullRequestOff, true
 	case "always() && !cancelled() && github.event_name == 'push' && github.ref == 'refs/heads/main' && (needs.bench.result == 'success' || needs.bench.result == 'failure')":
 		return classMainHistory, true
 	case "${{ needs.changes.outputs.code == 'true' && !cancelled() && needs.prepare-image-arm64.result == 'success' }}":
