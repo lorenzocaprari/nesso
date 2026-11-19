@@ -1,0 +1,243 @@
+#!/usr/bin/env python3
+"""Compare two retrieval-eval JSON reports.
+
+Prints a Markdown table of current vs previous scores per system, mode, class
+(or overall), and metric, plus one DROP line per relative drop beyond the
+tolerance. Scores never fail the process: exit 0 whenever both reports parse.
+Exit non-zero only on unreadable or malformed input.
+
+A schema_version mismatch prints a note and skips the comparison (exit 0).
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import sys
+from pathlib import Path
+from typing import Any
+
+METRICS = ("recall_at_10", "mrr", "ndcg_at_10")
+DEFAULT_TOLERANCE = 0.05
+
+
+def load_report(path: Path) -> dict[str, Any]:
+    try:
+        raw = path.read_text(encoding="utf-8")
+    except OSError as exc:
+        raise SystemExit(f"error: cannot read {path}: {exc}") from exc
+    try:
+        payload = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise SystemExit(f"error: malformed JSON in {path}: {exc}") from exc
+    if not isinstance(payload, dict):
+        raise SystemExit(f"error: malformed JSON in {path}: top-level value must be an object")
+    if "schema_version" not in payload:
+        raise SystemExit(f"error: malformed JSON in {path}: missing schema_version")
+    version = payload["schema_version"]
+    if not isinstance(version, int) or isinstance(version, bool):
+        raise SystemExit(f"error: malformed JSON in {path}: schema_version must be an int")
+    return payload
+
+
+def metrics_from(bucket: dict[str, Any] | None) -> dict[str, float] | None:
+    if bucket is None:
+        return None
+    metrics = bucket.get("metrics")
+    if not isinstance(metrics, dict):
+        return None
+    out: dict[str, float] = {}
+    for name in METRICS:
+        if name not in metrics:
+            continue
+        value = metrics[name]
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            raise SystemExit(f"error: malformed metrics value for {name}")
+        out[name] = float(value)
+    return out
+
+
+def index_modes(modes: Any) -> dict[str, dict[str, Any]]:
+    if not isinstance(modes, list):
+        return {}
+    found: dict[str, dict[str, Any]] = {}
+    for mode in modes:
+        if not isinstance(mode, dict):
+            continue
+        name = mode.get("mode")
+        if isinstance(name, str):
+            found[name] = mode
+    return found
+
+
+def index_classes(mode: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    found: dict[str, dict[str, Any]] = {}
+    by_class = mode.get("by_class")
+    if isinstance(by_class, list):
+        for row in by_class:
+            if not isinstance(row, dict):
+                continue
+            name = row.get("class")
+            if isinstance(name, str):
+                found[name] = row
+    overall = mode.get("overall")
+    if isinstance(overall, dict):
+        found["overall"] = overall
+    return found
+
+
+def flatten(report: dict[str, Any]) -> dict[tuple[str, str, str, str], float]:
+    """Map (system, mode, class, metric) -> score."""
+    flat: dict[tuple[str, str, str, str], float] = {}
+
+    def add_scope(system: str, modes_payload: Any) -> None:
+        for mode_name, mode in index_modes(modes_payload).items():
+            for class_name, bucket in index_classes(mode).items():
+                metrics = metrics_from(bucket)
+                if metrics is None:
+                    continue
+                for metric, value in metrics.items():
+                    flat[(system, mode_name, class_name, metric)] = value
+
+    datasets = report.get("datasets")
+    if isinstance(datasets, list):
+        for entry in datasets:
+            if not isinstance(entry, dict):
+                continue
+            name = entry.get("dataset")
+            if isinstance(name, str):
+                add_scope(name, entry.get("modes"))
+
+    overall = report.get("overall")
+    if isinstance(overall, dict):
+        add_scope("overall", overall.get("modes"))
+
+    return flat
+
+
+def format_score(value: float | None) -> str:
+    if value is None:
+        return "—"
+    return f"{value:.6f}"
+
+
+def format_change(current: float | None, previous: float | None) -> str:
+    if current is None or previous is None:
+        return "—"
+    if previous <= 0:
+        return "n/a"
+    return f"{(current - previous) / previous * 100.0:+.1f}%"
+
+
+def resolve_tolerance(explicit: float | None) -> float:
+    if explicit is not None:
+        value = explicit
+    else:
+        raw = os.environ.get("NESSO_EVAL_TOLERANCE", "")
+        if raw != "":
+            try:
+                value = float(raw)
+            except ValueError as exc:
+                raise SystemExit(f"error: invalid NESSO_EVAL_TOLERANCE: {exc}") from exc
+        else:
+            value = DEFAULT_TOLERANCE
+    if value < 0:
+        raise SystemExit("error: tolerance must be >= 0")
+    return value
+
+
+def compare(current: dict[str, Any], previous: dict[str, Any], tolerance: float) -> tuple[str, list[str]]:
+    if current["schema_version"] != previous["schema_version"]:
+        note = (
+            f"schema_version mismatch: current={current['schema_version']} "
+            f"previous={previous['schema_version']}; skipping comparison"
+        )
+        return note, []
+
+    cur = flatten(current)
+    prev = flatten(previous)
+    keys = sorted(set(cur) | set(prev))
+
+    pct = int(round(tolerance * 100))
+    lines = [
+        f"### Retrieval eval compare (tolerance {pct}%)",
+        "",
+        "| system | mode | class | metric | current | previous | change | status |",
+        "| --- | --- | --- | --- | --- | --- | --- | --- |",
+    ]
+    drops: list[str] = []
+
+    for key in keys:
+        system, mode, class_name, metric = key
+        c_val = cur.get(key)
+        p_val = prev.get(key)
+        if c_val is None and p_val is not None:
+            status = "removed"
+        elif c_val is not None and p_val is None:
+            status = "new"
+        elif c_val is not None and p_val is not None and p_val > 0 and c_val < p_val * (1.0 - tolerance):
+            status = "drop"
+            change = format_change(c_val, p_val)
+            drops.append(
+                f"DROP {system} {mode} {class_name} {metric}: "
+                f"{format_score(p_val)} -> {format_score(c_val)} ({change})"
+            )
+        else:
+            status = "ok"
+
+        lines.append(
+            "| "
+            + " | ".join(
+                [
+                    system,
+                    mode,
+                    class_name,
+                    metric,
+                    format_score(c_val),
+                    format_score(p_val),
+                    format_change(c_val, p_val),
+                    status,
+                ]
+            )
+            + " |"
+        )
+
+    if drops:
+        lines.append("")
+        lines.extend(drops)
+
+    return "\n".join(lines) + "\n", drops
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--current", type=Path, required=True, help="Current eval JSON report")
+    parser.add_argument("--previous", type=Path, required=True, help="Previous eval JSON report")
+    parser.add_argument(
+        "--tolerance",
+        type=float,
+        default=None,
+        help=f"Relative drop fraction that marks a drop (default {DEFAULT_TOLERANCE})",
+    )
+    args = parser.parse_args()
+
+    try:
+        tolerance = resolve_tolerance(args.tolerance)
+    except SystemExit:
+        raise
+    except ValueError as exc:
+        raise SystemExit(f"error: invalid tolerance: {exc}") from exc
+
+    current = load_report(args.current)
+    previous = load_report(args.previous)
+    text, _drops = compare(current, previous, tolerance)
+    sys.stdout.write(text)
+    return 0
+
+
+if __name__ == "__main__":
+    try:
+        raise SystemExit(main())
+    except BrokenPipeError:
+        raise SystemExit(0) from None
