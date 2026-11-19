@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795005979276,
+  "lastUpdate": 1795079716657,
   "repoUrl": "https://github.com/lorenzocaprari/nesso",
   "entries": {
     "nesso": [
@@ -9017,6 +9017,60 @@ window.BENCHMARK_DATA = {
           {
             "name": "grep-100000-rss",
             "value": 146612224,
+            "unit": "bytes"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "caprarilorenzo5@gmail.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "committer": {
+            "email": "85455384+lorenzocaprari@users.noreply.github.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "distinct": true,
+          "id": "5686ac29c9070be96376a7d99af5acfcd550b2c1",
+          "message": "ci(soak): extract fuzz-test and add index-rss soak\n\nMove AFL++ out of Pipeline, gate 1M index RSS nightly, and trim real-log to HDFS plus Thunderbird by default.",
+          "timestamp": "2026-11-19T10:09:06+01:00",
+          "tree_id": "a087640dbdb35f5f4c9319ec9826d4e4332e6ce2",
+          "url": "https://github.com/lorenzocaprari/nesso/commit/5686ac29c9070be96376a7d99af5acfcd550b2c1"
+        },
+        "date": 1795079716344,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "grep-1000-wall",
+            "value": 0.14,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-1000-rss",
+            "value": 118824960,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-10000-wall",
+            "value": 0.16,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-10000-rss",
+            "value": 117620736,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-100000-wall",
+            "value": 0.35,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-100000-rss",
+            "value": 144277504,
             "unit": "bytes"
           }
         ]
