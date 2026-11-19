@@ -60,6 +60,10 @@ if(NESSO_PYTHON_EXECUTABLE)
            COMMAND "${NESSO_PYTHON_EXECUTABLE}"
                    "${CMAKE_CURRENT_SOURCE_DIR}/eval_retrieval_test.py")
   set_tests_properties(eval_retrieval_test PROPERTIES LABELS unit)
+  add_test(NAME eval_retrieval_compare_test
+           COMMAND "${NESSO_PYTHON_EXECUTABLE}"
+                   "${CMAKE_CURRENT_SOURCE_DIR}/eval_retrieval_compare_test.py")
+  set_tests_properties(eval_retrieval_compare_test PROPERTIES LABELS unit)
   add_test(NAME fetch_model_test
            COMMAND "${NESSO_PYTHON_EXECUTABLE}"
                    "${CMAKE_CURRENT_SOURCE_DIR}/fetch_model_test.py")
