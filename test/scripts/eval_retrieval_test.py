@@ -36,34 +36,108 @@ class EvalRetrievalMetricsTest(unittest.TestCase):
     def setUpClass(cls) -> None:
         cls.mod = load_eval()
 
-    def test_perfect_ranking(self) -> None:
-        ranked = ["E10"] * 10
-        metrics = self.mod.score_ranking(ranked, frozenset({"E10"}), relevant_line_count=100)
+    def test_single_line_hit(self) -> None:
+        metrics = self.mod.score_ranking([7] + [8] * 9, frozenset({7}))
         self.assertEqual(metrics.recall_at_10, 1.0)
         self.assertEqual(metrics.mrr, 1.0)
         self.assertEqual(metrics.ndcg_at_10, 1.0)
 
-    def test_no_hits(self) -> None:
-        metrics = self.mod.score_ranking([], frozenset({"E10"}), relevant_line_count=100)
+    def test_single_line_miss(self) -> None:
+        metrics = self.mod.score_ranking([2, 3, 4], frozenset({1}))
         self.assertEqual(metrics.recall_at_10, 0.0)
         self.assertEqual(metrics.mrr, 0.0)
         self.assertEqual(metrics.ndcg_at_10, 0.0)
 
-    def test_hit_at_rank_3(self) -> None:
-        ranked = ["E1", "E1", "E10"] + ["E1"] * 7
-        metrics = self.mod.score_ranking(ranked, frozenset({"E10"}), relevant_line_count=100)
-        self.assertEqual(metrics.recall_at_10, 1.0)
-        self.assertAlmostEqual(metrics.mrr, 1.0 / 3.0)
-        expected_ndcg = (1.0 / math.log2(4)) / idcg10()
-        self.assertAlmostEqual(metrics.ndcg_at_10, expected_ndcg)
-
-    def test_duplicates(self) -> None:
-        ranked = ["E10", "E10", "E1"]
-        metrics = self.mod.score_ranking(ranked, frozenset({"E10"}), relevant_line_count=100)
+    def test_template_311_all_in_top_10(self) -> None:
+        relevant = frozenset(range(1, 312))
+        self.assertEqual(len(relevant), 311)
+        metrics = self.mod.score_ranking(list(range(1, 11)), relevant)
         self.assertEqual(metrics.recall_at_10, 1.0)
         self.assertEqual(metrics.mrr, 1.0)
-        dcg = 1.0 / math.log2(2) + 1.0 / math.log2(3)
+        self.assertEqual(metrics.ndcg_at_10, 1.0)
+
+    def test_template_311_three_of_ten(self) -> None:
+        relevant = frozenset(range(1, 312))
+        ranked = [1, 2, 3] + [1000] * 7
+        metrics = self.mod.score_ranking(ranked, relevant)
+        self.assertAlmostEqual(metrics.recall_at_10, 3.0 / 10.0)
+        self.assertEqual(metrics.mrr, 1.0)
+        dcg = 1.0 / math.log2(2) + 1.0 / math.log2(3) + 1.0 / math.log2(4)
         self.assertAlmostEqual(metrics.ndcg_at_10, dcg / idcg10())
+
+    def test_hit_at_rank_3(self) -> None:
+        ranked = [9, 8, 1] + [7] * 7
+        metrics = self.mod.score_ranking(ranked, frozenset({1}))
+        self.assertEqual(metrics.recall_at_10, 1.0 / min(10, 1))
+        self.assertAlmostEqual(metrics.mrr, 1.0 / 3.0)
+        ideal = 1.0 / math.log2(2)
+        self.assertAlmostEqual(metrics.ndcg_at_10, (1.0 / math.log2(4)) / ideal)
+
+
+class EvalRetrievalLabelsTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.mod = load_eval()
+
+    def _queries(self, directory: pathlib.Path, body: str) -> pathlib.Path:
+        path = directory / "queries.jsonl"
+        path.write_text(body, encoding="utf-8")
+        return path
+
+    def test_wrong_line_label_fails(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            directory = pathlib.Path(temp)
+            log = directory / "sample.log"
+            log.write_text("nothing about the query\n", encoding="utf-8")
+            loaded = self.mod.load_queries(
+                self._queries(
+                    directory,
+                    '{"id":"exact_01","class":"exact_id","query":"blk_123","relevant_lines":[1]}\n',
+                )
+            )
+            with self.assertRaises(SystemExit) as ctx:
+                self.mod.validate_relevant_lines(loaded, log)
+            message = str(ctx.exception)
+            self.assertIn("exact_01", message)
+            self.assertIn("whole token", message)
+            self.assertIn("blk_123", message)
+
+    def test_token_boundary_miss_fails(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            directory = pathlib.Path(temp)
+            log = directory / "sample.log"
+            log.write_text("saw blk_1234 here\n", encoding="utf-8")
+            loaded = self.mod.load_queries(
+                self._queries(
+                    directory,
+                    '{"id":"exact_01","class":"exact_id","query":"blk_123","relevant_lines":[1]}\n',
+                )
+            )
+            with self.assertRaises(SystemExit) as ctx:
+                self.mod.validate_relevant_lines(loaded, log)
+            message = str(ctx.exception)
+            self.assertIn("exact_01", message)
+            self.assertIn("line 1", message)
+            self.assertIn("blk_123", message)
+            self.assertIn("whole token", message)
+
+    def test_rejects_both_neither_and_legacy_relevant(self) -> None:
+        cases = (
+            '{"id":"q","class":"exact_id","query":"a","relevant_lines":[1],"relevant_events":["E1"]}\n',
+            '{"id":"q","class":"exact_id","query":"a"}\n',
+            '{"id":"q","class":"exact_id","query":"a","relevant":["E1"]}\n',
+        )
+        for body in cases:
+            with self.subTest(body=body):
+                with tempfile.TemporaryDirectory() as temp:
+                    path = self._queries(pathlib.Path(temp), body)
+                    with self.assertRaises(SystemExit) as ctx:
+                        self.mod.load_queries(path)
+                    message = str(ctx.exception)
+                    self.assertTrue(
+                        "exactly one" in message or "unknown key 'relevant'" in message,
+                        message,
+                    )
 
 
 class EvalRetrievalEndToEndTest(unittest.TestCase):
@@ -76,11 +150,11 @@ class EvalRetrievalEndToEndTest(unittest.TestCase):
                 encoding="utf-8",
             )
             log_path = directory / "sample.log"
-            log_path.write_text("a\nb\nc\nd\ne\n", encoding="utf-8")
+            log_path.write_text("alpha\nb\nc\nd\ne\n", encoding="utf-8")
             queries = directory / "queries.jsonl"
             queries.write_text(
-                '{"id":"q1","class":"exact_id","query":"alpha","relevant":["E10"]}\n'
-                '{"id":"q2","class":"paraphrase","query":"beta","relevant":["E7"]}\n',
+                '{"id":"q1","class":"exact_id","query":"alpha","relevant_lines":[1]}\n'
+                '{"id":"q2","class":"paraphrase","query":"beta","relevant_events":["E7"]}\n',
                 encoding="utf-8",
             )
             fake = directory / "fake-nesso"
@@ -130,64 +204,35 @@ class EvalRetrievalEndToEndTest(unittest.TestCase):
             fake.chmod(fake.stat().st_mode | stat.S_IEXEC)
             out = directory / "report.json"
             workdir = directory / "work"
-            first = subprocess.run(
-                [
-                    sys.executable,
-                    str(SCRIPT),
-                    "--binary",
-                    str(fake),
-                    "--model-dir",
-                    str(directory),
-                    "--log",
-                    str(log_path),
-                    "--structured",
-                    str(structured),
-                    "--queries",
-                    str(queries),
-                    "--modes",
-                    "dense",
-                    "--workdir",
-                    str(workdir),
-                    "--out",
-                    str(out),
-                    "--skip-fetch",
-                ],
-                capture_output=True,
-                text=True,
-                check=False,
-            )
+            command = [
+                sys.executable,
+                str(SCRIPT),
+                "--binary",
+                str(fake),
+                "--model-dir",
+                str(directory),
+                "--log",
+                str(log_path),
+                "--structured",
+                str(structured),
+                "--queries",
+                str(queries),
+                "--modes",
+                "dense",
+                "--workdir",
+                str(workdir),
+                "--out",
+                str(out),
+                "--skip-fetch",
+            ]
+            first = subprocess.run(command, capture_output=True, text=True, check=False)
             self.assertEqual(first.returncode, 0, first.stderr + first.stdout)
             payload = out.read_bytes()
-            second = subprocess.run(
-                [
-                    sys.executable,
-                    str(SCRIPT),
-                    "--binary",
-                    str(fake),
-                    "--model-dir",
-                    str(directory),
-                    "--log",
-                    str(log_path),
-                    "--structured",
-                    str(structured),
-                    "--queries",
-                    str(queries),
-                    "--modes",
-                    "dense",
-                    "--workdir",
-                    str(workdir),
-                    "--out",
-                    str(out),
-                    "--skip-fetch",
-                ],
-                capture_output=True,
-                text=True,
-                check=False,
-            )
+            second = subprocess.run(command, capture_output=True, text=True, check=False)
             self.assertEqual(second.returncode, 0, second.stderr + second.stdout)
             self.assertEqual(out.read_bytes(), payload)
             report = json.loads(payload.decode())
-            self.assertEqual(report["schema_version"], 1)
+            self.assertEqual(report["schema_version"], 2)
             self.assertEqual(report["k"], 10)
             self.assertEqual(report["query_count"], 2)
             mode = report["modes"][0]
@@ -195,9 +240,14 @@ class EvalRetrievalEndToEndTest(unittest.TestCase):
             self.assertEqual(mode["overall"]["n"], 2)
             q1 = mode["queries"][0]
             self.assertEqual(q1["id"], "q1")
-            self.assertEqual(q1["ranked_event_ids"], ["E10", "E1", "E10"])
+            self.assertEqual(q1["ranked_lines"], [1, 2, 3])
+            self.assertNotIn("ranked_event_ids", q1)
             self.assertEqual(q1["metrics"]["recall_at_10"], 1.0)
             self.assertEqual(q1["metrics"]["mrr"], 1.0)
+            q2 = mode["queries"][1]
+            self.assertEqual(q2["ranked_lines"], [4, 5, 2])
+            self.assertEqual(q2["metrics"]["recall_at_10"], 1.0)
+            self.assertEqual(q2["metrics"]["mrr"], 1.0)
 
     def test_missing_binary_fails(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
