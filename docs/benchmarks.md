@@ -55,6 +55,20 @@ go run -C scripts/ci . bench-baseline --output bench/baseline.json bench/results
 python3 scripts/eval-retrieval --dataset all-2k --out build/eval/all_2k.json
 ```
 
+Optional keyword baselines share the same labels and metrics. Pass `--engine` repeatedly (`nesso`, `grep`, `ripgrep`, `bm25`; default is nesso only). Without `--engine` (or with `--engine nesso` alone) the JSON stays `schema_version` 3 and is byte-compatible with prior nesso-only reports. Any other engine writes `schema_version` 4 with an `engines[]` axis and a side-by-side text table. Scoring is unchanged: each engine only supplies ranked 1-based line ids.
+
+- **grep:** `grep -n -F -i -e <query> -- <log>`. If that has no hits, OR the query's whitespace tokens with one `-e` per token. Rank is file order (ascending line id), top 10. This is the "what people do today" baseline.
+- **ripgrep:** the same rule with `rg -n -F -i`. If `rg` is missing, the engine is reported as `skipped` (not zeros).
+- **bm25:** Python stdlib `sqlite3` FTS5, one row per line with `rowid = line id`, query = OR of FTS5-quoted tokens, `ORDER BY bm25(lines), rowid LIMIT 10`. The run fails clearly if the sqlite3 build lacks FTS5.
+
+```bash
+python3 scripts/eval-retrieval --dataset all-2k \
+  --engine nesso --engine grep --engine ripgrep --engine bm25 \
+  --out build/eval/all_2k_baselines.json
+```
+
+Baseline comparisons are a local or per-release tool: they are not Pipeline and are not the nightly `eval-retrieval` workflow. Published comparisons should be run on a fixed machine.
+
 The nightly workflow downloads the newest `eval-retrieval` artifact from the latest successful scheduled run on `main`, then runs `scripts/eval-retrieval-compare` against the fresh report. That script prints a Markdown table of per-system, per-mode, per-class (and overall) recall@10 / MRR / nDCG@10 deltas and emits a warning annotation when a score drops by more than 5% relative to the previous value (`--tolerance` or `NESSO_EVAL_TOLERANCE`). A missing previous artifact prints `no previous run to compare`. Scores never fail the job; only unreadable or malformed JSON does.
 
 The `bench` CI job runs on every pull request, on pushes to `main`, and nightly. Pull requests time the 1k and 10k tiers. Pushes to `main` and the nightly schedule also time 100k. The job compares the tiers it ran with `bench/baseline.json` and fails when wall time is more than 1.35× the baseline or peak RSS is more than 1.15× the baseline (`NESSO_BENCH_WALL_TOLERANCE`, `NESSO_BENCH_RSS_TOLERANCE`). A missing baseline file fails the job. The same job runs the 4000-line grep once with `NESSO_THREADS=1` and once with `NESSO_THREADS=4` and fails unless the 4-thread run is at least `threadScaleMinRatio` faster (`scripts/ci`). The job summary lists lines per second for each tier and that ratio. A push to `main` appends the sized-tier result to benchmark history on the `gh-pages` branch. Pull requests do not write that branch. They add an informational comparison with the stored history to the job summary, and that comparison does not fail the job.
