@@ -14,6 +14,7 @@ import zipfile
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "scripts" / "fetch-loghub"
 PINNED_SHA256 = "7c967000980c086ed55fa6544ba4f05fe66d44622795e890c68caf8bbb635035"
+PINNED_STRUCTURED_SHA256 = "729df59774e3dde934044028546d2a55d5e3d4370b9d12fcebbe4c087b2bf7b4"
 
 
 def load_fetch():
@@ -46,6 +47,19 @@ class FetchLoghubTest(unittest.TestCase):
         self.assertNotIn("/main/", module.HDFS_URL)
         self.assertEqual(module.HDFS_SHA256, PINNED_SHA256)
         self.assertEqual(module.DEFAULT_DEST.relative_to(ROOT), pathlib.Path("build/bench/HDFS_2k.log"))
+        self.assertRegex(
+            module.HDFS_STRUCTURED_URL,
+            r"^https://raw\.githubusercontent\.com/logpai/loghub/[0-9a-f]{40}/HDFS/HDFS_2k\.log_structured\.csv$",
+        )
+        self.assertNotIn("/master/", module.HDFS_STRUCTURED_URL)
+        self.assertNotIn("/main/", module.HDFS_STRUCTURED_URL)
+        self.assertEqual(module.HDFS_STRUCTURED_SHA256, PINNED_STRUCTURED_SHA256)
+        self.assertEqual(
+            module.DEFAULT_STRUCTURED_DEST.relative_to(ROOT),
+            pathlib.Path("build/bench/HDFS_2k.log_structured.csv"),
+        )
+        self.assertEqual(module.HDFS_COMMIT, module.HDFS_URL.split("/")[5])
+        self.assertEqual(module.HDFS_COMMIT, module.HDFS_STRUCTURED_URL.split("/")[5])
 
     def test_hash_mismatch_fails_and_keeps_no_file(self) -> None:
         with tempfile.TemporaryDirectory() as temp:

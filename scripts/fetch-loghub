@@ -2,7 +2,9 @@
 """Download pinned Loghub inputs into build/bench/.
 
 The default dataset is the HDFS_v1 2k sample (HDFS/HDFS_2k.log) from
-logpai/loghub at a pinned commit. Full sets come from Zenodo record 8196385:
+logpai/loghub at a pinned commit, plus the matching structured CSV
+(HDFS_2k.log_structured.csv) with per-line EventId labels. Full sets come
+from Zenodo record 8196385:
 HDFS_v1, BGL, and Thunderbird. Each full set is checked against a sha256 pin,
 then the first N lines of the raw log are written and the archive is deleted.
 Thunderbird is streamed from the tar member so the 29 GiB log is never
@@ -31,6 +33,11 @@ HDFS_COMMIT = "374038faa4ca122dd7ca0730372c0b78f76f8597"
 HDFS_URL = f"https://raw.githubusercontent.com/logpai/loghub/{HDFS_COMMIT}/HDFS/HDFS_2k.log"
 HDFS_SHA256 = "7c967000980c086ed55fa6544ba4f05fe66d44622795e890c68caf8bbb635035"
 DEFAULT_DEST = ROOT / "build" / "bench" / "HDFS_2k.log"
+HDFS_STRUCTURED_URL = (
+    f"https://raw.githubusercontent.com/logpai/loghub/{HDFS_COMMIT}/HDFS/HDFS_2k.log_structured.csv"
+)
+HDFS_STRUCTURED_SHA256 = "729df59774e3dde934044028546d2a55d5e3d4370b9d12fcebbe4c087b2bf7b4"
+DEFAULT_STRUCTURED_DEST = ROOT / "build" / "bench" / "HDFS_2k.log_structured.csv"
 DEFAULT_PREFIX_LINES = 1_000_000
 # Loghub full logs (ISSRE 2023). Not the concept DOI and not /latest.
 ZENODO_RECORD = "8196385"
@@ -279,7 +286,16 @@ def main(argv: list[str] | None = None) -> None:
             raise SystemExit("error: --lines applies to a full Loghub set, not hdfs-2k")
         if args.member is not None or args.kind is not None or args.prefix_sha256 is not None:
             raise SystemExit("error: --member, --kind, and --prefix-sha256 apply to a full Loghub set")
-        fetch(args.dest or DEFAULT_DEST, args.url or HDFS_URL, args.sha256 or HDFS_SHA256)
+        log_dest = args.dest or DEFAULT_DEST
+        fetch(log_dest, args.url or HDFS_URL, args.sha256 or HDFS_SHA256)
+        # Unit tests override --url/--sha256 for the log only; keep that path offline.
+        if args.url is None and args.sha256 is None:
+            structured_dest = (
+                DEFAULT_STRUCTURED_DEST
+                if args.dest is None
+                else log_dest.with_name(log_dest.name + "_structured.csv")
+            )
+            fetch(structured_dest, HDFS_STRUCTURED_URL, HDFS_STRUCTURED_SHA256)
         return
     if args.lines <= 0:
         raise SystemExit("error: --lines must be a positive integer")

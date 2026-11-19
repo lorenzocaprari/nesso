@@ -48,6 +48,13 @@ go run -C scripts/ci . bench-baseline --output bench/baseline.json bench/results
 
 `./scripts/check-index-rss` measures `nesso index` peak RSS on a repeated Loghub HDFS sample (default 1M lines, budget 1.5 GiB, threads 1 and 8). [`.github/workflows/index-rss.yml`](../.github/workflows/index-rss.yml) runs that gate on schedule `47 4 * * *` and on `workflow_dispatch`. It is not a Pipeline job.
 
+`scripts/eval-retrieval` scores `nesso search --json -k 10` against labelled queries on the pinned Loghub HDFS_2k sample. It indexes the log once, runs each query for the requested modes (default `auto`, `hybrid`, `dense`, `lexical`), and reports recall@10, MRR, and nDCG@10 with binary relevance by Loghub `EventId` (from the structured CSV that `scripts/fetch-loghub` also downloads). It prints a text table and writes deterministic JSON to `--out`. The script is report-only: any scores exit 0; it fails only on missing inputs, a bad query file, or unparseable search output. The committed seed set in `test/eval/queries/hdfs_2k.jsonl` is for local smoke scoring and is not the published retrieval benchmark.
+
+```bash
+./scripts/fetch-loghub
+python3 scripts/eval-retrieval --out build/eval/hdfs_2k.json
+```
+
 The `bench` CI job runs on every pull request, on pushes to `main`, and nightly. Pull requests time the 1k and 10k tiers. Pushes to `main` and the nightly schedule also time 100k. The job compares the tiers it ran with `bench/baseline.json` and fails when wall time is more than 1.35× the baseline or peak RSS is more than 1.15× the baseline (`NESSO_BENCH_WALL_TOLERANCE`, `NESSO_BENCH_RSS_TOLERANCE`). A missing baseline file fails the job. The same job runs the 4000-line grep once with `NESSO_THREADS=1` and once with `NESSO_THREADS=4` and fails unless the 4-thread run is at least `threadScaleMinRatio` faster (`scripts/ci`). The job summary lists lines per second for each tier and that ratio. A push to `main` appends the sized-tier result to benchmark history on the `gh-pages` branch. Pull requests do not write that branch. They add an informational comparison with the stored history to the job summary, and that comparison does not fail the job.
 
 The chart file is [dev/bench/index.html](https://github.com/lorenzocaprari/nesso/blob/gh-pages/dev/bench/index.html) on that branch. GitHub Pages does not serve this repository.

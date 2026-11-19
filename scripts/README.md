@@ -5,7 +5,7 @@ helpers live elsewhere so a local `ls` stays short.
 
 | Location | Use |
 | --- | --- |
-| `scripts/` | Local gates and day-to-day tooling (`lint`, `fetch-model`, `bench`, `bench-real-log-compare`, `check-index-rss`, …) |
+| `scripts/` | Local gates and day-to-day tooling (`lint`, `fetch-model`, `bench`, `bench-real-log-compare`, `check-index-rss`, `eval-retrieval`, …) |
 | `scripts/ci/` | Pipeline helpers (Go `ci` binary, `build-env-hash`, `ci-build-archive`, `download-pinned`) |
 | `packaging/scripts/` | Release `.deb`, runtime image, Trivy, and license/notice gates |
 
