@@ -3,8 +3,9 @@
 
 Indexes the pinned HDFS_2k log once, runs every query with
 `nesso search --json -k 10` for each requested mode, and reports recall@10,
-MRR, and nDCG@10 (binary relevance by Loghub EventId) per query class and
-overall. Report-only: exit 0 for any scores; non-zero only on errors.
+MRR, and nDCG@10. Relevance is a set of lines: the listed LineIds, or every
+line whose EventId is listed. Report-only: exit 0 for any scores; non-zero
+only on errors.
 """
 
 from __future__ import annotations
@@ -28,6 +29,7 @@ DEFAULT_MODES = ("auto", "hybrid", "dense", "lexical")
 VALID_CLASSES = frozenset({"exact_id", "paraphrase", "cause"})
 K = 10
 FLOAT_DIGITS = 6
+TOKEN_CHARS = frozenset("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_")
 
 
 @dataclass(frozen=True)
@@ -35,7 +37,8 @@ class Query:
     id: str
     class_name: str
     query: str
-    relevant: frozenset[str]
+    relevant_lines: frozenset[int] | None
+    relevant_events: frozenset[str] | None
 
 
 @dataclass(frozen=True)
@@ -82,6 +85,23 @@ def resolve_model_dir(explicit: str | None) -> Path:
     return ROOT / "models"
 
 
+def _positive_line_ids(path: Path, lineno: int, raw: object) -> frozenset[int]:
+    if not isinstance(raw, list) or not raw:
+        raise SystemExit(f"error: {path}:{lineno}: relevant_lines must be a non-empty list of line ids")
+    line_ids: list[int] = []
+    for item in raw:
+        if isinstance(item, bool) or not isinstance(item, int) or item < 1:
+            raise SystemExit(f"error: {path}:{lineno}: relevant_lines must be positive integers")
+        line_ids.append(item)
+    return frozenset(line_ids)
+
+
+def _event_ids(path: Path, lineno: int, raw: object) -> frozenset[str]:
+    if not isinstance(raw, list) or not raw or not all(isinstance(item, str) and item for item in raw):
+        raise SystemExit(f"error: {path}:{lineno}: relevant_events must be a non-empty string list")
+    return frozenset(raw)
+
+
 def load_queries(path: Path) -> list[Query]:
     if not path.is_file():
         raise SystemExit(f"error: query file not found: {path}")
@@ -103,7 +123,6 @@ def load_queries(path: Path) -> list[Query]:
         query_id = payload.get("id")
         class_name = payload.get("class")
         query_text = payload.get("query")
-        relevant = payload.get("relevant")
         if not isinstance(query_id, str) or not query_id:
             raise SystemExit(f"error: {path}:{lineno}: missing id")
         if class_name not in VALID_CLASSES:
@@ -112,21 +131,66 @@ def load_queries(path: Path) -> list[Query]:
             )
         if not isinstance(query_text, str) or not query_text:
             raise SystemExit(f"error: {path}:{lineno}: missing query")
-        if not isinstance(relevant, list) or not relevant or not all(
-            isinstance(item, str) and item for item in relevant
-        ):
-            raise SystemExit(f"error: {path}:{lineno}: relevant must be a non-empty string list")
+        if "relevant" in payload:
+            raise SystemExit(
+                f"error: {path}:{lineno}: unknown key 'relevant'; use relevant_lines or relevant_events"
+            )
+        has_lines = "relevant_lines" in payload
+        has_events = "relevant_events" in payload
+        if has_lines == has_events:
+            raise SystemExit(
+                f"error: {path}:{lineno}: query must set exactly one of relevant_lines or relevant_events"
+            )
+        relevant_lines = _positive_line_ids(path, lineno, payload["relevant_lines"]) if has_lines else None
+        relevant_events = _event_ids(path, lineno, payload["relevant_events"]) if has_events else None
         queries.append(
             Query(
                 id=query_id,
                 class_name=class_name,
                 query=query_text,
-                relevant=frozenset(relevant),
+                relevant_lines=relevant_lines,
+                relevant_events=relevant_events,
             )
         )
     if not queries:
         raise SystemExit(f"error: {path}: no queries")
     return queries
+
+
+def contains_whole_token(text: str, query: str) -> bool:
+    if not query:
+        return False
+    start = 0
+    while True:
+        index = text.find(query, start)
+        if index < 0:
+            return False
+        before_ok = index == 0 or text[index - 1] not in TOKEN_CHARS
+        end = index + len(query)
+        after_ok = end == len(text) or text[end] not in TOKEN_CHARS
+        if before_ok and after_ok:
+            return True
+        start = index + 1
+
+
+def validate_relevant_lines(queries: list[Query], log_path: Path) -> None:
+    try:
+        lines = log_path.read_text(encoding="utf-8").splitlines()
+    except OSError as exc:
+        raise SystemExit(f"error: cannot read {log_path}: {exc}") from exc
+    for query in queries:
+        if query.relevant_lines is None:
+            continue
+        for line_id in sorted(query.relevant_lines):
+            if line_id > len(lines):
+                raise SystemExit(
+                    f"error: query {query.id}: line {line_id} does not exist in {log_path} "
+                    f"(query {query.query!r})"
+                )
+            if not contains_whole_token(lines[line_id - 1], query.query):
+                raise SystemExit(
+                    f"error: query {query.id}: line {line_id} does not contain {query.query!r} as a whole token"
+                )
 
 
 def load_event_ids(path: Path) -> dict[int, str]:
@@ -154,20 +218,25 @@ def load_event_ids(path: Path) -> dict[int, str]:
     return mapping
 
 
-def count_relevant_lines(event_by_line: dict[int, str], relevant: frozenset[str]) -> int:
-    return sum(1 for event_id in event_by_line.values() if event_id in relevant)
+def relevant_set(query: Query, event_by_line: dict[int, str]) -> frozenset[int]:
+    if query.relevant_lines is not None:
+        return query.relevant_lines
+    events = query.relevant_events
+    if events is None:
+        raise SystemExit(f"error: query {query.id} has no relevance labels")
+    return frozenset(line_id for line_id, event_id in event_by_line.items() if event_id in events)
 
 
-def recall_at_k(ranked_event_ids: list[str], relevant: frozenset[str], k: int = K) -> float:
+def recall_at_k(ranked_lines: list[int], relevant: frozenset[int], k: int = K) -> float:
     if not relevant:
         return 0.0
-    found = {event_id for event_id in ranked_event_ids[:k] if event_id in relevant}
-    return len(found) / len(relevant)
+    found = {line_id for line_id in ranked_lines[:k] if line_id in relevant}
+    return len(found) / min(k, len(relevant))
 
 
-def mrr(ranked_event_ids: list[str], relevant: frozenset[str]) -> float:
-    for index, event_id in enumerate(ranked_event_ids, start=1):
-        if event_id in relevant:
+def mrr(ranked_lines: list[int], relevant: frozenset[int]) -> float:
+    for index, line_id in enumerate(ranked_lines, start=1):
+        if line_id in relevant:
             return 1.0 / index
     return 0.0
 
@@ -179,36 +248,20 @@ def dcg_at_k(gains: list[float], k: int = K) -> float:
     return total
 
 
-def ndcg_at_k(
-    ranked_event_ids: list[str],
-    relevant: frozenset[str],
-    *,
-    relevant_line_count: int,
-    k: int = K,
-) -> float:
-    gains = [1.0 if event_id in relevant else 0.0 for event_id in ranked_event_ids[:k]]
-    ideal_hits = min(k, max(0, relevant_line_count))
+def ndcg_at_k(ranked_lines: list[int], relevant: frozenset[int], k: int = K) -> float:
+    gains = [1.0 if line_id in relevant else 0.0 for line_id in ranked_lines[:k]]
+    ideal_hits = min(k, len(relevant))
     ideal = dcg_at_k([1.0] * ideal_hits, k)
     if ideal == 0.0:
         return 0.0
     return dcg_at_k(gains, k) / ideal
 
 
-def score_ranking(
-    ranked_event_ids: list[str],
-    relevant: frozenset[str],
-    relevant_line_count: int,
-    k: int = K,
-) -> Metrics:
+def score_ranking(ranked_lines: list[int], relevant: frozenset[int], k: int = K) -> Metrics:
     return Metrics(
-        recall_at_10=recall_at_k(ranked_event_ids, relevant, k),
-        mrr=mrr(ranked_event_ids, relevant),
-        ndcg_at_10=ndcg_at_k(
-            ranked_event_ids,
-            relevant,
-            relevant_line_count=relevant_line_count,
-            k=k,
-        ),
+        recall_at_10=recall_at_k(ranked_lines, relevant, k),
+        mrr=mrr(ranked_lines, relevant),
+        ndcg_at_10=ndcg_at_k(ranked_lines, relevant, k),
     )
 
 
@@ -231,17 +284,14 @@ def parse_search_json(stdout: str) -> list[dict]:
     return hits
 
 
-def event_ids_for_hits(hits: list[dict], event_by_line: dict[int, str]) -> list[str]:
-    ranked: list[str] = []
+def lines_for_hits(hits: list[dict]) -> list[int]:
+    ranked: list[int] = []
     for hit in hits[:K]:
         try:
             line_id = int(hit["line"])
         except (TypeError, ValueError) as exc:
             raise SystemExit(f"error: invalid line in search hit: {hit.get('line')!r}") from exc
-        event_id = event_by_line.get(line_id)
-        if event_id is None:
-            raise SystemExit(f"error: no EventId for line {line_id}")
-        ranked.append(event_id)
+        ranked.append(line_id)
     return ranked
 
 
@@ -377,12 +427,13 @@ def evaluate(
         ],
         label="nesso index",
     )
+    resolved = [(query, relevant_set(query, event_by_line)) for query in queries]
     mode_results = []
     for mode in modes:
         per_query: list[dict] = []
         by_class: dict[str, list[Metrics]] = {name: [] for name in sorted(VALID_CLASSES)}
         all_metrics: list[Metrics] = []
-        for query in queries:
+        for query, relevant in resolved:
             # Exit 1 is "no matches"; that is a valid empty ranking for metrics.
             completed = run_command(
                 [
@@ -403,9 +454,8 @@ def evaluate(
                 ok_codes=frozenset({0, 1}),
             )
             hits = parse_search_json(completed.stdout)
-            ranked = event_ids_for_hits(hits, event_by_line)
-            relevant_lines = count_relevant_lines(event_by_line, query.relevant)
-            metrics = score_ranking(ranked, query.relevant, relevant_lines)
+            ranked = lines_for_hits(hits)
+            metrics = score_ranking(ranked, relevant)
             all_metrics.append(metrics)
             by_class[query.class_name].append(metrics)
             per_query.append(
@@ -413,7 +463,7 @@ def evaluate(
                     "class": query.class_name,
                     "id": query.id,
                     "metrics": metrics_dict(metrics),
-                    "ranked_event_ids": ranked,
+                    "ranked_lines": ranked,
                 }
             )
         class_rows = []
@@ -441,7 +491,7 @@ def evaluate(
         "k": K,
         "modes": mode_results,
         "query_count": len(queries),
-        "schema_version": 1,
+        "schema_version": 2,
     }
 
 
@@ -495,6 +545,7 @@ def main(argv: list[str] | None = None) -> None:
     elif not args.log.is_file() or not args.structured.is_file():
         raise SystemExit("error: --log and --structured must exist when --skip-fetch is set")
     event_by_line = load_event_ids(args.structured)
+    validate_relevant_lines(queries, args.log)
     payload = evaluate(
         binary=binary,
         model_dir=model_dir,

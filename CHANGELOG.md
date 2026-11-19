@@ -9,7 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- `scripts/eval-retrieval` scores `nesso search --json -k 10` on the pinned Loghub HDFS_2k sample against a seed query set labelled by EventId. It is report-only and is not a Pipeline gate. `scripts/fetch-loghub` also downloads the matching structured CSV.
+- `scripts/eval-retrieval` scores `nesso search --json -k 10` on the pinned Loghub HDFS_2k sample against a seed query set. It is report-only and is not a Pipeline gate. `scripts/fetch-loghub` also downloads the matching structured CSV.
+
+### Fixed
+
+- Retrieval evaluation labels exact-ID seeds by line and scores every query class on lines. A query sets `relevant_lines` or `relevant_events`, not both. recall@10, MRR, and nDCG@10 use that line set.
 
 ## [0.3.1] - 2026-11-18
 

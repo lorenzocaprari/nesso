@@ -1,17 +1,18 @@
 # Seed queries for scripts/eval-retrieval on Loghub HDFS_2k.
-# Relevance is by EventId (see test/eval/README.md). Not the published benchmark.
-{"id":"exact_01","class":"exact_id","query":"blk_38865049064139660","relevant":["E10"]}
-{"id":"exact_02","class":"exact_id","query":"blk_-1727475099218615100","relevant":["E7"]}
-{"id":"exact_03","class":"exact_id","query":"blk_-4980916519894289629","relevant":["E14"]}
-{"id":"exact_04","class":"exact_id","query":"blk_-2918118818249673980","relevant":["E3"]}
-{"id":"exact_05","class":"exact_id","query":"blk_-5140072410813878235","relevant":["E4"]}
-{"id":"para_01","class":"paraphrase","query":"PacketResponder terminating for block","relevant":["E10"]}
-{"id":"para_02","class":"paraphrase","query":"NameSystem allocated a new block","relevant":["E7"]}
-{"id":"para_03","class":"paraphrase","query":"block verification succeeded","relevant":["E14"]}
-{"id":"para_04","class":"paraphrase","query":"exception while serving a block","relevant":["E3"]}
-{"id":"para_05","class":"paraphrase","query":"ask datanode to delete block","relevant":["E4"]}
-{"id":"cause_01","class":"cause","query":"why did PacketResponder stop","relevant":["E10"]}
-{"id":"cause_02","class":"cause","query":"why was a new HDFS block allocated","relevant":["E7"]}
-{"id":"cause_03","class":"cause","query":"why did block verification succeed","relevant":["E14"]}
-{"id":"cause_04","class":"cause","query":"why did serving a block fail","relevant":["E3"]}
-{"id":"cause_05","class":"cause","query":"why was a block asked to be deleted","relevant":["E4"]}
+# exact_id uses relevant_lines; paraphrase and cause use relevant_events.
+# Not the published benchmark.
+{"id":"exact_01","class":"exact_id","query":"blk_38865049064139660","relevant_lines":[1]}
+{"id":"exact_02","class":"exact_id","query":"blk_-1727475099218615100","relevant_lines":[16]}
+{"id":"exact_03","class":"exact_id","query":"blk_-4980916519894289629","relevant_lines":[29]}
+{"id":"exact_04","class":"exact_id","query":"blk_-2918118818249673980","relevant_lines":[78]}
+{"id":"exact_05","class":"exact_id","query":"blk_-5140072410813878235","relevant_lines":[928]}
+{"id":"para_01","class":"paraphrase","query":"PacketResponder terminating for block","relevant_events":["E10"]}
+{"id":"para_02","class":"paraphrase","query":"NameSystem allocated a new block","relevant_events":["E7"]}
+{"id":"para_03","class":"paraphrase","query":"block verification succeeded","relevant_events":["E14"]}
+{"id":"para_04","class":"paraphrase","query":"exception while serving a block","relevant_events":["E3"]}
+{"id":"para_05","class":"paraphrase","query":"ask datanode to delete block","relevant_events":["E4"]}
+{"id":"cause_01","class":"cause","query":"why did PacketResponder stop","relevant_events":["E10"]}
+{"id":"cause_02","class":"cause","query":"why was a new HDFS block allocated","relevant_events":["E7"]}
+{"id":"cause_03","class":"cause","query":"why did block verification succeed","relevant_events":["E14"]}
+{"id":"cause_04","class":"cause","query":"why did serving a block fail","relevant_events":["E3"]}
+{"id":"cause_05","class":"cause","query":"why was a block asked to be deleted","relevant_events":["E4"]}
