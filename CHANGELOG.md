@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `scripts/eval-retrieval` scores `nesso search --json -k 10` on the pinned Loghub HDFS_2k sample against a seed query set. It is report-only and is not a Pipeline gate. `scripts/fetch-loghub` also downloads the matching structured CSV.
 - Retrieval eval covers pinned BGL, Thunderbird, OpenSSH, and Linux 2k samples as well as HDFS. `scripts/fetch-loghub` accepts `bgl-2k`, `thunderbird-2k`, `openssh-2k`, `linux-2k`, and `all-2k`. `scripts/eval-retrieval --dataset` runs one or more systems and writes `schema_version` 3 JSON with per-system and overall tables.
+- `scripts/eval-retrieval --engine` scores grep, ripgrep, and SQLite FTS5 BM25 baselines with the same labelled queries and metrics. Default nesso-only output stays `schema_version` 3; any non-nesso engine writes `schema_version` 4. Not Pipeline or nightly.
 
 ### Fixed
 

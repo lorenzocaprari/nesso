@@ -1,11 +1,20 @@
 #!/usr/bin/env python3
-"""Score nesso search ranking against labelled Loghub queries.
+"""Score search ranking against labelled Loghub queries.
 
-Indexes each selected Loghub 2k sample once, runs every query with
-`nesso search --json -k 10` for each requested mode, and reports recall@10,
-MRR, and nDCG@10. Relevance is a set of lines: the listed LineIds, or every
-line whose EventId is listed. Report-only: exit 0 for any scores; non-zero
-only on errors.
+Indexes each selected Loghub 2k sample once (nesso), runs every query, and
+reports recall@10, MRR, and nDCG@10. Relevance is a set of lines: the listed
+LineIds, or every line whose EventId is listed.
+
+Engines (--engine, repeatable; default nesso only):
+  nesso     nesso search --json -k 10 for each --modes value
+  grep      grep -n -F -i exact query, else OR of whitespace tokens via -e
+  ripgrep   same rule with rg; skipped (not zeroed) if rg is missing
+  bm25      stdlib sqlite3 FTS5, OR of quoted tokens, ORDER BY bm25(), rowid
+
+Without --engine (or --engine nesso alone) the JSON stays schema_version 3 and
+byte-compatible with prior nesso-only reports. Any other engine uses
+schema_version 4 with an engines[] axis. Report-only: exit 0 for any scores;
+non-zero only on errors.
 """
 
 from __future__ import annotations
@@ -15,11 +24,14 @@ import csv
 import json
 import math
 import os
+import shutil
+import sqlite3
 import statistics
 import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Protocol
 
 ROOT = Path(__file__).resolve().parent.parent
 BENCH_DIR = ROOT / "build" / "bench"
@@ -29,9 +41,11 @@ DEFAULT_LOG = BENCH_DIR / "HDFS_2k.log"
 DEFAULT_STRUCTURED = BENCH_DIR / "HDFS_2k.log_structured.csv"
 DEFAULT_MODES = ("auto", "hybrid", "dense", "lexical")
 VALID_CLASSES = frozenset({"exact_id", "paraphrase", "cause"})
+VALID_ENGINES = ("nesso", "grep", "ripgrep", "bm25")
 K = 10
 FLOAT_DIGITS = 6
 SCHEMA_VERSION = 3
+SCHEMA_VERSION_ENGINES = 4
 TOKEN_CHARS = frozenset("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_")
 ALL_2K = "all-2k"
 
@@ -84,8 +98,25 @@ class Metrics:
     ndcg_at_10: float
 
 
+class RankEngine(Protocol):
+    name: str
+
+    def availability(self) -> tuple[bool, str]:
+        """(True, "") if usable; (False, reason) if skipped."""
+
+    def prepare(self, log_path: Path, lines: list[str], workdir: Path) -> None:
+        """Per-dataset setup."""
+
+    def rank(self, query: str, *, k: int = K) -> list[int]:
+        """Up to k distinct 1-based line ids, best-first."""
+
+
 def round_metric(value: float) -> float:
     return round(value, FLOAT_DIGITS)
+
+
+def query_tokens(query: str) -> list[str]:
+    return [tok for tok in query.split() if tok]
 
 
 def resolve_binary(explicit: str | None) -> Path:
@@ -397,6 +428,239 @@ def metrics_dict(metrics: Metrics) -> dict[str, float]:
     }
 
 
+def parse_fixed_line_matches(stdout: str) -> list[int]:
+    """Parse `grep -n` / `rg -n` output into 1-based line ids in file order."""
+    ranked: list[int] = []
+    seen: set[int] = set()
+    for raw in stdout.splitlines():
+        if not raw:
+            continue
+        # Format: <line>:<text> — take the leading integer before the first colon.
+        colon = raw.find(":")
+        if colon <= 0:
+            continue
+        try:
+            line_id = int(raw[:colon])
+        except ValueError:
+            continue
+        if line_id < 1 or line_id in seen:
+            continue
+        seen.add(line_id)
+        ranked.append(line_id)
+    return ranked
+
+
+def fixed_pattern_rank(
+    argv_prefix: list[str],
+    log_path: Path,
+    query: str,
+    *,
+    k: int = K,
+    label: str,
+) -> list[int]:
+    """Exact fixed-string match, else OR of whitespace tokens; file order, top k."""
+    exact = run_command(
+        [*argv_prefix, "-e", query, "--", str(log_path)],
+        label=f"{label} exact",
+        ok_codes=frozenset({0, 1}),
+    )
+    ranked = parse_fixed_line_matches(exact.stdout)
+    if ranked:
+        return ranked[:k]
+    tokens = query_tokens(query)
+    if not tokens:
+        return []
+    command = list(argv_prefix)
+    for token in tokens:
+        command.extend(["-e", token])
+    command.extend(["--", str(log_path)])
+    fallback = run_command(
+        command,
+        label=f"{label} token-or",
+        ok_codes=frozenset({0, 1}),
+    )
+    return parse_fixed_line_matches(fallback.stdout)[:k]
+
+
+def fts5_quote_token(token: str) -> str:
+    return '"' + token.replace('"', '""') + '"'
+
+
+def fts5_or_query(tokens: list[str]) -> str:
+    return " OR ".join(fts5_quote_token(token) for token in tokens)
+
+
+def require_fts5() -> None:
+    try:
+        conn = sqlite3.connect(":memory:")
+        try:
+            conn.execute("CREATE VIRTUAL TABLE probe USING fts5(x)")
+        finally:
+            conn.close()
+    except sqlite3.Error as exc:
+        raise SystemExit(
+            f"error: Python sqlite3 build lacks FTS5 (required for --engine bm25): {exc}"
+        ) from exc
+
+
+@dataclass
+class NessoEngine:
+    name: str = "nesso"
+    binary: Path = Path()
+    model_dir: Path = Path()
+    corpus: Path | None = None
+
+    def availability(self) -> tuple[bool, str]:
+        return True, ""
+
+    def prepare(self, log_path: Path, lines: list[str], workdir: Path) -> None:
+        del lines
+        workdir.mkdir(parents=True, exist_ok=True)
+        if self.corpus is None:
+            raise SystemExit("error: nesso engine missing corpus path")
+        run_checked(
+            [
+                str(self.binary),
+                "index",
+                "-o",
+                str(self.corpus),
+                str(log_path),
+                "--model-dir",
+                str(self.model_dir),
+            ],
+            label="nesso index",
+        )
+
+    def rank(self, query: str, *, k: int = K) -> list[int]:
+        return self.rank_mode(query, "dense", k=k)
+
+    def rank_mode(self, query: str, mode: str, *, k: int = K) -> list[int]:
+        if self.corpus is None:
+            raise SystemExit("error: nesso engine not prepared")
+        completed = run_command(
+            [
+                str(self.binary),
+                "search",
+                query,
+                "-i",
+                str(self.corpus),
+                "--json",
+                "-k",
+                str(k),
+                "--mode",
+                mode,
+                "--model-dir",
+                str(self.model_dir),
+            ],
+            label=f"nesso search ({mode})",
+            ok_codes=frozenset({0, 1}),
+        )
+        return lines_for_hits(parse_search_json(completed.stdout))
+
+
+@dataclass
+class GrepEngine:
+    name: str = "grep"
+    _log_path: Path | None = None
+
+    def availability(self) -> tuple[bool, str]:
+        if shutil.which("grep") is None:
+            return False, "grep executable not found"
+        return True, ""
+
+    def prepare(self, log_path: Path, lines: list[str], workdir: Path) -> None:
+        del lines, workdir
+        ok, reason = self.availability()
+        if not ok:
+            raise SystemExit(f"error: {reason}")
+        self._log_path = log_path
+
+    def rank(self, query: str, *, k: int = K) -> list[int]:
+        if self._log_path is None:
+            raise SystemExit("error: grep engine not prepared")
+        return fixed_pattern_rank(
+            ["grep", "-n", "-F", "-i"],
+            self._log_path,
+            query,
+            k=k,
+            label="grep",
+        )
+
+
+@dataclass
+class RipgrepEngine:
+    name: str = "ripgrep"
+    _log_path: Path | None = None
+    _skip_reason: str | None = None
+
+    def availability(self) -> tuple[bool, str]:
+        if shutil.which("rg") is None:
+            return False, "rg executable not found"
+        return True, ""
+
+    def prepare(self, log_path: Path, lines: list[str], workdir: Path) -> None:
+        del lines, workdir
+        ok, reason = self.availability()
+        if not ok:
+            self._skip_reason = reason
+            self._log_path = None
+            return
+        self._skip_reason = None
+        self._log_path = log_path
+
+    def rank(self, query: str, *, k: int = K) -> list[int]:
+        if self._skip_reason is not None:
+            raise SystemExit(f"error: ripgrep skipped: {self._skip_reason}")
+        if self._log_path is None:
+            raise SystemExit("error: ripgrep engine not prepared")
+        return fixed_pattern_rank(
+            ["rg", "-n", "-F", "-i"],
+            self._log_path,
+            query,
+            k=k,
+            label="ripgrep",
+        )
+
+
+@dataclass
+class Bm25Engine:
+    name: str = "bm25"
+    _conn: sqlite3.Connection | None = None
+
+    def availability(self) -> tuple[bool, str]:
+        try:
+            require_fts5()
+        except SystemExit as exc:
+            return False, str(exc).removeprefix("error: ")
+        return True, ""
+
+    def prepare(self, log_path: Path, lines: list[str], workdir: Path) -> None:
+        del log_path, workdir
+        require_fts5()
+        if self._conn is not None:
+            self._conn.close()
+        self._conn = sqlite3.connect(":memory:")
+        self._conn.execute("CREATE VIRTUAL TABLE lines USING fts5(content)")
+        self._conn.executemany(
+            "INSERT INTO lines(rowid, content) VALUES (?, ?)",
+            ((index, text) for index, text in enumerate(lines, start=1)),
+        )
+        self._conn.commit()
+
+    def rank(self, query: str, *, k: int = K) -> list[int]:
+        if self._conn is None:
+            raise SystemExit("error: bm25 engine not prepared")
+        tokens = query_tokens(query)
+        if not tokens:
+            return []
+        match = fts5_or_query(tokens)
+        rows = self._conn.execute(
+            "SELECT rowid FROM lines WHERE lines MATCH ? ORDER BY bm25(lines), rowid LIMIT ?",
+            (match, k),
+        ).fetchall()
+        return [int(row[0]) for row in rows]
+
+
 def format_mode_table(modes: list[dict]) -> str:
     headers = ("mode", "class", "n", "recall@10", "MRR", "nDCG@10")
     rows: list[tuple[str, str, str, str, str, str]] = []
@@ -438,8 +702,96 @@ def format_mode_table(modes: list[dict]) -> str:
     return "\n".join(lines)
 
 
+def format_engine_table(engines: list[dict]) -> str:
+    headers = ("engine", "class", "n", "recall@10", "MRR", "nDCG@10")
+    rows: list[tuple[str, str, str, str, str, str]] = []
+    for engine in engines:
+        engine_name = engine["engine"]
+        if engine.get("status") == "skipped":
+            rows.append(
+                (
+                    engine_name,
+                    "skipped",
+                    "-",
+                    engine.get("reason", ""),
+                    "",
+                    "",
+                )
+            )
+            continue
+        if "modes" in engine:
+            for mode in engine["modes"]:
+                label = f"{engine_name}/{mode['mode']}"
+                for bucket in mode["by_class"]:
+                    metrics = bucket["metrics"]
+                    rows.append(
+                        (
+                            label,
+                            bucket["class"],
+                            str(bucket["n"]),
+                            f"{metrics['recall_at_10']:0.6f}",
+                            f"{metrics['mrr']:0.6f}",
+                            f"{metrics['ndcg_at_10']:0.6f}",
+                        )
+                    )
+                overall = mode["overall"]["metrics"]
+                rows.append(
+                    (
+                        label,
+                        "overall",
+                        str(mode["overall"]["n"]),
+                        f"{overall['recall_at_10']:0.6f}",
+                        f"{overall['mrr']:0.6f}",
+                        f"{overall['ndcg_at_10']:0.6f}",
+                    )
+                )
+            continue
+        for bucket in engine["by_class"]:
+            metrics = bucket["metrics"]
+            rows.append(
+                (
+                    engine_name,
+                    bucket["class"],
+                    str(bucket["n"]),
+                    f"{metrics['recall_at_10']:0.6f}",
+                    f"{metrics['mrr']:0.6f}",
+                    f"{metrics['ndcg_at_10']:0.6f}",
+                )
+            )
+        overall = engine["overall"]["metrics"]
+        rows.append(
+            (
+                engine_name,
+                "overall",
+                str(engine["overall"]["n"]),
+                f"{overall['recall_at_10']:0.6f}",
+                f"{overall['mrr']:0.6f}",
+                f"{overall['ndcg_at_10']:0.6f}",
+            )
+        )
+    widths = [len(header) for header in headers]
+    for row in rows:
+        for index, cell in enumerate(row):
+            widths[index] = max(widths[index], len(cell))
+    lines = [
+        "  ".join(header.ljust(widths[index]) for index, header in enumerate(headers)),
+        "  ".join("-" * widths[index] for index in range(len(headers))),
+    ]
+    for row in rows:
+        lines.append("  ".join(cell.ljust(widths[index]) for index, cell in enumerate(row)))
+    return "\n".join(lines)
+
+
 def format_report(payload: dict) -> str:
     sections: list[str] = []
+    schema = payload.get("schema_version", SCHEMA_VERSION)
+    if schema >= SCHEMA_VERSION_ENGINES:
+        for dataset in payload["datasets"]:
+            sections.append(f"=== {dataset['dataset']} ===")
+            sections.append(format_engine_table(dataset["engines"]))
+        sections.append("=== overall ===")
+        sections.append(format_engine_table(payload["overall"]["engines"]))
+        return "\n".join(sections)
     for dataset in payload["datasets"]:
         sections.append(f"=== {dataset['dataset']} ===")
         sections.append(format_mode_table(dataset["modes"]))
@@ -473,6 +825,26 @@ def parse_datasets(raw: str | None) -> list[DatasetSpec] | None:
             continue
         seen.add(name)
         ordered.append(DATASETS_2K[name])
+    return ordered
+
+
+def parse_engines(raw: list[str] | None) -> list[str]:
+    if not raw:
+        return ["nesso"]
+    allowed = set(VALID_ENGINES)
+    ordered: list[str] = []
+    seen: set[str] = set()
+    for name in raw:
+        if name not in allowed:
+            raise SystemExit(
+                f"error: unknown engine {name!r}; expected one of {list(VALID_ENGINES)}"
+            )
+        if name in seen:
+            continue
+        seen.add(name)
+        ordered.append(name)
+    if not ordered:
+        raise SystemExit("error: --engine must list at least one engine")
     return ordered
 
 
@@ -514,6 +886,49 @@ def ensure_inputs(
         raise SystemExit(f"error: structured CSV still missing after fetch-loghub: {structured_path}")
 
 
+def score_queries(
+    *,
+    queries: list[Query],
+    event_by_line: dict[int, str],
+    rank_fn,
+) -> dict:
+    resolved = [(query, relevant_set(query, event_by_line)) for query in queries]
+    per_query: list[dict] = []
+    by_class: dict[str, list[Metrics]] = {name: [] for name in sorted(VALID_CLASSES)}
+    all_metrics: list[Metrics] = []
+    for query, relevant in resolved:
+        ranked = rank_fn(query.query)
+        metrics = score_ranking(ranked, relevant)
+        all_metrics.append(metrics)
+        by_class[query.class_name].append(metrics)
+        per_query.append(
+            {
+                "class": query.class_name,
+                "id": query.id,
+                "metrics": metrics_dict(metrics),
+                "ranked_lines": ranked,
+            }
+        )
+    class_rows = []
+    for class_name in sorted(VALID_CLASSES):
+        items = by_class[class_name]
+        class_rows.append(
+            {
+                "class": class_name,
+                "metrics": metrics_dict(mean_metrics(items)),
+                "n": len(items),
+            }
+        )
+    return {
+        "by_class": class_rows,
+        "overall": {
+            "metrics": metrics_dict(mean_metrics(all_metrics)),
+            "n": len(all_metrics),
+        },
+        "queries": per_query,
+    }
+
+
 def evaluate_modes(
     *,
     binary: Path,
@@ -524,79 +939,58 @@ def evaluate_modes(
     modes: list[str],
     corpus: Path,
 ) -> list[dict]:
-    run_checked(
-        [
-            str(binary),
-            "index",
-            "-o",
-            str(corpus),
-            str(log_path),
-            "--model-dir",
-            str(model_dir),
-        ],
-        label="nesso index",
-    )
-    resolved = [(query, relevant_set(query, event_by_line)) for query in queries]
+    engine = NessoEngine(binary=binary, model_dir=model_dir, corpus=corpus)
+    engine.prepare(log_path, read_log_lines(log_path), corpus.parent)
     mode_results = []
     for mode in modes:
-        per_query: list[dict] = []
-        by_class: dict[str, list[Metrics]] = {name: [] for name in sorted(VALID_CLASSES)}
-        all_metrics: list[Metrics] = []
-        for query, relevant in resolved:
-            # Exit 1 is "no matches"; that is a valid empty ranking for metrics.
-            completed = run_command(
-                [
-                    str(binary),
-                    "search",
-                    query.query,
-                    "-i",
-                    str(corpus),
-                    "--json",
-                    "-k",
-                    str(K),
-                    "--mode",
-                    mode,
-                    "--model-dir",
-                    str(model_dir),
-                ],
-                label=f"nesso search ({mode}/{query.id})",
-                ok_codes=frozenset({0, 1}),
-            )
-            hits = parse_search_json(completed.stdout)
-            ranked = lines_for_hits(hits)
-            metrics = score_ranking(ranked, relevant)
-            all_metrics.append(metrics)
-            by_class[query.class_name].append(metrics)
-            per_query.append(
-                {
-                    "class": query.class_name,
-                    "id": query.id,
-                    "metrics": metrics_dict(metrics),
-                    "ranked_lines": ranked,
-                }
-            )
-        class_rows = []
-        for class_name in sorted(VALID_CLASSES):
-            items = by_class[class_name]
-            class_rows.append(
-                {
-                    "class": class_name,
-                    "metrics": metrics_dict(mean_metrics(items)),
-                    "n": len(items),
-                }
-            )
+        scored = score_queries(
+            queries=queries,
+            event_by_line=event_by_line,
+            rank_fn=lambda q, mode=mode: engine.rank_mode(q, mode),
+        )
         mode_results.append(
             {
-                "by_class": class_rows,
+                "by_class": scored["by_class"],
                 "mode": mode,
-                "overall": {
-                    "metrics": metrics_dict(mean_metrics(all_metrics)),
-                    "n": len(all_metrics),
-                },
-                "queries": per_query,
+                "overall": scored["overall"],
+                "queries": scored["queries"],
             }
         )
     return mode_results
+
+
+def evaluate_keyword_engine(
+    engine: RankEngine,
+    *,
+    queries: list[Query],
+    event_by_line: dict[int, str],
+    log_path: Path,
+    lines: list[str],
+    workdir: Path,
+) -> dict:
+    ok, reason = engine.availability()
+    if not ok:
+        # Only ripgrep may be skipped; grep/bm25 fail the run instead.
+        if engine.name == "ripgrep":
+            return {
+                "engine": engine.name,
+                "status": "skipped",
+                "reason": reason,
+            }
+        raise SystemExit(f"error: {reason}")
+    engine.prepare(log_path, lines, workdir)
+    scored = score_queries(
+        queries=queries,
+        event_by_line=event_by_line,
+        rank_fn=lambda q: engine.rank(q),
+    )
+    return {
+        "engine": engine.name,
+        "status": "ok",
+        "by_class": scored["by_class"],
+        "overall": scored["overall"],
+        "queries": scored["queries"],
+    }
 
 
 def aggregate_overall(dataset_results: list[dict], modes: list[str]) -> dict:
@@ -638,31 +1032,181 @@ def aggregate_overall(dataset_results: list[dict], modes: list[str]) -> dict:
     return {"modes": mode_rows, "query_count": total_queries}
 
 
+def aggregate_overall_engines(dataset_results: list[dict], engine_names: list[str]) -> dict:
+    engine_rows: list[dict] = []
+    total_queries = sum(item["query_count"] for item in dataset_results)
+    for engine_name in engine_names:
+        samples = []
+        for dataset in dataset_results:
+            entry = next(item for item in dataset["engines"] if item["engine"] == engine_name)
+            samples.append(entry)
+        if any(item.get("status") == "skipped" for item in samples):
+            reason = next(
+                item.get("reason", "skipped")
+                for item in samples
+                if item.get("status") == "skipped"
+            )
+            engine_rows.append(
+                {
+                    "engine": engine_name,
+                    "status": "skipped",
+                    "reason": reason,
+                }
+            )
+            continue
+        if engine_name == "nesso":
+            # Aggregate each mode across datasets the same way as schema 3.
+            modes = [mode["mode"] for mode in samples[0]["modes"]]
+            mode_rows: list[dict] = []
+            for mode_name in modes:
+                by_class: dict[str, list[Metrics]] = {name: [] for name in sorted(VALID_CLASSES)}
+                all_metrics: list[Metrics] = []
+                for sample in samples:
+                    mode_payload = next(item for item in sample["modes"] if item["mode"] == mode_name)
+                    for query in mode_payload["queries"]:
+                        metrics = Metrics(
+                            recall_at_10=query["metrics"]["recall_at_10"],
+                            mrr=query["metrics"]["mrr"],
+                            ndcg_at_10=query["metrics"]["ndcg_at_10"],
+                        )
+                        all_metrics.append(metrics)
+                        by_class[query["class"]].append(metrics)
+                class_rows = []
+                for class_name in sorted(VALID_CLASSES):
+                    items = by_class[class_name]
+                    class_rows.append(
+                        {
+                            "class": class_name,
+                            "metrics": metrics_dict(mean_metrics(items)),
+                            "n": len(items),
+                        }
+                    )
+                mode_rows.append(
+                    {
+                        "by_class": class_rows,
+                        "mode": mode_name,
+                        "overall": {
+                            "metrics": metrics_dict(mean_metrics(all_metrics)),
+                            "n": len(all_metrics),
+                        },
+                    }
+                )
+            engine_rows.append(
+                {
+                    "engine": "nesso",
+                    "status": "ok",
+                    "modes": mode_rows,
+                }
+            )
+            continue
+        by_class: dict[str, list[Metrics]] = {name: [] for name in sorted(VALID_CLASSES)}
+        all_metrics: list[Metrics] = []
+        for sample in samples:
+            for query in sample["queries"]:
+                metrics = Metrics(
+                    recall_at_10=query["metrics"]["recall_at_10"],
+                    mrr=query["metrics"]["mrr"],
+                    ndcg_at_10=query["metrics"]["ndcg_at_10"],
+                )
+                all_metrics.append(metrics)
+                by_class[query["class"]].append(metrics)
+        class_rows = []
+        for class_name in sorted(VALID_CLASSES):
+            items = by_class[class_name]
+            class_rows.append(
+                {
+                    "class": class_name,
+                    "metrics": metrics_dict(mean_metrics(items)),
+                    "n": len(items),
+                }
+            )
+        engine_rows.append(
+            {
+                "engine": engine_name,
+                "status": "ok",
+                "by_class": class_rows,
+                "overall": {
+                    "metrics": metrics_dict(mean_metrics(all_metrics)),
+                    "n": len(all_metrics),
+                },
+            }
+        )
+    return {"engines": engine_rows, "query_count": total_queries}
+
+
 def evaluate_dataset(
     *,
-    binary: Path,
-    model_dir: Path,
+    binary: Path | None,
+    model_dir: Path | None,
     queries: list[Query],
     event_by_line: dict[int, str],
     log_path: Path,
+    lines: list[str],
     modes: list[str],
+    engines: list[str],
     workdir: Path,
     corpus_name: str,
     dataset_name: str,
 ) -> dict:
     workdir.mkdir(parents=True, exist_ok=True)
-    modes_payload = evaluate_modes(
-        binary=binary,
-        model_dir=model_dir,
-        queries=queries,
-        event_by_line=event_by_line,
-        log_path=log_path,
-        modes=modes,
-        corpus=workdir / corpus_name,
-    )
+    nesso_only = engines == ["nesso"]
+    if nesso_only:
+        assert binary is not None and model_dir is not None
+        modes_payload = evaluate_modes(
+            binary=binary,
+            model_dir=model_dir,
+            queries=queries,
+            event_by_line=event_by_line,
+            log_path=log_path,
+            modes=modes,
+            corpus=workdir / corpus_name,
+        )
+        return {
+            "dataset": dataset_name,
+            "modes": modes_payload,
+            "query_count": len(queries),
+        }
+
+    engine_payloads: list[dict] = []
+    for engine_name in engines:
+        if engine_name == "nesso":
+            assert binary is not None and model_dir is not None
+            modes_payload = evaluate_modes(
+                binary=binary,
+                model_dir=model_dir,
+                queries=queries,
+                event_by_line=event_by_line,
+                log_path=log_path,
+                modes=modes,
+                corpus=workdir / corpus_name,
+            )
+            engine_payloads.append(
+                {
+                    "engine": "nesso",
+                    "status": "ok",
+                    "modes": modes_payload,
+                }
+            )
+            continue
+        if engine_name == "grep":
+            engine: RankEngine = GrepEngine()
+        elif engine_name == "ripgrep":
+            engine = RipgrepEngine()
+        else:
+            engine = Bm25Engine()
+        engine_payloads.append(
+            evaluate_keyword_engine(
+                engine,
+                queries=queries,
+                event_by_line=event_by_line,
+                log_path=log_path,
+                lines=lines,
+                workdir=workdir,
+            )
+        )
     return {
         "dataset": dataset_name,
-        "modes": modes_payload,
+        "engines": engine_payloads,
         "query_count": len(queries),
     }
 
@@ -697,7 +1241,14 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument(
         "--modes",
         default=",".join(DEFAULT_MODES),
-        help="Comma-separated search modes (default: auto,hybrid,dense,lexical)",
+        help="Comma-separated search modes for nesso (default: auto,hybrid,dense,lexical)",
+    )
+    parser.add_argument(
+        "--engine",
+        action="append",
+        dest="engines",
+        choices=list(VALID_ENGINES),
+        help="Ranking engine (repeatable; default: nesso). Non-nesso engines use schema_version 4",
     )
     parser.add_argument("--binary", default=None, help="Path to the nesso executable")
     parser.add_argument("--model-dir", default=None, help="Directory with model.onnx and vocab.txt")
@@ -713,8 +1264,20 @@ def main(argv: list[str] | None = None) -> None:
         help="Do not call fetch-loghub when inputs are missing",
     )
     args = parser.parse_args(argv)
-    binary = resolve_binary(args.binary)
-    model_dir = resolve_model_dir(args.model_dir)
+    engines = parse_engines(args.engines)
+    nesso_only = engines == ["nesso"]
+    needs_nesso = "nesso" in engines
+    binary: Path | None = None
+    model_dir: Path | None = None
+    if needs_nesso:
+        binary = resolve_binary(args.binary)
+        model_dir = resolve_model_dir(args.model_dir)
+    if "bm25" in engines:
+        require_fts5()
+    if "grep" in engines:
+        ok, reason = GrepEngine().availability()
+        if not ok:
+            raise SystemExit(f"error: {reason}")
     modes = parse_modes(args.modes)
     dataset_specs = parse_datasets(args.dataset)
 
@@ -736,7 +1299,9 @@ def main(argv: list[str] | None = None) -> None:
                 queries=queries,
                 event_by_line=event_by_line,
                 log_path=args.log,
+                lines=lines,
                 modes=modes,
+                engines=engines,
                 workdir=args.workdir,
                 corpus_name="hdfs_2k.nesso",
                 dataset_name="hdfs-2k",
@@ -763,20 +1328,31 @@ def main(argv: list[str] | None = None) -> None:
                     queries=queries,
                     event_by_line=event_by_line,
                     log_path=spec.log_path,
+                    lines=lines,
                     modes=modes,
+                    engines=engines,
                     workdir=args.workdir,
                     corpus_name=spec.corpus_name,
                     dataset_name=spec.name,
                 )
             )
 
-    overall = aggregate_overall(dataset_results, modes)
-    payload = {
-        "datasets": dataset_results,
-        "k": K,
-        "overall": overall,
-        "schema_version": SCHEMA_VERSION,
-    }
+    if nesso_only:
+        overall = aggregate_overall(dataset_results, modes)
+        payload = {
+            "datasets": dataset_results,
+            "k": K,
+            "overall": overall,
+            "schema_version": SCHEMA_VERSION,
+        }
+    else:
+        overall = aggregate_overall_engines(dataset_results, engines)
+        payload = {
+            "datasets": dataset_results,
+            "k": K,
+            "overall": overall,
+            "schema_version": SCHEMA_VERSION_ENGINES,
+        }
     encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")) + "\n"
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(encoded, encoding="utf-8")

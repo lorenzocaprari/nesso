@@ -4,6 +4,7 @@ import json
 import math
 import os
 import pathlib
+import shutil
 import stat
 import subprocess
 import sys
@@ -14,6 +15,24 @@ import unittest
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "scripts" / "eval-retrieval"
+
+# Frozen schema_version 3 report from the fake-nesso e2e fixture on origin/main.
+NESSO_ONLY_GOLDEN = (
+    b'{"datasets":[{"dataset":"hdfs-2k","modes":[{"by_class":[{"class":"cause","metrics":'
+    b'{"mrr":0.0,"ndcg_at_10":0.0,"recall_at_10":0.0},"n":0},{"class":"exact_id","metrics":'
+    b'{"mrr":1.0,"ndcg_at_10":1.0,"recall_at_10":1.0},"n":1},{"class":"paraphrase","metrics":'
+    b'{"mrr":1.0,"ndcg_at_10":1.0,"recall_at_10":1.0},"n":1}],"mode":"dense","overall":'
+    b'{"metrics":{"mrr":1.0,"ndcg_at_10":1.0,"recall_at_10":1.0},"n":2},"queries":'
+    b'[{"class":"exact_id","id":"q1","metrics":{"mrr":1.0,"ndcg_at_10":1.0,"recall_at_10":1.0},'
+    b'"ranked_lines":[1,2,3]},{"class":"paraphrase","id":"q2","metrics":'
+    b'{"mrr":1.0,"ndcg_at_10":1.0,"recall_at_10":1.0},"ranked_lines":[4,5,2]}]}],'
+    b'"query_count":2}],"k":10,"overall":{"modes":[{"by_class":[{"class":"cause","metrics":'
+    b'{"mrr":0.0,"ndcg_at_10":0.0,"recall_at_10":0.0},"n":0},{"class":"exact_id","metrics":'
+    b'{"mrr":1.0,"ndcg_at_10":1.0,"recall_at_10":1.0},"n":1},{"class":"paraphrase","metrics":'
+    b'{"mrr":1.0,"ndcg_at_10":1.0,"recall_at_10":1.0},"n":1}],"mode":"dense","overall":'
+    b'{"metrics":{"mrr":1.0,"ndcg_at_10":1.0,"recall_at_10":1.0},"n":2}}],"query_count":2},'
+    b'"schema_version":3}\n'
+)
 
 
 def load_eval():
@@ -262,9 +281,18 @@ class EvalRetrievalEndToEndTest(unittest.TestCase):
             first = subprocess.run(command, capture_output=True, text=True, check=False)
             self.assertEqual(first.returncode, 0, first.stderr + first.stdout)
             payload = out.read_bytes()
+            self.assertEqual(payload, NESSO_ONLY_GOLDEN)
             second = subprocess.run(command, capture_output=True, text=True, check=False)
             self.assertEqual(second.returncode, 0, second.stderr + second.stdout)
             self.assertEqual(out.read_bytes(), payload)
+            with_engine = subprocess.run(
+                [*command, "--engine", "nesso"],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertEqual(with_engine.returncode, 0, with_engine.stderr + with_engine.stdout)
+            self.assertEqual(out.read_bytes(), NESSO_ONLY_GOLDEN)
             report = json.loads(payload.decode())
             self.assertEqual(report["schema_version"], 3)
             self.assertEqual(report["k"], 10)
@@ -355,7 +383,9 @@ class EvalRetrievalEndToEndTest(unittest.TestCase):
                         queries=queries,
                         event_by_line=event_by_line,
                         log_path=log_path,
+                        lines=lines,
                         modes=["dense"],
+                        engines=["nesso"],
                         workdir=directory / "work",
                         corpus_name=f"{name.replace('-', '_')}.nesso",
                         dataset_name=name,
@@ -439,6 +469,223 @@ class EvalRetrievalEndToEndTest(unittest.TestCase):
             )
             self.assertEqual(completed.returncode, 1)
             self.assertIn("class must be one of", completed.stderr)
+
+
+class EvalRetrievalEnginesTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.mod = load_eval()
+
+    def test_fake_engines_feed_score_queries(self) -> None:
+        mod = self.mod
+
+        class FakeA:
+            name = "fake_a"
+
+            def availability(self) -> tuple[bool, str]:
+                return True, ""
+
+            def prepare(self, log_path, lines, workdir) -> None:
+                return None
+
+            def rank(self, query: str, *, k: int = 10) -> list[int]:
+                del k
+                return [1, 2] if query == "hit" else [9]
+
+        class FakeB:
+            name = "fake_b"
+
+            def availability(self) -> tuple[bool, str]:
+                return True, ""
+
+            def prepare(self, log_path, lines, workdir) -> None:
+                return None
+
+            def rank(self, query: str, *, k: int = 10) -> list[int]:
+                del k
+                return [3]
+
+        queries = [
+            mod.Query("q1", "exact_id", "hit", frozenset({1}), None),
+            mod.Query("q2", "paraphrase", "miss", frozenset({3}), None),
+        ]
+        event_by_line = {1: "E1", 2: "E2", 3: "E3"}
+        scored_a = mod.score_queries(
+            queries=queries,
+            event_by_line=event_by_line,
+            rank_fn=lambda q: FakeA().rank(q),
+        )
+        self.assertEqual(scored_a["queries"][0]["ranked_lines"], [1, 2])
+        self.assertEqual(scored_a["queries"][0]["metrics"]["mrr"], 1.0)
+        self.assertEqual(scored_a["queries"][1]["ranked_lines"], [9])
+        self.assertEqual(scored_a["queries"][1]["metrics"]["recall_at_10"], 0.0)
+        scored_b = mod.score_queries(
+            queries=queries,
+            event_by_line=event_by_line,
+            rank_fn=lambda q: FakeB().rank(q),
+        )
+        self.assertEqual(scored_b["queries"][1]["ranked_lines"], [3])
+        self.assertEqual(scored_b["queries"][1]["metrics"]["mrr"], 1.0)
+
+    def test_fixed_pattern_rank_rules(self) -> None:
+        mod = self.mod
+        with tempfile.TemporaryDirectory() as temp:
+            log_path = pathlib.Path(temp) / "fixture.log"
+            log_path.write_text(
+                "alpha only\n"
+                "bravo charlie\n"
+                "FOO marker\n"
+                "nothing useful\n"
+                "charlie alone\n",
+                encoding="utf-8",
+            )
+            prefixes = [["grep", "-n", "-F", "-i"]]
+            if shutil.which("rg") is not None:
+                prefixes.append(["rg", "-n", "-F", "-i"])
+            for prefix in prefixes:
+                with self.subTest(prefix=prefix[0]):
+                    exact = mod.fixed_pattern_rank(
+                        prefix, log_path, "alpha only", k=10, label=prefix[0]
+                    )
+                    self.assertEqual(exact, [1])
+                    fallback = mod.fixed_pattern_rank(
+                        prefix, log_path, "bravo nowhere", k=10, label=prefix[0]
+                    )
+                    self.assertEqual(fallback, [2])
+                    empty = mod.fixed_pattern_rank(
+                        prefix, log_path, "zzzz nohit", k=10, label=prefix[0]
+                    )
+                    self.assertEqual(empty, [])
+                    case = mod.fixed_pattern_rank(
+                        prefix, log_path, "Foo", k=10, label=prefix[0]
+                    )
+                    self.assertEqual(case, [3])
+                    multi = mod.fixed_pattern_rank(
+                        prefix, log_path, "missing charlie", k=10, label=prefix[0]
+                    )
+                    self.assertEqual(multi, [2, 5])
+
+    def test_bm25_known_order(self) -> None:
+        mod = self.mod
+        with tempfile.TemporaryDirectory() as temp:
+            directory = pathlib.Path(temp)
+            lines = [
+                "alpha alpha alpha",
+                "beta rare",
+                "rare only here",
+                "gamma",
+            ]
+            engine = mod.Bm25Engine()
+            engine.prepare(directory / "log", lines, directory)
+            self.assertEqual(engine.rank("rare"), [2, 3])
+            self.assertEqual(engine.rank("alpha"), [1])
+            self.assertEqual(engine.rank(""), [])
+
+    def test_require_fts5_ok(self) -> None:
+        self.mod.require_fts5()
+
+    def test_ripgrep_skipped_when_rg_missing(self) -> None:
+        mod = self.mod
+        with tempfile.TemporaryDirectory() as temp:
+            directory = pathlib.Path(temp)
+            log_path = directory / "sample.log"
+            log_path.write_text("alpha\nbeta\n", encoding="utf-8")
+            structured = directory / "structured.csv"
+            structured.write_text("LineId,EventId\n1,E1\n2,E2\n", encoding="utf-8")
+            queries = directory / "queries.jsonl"
+            queries.write_text(
+                '{"id":"q1","class":"exact_id","query":"alpha","relevant_lines":[1]}\n',
+                encoding="utf-8",
+            )
+            out = directory / "out.json"
+            env = os.environ.copy()
+            env["PATH"] = "/usr/bin:/bin"
+            # Ensure a PATH without rg even if /usr/bin has it.
+            bin_dir = directory / "bin"
+            bin_dir.mkdir()
+            grep_src = pathlib.Path("/usr/bin/grep")
+            if not grep_src.is_file():
+                grep_src = pathlib.Path("/bin/grep")
+            (bin_dir / "grep").symlink_to(grep_src)
+            env["PATH"] = str(bin_dir)
+            completed = subprocess.run(
+                [
+                    sys.executable,
+                    str(SCRIPT),
+                    "--engine",
+                    "ripgrep",
+                    "--engine",
+                    "grep",
+                    "--log",
+                    str(log_path),
+                    "--structured",
+                    str(structured),
+                    "--queries",
+                    str(queries),
+                    "--out",
+                    str(out),
+                    "--workdir",
+                    str(directory / "work"),
+                    "--skip-fetch",
+                ],
+                capture_output=True,
+                text=True,
+                check=False,
+                env=env,
+            )
+            self.assertEqual(completed.returncode, 0, completed.stderr + completed.stdout)
+            report = json.loads(out.read_text(encoding="utf-8"))
+            self.assertEqual(report["schema_version"], 4)
+            engines = {item["engine"]: item for item in report["datasets"][0]["engines"]}
+            self.assertEqual(engines["ripgrep"]["status"], "skipped")
+            self.assertIn("rg", engines["ripgrep"]["reason"])
+            self.assertNotIn("metrics", engines["ripgrep"])
+            self.assertEqual(engines["grep"]["status"], "ok")
+            self.assertEqual(engines["grep"]["queries"][0]["ranked_lines"], [1])
+
+    def test_schema4_grep_only_report(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            directory = pathlib.Path(temp)
+            log_path = directory / "sample.log"
+            log_path.write_text("alpha\nbeta\n", encoding="utf-8")
+            structured = directory / "structured.csv"
+            structured.write_text("LineId,EventId\n1,E1\n2,E2\n", encoding="utf-8")
+            queries = directory / "queries.jsonl"
+            queries.write_text(
+                '{"id":"q1","class":"exact_id","query":"alpha","relevant_lines":[1]}\n',
+                encoding="utf-8",
+            )
+            out = directory / "out.json"
+            completed = subprocess.run(
+                [
+                    sys.executable,
+                    str(SCRIPT),
+                    "--engine",
+                    "grep",
+                    "--log",
+                    str(log_path),
+                    "--structured",
+                    str(structured),
+                    "--queries",
+                    str(queries),
+                    "--out",
+                    str(out),
+                    "--workdir",
+                    str(directory / "work"),
+                    "--skip-fetch",
+                ],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertEqual(completed.returncode, 0, completed.stderr + completed.stdout)
+            report = json.loads(out.read_text(encoding="utf-8"))
+            self.assertEqual(report["schema_version"], 4)
+            dataset = report["datasets"][0]
+            self.assertIn("engines", dataset)
+            self.assertNotIn("modes", dataset)
+            self.assertEqual(dataset["engines"][0]["engine"], "grep")
+            self.assertIn("grep", completed.stdout)
 
 
 if __name__ == "__main__":
