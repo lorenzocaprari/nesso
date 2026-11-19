@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795123614111,
+  "lastUpdate": 1795124985224,
   "repoUrl": "https://github.com/lorenzocaprari/nesso",
   "entries": {
     "nesso": [
@@ -9341,6 +9341,60 @@ window.BENCHMARK_DATA = {
           {
             "name": "grep-100000-rss",
             "value": 143642624,
+            "unit": "bytes"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "caprarilorenzo5@gmail.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "committer": {
+            "email": "85455384+lorenzocaprari@users.noreply.github.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "distinct": true,
+          "id": "a76264d91e33750eccad4c7fd9f7dbf6719d5f72",
+          "message": "ci(eval): warn when a nightly retrieval score drops more than 5%",
+          "timestamp": "2026-11-19T22:44:36+01:00",
+          "tree_id": "26c069d40f8e77a500c84f7de4da995a782c03e3",
+          "url": "https://github.com/lorenzocaprari/nesso/commit/a76264d91e33750eccad4c7fd9f7dbf6719d5f72"
+        },
+        "date": 1795124984799,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "grep-1000-wall",
+            "value": 1.22,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-1000-rss",
+            "value": 118931456,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-10000-wall",
+            "value": 1.25,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-10000-rss",
+            "value": 118083584,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-100000-wall",
+            "value": 1.46,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-100000-rss",
+            "value": 143818752,
             "unit": "bytes"
           }
         ]
