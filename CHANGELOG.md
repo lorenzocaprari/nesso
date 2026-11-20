@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Retrieval eval covers pinned BGL, Thunderbird, OpenSSH, and Linux 2k samples as well as HDFS. `scripts/fetch-loghub` accepts `bgl-2k`, `thunderbird-2k`, `openssh-2k`, `linux-2k`, and `all-2k`. `scripts/eval-retrieval --dataset` runs one or more systems and writes `schema_version` 3 JSON with per-system and overall tables.
 - `scripts/eval-retrieval --engine` scores grep, ripgrep, and SQLite FTS5 BM25 baselines with the same labelled queries and metrics. Default nesso-only output stays `schema_version` 3; any non-nesso engine writes `schema_version` 4. Not Pipeline or nightly.
 - `scripts/eval-retrieval --engine diy-faiss` scores a local sentence-transformers MiniLM (fp32) + FAISS `IndexFlatIP` baseline. Optional deps are hash-pinned under `bench/competitors/`; not Pipeline or nightly.
+- `scripts/eval-retrieval --engine xerj` / `xerj-neural` scores an Elasticsearch-compatible XERJ baseline (stdlib HTTP adapter). Lexical `match` by default; neural uses a local MiniLM dir and never downloads. Missing binary/URL or neural model files report `skipped`. Not Pipeline or nightly.
 
 ### Fixed
 

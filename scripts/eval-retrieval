@@ -11,6 +11,8 @@ Engines (--engine, repeatable; default nesso only):
   ripgrep   same rule with rg; skipped (not zeroed) if rg is missing
   bm25      stdlib sqlite3 FTS5, OR of quoted tokens, ORDER BY bm25(), rowid
   diy-faiss sentence-transformers MiniLM + FAISS IndexFlatIP (optional deps)
+  xerj      Elasticsearch-compatible match on text (local xerj lexical node)
+  xerj-neural  semantic query on semantic_text (opt-in; local model files)
 
 Without --engine (or --engine nesso alone) the JSON stays schema_version 3 and
 byte-compatible with prior nesso-only reports. Any other engine uses
@@ -27,10 +29,18 @@ import json
 import math
 import os
 import shutil
+import signal
+import socket
 import sqlite3
 import statistics
 import subprocess
 import sys
+import tempfile
+import time
+import urllib.error
+import urllib.parse
+import urllib.request
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol
@@ -43,7 +53,16 @@ DEFAULT_LOG = BENCH_DIR / "HDFS_2k.log"
 DEFAULT_STRUCTURED = BENCH_DIR / "HDFS_2k.log_structured.csv"
 DEFAULT_MODES = ("auto", "hybrid", "dense", "lexical")
 VALID_CLASSES = frozenset({"exact_id", "paraphrase", "cause"})
-VALID_ENGINES = ("nesso", "grep", "ripgrep", "bm25", "diy-faiss")
+VALID_ENGINES = (
+    "nesso",
+    "grep",
+    "ripgrep",
+    "bm25",
+    "diy-faiss",
+    "xerj",
+    "xerj-neural",
+)
+SKIPPABLE_ENGINES = frozenset({"ripgrep", "xerj", "xerj-neural"})
 DIY_FAISS_MODULE = ROOT / "bench" / "competitors" / "diy_faiss.py"
 K = 10
 FLOAT_DIGITS = 6
@@ -51,6 +70,12 @@ SCHEMA_VERSION = 3
 SCHEMA_VERSION_ENGINES = 4
 TOKEN_CHARS = frozenset("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_")
 ALL_2K = "all-2k"
+ES_BULK_BATCH = 500
+XERJ_READY_TIMEOUT_S = 60.0
+XERJ_NEURAL_MODEL_FILES = ("config.json", "tokenizer.json", "model.safetensors")
+XERJ_NEURAL_MODEL_SIZE = "~90 MB"
+XERJ_INDEX_LEXICAL = "nesso-eval-xerj"
+XERJ_INDEX_NEURAL = "nesso-eval-xerj-neural"
 
 
 @dataclass(frozen=True)
@@ -677,6 +702,432 @@ class Bm25Engine:
         return [int(row[0]) for row in rows]
 
 
+def es_request(
+    method: str,
+    url: str,
+    body: bytes | dict | list | str | None = None,
+    *,
+    content_type: str = "application/json",
+    timeout: float = 120.0,
+) -> Any:
+    data: bytes | None = None
+    headers: dict[str, str] = {}
+    if body is not None:
+        if isinstance(body, (dict, list)):
+            data = json.dumps(body).encode("utf-8")
+            headers["Content-Type"] = content_type
+        elif isinstance(body, str):
+            data = body.encode("utf-8")
+            headers["Content-Type"] = content_type
+        else:
+            data = body
+            headers["Content-Type"] = content_type
+    request = urllib.request.Request(url, data=data, headers=headers, method=method)
+    try:
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            raw = response.read()
+    except urllib.error.HTTPError as exc:
+        detail = exc.read().decode("utf-8", errors="replace")
+        raise SystemExit(f"error: ES {method} {url} -> HTTP {exc.code}: {detail}") from exc
+    except urllib.error.URLError as exc:
+        raise SystemExit(f"error: ES {method} {url} failed: {exc}") from exc
+    if not raw:
+        return {}
+    try:
+        return json.loads(raw.decode("utf-8"))
+    except json.JSONDecodeError as exc:
+        raise SystemExit(f"error: ES {method} {url} returned non-JSON") from exc
+
+
+def assert_loopback_url(url: str) -> str:
+    parsed = urllib.parse.urlparse(url)
+    if parsed.scheme not in ("http", "https"):
+        raise SystemExit(f"error: --xerj-url must be http(s), got {url!r}")
+    host = (parsed.hostname or "").lower()
+    if host not in ("127.0.0.1", "localhost", "::1"):
+        raise SystemExit(f"error: --xerj-url must target localhost, got {host!r}")
+    return url.rstrip("/")
+
+
+def xerj_match_query(query: str, k: int) -> dict:
+    return {"size": k, "query": {"match": {"text": query}}}
+
+
+def xerj_semantic_query(query: str, k: int) -> dict:
+    return {
+        "size": k,
+        "query": {"semantic": {"field": "text", "query": query, "k": k}},
+    }
+
+
+def xerj_neural_mappings() -> dict:
+    return {
+        "mappings": {
+            "properties": {
+                "line": {"type": "integer"},
+                "text": {"type": "semantic_text"},
+            }
+        }
+    }
+
+
+def xerj_lexical_mappings() -> dict:
+    return {
+        "mappings": {
+            "properties": {
+                "line": {"type": "integer"},
+                "text": {"type": "text"},
+            }
+        }
+    }
+
+
+def check_neural_model_dir(model_dir: Path | None) -> tuple[bool, str]:
+    if model_dir is None:
+        return False, "neural model dir not set (--xerj-model-dir)"
+    if not model_dir.is_dir():
+        return False, f"neural model dir not found: {model_dir}"
+    missing = [name for name in XERJ_NEURAL_MODEL_FILES if not (model_dir / name).is_file()]
+    if missing:
+        return False, f"neural model files missing: {', '.join(missing)}"
+    return True, ""
+
+
+def xerj_version_from_binary(binary: Path | None) -> str:
+    if binary is None or not binary.is_file():
+        return "unknown"
+    try:
+        completed = subprocess.run(
+            [str(binary), "-V"],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=30,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return "unknown"
+    line = (completed.stdout or completed.stderr or "").strip().splitlines()
+    return line[0].strip() if line else "unknown"
+
+
+def reserve_xerj_es_port() -> int:
+    """Pick N such that N, N+1, and N+2 are free on 127.0.0.1 (--port derives +1/+2)."""
+    for _ in range(64):
+        holders: list[socket.socket] = []
+        try:
+            probe = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            probe.bind(("127.0.0.1", 0))
+            port = int(probe.getsockname()[1])
+            probe.close()
+            for candidate in (port, port + 1, port + 2):
+                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                sock.bind(("127.0.0.1", candidate))
+                holders.append(sock)
+            return port
+        except OSError:
+            continue
+        finally:
+            for sock in holders:
+                try:
+                    sock.close()
+                except OSError:
+                    pass
+    raise SystemExit("error: could not reserve three consecutive localhost ports for xerj")
+
+
+def wait_xerj_ready(base_url: str, *, timeout: float = XERJ_READY_TIMEOUT_S) -> None:
+    deadline = time.monotonic() + timeout
+    health = f"{base_url}/_cluster/health"
+    last_error = ""
+    while time.monotonic() < deadline:
+        try:
+            es_request("GET", health, timeout=2.0)
+            return
+        except SystemExit as exc:
+            last_error = str(exc)
+            time.sleep(0.25)
+    raise SystemExit(f"error: xerj not ready at {base_url} within {timeout:.0f}s: {last_error}")
+
+
+@dataclass
+class XerjContext:
+    url: str | None = None
+    skip_reason: str | None = None
+    neural_skip_reason: str | None = None
+    url_mode: str = "external"
+    binary: Path | None = None
+    version: str = "unknown"
+    _proc: subprocess.Popen[str] | None = None
+    _tmpdir: tempfile.TemporaryDirectory[str] | None = None
+    _log_handle: Any = None
+
+    def shutdown(self) -> None:
+        if self._proc is not None:
+            if self._proc.poll() is None:
+                self._proc.send_signal(signal.SIGTERM)
+                try:
+                    self._proc.wait(timeout=30)
+                except subprocess.TimeoutExpired:
+                    self._proc.kill()
+                    self._proc.wait(timeout=10)
+            self._proc = None
+        if self._log_handle is not None:
+            self._log_handle.close()
+            self._log_handle = None
+        if self._tmpdir is not None:
+            self._tmpdir.cleanup()
+            self._tmpdir = None
+
+
+@dataclass
+class SkippedEngine:
+    name: str
+    reason: str
+
+    def availability(self) -> tuple[bool, str]:
+        return False, self.reason
+
+    def prepare(self, log_path: Path, lines: list[str], workdir: Path) -> None:
+        del log_path, lines, workdir
+
+    def rank(self, query: str, *, k: int = K) -> list[int]:
+        del query, k
+        raise SystemExit(f"error: {self.name} skipped: {self.reason}")
+
+
+@dataclass
+class EsCompatEngine:
+    """Generic Elasticsearch-compatible RankEngine (stdlib HTTP only)."""
+
+    name: str
+    base_url: str
+    index_name: str
+    query_fn: Callable[[str, int], dict]
+    mappings: dict | None = None
+    xerj_version: str = "unknown"
+    url_mode: str = "external"
+    neural_model_download_size: str | None = None
+    index_seconds: float = 0.0
+    _prepared: bool = False
+
+    def availability(self) -> tuple[bool, str]:
+        return True, ""
+
+    def versions(self) -> dict[str, Any]:
+        payload: dict[str, Any] = {
+            "index_seconds": round(self.index_seconds, 6),
+            "url_mode": self.url_mode,
+            "xerj_version": self.xerj_version,
+        }
+        if self.neural_model_download_size is not None:
+            payload["neural_model_download_size"] = self.neural_model_download_size
+        return payload
+
+    def prepare(self, log_path: Path, lines: list[str], workdir: Path) -> None:
+        del log_path, workdir
+        started = time.perf_counter()
+        index_url = f"{self.base_url}/{self.index_name}"
+        # Drop a leftover index from a previous crashed run.
+        try:
+            es_request("DELETE", index_url, timeout=30.0)
+        except SystemExit:
+            pass
+        body = self.mappings if self.mappings is not None else {}
+        es_request("PUT", index_url, body)
+        for start in range(0, len(lines), ES_BULK_BATCH):
+            chunk = lines[start : start + ES_BULK_BATCH]
+            ndjson_parts: list[str] = []
+            for offset, text in enumerate(chunk):
+                line_id = start + offset + 1
+                ndjson_parts.append(json.dumps({"index": {"_id": str(line_id)}}))
+                ndjson_parts.append(json.dumps({"line": line_id, "text": text}))
+            payload = "\n".join(ndjson_parts) + "\n"
+            response = es_request(
+                "POST",
+                f"{index_url}/_bulk",
+                payload,
+                content_type="application/x-ndjson",
+            )
+            if response.get("errors"):
+                for item in response.get("items", []):
+                    action = next(iter(item.values()), {})
+                    if isinstance(action, dict) and action.get("error"):
+                        raise SystemExit(
+                            f"error: ES bulk item failed on {self.index_name}: {action['error']}"
+                        )
+                raise SystemExit(f"error: ES bulk reported errors on {self.index_name}")
+        es_request("POST", f"{index_url}/_refresh", {})
+        self.index_seconds = time.perf_counter() - started
+        self._prepared = True
+
+    def rank(self, query: str, *, k: int = K) -> list[int]:
+        if not self._prepared:
+            raise SystemExit(f"error: {self.name} engine not prepared")
+        body = self.query_fn(query, k)
+        response = es_request(
+            "POST",
+            f"{self.base_url}/{self.index_name}/_search",
+            body,
+        )
+        hits = response.get("hits", {}).get("hits", [])
+        scored: list[tuple[float, int]] = []
+        for hit in hits:
+            raw_id = hit.get("_id")
+            try:
+                line_id = int(raw_id)
+            except (TypeError, ValueError) as exc:
+                raise SystemExit(f"error: ES hit _id is not an int line id: {raw_id!r}") from exc
+            score = hit.get("_score")
+            score_value = float(score) if score is not None else 0.0
+            scored.append((score_value, line_id))
+        scored.sort(key=lambda item: (-item[0], item[1]))
+        return [line_id for _, line_id in scored[:k]]
+
+    def cleanup(self) -> None:
+        if not self._prepared:
+            return
+        try:
+            es_request("DELETE", f"{self.base_url}/{self.index_name}", timeout=30.0)
+        except SystemExit:
+            pass
+        self._prepared = False
+
+
+def resolve_xerj_binary(explicit: str | None) -> Path | None:
+    if explicit:
+        path = Path(explicit)
+        if not path.is_file():
+            raise SystemExit(f"error: xerj binary not found: {path}")
+        return path
+    found = shutil.which("xerj")
+    return Path(found) if found else None
+
+
+def open_xerj_context(
+    *,
+    engines: list[str],
+    xerj_url: str | None,
+    xerj_bin: str | None,
+    xerj_model_dir: str | None,
+) -> XerjContext:
+    needs_xerj = "xerj" in engines or "xerj-neural" in engines
+    if not needs_xerj:
+        return XerjContext()
+    binary = resolve_xerj_binary(xerj_bin)
+    model_dir = Path(xerj_model_dir) if xerj_model_dir else None
+    needs_neural = "xerj-neural" in engines
+    neural_ok, neural_reason = check_neural_model_dir(model_dir)
+
+    if xerj_url:
+        url = assert_loopback_url(xerj_url)
+        ctx = XerjContext(
+            url=url,
+            url_mode="external",
+            binary=binary,
+            version=xerj_version_from_binary(binary),
+        )
+        # External node: model files are the operator's responsibility.
+        return ctx
+
+    if binary is None:
+        return XerjContext(skip_reason="xerj executable not found")
+
+    spawn_neural = needs_neural and neural_ok
+    if needs_neural and not neural_ok and "xerj" not in engines:
+        return XerjContext(
+            binary=binary,
+            version=xerj_version_from_binary(binary),
+            skip_reason=neural_reason,
+            neural_skip_reason=neural_reason,
+        )
+
+    tmp = tempfile.TemporaryDirectory(prefix="nesso-xerj-")
+    tmp_path = Path(tmp.name)
+    data_dir = tmp_path / "data"
+    data_dir.mkdir()
+    port = reserve_xerj_es_port()
+    cmd = [
+        str(binary),
+        "--insecure",
+        "--data-dir",
+        str(data_dir),
+        "--port",
+        str(port),
+    ]
+    if spawn_neural:
+        assert model_dir is not None
+        config_path = tmp_path / "xerj.toml"
+        config_path.write_text(
+            "[embedding]\n"
+            'mode = "neural"\n'
+            f'local_model_dir = "{model_dir.resolve()}"\n',
+            encoding="utf-8",
+        )
+        cmd.extend(["--embed-mode", "neural", "--config", str(config_path)])
+
+    log_path = tmp_path / "xerj.log"
+    log_handle = log_path.open("w", encoding="utf-8")
+    try:
+        proc = subprocess.Popen(
+            cmd,
+            stdout=log_handle,
+            stderr=subprocess.STDOUT,
+            text=True,
+        )
+    except OSError as exc:
+        log_handle.close()
+        tmp.cleanup()
+        raise SystemExit(f"error: failed to start xerj: {exc}") from exc
+
+    url = f"http://127.0.0.1:{port}"
+    ctx = XerjContext(
+        url=url,
+        url_mode="spawned",
+        binary=binary,
+        version=xerj_version_from_binary(binary),
+        neural_skip_reason=None if spawn_neural or not needs_neural else neural_reason,
+        _proc=proc,
+        _tmpdir=tmp,
+        _log_handle=log_handle,
+    )
+    try:
+        wait_xerj_ready(url)
+    except SystemExit:
+        ctx.shutdown()
+        raise
+    return ctx
+
+
+def make_xerj_engine(ctx: XerjContext, *, neural: bool) -> RankEngine:
+    name = "xerj-neural" if neural else "xerj"
+    if ctx.skip_reason:
+        return SkippedEngine(name=name, reason=ctx.skip_reason)
+    if neural and ctx.neural_skip_reason:
+        return SkippedEngine(name=name, reason=ctx.neural_skip_reason)
+    if not ctx.url:
+        return SkippedEngine(name=name, reason="xerj URL unavailable")
+    if neural:
+        return EsCompatEngine(
+            name=name,
+            base_url=ctx.url,
+            index_name=XERJ_INDEX_NEURAL,
+            query_fn=xerj_semantic_query,
+            mappings=xerj_neural_mappings(),
+            xerj_version=ctx.version,
+            url_mode=ctx.url_mode,
+            neural_model_download_size=XERJ_NEURAL_MODEL_SIZE,
+        )
+    return EsCompatEngine(
+        name=name,
+        base_url=ctx.url,
+        index_name=XERJ_INDEX_LEXICAL,
+        query_fn=xerj_match_query,
+        mappings=xerj_lexical_mappings(),
+        xerj_version=ctx.version,
+        url_mode=ctx.url_mode,
+    )
+
+
 def format_mode_table(modes: list[dict]) -> str:
     headers = ("mode", "class", "n", "recall@10", "MRR", "nDCG@10")
     rows: list[tuple[str, str, str, str, str, str]] = []
@@ -798,6 +1249,29 @@ def format_engine_table(engines: list[dict]) -> str:
     return "\n".join(lines)
 
 
+def format_xerj_metadata_lines(payload: dict) -> list[str]:
+    lines: list[str] = []
+    for dataset in payload.get("datasets", []):
+        for engine in dataset.get("engines", []):
+            if engine.get("status") != "ok":
+                continue
+            if engine.get("engine") not in ("xerj", "xerj-neural"):
+                continue
+            versions = engine.get("versions")
+            if not isinstance(versions, dict):
+                continue
+            parts = [
+                f"xerj_version={versions.get('xerj_version', 'unknown')}",
+                f"url_mode={versions.get('url_mode', 'unknown')}",
+                f"index_seconds={versions.get('index_seconds', 0)}",
+            ]
+            size = versions.get("neural_model_download_size")
+            if size is not None:
+                parts.append(f"neural_model_download_size={size}")
+            lines.append(f"# {dataset['dataset']}/{engine['engine']}: " + " ".join(parts))
+    return lines
+
+
 def format_report(payload: dict) -> str:
     sections: list[str] = []
     schema = payload.get("schema_version", SCHEMA_VERSION)
@@ -807,6 +1281,7 @@ def format_report(payload: dict) -> str:
             sections.append(format_engine_table(dataset["engines"]))
         sections.append("=== overall ===")
         sections.append(format_engine_table(payload["overall"]["engines"]))
+        sections.extend(format_xerj_metadata_lines(payload))
         return "\n".join(sections)
     for dataset in payload["datasets"]:
         sections.append(f"=== {dataset['dataset']} ===")
@@ -986,31 +1461,35 @@ def evaluate_keyword_engine(
 ) -> dict:
     ok, reason = engine.availability()
     if not ok:
-        # Only ripgrep may be skipped; grep/bm25 fail the run instead.
-        if engine.name == "ripgrep":
+        if engine.name in SKIPPABLE_ENGINES:
             return {
                 "engine": engine.name,
                 "status": "skipped",
                 "reason": reason,
             }
         raise SystemExit(f"error: {reason}")
-    engine.prepare(log_path, lines, workdir)
-    scored = score_queries(
-        queries=queries,
-        event_by_line=event_by_line,
-        rank_fn=lambda q: engine.rank(q),
-    )
-    payload = {
-        "engine": engine.name,
-        "status": "ok",
-        "by_class": scored["by_class"],
-        "overall": scored["overall"],
-        "queries": scored["queries"],
-    }
-    versions_fn = getattr(engine, "versions", None)
-    if callable(versions_fn):
-        payload["versions"] = versions_fn()
-    return payload
+    try:
+        engine.prepare(log_path, lines, workdir)
+        scored = score_queries(
+            queries=queries,
+            event_by_line=event_by_line,
+            rank_fn=lambda q: engine.rank(q),
+        )
+        payload = {
+            "engine": engine.name,
+            "status": "ok",
+            "by_class": scored["by_class"],
+            "overall": scored["overall"],
+            "queries": scored["queries"],
+        }
+        versions_fn = getattr(engine, "versions", None)
+        if callable(versions_fn):
+            payload["versions"] = versions_fn()
+        return payload
+    finally:
+        cleanup = getattr(engine, "cleanup", None)
+        if callable(cleanup):
+            cleanup()
 
 
 def aggregate_overall(dataset_results: list[dict], modes: list[str]) -> dict:
@@ -1168,6 +1647,7 @@ def evaluate_dataset(
     workdir: Path,
     corpus_name: str,
     dataset_name: str,
+    xerj: XerjContext | None = None,
 ) -> dict:
     workdir.mkdir(parents=True, exist_ok=True)
     nesso_only = engines == ["nesso"]
@@ -1218,6 +1698,10 @@ def evaluate_dataset(
         elif engine_name == "diy-faiss":
             diy = load_diy_faiss_module()
             engine = diy.DiyFaissEngine()
+        elif engine_name == "xerj":
+            engine = make_xerj_engine(xerj or XerjContext(skip_reason="xerj not configured"), neural=False)
+        elif engine_name == "xerj-neural":
+            engine = make_xerj_engine(xerj or XerjContext(skip_reason="xerj not configured"), neural=True)
         else:
             raise SystemExit(f"error: unknown engine {engine_name!r}")
         engine_payloads.append(
@@ -1289,6 +1773,21 @@ def main(argv: list[str] | None = None) -> None:
         action="store_true",
         help="Do not call fetch-loghub when inputs are missing",
     )
+    parser.add_argument(
+        "--xerj-url",
+        default=None,
+        help="Existing Elasticsearch-compatible xerj URL (localhost only)",
+    )
+    parser.add_argument(
+        "--xerj-bin",
+        default=None,
+        help="Path to the xerj binary (default: xerj on PATH)",
+    )
+    parser.add_argument(
+        "--xerj-model-dir",
+        default=None,
+        help="Local all-MiniLM-L6-v2 dir for spawned xerj-neural (no download)",
+    )
     args = parser.parse_args(argv)
     engines = parse_engines(args.engines)
     nesso_only = engines == ["nesso"]
@@ -1311,84 +1810,94 @@ def main(argv: list[str] | None = None) -> None:
             raise SystemExit(f"error: {reason}")
     modes = parse_modes(args.modes)
     dataset_specs = parse_datasets(args.dataset)
-
-    dataset_results: list[dict] = []
-    if dataset_specs is None:
-        queries = load_queries(args.queries)
-        if not args.skip_fetch:
-            ensure_inputs(args.log, args.structured)
-        elif not args.log.is_file() or not args.structured.is_file():
-            raise SystemExit("error: --log and --structured must exist when --skip-fetch is set")
-        lines = read_log_lines(args.log)
-        event_by_line = load_event_ids(args.structured)
-        assert_line_id_alignment(args.log, event_by_line, lines)
-        validate_relevant_lines(queries, args.log, lines)
-        dataset_results.append(
-            evaluate_dataset(
-                binary=binary,
-                model_dir=model_dir,
-                queries=queries,
-                event_by_line=event_by_line,
-                log_path=args.log,
-                lines=lines,
-                modes=modes,
-                engines=engines,
-                workdir=args.workdir,
-                corpus_name="hdfs_2k.nesso",
-                dataset_name="hdfs-2k",
-            )
-        )
-    else:
-        for spec in dataset_specs:
+    xerj = open_xerj_context(
+        engines=engines,
+        xerj_url=args.xerj_url,
+        xerj_bin=args.xerj_bin,
+        xerj_model_dir=args.xerj_model_dir,
+    )
+    try:
+        dataset_results: list[dict] = []
+        if dataset_specs is None:
+            queries = load_queries(args.queries)
             if not args.skip_fetch:
-                ensure_inputs(spec.log_path, spec.structured_path, fetch_dataset=spec.name)
-            elif not spec.log_path.is_file() or not spec.structured_path.is_file():
-                raise SystemExit(
-                    f"error: --log and --structured must exist when --skip-fetch is set "
-                    f"({spec.log_path}, {spec.structured_path})"
-                )
-            queries = load_queries(spec.queries_path)
-            lines = read_log_lines(spec.log_path)
-            event_by_line = load_event_ids(spec.structured_path)
-            assert_line_id_alignment(spec.log_path, event_by_line, lines)
-            validate_relevant_lines(queries, spec.log_path, lines)
+                ensure_inputs(args.log, args.structured)
+            elif not args.log.is_file() or not args.structured.is_file():
+                raise SystemExit("error: --log and --structured must exist when --skip-fetch is set")
+            lines = read_log_lines(args.log)
+            event_by_line = load_event_ids(args.structured)
+            assert_line_id_alignment(args.log, event_by_line, lines)
+            validate_relevant_lines(queries, args.log, lines)
             dataset_results.append(
                 evaluate_dataset(
                     binary=binary,
                     model_dir=model_dir,
                     queries=queries,
                     event_by_line=event_by_line,
-                    log_path=spec.log_path,
+                    log_path=args.log,
                     lines=lines,
                     modes=modes,
                     engines=engines,
                     workdir=args.workdir,
-                    corpus_name=spec.corpus_name,
-                    dataset_name=spec.name,
+                    corpus_name="hdfs_2k.nesso",
+                    dataset_name="hdfs-2k",
+                    xerj=xerj,
                 )
             )
+        else:
+            for spec in dataset_specs:
+                if not args.skip_fetch:
+                    ensure_inputs(spec.log_path, spec.structured_path, fetch_dataset=spec.name)
+                elif not spec.log_path.is_file() or not spec.structured_path.is_file():
+                    raise SystemExit(
+                        f"error: --log and --structured must exist when --skip-fetch is set "
+                        f"({spec.log_path}, {spec.structured_path})"
+                    )
+                queries = load_queries(spec.queries_path)
+                lines = read_log_lines(spec.log_path)
+                event_by_line = load_event_ids(spec.structured_path)
+                assert_line_id_alignment(spec.log_path, event_by_line, lines)
+                validate_relevant_lines(queries, spec.log_path, lines)
+                dataset_results.append(
+                    evaluate_dataset(
+                        binary=binary,
+                        model_dir=model_dir,
+                        queries=queries,
+                        event_by_line=event_by_line,
+                        log_path=spec.log_path,
+                        lines=lines,
+                        modes=modes,
+                        engines=engines,
+                        workdir=args.workdir,
+                        corpus_name=spec.corpus_name,
+                        dataset_name=spec.name,
+                        xerj=xerj,
+                    )
+                )
 
-    if nesso_only:
-        overall = aggregate_overall(dataset_results, modes)
-        payload = {
-            "datasets": dataset_results,
-            "k": K,
-            "overall": overall,
-            "schema_version": SCHEMA_VERSION,
-        }
-    else:
-        overall = aggregate_overall_engines(dataset_results, engines)
-        payload = {
-            "datasets": dataset_results,
-            "k": K,
-            "overall": overall,
-            "schema_version": SCHEMA_VERSION_ENGINES,
-        }
-    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")) + "\n"
-    args.out.parent.mkdir(parents=True, exist_ok=True)
-    args.out.write_text(encoded, encoding="utf-8")
-    print(format_report(payload))
-    print(f"wrote {args.out}")
+        if nesso_only:
+            overall = aggregate_overall(dataset_results, modes)
+            payload = {
+                "datasets": dataset_results,
+                "k": K,
+                "overall": overall,
+                "schema_version": SCHEMA_VERSION,
+            }
+        else:
+            overall = aggregate_overall_engines(dataset_results, engines)
+            payload = {
+                "datasets": dataset_results,
+                "k": K,
+                "overall": overall,
+                "schema_version": SCHEMA_VERSION_ENGINES,
+            }
+        encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")) + "\n"
+        args.out.parent.mkdir(parents=True, exist_ok=True)
+        args.out.write_text(encoded, encoding="utf-8")
+        print(format_report(payload))
+        print(f"wrote {args.out}")
+    finally:
+        xerj.shutdown()
 
 
 if __name__ == "__main__":
