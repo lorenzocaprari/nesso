@@ -1,8 +1,8 @@
 name: Eval competitors
 
 # Not a Pipeline job and not in the CI gate. Scores the heavy competitor
-# engines (diy-faiss, OpenSearch BM25 and k-NN, ck, vecgrep, xerj lexical and
-# neural) on the Loghub 2k
+# engines (diy-faiss, OpenSearch BM25 and k-NN, ck, vecgrep, and xerj: BM25
+# match, neural, and its default semantic search) on the Loghub 2k
 # seed sets and the bgl-needle-100k needle window, retrieval quality only: no
 # --measure, because runner timings are too noisy to publish. Each engine runs
 # in its own job; the merge job combines whatever finished into one 2k report
@@ -102,7 +102,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        engine: [diy-faiss, opensearch, opensearch-knn, ck, vecgrep, xerj, xerj-neural]
+        engine: [diy-faiss, opensearch, opensearch-knn, ck, vecgrep, xerj, xerj-neural, xerj-semantic]
         # ck and vecgrep build multi-line chunk indexes that exhaust the 16 GB
         # hosted runner on the 100k needle window (the runner shuts down mid-
         # step), so they score the 2k seed sets only.
@@ -171,7 +171,7 @@ jobs:
           echo "${bin}" >> "${GITHUB_PATH}"
 
       - name: Install xerj
-        if: matrix.engine == 'xerj' || matrix.engine == 'xerj-neural'
+        if: matrix.engine == 'xerj' || matrix.engine == 'xerj-neural' || matrix.engine == 'xerj-semantic'
         shell: bash
         run: |
           set -euo pipefail
@@ -291,7 +291,7 @@ jobs:
           for kind in 2k needle; do
             shopt -s nullglob
             inputs=()
-            for engine in diy-faiss opensearch opensearch-knn ck vecgrep xerj xerj-neural; do
+            for engine in diy-faiss opensearch opensearch-knn ck vecgrep xerj xerj-neural xerj-semantic; do
               file="build/eval/competitors/${kind}-${engine}.json"
               if [[ -f "${file}" ]]; then
                 inputs+=("${file}")

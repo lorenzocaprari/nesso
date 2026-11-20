@@ -13,6 +13,8 @@ Engines (--engine, repeatable; default nesso only):
   diy-faiss sentence-transformers MiniLM + FAISS IndexFlatIP (optional deps)
   xerj      Elasticsearch-compatible match on text (local xerj lexical node)
   xerj-neural  semantic query on semantic_text (opt-in; local model files)
+  xerj-semantic  semantic query on semantic_text with xerj's default
+            (lexical feature-hashing) embedder: xerj as shipped
   opensearch   single-node OpenSearch BM25 match on text (local node)
   opensearch-knn  OpenSearch k-NN (HNSW) over the diy-faiss MiniLM vectors
   ck        ck --sem over its own chunk index (skipped if ck is missing)
@@ -75,6 +77,7 @@ VALID_ENGINES = (
     "diy-faiss",
     "xerj",
     "xerj-neural",
+    "xerj-semantic",
     "opensearch",
     "opensearch-knn",
     "ck",
@@ -83,7 +86,7 @@ VALID_ENGINES = (
 CHUNK_CLI_ENGINES = frozenset({"ck", "vecgrep"})
 OPENSEARCH_ENGINES = frozenset({"opensearch", "opensearch-knn"})
 SKIPPABLE_ENGINES = (
-    frozenset({"ripgrep", "xerj", "xerj-neural"}) | OPENSEARCH_ENGINES | CHUNK_CLI_ENGINES
+    frozenset({"ripgrep", "xerj", "xerj-neural", "xerj-semantic"}) | OPENSEARCH_ENGINES | CHUNK_CLI_ENGINES
 )
 DIY_FAISS_MODULE = ROOT / "bench" / "competitors" / "diy_faiss.py"
 K = 10
@@ -98,6 +101,8 @@ XERJ_NEURAL_MODEL_FILES = ("config.json", "tokenizer.json", "model.safetensors")
 XERJ_NEURAL_MODEL_SIZE = "~90 MB"
 XERJ_INDEX_LEXICAL = "nesso-eval-xerj"
 XERJ_INDEX_NEURAL = "nesso-eval-xerj-neural"
+XERJ_INDEX_SEMANTIC = "nesso-eval-xerj-semantic"
+XERJ_ENGINES = frozenset({"xerj", "xerj-neural", "xerj-semantic"})
 OPENSEARCH_READY_TIMEOUT_S = 180.0
 OPENSEARCH_DEFAULT_JAVA_OPTS = "-Xms1g -Xmx1g"
 OPENSEARCH_INDEX_LEXICAL = "nesso-eval-opensearch"
@@ -1296,6 +1301,8 @@ class XerjContext:
     url_mode: str = "external"
     binary: Path | None = None
     version: str = "unknown"
+    # True when this context spawned the node with --embed-mode neural.
+    neural_node: bool = False
     _proc: subprocess.Popen[str] | None = None
     _tmpdir: tempfile.TemporaryDirectory[str] | None = None
     _log_handle: Any = None
@@ -1481,7 +1488,7 @@ def open_xerj_context(
     xerj_bin: str | None,
     xerj_model_dir: str | None,
 ) -> XerjContext:
-    needs_xerj = "xerj" in engines or "xerj-neural" in engines
+    needs_xerj = bool(XERJ_ENGINES.intersection(engines))
     if not needs_xerj:
         return XerjContext()
     binary = resolve_xerj_binary(xerj_bin)
@@ -1504,7 +1511,7 @@ def open_xerj_context(
         return XerjContext(skip_reason="xerj executable not found")
 
     spawn_neural = needs_neural and neural_ok
-    if needs_neural and not neural_ok and "xerj" not in engines:
+    if needs_neural and not neural_ok and not {"xerj", "xerj-semantic"}.intersection(engines):
         return XerjContext(
             binary=binary,
             version=xerj_version_from_binary(binary),
@@ -1557,6 +1564,7 @@ def open_xerj_context(
         binary=binary,
         version=xerj_version_from_binary(binary),
         neural_skip_reason=None if spawn_neural or not needs_neural else neural_reason,
+        neural_node=spawn_neural,
         _proc=proc,
         _tmpdir=tmp,
         _log_handle=log_handle,
@@ -1569,10 +1577,30 @@ def open_xerj_context(
     return ctx
 
 
-def make_xerj_engine(ctx: XerjContext, *, neural: bool) -> RankEngine:
-    name = "xerj-neural" if neural else "xerj"
+def make_xerj_engine(ctx: XerjContext, *, neural: bool, semantic: bool = False) -> RankEngine:
+    name = "xerj-semantic" if semantic else ("xerj-neural" if neural else "xerj")
     if ctx.skip_reason:
         return SkippedEngine(name=name, reason=ctx.skip_reason)
+    if semantic:
+        if not ctx.url:
+            return SkippedEngine(name=name, reason="xerj URL unavailable")
+        if ctx.neural_node:
+            # One spawned node serves every xerj engine in a run, and its
+            # embedder is chosen at startup.
+            return SkippedEngine(
+                name=name,
+                reason="xerj-semantic needs a node on the default lexical embedder; "
+                "this run's node uses --embed-mode neural (run xerj-semantic without xerj-neural)",
+            )
+        return EsCompatEngine(
+            name=name,
+            base_url=ctx.url,
+            index_name=XERJ_INDEX_SEMANTIC,
+            query_fn=xerj_semantic_query,
+            mappings=xerj_neural_mappings(),
+            xerj_version=ctx.version,
+            url_mode=ctx.url_mode,
+        )
     if neural and ctx.neural_skip_reason:
         return SkippedEngine(name=name, reason=ctx.neural_skip_reason)
     if not ctx.url:
@@ -2045,7 +2073,7 @@ def format_xerj_metadata_lines(payload: dict) -> list[str]:
         for engine in dataset.get("engines", []):
             if engine.get("status") != "ok":
                 continue
-            if engine.get("engine") not in ("xerj", "xerj-neural"):
+            if engine.get("engine") not in XERJ_ENGINES:
                 continue
             versions = engine.get("versions")
             if not isinstance(versions, dict):
@@ -2493,6 +2521,10 @@ def make_rank_engine(
         return make_xerj_engine(xerj or XerjContext(skip_reason="xerj not configured"), neural=False)
     if engine_name == "xerj-neural":
         return make_xerj_engine(xerj or XerjContext(skip_reason="xerj not configured"), neural=True)
+    if engine_name == "xerj-semantic":
+        return make_xerj_engine(
+            xerj or XerjContext(skip_reason="xerj not configured"), neural=False, semantic=True
+        )
     if engine_name in CHUNK_CLI_ENGINES:
         return ChunkCliEngine(CHUNK_CLI_SPECS[engine_name])
     if engine_name in OPENSEARCH_ENGINES:
@@ -2725,7 +2757,7 @@ def collect_measure_tool_versions(
             tools["rg"] = "missing"
         else:
             tools["rg"] = tool_version_line(["rg", "--version"])
-    if "xerj" in engines or "xerj-neural" in engines:
+    if XERJ_ENGINES.intersection(engines):
         resolved = resolve_xerj_binary(xerj_bin)
         tools["xerj"] = xerj_version_from_binary(resolved)
     for name in sorted(CHUNK_CLI_ENGINES.intersection(engines)):
@@ -2993,7 +3025,7 @@ def run_measure_worker_phase(
             mode=mode,
             corpus=corpus,
         )
-    if engine in ("xerj", "xerj-neural"):
+    if engine in XERJ_ENGINES:
         return _worker_xerj_phase(
             phase=phase,
             log_path=log_path,
@@ -3003,6 +3035,7 @@ def run_measure_worker_phase(
             xerj_bin=xerj_bin,
             xerj_model_dir=xerj_model_dir,
             neural=neural or engine == "xerj-neural",
+            semantic=engine == "xerj-semantic",
         )
     raise SystemExit(f"error: unknown measure worker engine {engine!r}")
 
@@ -3204,9 +3237,10 @@ def _worker_xerj_phase(
     xerj_bin: str | None,
     xerj_model_dir: str | None,
     neural: bool,
+    semantic: bool = False,
 ) -> dict[str, Any]:
     del log_path
-    engines = ["xerj-neural"] if neural else ["xerj"]
+    engines = ["xerj-semantic"] if semantic else (["xerj-neural"] if neural else ["xerj"])
     # Measure always owns a spawned node so GNU time includes server RSS.
     ctx = open_xerj_context(
         engines=engines,
@@ -3218,14 +3252,14 @@ def _worker_xerj_phase(
         if ctx.skip_reason or (neural and ctx.neural_skip_reason):
             reason = ctx.skip_reason or ctx.neural_skip_reason or "xerj unavailable"
             return {"skipped": True, "reason": reason, "latencySeconds": []}
-        engine = make_xerj_engine(ctx, neural=neural)
+        engine = make_xerj_engine(ctx, neural=neural, semantic=semantic)
         if isinstance(engine, SkippedEngine):
             return {"skipped": True, "reason": engine.reason, "latencySeconds": []}
         assert isinstance(engine, EsCompatEngine)
         data_dir = None
         if ctx._tmpdir is not None:
             data_dir = Path(ctx._tmpdir.name) / "data"
-        marker = workdir / ("xerj-neural-ready" if neural else "xerj-ready")
+        marker = workdir / f"{engines[0]}-ready"
         if phase == "index":
             engine.prepare(Path("."), lines, workdir)
             index_bytes = directory_size_bytes(data_dir) if data_dir is not None else 0
@@ -3517,7 +3551,7 @@ def measure_cli_engine_once(
             "timeToFirstResultSeconds": ttfr_payload["wallSeconds"],
         }
 
-    if engine in ("xerj", "xerj-neural") or engine in OPENSEARCH_ENGINES:
+    if engine in XERJ_ENGINES or engine in OPENSEARCH_ENGINES:
         # Server engines: each phase spawns its own node inside the timed child.
         server_args: dict[str, Any] = {
             "xerj_bin": xerj_bin,
