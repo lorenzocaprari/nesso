@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795199900197,
+  "lastUpdate": 1795201377399,
   "repoUrl": "https://github.com/lorenzocaprari/nesso",
   "entries": {
     "nesso": [
@@ -10151,6 +10151,60 @@ window.BENCHMARK_DATA = {
           {
             "name": "grep-100000-rss",
             "value": 146468864,
+            "unit": "bytes"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "caprarilorenzo5@gmail.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "committer": {
+            "email": "85455384+lorenzocaprari@users.noreply.github.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "distinct": true,
+          "id": "f871cecf01ae7dd5b64f076d2143fbe279775443",
+          "message": "ci(eval): show nesso's margin over the best other engine\n\neval-retrieval-compare --margins prints, per system and class, nesso (auto,\nelse the first present mode) against the best other engine by MRR, from the\nengines in the same report plus --reference reports. A reference of another\nkind is ignored, an engine in the report wins over the same engine in a\nreference, and classes under 30 queries are flagged as noisy. It needs no\nprevious report and combines with --previous.\n\nThe eval-retrieval workflow prints the table for the 2k and needle reports\nand reads test/eval/reference/*.json, which the eval-competitors workflow\nrefreshes by hand (README in that directory).",
+          "timestamp": "2026-11-20T19:55:26+01:00",
+          "tree_id": "55d726cf26830ff7b4ca9c00bea298cfad7372a6",
+          "url": "https://github.com/lorenzocaprari/nesso/commit/f871cecf01ae7dd5b64f076d2143fbe279775443"
+        },
+        "date": 1795201376921,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "grep-1000-wall",
+            "value": 1.21,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-1000-rss",
+            "value": 117366784,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-10000-wall",
+            "value": 1.23,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-10000-rss",
+            "value": 118513664,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-100000-wall",
+            "value": 1.48,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-100000-rss",
+            "value": 145973248,
             "unit": "bytes"
           }
         ]
