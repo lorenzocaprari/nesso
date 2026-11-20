@@ -11,6 +11,15 @@ then the first N lines of the raw log are written and the archive is deleted.
 Thunderbird is streamed from the tar member so the 29 GiB log is never
 extracted. Loghub data is for research use and must stay out of the repository.
 
+Labelled windows come from Loghub 2.0 (Zenodo record 8275861, CC-BY-4.0):
+--dataset bgl-loghub2 or thunderbird-loghub2 with one or more
+--window START:COUNT (1-based start line). Each window is written as
+<Name>_loghub2_<start>_<count>.log, with the leading alert tag stripped, and a
+matching .labels file with one tag per line ("-" or an alert category such as
+KERNDTLB). The tags are the system administrators' labels from Oliner and
+Stearley, "What Supercomputers Say" (DSN 2007). The archive is read once for
+all windows and then deleted.
+
 A file already at the destination is kept when its sha256 matches the pin.
 The 2k sample pin is the file itself. A full set's cache pin is the sha256 of
 the default 1_000_000-line prefix.
@@ -127,7 +136,8 @@ DEFAULT_STRUCTURED_DEST = _HDFS.default_structured_dest
 DATASET_2K_NAMES = tuple(SAMPLES_2K)
 ALL_2K = "all-2k"
 FULL_DATASET_NAMES = ("hdfs-v1", "bgl", "thunderbird", "all-full")
-DATASET_CHOICES = (*DATASET_2K_NAMES, ALL_2K, *FULL_DATASET_NAMES)
+LABELLED_DATASET_NAMES = ("bgl-loghub2", "thunderbird-loghub2")
+DATASET_CHOICES = (*DATASET_2K_NAMES, ALL_2K, *FULL_DATASET_NAMES, *LABELLED_DATASET_NAMES)
 
 
 @dataclass(frozen=True)
@@ -179,6 +189,196 @@ FULL_SETS: dict[str, FullSet] = {
         prefix_sha256="5cb50133190d4ff80af30dca611b6c4b37d88421e7d5c54786e9ae8bcc6b1d9f",
     ),
 }
+
+
+# Loghub 2.0 (ISSTA 2024), CC-BY-4.0. Its BGL and Thunderbird logs keep the
+# original expert alert tag as the first token of each line: "-" for a normal
+# line, else an alert category (Oliner & Stearley, DSN 2007).
+LOGHUB2_RECORD = "8275861"
+LOGHUB2_FILES = f"https://zenodo.org/records/{LOGHUB2_RECORD}/files"
+
+
+@dataclass(frozen=True)
+class LabelledSet:
+    name: str
+    url: str
+    archive_sha256: str
+    archive_md5: str
+    member: str
+    # File stem for windows: <stem>_<start>_<count>.log / .labels
+    stem: str
+
+
+LABELLED_SETS: dict[str, LabelledSet] = {
+    "bgl-loghub2": LabelledSet(
+        name="bgl-loghub2",
+        url=f"{LOGHUB2_FILES}/BGL.zip?download=1",
+        archive_sha256="2a6e72e53a9dcfe263a8ac6a0c6cf0f694d250ea8bdbe6bcae46e81500ec7fa3",
+        archive_md5="521ee643375bb6e9d0dd88636ff7ece1",
+        member="BGL/BGL_full.log",
+        stem="BGL_loghub2",
+    ),
+    "thunderbird-loghub2": LabelledSet(
+        name="thunderbird-loghub2",
+        url=f"{LOGHUB2_FILES}/Thunderbird.zip?download=1",
+        archive_sha256="ee76bfb6a75126dbf137dcac00a3ebe0c61f90963334354a67c09df1ca1bf831",
+        archive_md5="a8d365d003845c3bef61661375513910",
+        member="Thunderbird/Thunderbird_full.log",
+        stem="Thunderbird_loghub2",
+    ),
+}
+
+# (dataset, start, count) -> (sha256 of the stripped .log, sha256 of .labels).
+# Windows used by the needle benchmark; any other window is written unpinned.
+WINDOW_PINS: dict[tuple[str, int, int], tuple[str, str]] = {
+    # 17 alert categories, 21,061 alert lines.
+    ("bgl-loghub2", 4_100_001, 100_000): (
+        "fbd0e8ead73f2980ebf2a691e0844c92cb815dd794e39b3c0b72a2c271af238a",
+        "9fa23317eb5ffb54c2626584a3efc82690e48df1386170b44c9fe7eee776c655",
+    ),
+    # 27 alert categories, 72,300 alert lines.
+    ("bgl-loghub2", 3_200_001, 1_000_000): (
+        "df2665f262c49bc82034541109a3ebeffe51f3ba3a171eedc0830c25fb5c16b2",
+        "70b0b19c1f33a06d64a7603e8fc5d4a17057cc704b7ce3da693c9004c2e95704",
+    ),
+    # 5 alert categories, 32 alert lines.
+    ("thunderbird-loghub2", 8_550_001, 1_000_000): (
+        "d106f820822de19f9e0a43e40e679a9a15c06a7a8bde1ac2708a0cdf41a4515b",
+        "78efc6410e72f7893ae292f45090c7356ab6ab118849b3d4510ce7435a7ac046",
+    ),
+}
+
+
+@dataclass(frozen=True)
+class Window:
+    start: int
+    count: int
+
+
+def parse_window(raw: str) -> Window:
+    try:
+        start_raw, count_raw = raw.split(":", 1)
+        window = Window(start=int(start_raw), count=int(count_raw))
+    except ValueError as exc:
+        raise SystemExit(f"error: --window must be START:COUNT with integers, got {raw!r}") from exc
+    if window.start < 1 or window.count < 1:
+        raise SystemExit(f"error: --window needs START >= 1 and COUNT >= 1, got {raw!r}")
+    return window
+
+
+def window_paths(spec: LabelledSet, window: Window, dest_dir: Path) -> tuple[Path, Path]:
+    base = f"{spec.stem}_{window.start}_{window.count}"
+    return dest_dir / f"{base}.log", dest_dir / f"{base}.labels"
+
+
+def split_label(raw: bytes, line_number: int) -> tuple[bytes, bytes]:
+    """Split '<label> <rest>' into (label, rest). Rest keeps no trailing newline."""
+    text = raw.rstrip(b"\r\n")
+    label, sep, rest = text.partition(b" ")
+    if not sep or not label:
+        raise SystemExit(f"error: line {line_number} has no alert label token")
+    if label != b"-" and not all(65 <= byte <= 90 or byte == 95 or 48 <= byte <= 57 for byte in label):
+        raise SystemExit(f"error: line {line_number} label {label[:40]!r} is not '-' or an alert category")
+    return label, rest
+
+
+def write_windows(source, targets: list[tuple[Window, Path, Path]]) -> None:
+    """Stream source once and write each window's stripped log and labels."""
+    ordered = sorted(targets, key=lambda item: item[0].start)
+    handles: dict[int, tuple[Window, object, object, list[int]]] = {}
+    line_number = 0
+    last = max(window.start + window.count - 1 for window, _log, _labels in ordered)
+    try:
+        for index, (window, log_path, labels_path) in enumerate(ordered):
+            handles[index] = (window, log_path.open("wb"), labels_path.open("wb"), [0])
+        while line_number < last:
+            raw = source.readline()
+            if not raw:
+                break
+            line_number += 1
+            active = [
+                entry
+                for entry in handles.values()
+                if entry[0].start <= line_number < entry[0].start + entry[0].count
+            ]
+            if not active:
+                continue
+            label, rest = split_label(raw, line_number)
+            for _window, log_handle, labels_handle, written in active:
+                log_handle.write(rest + b"\n")
+                labels_handle.write(label + b"\n")
+                written[0] += 1
+    finally:
+        for _window, log_handle, labels_handle, _written in handles.values():
+            log_handle.close()
+            labels_handle.close()
+    for window, _log_handle, _labels_handle, written in handles.values():
+        if written[0] != window.count:
+            raise SystemExit(
+                f"error: window {window.start}:{window.count} has {written[0]} lines, need {window.count}"
+            )
+
+
+def window_cached(spec: LabelledSet, window: Window, log_path: Path, labels_path: Path) -> bool:
+    pin = WINDOW_PINS.get((spec.name, window.start, window.count))
+    if pin is None or not log_path.is_file() or not labels_path.is_file():
+        return False
+    return sha256_file(log_path) == pin[0] and sha256_file(labels_path) == pin[1]
+
+
+def fetch_labelled(
+    spec: LabelledSet,
+    windows: list[Window],
+    dest_dir: Path,
+    *,
+    url: str | None = None,
+    expected: str | None = None,
+) -> list[tuple[Path, Path]]:
+    """Download a Loghub 2.0 archive once and write each requested window."""
+    outputs = [(window, *window_paths(spec, window, dest_dir)) for window in windows]
+    pending = [item for item in outputs if not window_cached(spec, *item)]
+    for window, log_path, _labels_path in outputs:
+        if not any(item[0] == window for item in pending):
+            print(f"fetch-loghub: cached {log_path}")
+    if pending:
+        dest_dir.mkdir(parents=True, exist_ok=True)
+        archive = dest_dir / f"{spec.stem}.zip.archive"
+        partials = [
+            (window, log_path.with_name(log_path.name + ".partial"), labels_path.with_name(labels_path.name + ".partial"))
+            for window, log_path, labels_path in pending
+        ]
+        archive_pin = normalize_sha256(expected if expected is not None else spec.archive_sha256)
+        source_url = url or spec.url
+        try:
+            download(source_url, archive, timeout=600)
+            actual = sha256_file(archive)
+            if actual != archive_pin:
+                raise SystemExit(f"error: sha256 mismatch for {source_url}: expected {archive_pin}, got {actual}")
+            raw, handle = open_member(archive, "zip", spec.member)
+            try:
+                write_windows(raw, partials)
+            finally:
+                raw.close()
+                handle.close()
+            for (window, log_partial, labels_partial), (_w, log_path, labels_path) in zip(
+                partials, pending, strict=True
+            ):
+                pin = WINDOW_PINS.get((spec.name, window.start, window.count))
+                if pin is not None:
+                    got = (sha256_file(log_partial), sha256_file(labels_partial))
+                    if got != pin:
+                        raise SystemExit(
+                            f"error: window sha256 mismatch for {log_path.name}: expected {pin}, got {got}"
+                        )
+                log_partial.replace(log_path)
+                labels_partial.replace(labels_path)
+                print(f"fetch-loghub: wrote {log_path} and {labels_path.name}")
+        finally:
+            archive.unlink(missing_ok=True)
+            for _window, log_partial, labels_partial in partials:
+                log_partial.unlink(missing_ok=True)
+                labels_partial.unlink(missing_ok=True)
+    return [(log_path, labels_path) for _window, log_path, labels_path in outputs]
 
 
 def sha256_file(path: Path) -> str:
@@ -387,7 +587,32 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--prefix-sha256", default=None, help="Override the pinned prefix sha256")
     parser.add_argument("--member", default=None, help="Override the archive member name")
     parser.add_argument("--kind", choices=("zip", "tar"), default=None, help="Override the archive kind")
+    parser.add_argument(
+        "--window",
+        action="append",
+        default=None,
+        metavar="START:COUNT",
+        help="Labelled Loghub 2.0 window (repeatable; bgl-loghub2 and thunderbird-loghub2 only)",
+    )
     args = parser.parse_args(argv)
+
+    if args.dataset in LABELLED_SETS:
+        if not args.window:
+            raise SystemExit(f"error: --dataset {args.dataset} needs at least one --window START:COUNT")
+        if args.dest is not None or args.lines != DEFAULT_PREFIX_LINES:
+            raise SystemExit("error: --dest and --lines do not apply to a labelled window; use --dest-dir")
+        if args.member is not None or args.kind is not None or args.prefix_sha256 is not None:
+            raise SystemExit("error: --member, --kind, and --prefix-sha256 do not apply to a labelled window")
+        fetch_labelled(
+            LABELLED_SETS[args.dataset],
+            [parse_window(raw) for raw in args.window],
+            args.dest_dir,
+            url=args.url,
+            expected=args.sha256,
+        )
+        return
+    if args.window:
+        raise SystemExit("error: --window applies to bgl-loghub2 and thunderbird-loghub2 only")
 
     if args.dataset in SAMPLES_2K or args.dataset == ALL_2K:
         _reject_2k_full_flags(args.dataset, args)
