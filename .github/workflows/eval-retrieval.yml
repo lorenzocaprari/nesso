@@ -2,12 +2,14 @@ name: Eval retrieval
 
 # Not a Pipeline job and not in the CI gate. Scores nesso against grep and
 # SQLite BM25 on the pinned Loghub 2k seed sets, and on the BGL 100k needle
-# window (Loghub 2.0, administrators' alert labels). Runs nightly on main, on
-# workflow_dispatch, and on pull requests that touch ranking code, the eval
-# scripts, or the query sets. Every run compares against the latest successful
-# scheduled report on main and warns on relative drops over 5%. The summary
-# also shows nesso's margin over the best other engine per class. Scores never
-# fail the job; only script errors do. No gh-pages write yet.
+# window (Loghub 2.0, administrators' alert labels). The harness, query sets,
+# and competitor reference reports come from lorenzocaprari/nesso-bench at
+# NESSO_BENCH_REF. Runs nightly on main, on workflow_dispatch, and on pull
+# requests that touch ranking code or this workflow (which holds the pin).
+# Every run compares against the latest successful scheduled report on main
+# and warns on relative drops over 5%. The summary also shows nesso's margin
+# over the best other engine per class. Scores never fail the job; only
+# script errors do. No gh-pages write yet.
 on:
   schedule:
     # 06:47 UTC, after real-log at 05:47 UTC (fuzz-test 03:17, index-rss 04:47).
@@ -19,12 +21,7 @@ on:
       - "CMakeLists.txt"
       - "conanfile.py"
       - "conan.lock"
-      - "scripts/eval-retrieval"
-      - "scripts/eval-retrieval-compare"
-      - "scripts/fetch-loghub"
       - "scripts/fetch-model"
-      - "test/eval/**"
-      - "bench/competitors/**"
       - ".github/workflows/eval-retrieval.yml"
 
 concurrency:
@@ -39,6 +36,12 @@ env:
   REGISTRY: ghcr.io
   CONAN_HOME: /opt/conan2
   CONAN_WERROR_ARGS: "-c user.nesso:werror=True"
+  # nesso-bench commit that supplies eval-retrieval, eval-retrieval-compare,
+  # fetch-loghub, the query sets, and test/eval/reference/. Bump it in its own
+  # pull request when nesso-bench changes; that pull request runs this
+  # workflow, so its summary shows any score change the bump brings.
+  NESSO_BENCH_REPOSITORY: lorenzocaprari/nesso-bench
+  NESSO_BENCH_REF: e0f46ab745a4bcecdd814c8eb697c34ff1c5715d
 
 jobs:
   guard:
@@ -141,6 +144,16 @@ jobs:
         with:
           persist-credentials: false
 
+      # The harness resolves its query sets and Loghub inputs relative to its
+      # own checkout, so they land under nesso-bench/.
+      - name: Checkout nesso-bench
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ env.NESSO_BENCH_REPOSITORY }}
+          ref: ${{ env.NESSO_BENCH_REF }}
+          path: nesso-bench
+          persist-credentials: false
+
       - name: Download previous evaluation report
         id: prev_artifact
         if: needs.resolve.outputs.prev_run_id != ''
@@ -168,28 +181,28 @@ jobs:
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
-            build/bench/HDFS_2k.log
-            build/bench/HDFS_2k.log_structured.csv
-            build/bench/BGL_2k.log
-            build/bench/BGL_2k.log_structured.csv
-            build/bench/Thunderbird_2k.log
-            build/bench/Thunderbird_2k.log_structured.csv
-            build/bench/OpenSSH_2k.log
-            build/bench/OpenSSH_2k.log_structured.csv
-            build/bench/Linux_2k.log
-            build/bench/Linux_2k.log_structured.csv
-            build/bench/Apache_2k.log
-            build/bench/Apache_2k.log_structured.csv
-          key: loghub-all-2k-${{ hashFiles('scripts/fetch-loghub') }}
+            nesso-bench/build/bench/HDFS_2k.log
+            nesso-bench/build/bench/HDFS_2k.log_structured.csv
+            nesso-bench/build/bench/BGL_2k.log
+            nesso-bench/build/bench/BGL_2k.log_structured.csv
+            nesso-bench/build/bench/Thunderbird_2k.log
+            nesso-bench/build/bench/Thunderbird_2k.log_structured.csv
+            nesso-bench/build/bench/OpenSSH_2k.log
+            nesso-bench/build/bench/OpenSSH_2k.log_structured.csv
+            nesso-bench/build/bench/Linux_2k.log
+            nesso-bench/build/bench/Linux_2k.log_structured.csv
+            nesso-bench/build/bench/Apache_2k.log
+            nesso-bench/build/bench/Apache_2k.log_structured.csv
+          key: loghub-all-2k-${{ hashFiles('nesso-bench/scripts/fetch-loghub') }}
 
       - name: Restore BGL needle window
         id: needle_logs
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
-            build/bench/BGL_loghub2_4100001_100000.log
-            build/bench/BGL_loghub2_4100001_100000.labels
-          key: loghub2-bgl-needle-100k-${{ hashFiles('scripts/fetch-loghub') }}
+            nesso-bench/build/bench/BGL_loghub2_4100001_100000.log
+            nesso-bench/build/bench/BGL_loghub2_4100001_100000.labels
+          key: loghub2-bgl-needle-100k-${{ hashFiles('nesso-bench/scripts/fetch-loghub') }}
 
       - name: Install Dependencies (Conan)
         run: |
@@ -200,18 +213,18 @@ jobs:
         run: conan build . -pr:h ./conan/profiles/gcc-26 -pr:b default --lockfile=conan.lock --build=missing --no-remote -o tests=False $CONAN_WERROR_ARGS
 
       - name: Fetch Loghub 2k inputs
-        run: python3 scripts/fetch-loghub --dataset all-2k
+        run: python3 nesso-bench/scripts/fetch-loghub --dataset all-2k
 
       # A restored window that matches its pin is kept; otherwise the 86 MB
       # Loghub 2.0 BGL archive is downloaded, checked, cut, and deleted.
       - name: Fetch BGL needle window
-        run: python3 scripts/fetch-loghub --dataset bgl-loghub2 --window 4100001:100000
+        run: python3 nesso-bench/scripts/fetch-loghub --dataset bgl-loghub2 --window 4100001:100000
 
       - name: Run retrieval evaluation
         run: |
           set -euo pipefail
           mkdir -p build/eval
-          python3 scripts/eval-retrieval \
+          python3 nesso-bench/scripts/eval-retrieval \
             --dataset all-2k \
             --engine nesso \
             --engine grep \
@@ -260,7 +273,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python3 scripts/eval-retrieval \
+          python3 nesso-bench/scripts/eval-retrieval \
             --dataset bgl-needle-100k \
             --engine nesso \
             --engine grep \
@@ -282,20 +295,21 @@ jobs:
 
       # nesso against the best other engine per class: the baselines scored in
       # this run, plus the committed reference reports of the heavy competitors
-      # (test/eval/reference/, from the eval-competitors workflow) when present.
+      # (nesso-bench's test/eval/reference/, from its eval-competitors
+      # workflow) when present.
       - name: Nesso margin against other engines
         shell: bash
         run: |
           set -euo pipefail
           shopt -s nullglob
           references=()
-          for file in test/eval/reference/*.json; do
+          for file in nesso-bench/test/eval/reference/*.json; do
             references+=(--reference "${file}")
           done
           for report in all_2k needle; do
             {
               echo
-              python3 scripts/eval-retrieval-compare \
+              python3 nesso-bench/scripts/eval-retrieval-compare \
                 --current "build/eval/${report}.json" \
                 --margins \
                 "${references[@]}"
@@ -316,7 +330,7 @@ jobs:
               if [[ ! -f "${previous}" ]]; then
                 echo "no previous run to compare"
               else
-                python3 scripts/eval-retrieval-compare \
+                python3 nesso-bench/scripts/eval-retrieval-compare \
                   --current "build/eval/${report}.json" \
                   --previous "${previous}" \
                   | tee -a build/eval/compare.txt
@@ -337,18 +351,18 @@ jobs:
           set -euo pipefail
           ready=true
           for path in \
-            build/bench/HDFS_2k.log \
-            build/bench/HDFS_2k.log_structured.csv \
-            build/bench/BGL_2k.log \
-            build/bench/BGL_2k.log_structured.csv \
-            build/bench/Thunderbird_2k.log \
-            build/bench/Thunderbird_2k.log_structured.csv \
-            build/bench/OpenSSH_2k.log \
-            build/bench/OpenSSH_2k.log_structured.csv \
-            build/bench/Linux_2k.log \
-            build/bench/Linux_2k.log_structured.csv \
-            build/bench/Apache_2k.log \
-            build/bench/Apache_2k.log_structured.csv
+            nesso-bench/build/bench/HDFS_2k.log \
+            nesso-bench/build/bench/HDFS_2k.log_structured.csv \
+            nesso-bench/build/bench/BGL_2k.log \
+            nesso-bench/build/bench/BGL_2k.log_structured.csv \
+            nesso-bench/build/bench/Thunderbird_2k.log \
+            nesso-bench/build/bench/Thunderbird_2k.log_structured.csv \
+            nesso-bench/build/bench/OpenSSH_2k.log \
+            nesso-bench/build/bench/OpenSSH_2k.log_structured.csv \
+            nesso-bench/build/bench/Linux_2k.log \
+            nesso-bench/build/bench/Linux_2k.log_structured.csv \
+            nesso-bench/build/bench/Apache_2k.log \
+            nesso-bench/build/bench/Apache_2k.log_structured.csv
           do
             if [[ ! -s "${path}" ]]; then
               ready=false
@@ -362,28 +376,28 @@ jobs:
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
-            build/bench/HDFS_2k.log
-            build/bench/HDFS_2k.log_structured.csv
-            build/bench/BGL_2k.log
-            build/bench/BGL_2k.log_structured.csv
-            build/bench/Thunderbird_2k.log
-            build/bench/Thunderbird_2k.log_structured.csv
-            build/bench/OpenSSH_2k.log
-            build/bench/OpenSSH_2k.log_structured.csv
-            build/bench/Linux_2k.log
-            build/bench/Linux_2k.log_structured.csv
-            build/bench/Apache_2k.log
-            build/bench/Apache_2k.log_structured.csv
-          key: loghub-all-2k-${{ hashFiles('scripts/fetch-loghub') }}
+            nesso-bench/build/bench/HDFS_2k.log
+            nesso-bench/build/bench/HDFS_2k.log_structured.csv
+            nesso-bench/build/bench/BGL_2k.log
+            nesso-bench/build/bench/BGL_2k.log_structured.csv
+            nesso-bench/build/bench/Thunderbird_2k.log
+            nesso-bench/build/bench/Thunderbird_2k.log_structured.csv
+            nesso-bench/build/bench/OpenSSH_2k.log
+            nesso-bench/build/bench/OpenSSH_2k.log_structured.csv
+            nesso-bench/build/bench/Linux_2k.log
+            nesso-bench/build/bench/Linux_2k.log_structured.csv
+            nesso-bench/build/bench/Apache_2k.log
+            nesso-bench/build/bench/Apache_2k.log_structured.csv
+          key: loghub-all-2k-${{ hashFiles('nesso-bench/scripts/fetch-loghub') }}
 
       - name: Save BGL needle window
-        if: always() && !cancelled() && github.event_name != 'pull_request' && steps.needle_logs.outputs.cache-hit != 'true' && hashFiles('build/bench/BGL_loghub2_4100001_100000.labels') != ''
+        if: always() && !cancelled() && github.event_name != 'pull_request' && steps.needle_logs.outputs.cache-hit != 'true' && hashFiles('nesso-bench/build/bench/BGL_loghub2_4100001_100000.labels') != ''
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
-            build/bench/BGL_loghub2_4100001_100000.log
-            build/bench/BGL_loghub2_4100001_100000.labels
-          key: loghub2-bgl-needle-100k-${{ hashFiles('scripts/fetch-loghub') }}
+            nesso-bench/build/bench/BGL_loghub2_4100001_100000.log
+            nesso-bench/build/bench/BGL_loghub2_4100001_100000.labels
+          key: loghub2-bgl-needle-100k-${{ hashFiles('nesso-bench/scripts/fetch-loghub') }}
 
       # Pull request reports use their own name so they can never become the
       # nightly baseline (resolve also filters on the schedule event).

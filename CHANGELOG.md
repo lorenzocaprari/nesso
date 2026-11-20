@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - Hybrid ranking of natural-language queries (no identifier token, under `auto` or `--mode hybrid`) scales a line's BM25 term by the square of the share of query terms it contains. A line that matches one word of a long description no longer outranks meaning matches; lines that match the whole query keep the full lexical weight. Queries with an identifier token rank as before. See ADR 0011.
+- The `eval-retrieval` workflow runs `eval-retrieval`, `eval-retrieval-compare`, `fetch-loghub`, the query sets, and the competitor reference reports from [nesso-bench](https://github.com/lorenzocaprari/nesso-bench) at the commit pinned in the workflow (`NESSO_BENCH_REF`). Pull requests run it when they touch ranking code, `scripts/fetch-model`, or the workflow, which includes a pin bump. Scores, reports, and the comparison with the latest nightly are unchanged.
 
 ### Added
 
