@@ -2,6 +2,8 @@
 # Today that is GitHub Actions, test/functional/go.mod, and
 # .devcontainer/requirements.txt. conanfile.py and conan.lock are not in the
 # graph, and scripts/ci/go.mod and test/scripts/go.mod have no module requirements.
+# Optional DIY eval pins live in bench/competitors/diy-faiss.hashes.txt (not a
+# *requirements*.txt path) so they stay out of this graph on purpose.
 #
 # allow-licenses is the supported control. deny-licenses is deprecated in
 # dependency-review-action v5. An expression passes when it can be satisfied

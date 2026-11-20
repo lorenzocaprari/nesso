@@ -688,5 +688,207 @@ class EvalRetrievalEnginesTest(unittest.TestCase):
             self.assertIn("grep", completed.stdout)
 
 
+class EvalRetrievalDiyFaissTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.mod = load_eval()
+        diy_path = ROOT / "bench" / "competitors" / "diy_faiss.py"
+        loader = importlib.machinery.SourceFileLoader("nesso_diy_faiss_test", str(diy_path))
+        spec = importlib.util.spec_from_loader(loader.name, loader)
+        if spec is None:
+            raise AssertionError(f"cannot load {diy_path}")
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[loader.name] = module
+        loader.exec_module(module)
+        cls.diy = module
+
+    def test_core_import_skips_heavy_deps(self) -> None:
+        for name in ("sentence_transformers", "torch", "faiss"):
+            self.assertNotIn(name, sys.modules)
+
+    def test_top_k_line_ids_tie_break_and_truncate(self) -> None:
+        diy = self.diy
+        # Equal top scores: lower line id wins. Then lower scores fill the rest.
+        scores = [0.1, 0.9, 0.9, 0.5, 0.2, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.8]
+        self.assertEqual(diy.top_k_line_ids(scores, k=3), [2, 3, 12])
+        self.assertEqual(diy.top_k_line_ids(scores, k=1), [2])
+        self.assertEqual(diy.top_k_line_ids([], k=10), [])
+
+    def test_fake_encoder_index_prepare_and_rank(self) -> None:
+        diy = self.diy
+
+        class FakeIndex:
+            def __init__(self, matrix: list[list[float]]) -> None:
+                self.matrix = matrix
+
+            def search(self, query_vec: list[list[float]], n: int):
+                query = query_vec[0]
+                scores = [
+                    sum(a * b for a, b in zip(row, query, strict=True)) for row in self.matrix
+                ]
+                order = sorted(range(len(scores)), key=lambda i: (-scores[i], i))[:n]
+                return [[scores[i] for i in order]], [[i for i in order]]
+
+        # Lines 0 and 1 are identical embeddings → tie broken by line id.
+        line_vecs = {
+            "alpha": [1.0, 0.0],
+            "alpha twin": [1.0, 0.0],
+            "beta": [0.0, 1.0],
+            "noise": [0.2, 0.2],
+        }
+
+        def encode_fn(texts):
+            return [line_vecs.get(text, [0.0, 0.0]) for text in texts]
+
+        engine = diy.DiyFaissEngine(encode_fn=encode_fn, make_index_fn=FakeIndex)
+        lines = ["alpha", "alpha twin", "beta", "noise"]
+        with tempfile.TemporaryDirectory() as temp:
+            engine.prepare(pathlib.Path(temp) / "log", lines, pathlib.Path(temp))
+        self.assertEqual(engine.rank("alpha", k=3), [1, 2, 4])
+        self.assertEqual(engine.rank("beta", k=2), [3, 4])
+        versions = engine.versions()
+        self.assertEqual(versions["model_revision"], diy.MODEL_REVISION)
+        self.assertEqual(versions["faiss"], "fake")
+
+    def test_diy_faiss_missing_deps_fails_clearly(self) -> None:
+        diy = self.diy
+        engine = diy.DiyFaissEngine()
+
+        def boom() -> None:
+            raise SystemExit(f"error: {diy.INSTALL_HINT}")
+
+        engine._ensure_stack = boom  # type: ignore[method-assign]
+        ok, reason = engine.availability()
+        self.assertFalse(ok)
+        self.assertIn("diy-faiss.hashes.txt", reason)
+        self.assertFalse(reason.startswith("error:"))
+
+        with tempfile.TemporaryDirectory() as temp:
+            directory = pathlib.Path(temp)
+            log_path = directory / "sample.log"
+            log_path.write_text("alpha\nbeta\n", encoding="utf-8")
+            structured = directory / "structured.csv"
+            structured.write_text("LineId,EventId\n1,E1\n2,E2\n", encoding="utf-8")
+            queries = directory / "queries.jsonl"
+            queries.write_text(
+                '{"id":"q1","class":"exact_id","query":"alpha","relevant_lines":[1]}\n',
+                encoding="utf-8",
+            )
+            out = directory / "out.json"
+            # Force the loaded diy module's import to fail.
+            env = os.environ.copy()
+            env["PYTHONPATH"] = str(directory)
+            blocker = directory / "sentence_transformers.py"
+            blocker.write_text(
+                "raise ImportError('blocked for diy-faiss missing-deps test')\n",
+                encoding="utf-8",
+            )
+            # Also block torch/faiss so the stack cannot partially import.
+            (directory / "torch.py").write_text(
+                "raise ImportError('blocked')\n", encoding="utf-8"
+            )
+            (directory / "faiss.py").write_text(
+                "raise ImportError('blocked')\n", encoding="utf-8"
+            )
+            completed = subprocess.run(
+                [
+                    sys.executable,
+                    str(SCRIPT),
+                    "--engine",
+                    "diy-faiss",
+                    "--log",
+                    str(log_path),
+                    "--structured",
+                    str(structured),
+                    "--queries",
+                    str(queries),
+                    "--out",
+                    str(out),
+                    "--workdir",
+                    str(directory / "work"),
+                    "--skip-fetch",
+                ],
+                capture_output=True,
+                text=True,
+                check=False,
+                env=env,
+            )
+            self.assertNotEqual(completed.returncode, 0, completed.stdout)
+            self.assertIn("diy-faiss.hashes.txt", completed.stderr)
+
+    def test_evaluate_keyword_engine_attaches_versions(self) -> None:
+        mod = self.mod
+        diy = self.diy
+
+        class FakeIndex:
+            def __init__(self, matrix) -> None:
+                self.matrix = matrix
+
+            def search(self, query_vec, n: int):
+                del query_vec
+                scores = [1.0] + [0.0] * (len(self.matrix) - 1)
+                indices = list(range(len(self.matrix)))
+                return [scores[:n]], [indices[:n]]
+
+        engine = diy.DiyFaissEngine(
+            encode_fn=lambda texts: [[1.0] for _ in texts],
+            make_index_fn=FakeIndex,
+        )
+        with tempfile.TemporaryDirectory() as temp:
+            directory = pathlib.Path(temp)
+            lines = ["alpha", "beta"]
+            payload = mod.evaluate_keyword_engine(
+                engine,
+                queries=[mod.Query("q1", "exact_id", "alpha", frozenset({1}), None)],
+                event_by_line={1: "E1", 2: "E2"},
+                log_path=directory / "log",
+                lines=lines,
+                workdir=directory,
+            )
+        self.assertEqual(payload["status"], "ok")
+        self.assertEqual(payload["engine"], "diy-faiss")
+        self.assertIn("versions", payload)
+        self.assertEqual(
+            payload["versions"]["model_revision"],
+            "1110a243fdf4706b3f48f1d95db1a4f5529b4d41",
+        )
+        self.assertEqual(payload["queries"][0]["ranked_lines"], [1, 2])
+
+
+@unittest.skipUnless(os.environ.get("NESSO_EVAL_DIY") == "1", "set NESSO_EVAL_DIY=1")
+class EvalRetrievalDiyFaissLiveTest(unittest.TestCase):
+    def test_real_stack_tiny_fixture(self) -> None:
+        diy_path = ROOT / "bench" / "competitors" / "diy_faiss.py"
+        loader = importlib.machinery.SourceFileLoader("nesso_diy_faiss_live", str(diy_path))
+        spec = importlib.util.spec_from_loader(loader.name, loader)
+        if spec is None:
+            raise AssertionError(f"cannot load {diy_path}")
+        diy = importlib.util.module_from_spec(spec)
+        sys.modules[loader.name] = diy
+        loader.exec_module(diy)
+
+        engine = diy.DiyFaissEngine()
+        ok, reason = engine.availability()
+        self.assertTrue(ok, reason)
+        lines = [
+            "connection refused on port 22",
+            "disk space low on /var",
+            "ssh authentication failure for user root",
+            "unrelated kernel message",
+        ]
+        with tempfile.TemporaryDirectory() as temp:
+            engine.prepare(pathlib.Path(temp) / "log", lines, pathlib.Path(temp))
+            ranked = engine.rank("ssh login failed", k=2)
+            versions = engine.versions()
+        self.assertEqual(len(ranked), 2)
+        self.assertTrue(all(1 <= line_id <= len(lines) for line_id in ranked))
+        # Semantic neighbor for the ssh line should beat the disk-space line.
+        self.assertIn(3, ranked)
+        self.assertEqual(versions["model_revision"], diy.MODEL_REVISION)
+        self.assertTrue(versions["sentence_transformers"])
+        self.assertTrue(versions["torch"])
+        self.assertTrue(versions["faiss"])
+
+
 if __name__ == "__main__":
     unittest.main()

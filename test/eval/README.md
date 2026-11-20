@@ -28,4 +28,4 @@ Product.
 python3 scripts/eval-retrieval --dataset all-2k --out build/eval/all_2k.json
 ```
 
-Keyword baselines (`--engine grep`, `ripgrep`, `bm25`) reuse these seeds and the same line metrics. See [docs/benchmarks.md](../../docs/benchmarks.md) for the exact query rules. That path is local or per-release, not Pipeline or nightly.
+Keyword baselines (`--engine grep`, `ripgrep`, `bm25`) and the optional DIY semantic baseline (`--engine diy-faiss`) reuse these seeds and the same line metrics. See [docs/benchmarks.md](../../docs/benchmarks.md) for setup, fairness notes, and query rules. Those paths are local or per-release, not Pipeline or nightly.
