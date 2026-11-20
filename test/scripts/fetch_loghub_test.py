@@ -66,7 +66,7 @@ class FetchLoghubTest(unittest.TestCase):
         module = load_fetch()
         self.assertEqual(
             set(module.SAMPLES_2K),
-            {"hdfs-2k", "bgl-2k", "thunderbird-2k", "openssh-2k", "linux-2k"},
+            {"hdfs-2k", "bgl-2k", "thunderbird-2k", "openssh-2k", "linux-2k", "apache-2k"},
         )
         self.assertEqual(set(module.SAMPLES_2K) & set(module.FULL_SETS), set())
         expected = {
@@ -99,6 +99,12 @@ class FetchLoghubTest(unittest.TestCase):
                 "Linux_2k.log",
                 "b3e20bc1afe732ab1bf3ed1de4bf9c809e4194e02f7dea911d918e5342e8e173",
                 "7c86d7b0ecb961a25f00d9475a154df97613b9974f31ce142a146caa2017c71e",
+            ),
+            "apache-2k": (
+                "Apache",
+                "Apache_2k.log",
+                "c7efa3eb686e3a96bd2f8f4457b2a7887e9cf2f3649327f1b4e87af841363ce8",
+                "54331d12eedf513f2127f4d89f0284c8b15fddfa5471103abf9db2c73d737778",
             ),
         }
         for name, (folder, log_name, log_sha, structured_sha) in expected.items():

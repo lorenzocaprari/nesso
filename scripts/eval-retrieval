@@ -170,6 +170,7 @@ DATASETS_2K: dict[str, DatasetSpec] = {
     "thunderbird-2k": DatasetSpec("thunderbird-2k", "Thunderbird_2k.log", "thunderbird_2k.jsonl"),
     "openssh-2k": DatasetSpec("openssh-2k", "OpenSSH_2k.log", "openssh_2k.jsonl"),
     "linux-2k": DatasetSpec("linux-2k", "Linux_2k.log", "linux_2k.jsonl"),
+    "apache-2k": DatasetSpec("apache-2k", "Apache_2k.log", "apache_2k.jsonl"),
 }
 
 

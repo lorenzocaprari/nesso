@@ -4,7 +4,7 @@
 The default dataset is the HDFS_v1 2k sample (HDFS/HDFS_2k.log) from
 logpai/loghub at a pinned commit, plus the matching structured CSV
 (HDFS_2k.log_structured.csv) with per-line EventId labels. Other pinned 2k
-samples (BGL, Thunderbird, OpenSSH, Linux) share that commit. Full sets come
+samples (BGL, Thunderbird, OpenSSH, Linux, Apache) share that commit. Full sets come
 from Zenodo record 8196385:
 HDFS_v1, BGL, and Thunderbird. Each full set is checked against a sha256 pin,
 then the first N lines of the raw log are written and the archive is deleted.
@@ -29,7 +29,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-# Commit where HDFS/BGL/Thunderbird/OpenSSH/Linux *_2k.log samples are pinned.
+# Commit where HDFS/BGL/Thunderbird/OpenSSH/Linux/Apache *_2k.log samples are pinned.
 LOGHUB_COMMIT = "374038faa4ca122dd7ca0730372c0b78f76f8597"
 DEFAULT_PREFIX_LINES = 1_000_000
 # Loghub full logs (ISSRE 2023). Not the concept DOI and not /latest.
@@ -104,6 +104,13 @@ SAMPLES_2K: dict[str, Sample2k] = {
         log_name="Linux_2k.log",
         log_sha256="b3e20bc1afe732ab1bf3ed1de4bf9c809e4194e02f7dea911d918e5342e8e173",
         structured_sha256="7c86d7b0ecb961a25f00d9475a154df97613b9974f31ce142a146caa2017c71e",
+    ),
+    "apache-2k": Sample2k(
+        name="apache-2k",
+        folder="Apache",
+        log_name="Apache_2k.log",
+        log_sha256="c7efa3eb686e3a96bd2f8f4457b2a7887e9cf2f3649327f1b4e87af841363ce8",
+        structured_sha256="54331d12eedf513f2127f4d89f0284c8b15fddfa5471103abf9db2c73d737778",
     ),
 }
 

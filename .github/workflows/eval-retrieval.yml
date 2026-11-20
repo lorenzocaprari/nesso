@@ -162,6 +162,8 @@ jobs:
             build/bench/OpenSSH_2k.log_structured.csv
             build/bench/Linux_2k.log
             build/bench/Linux_2k.log_structured.csv
+            build/bench/Apache_2k.log
+            build/bench/Apache_2k.log_structured.csv
           key: loghub-all-2k-${{ hashFiles('scripts/fetch-loghub') }}
 
       - name: Install Dependencies (Conan)
@@ -257,7 +259,9 @@ jobs:
             build/bench/OpenSSH_2k.log \
             build/bench/OpenSSH_2k.log_structured.csv \
             build/bench/Linux_2k.log \
-            build/bench/Linux_2k.log_structured.csv
+            build/bench/Linux_2k.log_structured.csv \
+            build/bench/Apache_2k.log \
+            build/bench/Apache_2k.log_structured.csv
           do
             if [[ ! -s "${path}" ]]; then
               ready=false
@@ -281,6 +285,8 @@ jobs:
             build/bench/OpenSSH_2k.log_structured.csv
             build/bench/Linux_2k.log
             build/bench/Linux_2k.log_structured.csv
+            build/bench/Apache_2k.log
+            build/bench/Apache_2k.log_structured.csv
           key: loghub-all-2k-${{ hashFiles('scripts/fetch-loghub') }}
 
       - name: Upload evaluation report
