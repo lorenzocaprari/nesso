@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795198007912,
+  "lastUpdate": 1795199900197,
   "repoUrl": "https://github.com/lorenzocaprari/nesso",
   "entries": {
     "nesso": [
@@ -10097,6 +10097,60 @@ window.BENCHMARK_DATA = {
           {
             "name": "grep-100000-rss",
             "value": 145907712,
+            "unit": "bytes"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "caprarilorenzo5@gmail.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "committer": {
+            "email": "85455384+lorenzocaprari@users.noreply.github.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "distinct": true,
+          "id": "9398ec3ea0359426c0e1243f183bfb909324b593",
+          "message": "fix(search): restore the hybrid coverage fix and eval changes reverted by a squash\n\nThe squash merge of the competitor workflow (f9eb596) was built with a soft\nreset onto a newer main, so its tree was the old branch's tree and it\nsilently undid three commits that had landed in between:\n\n  6c6350d fix(search): scale hybrid BM25 by query-term coverage\n  e5bb9b0 fix(search): use a range-based loop for grep hybrid dense values\n  c8f7a95 ci(eval): score grep, BM25 and the BGL needle window nightly and\n          on pull requests\n\nRe-apply them. After this change src/, the unit tests, ADR 0011, usage.md,\neval-retrieval-compare and eval-retrieval.yml are identical to c8f7a95, and\nthe competitor workflow, merge script and xerj-semantic stay as merged.",
+          "timestamp": "2026-11-20T19:31:41+01:00",
+          "tree_id": "a68fc1f6b334e53f8974a93086055a578b28373a",
+          "url": "https://github.com/lorenzocaprari/nesso/commit/9398ec3ea0359426c0e1243f183bfb909324b593"
+        },
+        "date": 1795199899480,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "grep-1000-wall",
+            "value": 0.15,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-1000-rss",
+            "value": 118980608,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-10000-wall",
+            "value": 0.16,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-10000-rss",
+            "value": 117993472,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-100000-wall",
+            "value": 0.33,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-100000-rss",
+            "value": 146468864,
             "unit": "bytes"
           }
         ]
