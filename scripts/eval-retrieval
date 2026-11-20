@@ -15,6 +15,8 @@ Engines (--engine, repeatable; default nesso only):
   xerj-neural  semantic query on semantic_text (opt-in; local model files)
   opensearch   single-node OpenSearch BM25 match on text (local node)
   opensearch-knn  OpenSearch k-NN (HNSW) over the diy-faiss MiniLM vectors
+  ck        ck --sem over its own chunk index (skipped if ck is missing)
+  vecgrep   vecgrep semantic search over its chunk index (skipped if missing)
 
 Without --engine (or --engine nesso alone) the JSON stays schema_version 3 and
 byte-compatible with prior nesso-only reports. Any other engine uses
@@ -70,9 +72,14 @@ VALID_ENGINES = (
     "xerj-neural",
     "opensearch",
     "opensearch-knn",
+    "ck",
+    "vecgrep",
 )
+CHUNK_CLI_ENGINES = frozenset({"ck", "vecgrep"})
 OPENSEARCH_ENGINES = frozenset({"opensearch", "opensearch-knn"})
-SKIPPABLE_ENGINES = frozenset({"ripgrep", "xerj", "xerj-neural"}) | OPENSEARCH_ENGINES
+SKIPPABLE_ENGINES = (
+    frozenset({"ripgrep", "xerj", "xerj-neural"}) | OPENSEARCH_ENGINES | CHUNK_CLI_ENGINES
+)
 DIY_FAISS_MODULE = ROOT / "bench" / "competitors" / "diy_faiss.py"
 K = 10
 FLOAT_DIGITS = 6
@@ -621,6 +628,7 @@ def run_command(
     *,
     label: str,
     ok_codes: frozenset[int] = frozenset({0}),
+    cwd: Path | None = None,
 ) -> subprocess.CompletedProcess[str]:
     try:
         completed = subprocess.run(
@@ -628,6 +636,7 @@ def run_command(
             capture_output=True,
             text=True,
             check=False,
+            cwd=cwd,
         )
     except OSError as exc:
         raise SystemExit(f"error: failed to run {label}: {exc}") from exc
@@ -637,8 +646,10 @@ def run_command(
     return completed
 
 
-def run_checked(command: list[str], *, label: str) -> subprocess.CompletedProcess[str]:
-    return run_command(command, label=label, ok_codes=frozenset({0}))
+def run_checked(
+    command: list[str], *, label: str, cwd: Path | None = None
+) -> subprocess.CompletedProcess[str]:
+    return run_command(command, label=label, ok_codes=frozenset({0}), cwd=cwd)
 
 
 def mean_metrics(items: list[Metrics]) -> Metrics:
@@ -851,6 +862,228 @@ class RipgrepEngine:
             k=k,
             label="ripgrep",
         )
+
+
+@dataclass(frozen=True)
+class ChunkHit:
+    """One ranked chunk from a chunking CLI: an inclusive 1-based line span."""
+
+    score: float
+    line_start: int
+    line_end: int
+
+
+def expand_chunk_hits(hits: list[ChunkHit], *, k: int = K, max_line: int | None = None) -> list[int]:
+    """Turn ranked chunks into ranked lines.
+
+    Chunks are ordered by (-score, line_start, line_end). Each chunk contributes
+    its lines in file order; a line already emitted by an earlier (overlapping)
+    chunk is skipped. Stops at k lines.
+    """
+    ordered = sorted(hits, key=lambda hit: (-hit.score, hit.line_start, hit.line_end))
+    ranked: list[int] = []
+    seen: set[int] = set()
+    for hit in ordered:
+        start = max(1, hit.line_start)
+        end = hit.line_end if max_line is None else min(hit.line_end, max_line)
+        for line_id in range(start, end + 1):
+            if line_id in seen:
+                continue
+            seen.add(line_id)
+            ranked.append(line_id)
+            if len(ranked) >= k:
+                return ranked
+    return ranked
+
+
+def _json_records(stdout: str, *, label: str) -> list[dict]:
+    records: list[dict] = []
+    for raw in stdout.splitlines():
+        text = raw.strip()
+        # Status lines that slip past --quiet are not results.
+        if not text.startswith("{"):
+            continue
+        try:
+            record = json.loads(text)
+        except json.JSONDecodeError as exc:
+            raise SystemExit(f"error: {label} printed malformed JSON: {exc}: {text[:200]}") from exc
+        if isinstance(record, dict):
+            records.append(record)
+    return records
+
+
+def _int_field(record: dict, key: str, *, label: str) -> int:
+    value = record.get(key)
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise SystemExit(f"error: {label} result has no integer {key!r}: {record}")
+    return value
+
+
+def _score_field(record: dict) -> float:
+    value = record.get("score")
+    return float(value) if isinstance(value, (int, float)) else 0.0
+
+
+def parse_ck_jsonl(stdout: str, log_name: str) -> list[ChunkHit]:
+    """Parse `ck --jsonl` (path, span.line_start, span.line_end, score)."""
+    hits: list[ChunkHit] = []
+    for record in _json_records(stdout, label="ck"):
+        if Path(str(record.get("path", ""))).name != log_name:
+            continue
+        span = record.get("span")
+        if not isinstance(span, dict):
+            raise SystemExit(f"error: ck result has no span: {record}")
+        hits.append(
+            ChunkHit(
+                score=_score_field(record),
+                line_start=_int_field(span, "line_start", label="ck"),
+                line_end=_int_field(span, "line_end", label="ck"),
+            )
+        )
+    return hits
+
+
+def parse_vecgrep_json(stdout: str, log_name: str) -> list[ChunkHit]:
+    """Parse `vecgrep --json` lines (file, start_line, end_line, score)."""
+    hits: list[ChunkHit] = []
+    for record in _json_records(stdout, label="vecgrep"):
+        if Path(str(record.get("file", ""))).name != log_name:
+            continue
+        hits.append(
+            ChunkHit(
+                score=_score_field(record),
+                line_start=_int_field(record, "start_line", label="vecgrep"),
+                line_end=_int_field(record, "end_line", label="vecgrep"),
+            )
+        )
+    return hits
+
+
+@dataclass(frozen=True)
+class ChunkCliSpec:
+    """How to drive one chunk-indexing semantic grep CLI."""
+
+    name: str
+    executable: str
+    # Directory created in the corpus root so the tool treats it as the project root.
+    root_marker: str | None
+    index_args: tuple[str, ...]
+    search_args: Callable[[int], list[str]]
+    parse: Callable[[str, str], list[ChunkHit]]
+
+
+CHUNK_CLI_SPECS: dict[str, ChunkCliSpec] = {
+    # --threshold 0: ck's semantic default (0.6) would drop results below
+    # the top 10 that every other engine returns.
+    "ck": ChunkCliSpec(
+        name="ck",
+        executable="ck",
+        root_marker=None,
+        index_args=("--index", "--quiet", "."),
+        search_args=lambda k: [
+            "--sem",
+            "--jsonl",
+            "--no-snippet",
+            "--quiet",
+            "--topk",
+            str(k),
+            "--threshold",
+            "0",
+        ],
+        parse=parse_ck_jsonl,
+    ),
+    # A .vecgrep directory pins the project root (and index) to the corpus dir.
+    "vecgrep": ChunkCliSpec(
+        name="vecgrep",
+        executable="vecgrep",
+        root_marker=".vecgrep",
+        index_args=("--index-only", "--quiet"),
+        search_args=lambda k: ["--json", "--quiet", "-k", str(k), "--threshold", "0"],
+        parse=parse_vecgrep_json,
+    ),
+}
+
+
+def chunk_cli_setup_root(spec: ChunkCliSpec, root: Path, log_path: Path) -> Path:
+    """Create an isolated corpus root holding only the log; return the log copy."""
+    if root.exists():
+        shutil.rmtree(root)
+    root.mkdir(parents=True)
+    if spec.root_marker is not None:
+        (root / spec.root_marker).mkdir()
+    target = root / log_path.name
+    try:
+        os.link(log_path, target)
+    except OSError:
+        shutil.copyfile(log_path, target)
+    return target
+
+
+def chunk_cli_index(spec: ChunkCliSpec, root: Path) -> None:
+    run_checked([spec.executable, *spec.index_args], label=f"{spec.name} index", cwd=root)
+
+
+def chunk_cli_search(
+    spec: ChunkCliSpec,
+    root: Path,
+    log_name: str,
+    query: str,
+    *,
+    k: int = K,
+    max_line: int | None = None,
+) -> list[int]:
+    completed = run_command(
+        [spec.executable, *spec.search_args(k), "--", query, log_name],
+        label=f"{spec.name} search",
+        ok_codes=frozenset({0, 1}),
+        cwd=root,
+    )
+    return expand_chunk_hits(spec.parse(completed.stdout, log_name), k=k, max_line=max_line)
+
+
+def chunk_cli_index_bytes(root: Path, log_path: Path) -> int:
+    """Corpus root size minus the log itself: the tool's index and metadata."""
+    return max(0, directory_size_bytes(root) - log_path.stat().st_size)
+
+
+@dataclass
+class ChunkCliEngine:
+    spec: ChunkCliSpec
+    _root: Path | None = None
+    _log_name: str | None = None
+    _n_lines: int = 0
+
+    @property
+    def name(self) -> str:
+        return self.spec.name
+
+    def availability(self) -> tuple[bool, str]:
+        if shutil.which(self.spec.executable) is None:
+            return False, f"{self.spec.executable} executable not found"
+        return True, ""
+
+    def prepare(self, log_path: Path, lines: list[str], workdir: Path) -> None:
+        root = workdir / f"{self.spec.name}-corpus"
+        chunk_cli_setup_root(self.spec, root, log_path)
+        chunk_cli_index(self.spec, root)
+        self._root = root
+        self._log_name = log_path.name
+        self._n_lines = len(lines)
+
+    def rank(self, query: str, *, k: int = K) -> list[int]:
+        if self._root is None or self._log_name is None:
+            raise SystemExit(f"error: {self.spec.name} engine not prepared")
+        return chunk_cli_search(
+            self.spec,
+            self._root,
+            self._log_name,
+            query,
+            k=k,
+            max_line=self._n_lines,
+        )
+
+    def versions(self) -> dict[str, str]:
+        return {"version": tool_version_line([self.spec.executable, "--version"])}
 
 
 @dataclass
@@ -2298,6 +2531,8 @@ def evaluate_dataset(
             engine = make_xerj_engine(xerj or XerjContext(skip_reason="xerj not configured"), neural=False)
         elif engine_name == "xerj-neural":
             engine = make_xerj_engine(xerj or XerjContext(skip_reason="xerj not configured"), neural=True)
+        elif engine_name in CHUNK_CLI_ENGINES:
+            engine = ChunkCliEngine(CHUNK_CLI_SPECS[engine_name])
         elif engine_name in OPENSEARCH_ENGINES:
             engine = make_opensearch_engine(
                 opensearch or OpenSearchContext(skip_reason=OPENSEARCH_NOT_CONFIGURED),
@@ -2473,6 +2708,12 @@ def collect_measure_tool_versions(
     if "xerj" in engines or "xerj-neural" in engines:
         resolved = resolve_xerj_binary(xerj_bin)
         tools["xerj"] = xerj_version_from_binary(resolved)
+    for name in sorted(CHUNK_CLI_ENGINES.intersection(engines)):
+        executable = CHUNK_CLI_SPECS[name].executable
+        if shutil.which(executable) is None:
+            tools[name] = "missing"
+        else:
+            tools[name] = tool_version_line([executable, "--version"])
     if "bm25" in engines:
         tools["sqlite3"] = sqlite3.sqlite_version
     if "diy-faiss" in engines or "opensearch-knn" in engines:
@@ -2709,6 +2950,16 @@ def run_measure_worker_phase(
             opensearch_home=opensearch_home,
             knn=engine == "opensearch-knn",
         )
+    if engine in CHUNK_CLI_ENGINES:
+        return _worker_chunk_cli_phase(
+            engine=engine,
+            phase=phase,
+            log_path=log_path,
+            lines=lines,
+            workdir=workdir,
+            queries=queries,
+            corpus=corpus,
+        )
     if engine in ("bm25", "diy-faiss", "grep", "ripgrep", "nesso"):
         return _worker_local_phase(
             engine=engine,
@@ -2734,6 +2985,41 @@ def run_measure_worker_phase(
             neural=neural or engine == "xerj-neural",
         )
     raise SystemExit(f"error: unknown measure worker engine {engine!r}")
+
+
+def _worker_chunk_cli_phase(
+    *,
+    engine: str,
+    phase: str,
+    log_path: Path,
+    lines: list[str],
+    workdir: Path,
+    queries: list[str],
+    corpus: Path | None,
+) -> dict[str, Any]:
+    spec = CHUNK_CLI_SPECS[engine]
+    if phase == "index":
+        if corpus is None:
+            raise SystemExit(f"error: {engine} index phase needs --corpus")
+        chunk_cli_setup_root(spec, corpus, log_path)
+        chunk_cli_index(spec, corpus)
+        return {"indexBytes": chunk_cli_index_bytes(corpus, log_path), "latencySeconds": []}
+    if phase == "queries":
+        if corpus is None:
+            raise SystemExit(f"error: {engine} queries phase needs --corpus")
+        latencies: list[float] = []
+        for query in queries:
+            started = time.perf_counter()
+            chunk_cli_search(spec, corpus, log_path.name, query, max_line=len(lines))
+            latencies.append(time.perf_counter() - started)
+        return {"latencySeconds": latencies}
+    # ttfr: a fresh root and one search; both tools build their index on demand.
+    root = workdir / f"{engine}-ttfr"
+    started = time.perf_counter()
+    chunk_cli_setup_root(spec, root, log_path)
+    if queries:
+        chunk_cli_search(spec, root, log_path.name, queries[0], max_line=len(lines))
+    return {"latencySeconds": [time.perf_counter() - started]}
 
 
 def _worker_local_phase(
@@ -3110,6 +3396,53 @@ def measure_cli_engine_once(
             "indexToLogRatio": index_to_log_ratio(index_bytes, log_bytes),
             "timeToFirstResultSeconds": ttfr_payload["wallSeconds"],
             "modes": modes_out,
+        }
+
+    if engine in CHUNK_CLI_ENGINES:
+        if shutil.which(CHUNK_CLI_SPECS[engine].executable) is None:
+            return {
+                "engine": engine,
+                "status": "skipped",
+                "reason": f"{CHUNK_CLI_SPECS[engine].executable} executable not found",
+            }
+        corpus = workdir / f"{engine}-corpus"
+        index_payload = run_measure_worker(
+            engine=engine,
+            phase="index",
+            log_path=log_path,
+            workdir=workdir / "index",
+            queries=[],
+            corpus=corpus,
+        )
+        query_payload = run_measure_worker(
+            engine=engine,
+            phase="queries",
+            log_path=log_path,
+            workdir=workdir / "queries",
+            queries=queries,
+            corpus=corpus,
+        )
+        ttfr_payload = run_measure_worker(
+            engine=engine,
+            phase="ttfr",
+            log_path=log_path,
+            workdir=workdir / "ttfr",
+            queries=queries[:1],
+        )
+        index_bytes = index_payload.get("indexBytes")
+        return {
+            "engine": engine,
+            "status": "ok",
+            "indexWallSeconds": index_payload["wallSeconds"],
+            "indexPeakRssBytes": index_payload["peakRssBytes"],
+            "indexBytes": index_bytes,
+            "indexToLogRatio": index_to_log_ratio(index_bytes, log_bytes),
+            **query_metric_fields(
+                wall=query_payload["wallSeconds"],
+                peak_rss=query_payload["peakRssBytes"],
+                latencies=list(query_payload.get("latencySeconds", [])),
+            ),
+            "timeToFirstResultSeconds": ttfr_payload["wallSeconds"],
         }
 
     if engine in ("bm25", "diy-faiss"):

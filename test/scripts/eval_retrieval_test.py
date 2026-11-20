@@ -1429,6 +1429,224 @@ class EvalRetrievalOpenSearchTest(unittest.TestCase):
         self.assertIn("not --opensearch-url", completed.stderr)
 
 
+_FAKE_CHUNK_CLI = """#!{python}
+import json, os, pathlib, sys
+args = sys.argv[1:]
+name = pathlib.Path(sys.argv[0]).name
+with open(os.environ["FAKE_CHUNK_LOG"], "a", encoding="utf-8") as handle:
+    handle.write(json.dumps({{"tool": name, "cwd": os.getcwd(), "args": args}}) + "\\n")
+if "--index" in args or "--index-only" in args:
+    target = pathlib.Path(".ck" if name == "ck" else ".vecgrep")
+    target.mkdir(exist_ok=True)
+    (target / "index.bin").write_bytes(b"x" * 100)
+    sys.exit(0)
+if "--version" in args:
+    print(name + " 9.9.9")
+    sys.exit(0)
+log_name = args[-1]
+if name == "ck":
+    print("indexing... done")
+    rows = [
+        {{"path": "./" + log_name, "span": {{"byte_start": 0, "byte_end": 1, "line_start": 2, "line_end": 3}}, "score": 0.5}},
+        {{"path": "./other.log", "span": {{"byte_start": 0, "byte_end": 1, "line_start": 9, "line_end": 9}}, "score": 0.99}},
+        {{"path": "./" + log_name, "span": {{"byte_start": 0, "byte_end": 1, "line_start": 1, "line_end": 2}}, "score": 0.9}},
+    ]
+else:
+    rows = [
+        {{"root": os.getcwd(), "file": log_name, "start_line": 3, "end_line": 4, "score": 0.8}},
+        {{"root": os.getcwd(), "file": log_name, "start_line": 1, "end_line": 1, "score": 0.7}},
+    ]
+for row in rows:
+    print(json.dumps(row))
+"""
+
+
+def _install_fake_chunk_clis(directory: pathlib.Path) -> pathlib.Path:
+    bin_dir = directory / "fake-bin"
+    bin_dir.mkdir()
+    for name in ("ck", "vecgrep"):
+        script = bin_dir / name
+        script.write_text(_FAKE_CHUNK_CLI.format(python=sys.executable), encoding="utf-8")
+        script.chmod(script.stat().st_mode | stat.S_IXUSR)
+    return bin_dir
+
+
+class EvalRetrievalChunkCliTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.mod = load_eval()
+
+    def test_expand_chunk_hits_orders_dedupes_and_caps(self) -> None:
+        hit = self.mod.ChunkHit
+        hits = [
+            hit(score=0.5, line_start=5, line_end=8),
+            hit(score=0.9, line_start=2, line_end=4),
+            hit(score=0.9, line_start=1, line_end=3),
+        ]
+        # Ties on score break by line_start; overlapping lines are emitted once.
+        self.assertEqual(self.mod.expand_chunk_hits(hits, k=10), [1, 2, 3, 4, 5, 6, 7, 8])
+        self.assertEqual(self.mod.expand_chunk_hits(hits, k=3), [1, 2, 3])
+        self.assertEqual(self.mod.expand_chunk_hits(hits, k=10, max_line=6), [1, 2, 3, 4, 5, 6])
+        self.assertEqual(self.mod.expand_chunk_hits([], k=10), [])
+
+    def test_parse_ck_jsonl(self) -> None:
+        stdout = "\n".join(
+            [
+                "Indexing 1 file",
+                json.dumps({"path": "./a.log", "span": {"line_start": 3, "line_end": 4}, "score": 0.7}),
+                json.dumps({"path": "./b.log", "span": {"line_start": 1, "line_end": 1}, "score": 0.9}),
+                json.dumps({"path": "/abs/a.log", "span": {"line_start": 1, "line_end": 1}}),
+            ]
+        )
+        hits = self.mod.parse_ck_jsonl(stdout, "a.log")
+        self.assertEqual(
+            hits,
+            [
+                self.mod.ChunkHit(score=0.7, line_start=3, line_end=4),
+                self.mod.ChunkHit(score=0.0, line_start=1, line_end=1),
+            ],
+        )
+        with self.assertRaises(SystemExit) as raised:
+            self.mod.parse_ck_jsonl(json.dumps({"path": "a.log", "score": 1.0}), "a.log")
+        self.assertIn("span", str(raised.exception))
+        with self.assertRaises(SystemExit):
+            self.mod.parse_ck_jsonl("{not json", "a.log")
+
+    def test_parse_vecgrep_json(self) -> None:
+        stdout = "\n".join(
+            [
+                json.dumps({"file": "a.log", "start_line": 2, "end_line": 5, "score": 0.4}),
+                json.dumps({"file": "src/b.log", "start_line": 1, "end_line": 1, "score": 0.9}),
+            ]
+        )
+        self.assertEqual(
+            self.mod.parse_vecgrep_json(stdout, "a.log"),
+            [self.mod.ChunkHit(score=0.4, line_start=2, line_end=5)],
+        )
+        with self.assertRaises(SystemExit) as raised:
+            self.mod.parse_vecgrep_json(json.dumps({"file": "a.log", "start_line": "2"}), "a.log")
+        self.assertIn("start_line", str(raised.exception))
+
+    def test_cli_runs_fake_ck_and_vecgrep(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            directory = pathlib.Path(temp)
+            bin_dir = _install_fake_chunk_clis(directory)
+            calls = directory / "calls.jsonl"
+            env = os.environ.copy()
+            env["PATH"] = f"{bin_dir}{os.pathsep}{env.get('PATH', '')}"
+            env["FAKE_CHUNK_LOG"] = str(calls)
+            completed, out = _run_eval_cli(
+                directory,
+                ["--engine", "ck", "--engine", "vecgrep"],
+                env,
+            )
+            self.assertEqual(completed.returncode, 0, completed.stderr + completed.stdout)
+            report = json.loads(out.read_text(encoding="utf-8"))
+            records = [json.loads(line) for line in calls.read_text(encoding="utf-8").splitlines()]
+        engines = {item["engine"]: item for item in report["datasets"][0]["engines"]}
+        # ck: chunk 1-2 (0.9) then 2-3 (0.5); other.log is ignored; the log has 2 lines.
+        self.assertEqual(engines["ck"]["status"], "ok")
+        self.assertEqual(engines["ck"]["queries"][0]["ranked_lines"], [1, 2])
+        self.assertEqual(engines["ck"]["versions"], {"version": "ck 9.9.9"})
+        # vecgrep: chunk 3-4 is past the end of the 2-line log, then line 1.
+        self.assertEqual(engines["vecgrep"]["queries"][0]["ranked_lines"], [1])
+        searches = {
+            record["tool"]: record
+            for record in records
+            if "--index" not in record["args"]
+            and "--index-only" not in record["args"]
+            and "--version" not in record["args"]
+        }
+        self.assertEqual(
+            searches["ck"]["args"],
+            [
+                "--sem",
+                "--jsonl",
+                "--no-snippet",
+                "--quiet",
+                "--topk",
+                "10",
+                "--threshold",
+                "0",
+                "--",
+                "alpha",
+                "sample.log",
+            ],
+        )
+        self.assertEqual(
+            searches["vecgrep"]["args"],
+            ["--json", "--quiet", "-k", "10", "--threshold", "0", "--", "alpha", "sample.log"],
+        )
+        vecgrep_root = pathlib.Path(searches["vecgrep"]["cwd"])
+        self.assertEqual(vecgrep_root.name, "vecgrep-corpus")
+        index_calls = [record for record in records if "--index-only" in record["args"]]
+        self.assertEqual(len(index_calls), 1)
+
+    def test_cli_skips_missing_tools(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            directory = pathlib.Path(temp)
+            (directory / "empty-bin").mkdir()
+            env = os.environ.copy()
+            env["PATH"] = str(directory / "empty-bin")
+            completed, out = _run_eval_cli(directory, ["--engine", "ck", "--engine", "vecgrep"], env)
+            self.assertEqual(completed.returncode, 0, completed.stderr + completed.stdout)
+            report = json.loads(out.read_text(encoding="utf-8"))
+        engines = {item["engine"]: item for item in report["datasets"][0]["engines"]}
+        self.assertEqual(engines["ck"]["status"], "skipped")
+        self.assertEqual(engines["ck"]["reason"], "ck executable not found")
+        self.assertEqual(engines["vecgrep"]["status"], "skipped")
+        self.assertNotIn("metrics", engines["vecgrep"])
+
+    def test_measure_worker_phases(self) -> None:
+        mod = self.mod
+        with tempfile.TemporaryDirectory() as temp:
+            directory = pathlib.Path(temp)
+            bin_dir = _install_fake_chunk_clis(directory)
+            log_path = directory / "app.log"
+            log_path.write_text("one\ntwo\nthree\n", encoding="utf-8")
+            old_path = os.environ.get("PATH", "")
+            os.environ["PATH"] = f"{bin_dir}{os.pathsep}{old_path}"
+            os.environ["FAKE_CHUNK_LOG"] = str(directory / "calls.jsonl")
+            try:
+                corpus = directory / "ck-corpus"
+                index = mod._worker_chunk_cli_phase(
+                    engine="ck",
+                    phase="index",
+                    log_path=log_path,
+                    lines=["one", "two", "three"],
+                    workdir=directory / "index",
+                    queries=[],
+                    corpus=corpus,
+                )
+                queries = mod._worker_chunk_cli_phase(
+                    engine="ck",
+                    phase="queries",
+                    log_path=log_path,
+                    lines=["one", "two", "three"],
+                    workdir=directory / "queries",
+                    queries=["a", "b"],
+                    corpus=corpus,
+                )
+                ttfr = mod._worker_chunk_cli_phase(
+                    engine="vecgrep",
+                    phase="ttfr",
+                    log_path=log_path,
+                    lines=["one", "two", "three"],
+                    workdir=directory / "ttfr",
+                    queries=["a"],
+                    corpus=None,
+                )
+                ttfr_root_has_marker = (directory / "ttfr" / "vecgrep-ttfr" / ".vecgrep").is_dir()
+            finally:
+                os.environ["PATH"] = old_path
+                os.environ.pop("FAKE_CHUNK_LOG", None)
+        # Only the fake .ck/index.bin counts; the hard-linked log is subtracted.
+        self.assertEqual(index["indexBytes"], 100)
+        self.assertEqual(len(queries["latencySeconds"]), 2)
+        self.assertEqual(len(ttfr["latencySeconds"]), 1)
+        self.assertTrue(ttfr_root_has_marker)
+
+
 class EvalRetrievalMeasureStatsTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
