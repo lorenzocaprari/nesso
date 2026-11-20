@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Hybrid ranking of natural-language queries (no identifier token, under `auto` or `--mode hybrid`) scales a line's BM25 term by the square of the share of query terms it contains. A line that matches one word of a long description no longer outranks meaning matches; lines that match the whole query keep the full lexical weight. Queries with an identifier token rank as before. See ADR 0011.
+
 ### Added
 
 - `scripts/eval-retrieval` scores `nesso search --json -k 10` on the pinned Loghub HDFS_2k sample against a seed query set. It is report-only and is not a Pipeline gate. `scripts/fetch-loghub` also downloads the matching structured CSV.
@@ -21,6 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `scripts/eval-retrieval --dataset bgl-needle-100k|bgl-needle-1m|thunderbird-needle-1m|all-needle` scores any engine on Loghub 2.0 windows. Relevance is every line the administrators tagged with a query's alert category, not labels we wrote. 27 BGL and 5 Thunderbird categories each get a keyword and a symptom query. The report adds precision@10, found@100, median first-hit rank, and query-token overlap.
 - `.github/workflows/eval-competitors.yml` (manual, and on pull requests that change it) scores diy-faiss, OpenSearch BM25 and k-NN, ck, vecgrep, and xerj (BM25 match, neural with the pinned MiniLM files, and its default semantic search) on the 2k seed sets and the BGL 100k needle window, one job per engine. `scripts/eval-retrieval-merge` combines the reports. Retrieval quality only; not part of the CI gate.
 - `scripts/eval-retrieval --engine xerj-semantic` scores xerj's default semantic search (`semantic_text` with its built-in lexical feature-hashing embedder), xerj as shipped. The eval-competitors workflow runs it too.
+- The `eval-retrieval` workflow scores grep and BM25 next to nesso on the 2k seed sets, and runs the `bgl-needle-100k` needle window. It also runs on pull requests that touch ranking code, the eval scripts, or the query sets, and compares with the latest nightly report. `scripts/eval-retrieval-compare` reads nesso-only, engine, and needle reports. Report-only; not part of the CI gate.
 - `scripts/eval-retrieval --measure` records per-engine index/build wall and peak RSS, query median/p95 latency, query peak RSS, on-disk index size (or `none` for grep/rg), and cold time-to-first-result via GNU `/usr/bin/time`. Off by default so quality JSON stays byte-identical. `--log-prefix-lines` (default 100k; published size 1M) measures speed/memory on pinned full Loghub sets without quality labels. Not a CI or nightly gate.
 
 ### Fixed
