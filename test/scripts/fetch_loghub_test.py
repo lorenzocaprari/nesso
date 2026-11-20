@@ -364,5 +364,152 @@ class FetchLoghubTest(unittest.TestCase):
         self.assertIn("all-2k", bad_url.stderr)
 
 
+_LABELLED_LINES = [
+    b"- 1 2005.06.03 R00 normal one\n",
+    b"KERNDTLB 2 2005.06.03 R01 data TLB error interrupt\n",
+    b"- 3 2005.06.03 R02 normal three\n",
+    b"APPSEV 4 2005.06.03 R03 ciod: failed to read message\n",
+    b"- 5 2005.06.03 R04 normal five\n",
+    b"KERN_2 6 2005.06.03 R05 tagged with digits and underscore\n",
+]
+
+
+def _labelled_zip(directory: pathlib.Path, lines: list[bytes], member: str = "BGL/BGL_full.log") -> tuple[pathlib.Path, str]:
+    archive = directory / "BGL.zip"
+    with zipfile.ZipFile(archive, "w") as handle:
+        handle.writestr(member, b"".join(lines))
+    return archive, hashlib.sha256(archive.read_bytes()).hexdigest()
+
+
+class FetchLoghubLabelledWindowTest(unittest.TestCase):
+    def test_sources_are_pinned_to_the_loghub2_record(self) -> None:
+        module = load_fetch()
+        self.assertEqual(set(module.LABELLED_SETS), {"bgl-loghub2", "thunderbird-loghub2"})
+        for spec in module.LABELLED_SETS.values():
+            self.assertTrue(spec.url.startswith("https://zenodo.org/records/8275861/files/"))
+            self.assertEqual(len(spec.archive_sha256), 64)
+            self.assertTrue(spec.member.endswith("_full.log"))
+        self.assertEqual(
+            set(module.WINDOW_PINS),
+            {
+                ("bgl-loghub2", 4_100_001, 100_000),
+                ("bgl-loghub2", 3_200_001, 1_000_000),
+                ("thunderbird-loghub2", 8_550_001, 1_000_000),
+            },
+        )
+
+    def test_windows_strip_the_label_and_write_a_sidecar(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            directory = pathlib.Path(temp)
+            archive, digest = _labelled_zip(directory, _LABELLED_LINES)
+            out = directory / "out"
+            result = run_fetch(
+                "--dataset",
+                "bgl-loghub2",
+                "--url",
+                archive.as_uri(),
+                "--sha256",
+                digest,
+                "--window",
+                "2:3",
+                "--window",
+                "5:2",
+                "--dest-dir",
+                str(out),
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            first_log = (out / "BGL_loghub2_2_3.log").read_bytes()
+            first_labels = (out / "BGL_loghub2_2_3.labels").read_text(encoding="utf-8")
+            second_log = (out / "BGL_loghub2_5_2.log").read_bytes()
+            second_labels = (out / "BGL_loghub2_5_2.labels").read_text(encoding="utf-8")
+            leftovers = sorted(path.name for path in out.iterdir())
+        self.assertEqual(
+            first_log,
+            b"2 2005.06.03 R01 data TLB error interrupt\n"
+            b"3 2005.06.03 R02 normal three\n"
+            b"4 2005.06.03 R03 ciod: failed to read message\n",
+        )
+        self.assertEqual(first_labels, "KERNDTLB\n-\nAPPSEV\n")
+        self.assertEqual(second_log, b"5 2005.06.03 R04 normal five\n6 2005.06.03 R05 tagged with digits and underscore\n")
+        self.assertEqual(second_labels, "-\nKERN_2\n")
+        # The downloaded archive copy and partial files are removed.
+        self.assertEqual(
+            leftovers,
+            ["BGL_loghub2_2_3.labels", "BGL_loghub2_2_3.log", "BGL_loghub2_5_2.labels", "BGL_loghub2_5_2.log"],
+        )
+
+    def test_short_window_and_bad_label_fail(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            directory = pathlib.Path(temp)
+            archive, digest = _labelled_zip(directory, _LABELLED_LINES)
+            short = run_fetch(
+                "--dataset", "bgl-loghub2", "--url", archive.as_uri(), "--sha256", digest,
+                "--window", "5:10", "--dest-dir", str(directory / "short"),
+            )
+            self.assertNotEqual(short.returncode, 0)
+            self.assertIn("has 2 lines, need 10", short.stderr)
+            self.assertFalse((directory / "short" / "BGL_loghub2_5_10.log").exists())
+
+            (directory / "bad").mkdir()
+            bad_archive, bad_digest = _labelled_zip(directory / "bad", [b"lowercase 1 x\n"])
+            bad = run_fetch(
+                "--dataset", "bgl-loghub2", "--url", bad_archive.as_uri(), "--sha256", bad_digest,
+                "--window", "1:1", "--dest-dir", str(directory / "bad-out"),
+            )
+            self.assertNotEqual(bad.returncode, 0)
+            self.assertIn("is not '-' or an alert category", bad.stderr)
+
+            wrong_pin = run_fetch(
+                "--dataset", "bgl-loghub2", "--url", archive.as_uri(), "--sha256", "0" * 64,
+                "--window", "1:2", "--dest-dir", str(directory / "pin"),
+            )
+            self.assertNotEqual(wrong_pin.returncode, 0)
+            self.assertIn("sha256 mismatch", wrong_pin.stderr)
+
+    def test_window_flag_rules(self) -> None:
+        no_window = run_fetch("--dataset", "bgl-loghub2")
+        self.assertNotEqual(no_window.returncode, 0)
+        self.assertIn("needs at least one --window", no_window.stderr)
+        wrong_dataset = run_fetch("--dataset", "bgl", "--window", "1:5")
+        self.assertNotEqual(wrong_dataset.returncode, 0)
+        self.assertIn("--window applies to", wrong_dataset.stderr)
+        bad_window = run_fetch("--dataset", "bgl-loghub2", "--window", "abc")
+        self.assertNotEqual(bad_window.returncode, 0)
+        self.assertIn("START:COUNT", bad_window.stderr)
+        with_dest = run_fetch("--dataset", "bgl-loghub2", "--window", "1:5", "--dest", "x.log")
+        self.assertNotEqual(with_dest.returncode, 0)
+        self.assertIn("--dest-dir", with_dest.stderr)
+
+    def test_pinned_window_cache_skips_the_download(self) -> None:
+        module = load_fetch()
+        with tempfile.TemporaryDirectory() as temp:
+            directory = pathlib.Path(temp)
+            archive, digest = _labelled_zip(directory, _LABELLED_LINES)
+            spec = module.LABELLED_SETS["bgl-loghub2"]
+            window = module.Window(start=1, count=3)
+            out = directory / "out"
+            module.fetch_labelled(spec, [window], out, url=archive.as_uri(), expected=digest)
+            log_path, labels_path = module.window_paths(spec, window, out)
+            module.WINDOW_PINS[("bgl-loghub2", 1, 3)] = (
+                module.sha256_file(log_path),
+                module.sha256_file(labels_path),
+            )
+            try:
+                # A cached, pinned window never touches the (now missing) URL.
+                paths = module.fetch_labelled(
+                    spec, [window], out, url=(directory / "missing.zip").as_uri(), expected=digest
+                )
+                self.assertEqual(paths, [(log_path, labels_path)])
+                # A pin mismatch on a fresh write fails and keeps no file.
+                log_path.unlink()
+                module.WINDOW_PINS[("bgl-loghub2", 1, 3)] = ("0" * 64, "0" * 64)
+                with self.assertRaises(SystemExit) as raised:
+                    module.fetch_labelled(spec, [window], out, url=archive.as_uri(), expected=digest)
+                self.assertIn("window sha256 mismatch", str(raised.exception))
+                self.assertFalse(log_path.exists())
+            finally:
+                del module.WINDOW_PINS[("bgl-loghub2", 1, 3)]
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -112,6 +112,25 @@ PYTHONHASHSEED=0 .venv-diy/bin/python scripts/eval-retrieval --dataset all-2k \
 
 Set `NESSO_EVAL_DIY=1` to run the opt-in live diy-faiss unit test against a tiny fixture (requires the venv packages). Set `NESSO_EVAL_MEASURE=1` to run the opt-in measure smoke on HDFS 2k.
 
+### Labelled Loghub 2.0 windows
+
+The 2k seed sets are labelled by us and are small. For larger tasks with ground truth we did not write, `scripts/fetch-loghub` cuts windows out of the Loghub 2.0 BGL and Thunderbird logs (Zenodo record [8275861](https://zenodo.org/records/8275861), CC-BY-4.0). In those logs the first token of every line is the system administrators' alert tag: `-` for a normal line, otherwise an alert category such as `KERNDTLB`, `APPSEV`, or `EXT_FS`. The tags come from A. Oliner and J. Stearley, "What Supercomputers Say: A Study of Five System Logs", DSN 2007. Loghub 2.0 is from Z. Jiang et al., "A Large-scale Evaluation for Log Parsing Techniques: How Far Are We?", ISSTA 2024.
+
+```bash
+./scripts/fetch-loghub --dataset bgl-loghub2 --window 4100001:100000 --window 3200001:1000000
+./scripts/fetch-loghub --dataset thunderbird-loghub2 --window 8550001:1000000
+```
+
+Each `--window START:COUNT` (1-based start line, repeatable) writes `build/bench/<Name>_loghub2_<start>_<count>.log` with the tag removed, so the alert category is never searchable text, and a `.labels` file with one tag per line. The archive (BGL 86 MB, Thunderbird 293 MB) is checked against its sha256 pin, read once for all windows, and deleted. The three windows above have pinned output hashes. A cached window that still matches its pin is kept, and a fresh write that does not match fails. Other windows are written unpinned.
+
+| Window | Lines | Alert categories | Alert lines | Rarest categories |
+| --- | --- | --- | --- | --- |
+| BGL from 4,100,001 | 100,000 | 17 | 21,061 | KERNNOETH 1, LINKBLL 2, KERNSTOR 2, MONPOW 3 |
+| BGL from 3,200,001 | 1,000,000 | 27 | 72,300 | KERNEXT 1, MMCS 1, LINKBLL 2, KERNSTOR 3 |
+| Thunderbird from 8,550,001 | 1,000,000 | 5 | 32 | NMI 2, CPU 3, ECC 6, EXT_FS 8, SCSI 13 |
+
+The windows were chosen to hold the most distinct alert categories at each size, scanning Loghub 2.0 in 50,000-line steps. Loghub data is for research use and stays out of the repository.
+
 ### Retrieval eval `--measure`
 
 Off by default. Without it, quality JSON stays byte-identical with prior runs. With `--measure`, the report gains a top-level `measure` object that is machine-dependent and must not be used as a CI or nightly gate.
