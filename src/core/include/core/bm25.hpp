@@ -33,18 +33,6 @@ struct Bm25LinePostings
     std::span<const std::pair<std::uint32_t, std::uint32_t>> entries;
 };
 
-/// Per-line BM25 scores and query-term coverage, both in line order.
-///
-/// `coverage[i]` is the number of distinct query terms that occur in line `i`,
-/// divided by the number of distinct query terms. A query term missing from
-/// the corpus still counts in the divisor, so a line that matches one word of
-/// a long description has low coverage. An empty query gives all zeros.
-struct Bm25Result
-{
-    std::vector<double> scores;
-    std::vector<double> coverage;
-};
-
 /// In-memory Okapi BM25 over lines.
 ///
 /// `idf = ln(1 + (N - df + 0.5) / (df + 0.5))`, with `std::log`. `|D|` is the
@@ -86,9 +74,6 @@ class Bm25Index
     /// One score per added line, in insertion order.
     [[nodiscard]] std::vector<double> Scores(std::span<const std::string_view> query) const;
 
-    /// `Scores` plus per-line query-term coverage (see `Bm25Result`).
-    [[nodiscard]] Bm25Result ScoresAndCoverage(std::span<const std::string_view> query) const;
-
   private:
     struct Line
     {
@@ -110,11 +95,6 @@ class Bm25Index
 [[nodiscard]] std::vector<double> ScoresFromPostings(std::span<const std::string_view> dictionary,
                                                      std::span<const Bm25LinePostings> lines,
                                                      std::span<const std::string_view> query);
-
-/// `ScoresFromPostings` plus per-line query-term coverage (see `Bm25Result`).
-[[nodiscard]] Bm25Result ScoresAndCoverageFromPostings(std::span<const std::string_view> dictionary,
-                                                       std::span<const Bm25LinePostings> lines,
-                                                       std::span<const std::string_view> query);
 
 } // namespace nesso::core
 

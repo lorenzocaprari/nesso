@@ -1,7 +1,6 @@
 // Copyright (c) 2026 Lorenzo Caprari
 // SPDX-License-Identifier: Apache-2.0
 
-#include <core/query_class.hpp>
 #include <core/score_fusion.hpp>
 
 #include <cmath>
@@ -58,20 +57,16 @@ double ZScore(double value, const ZScoreStats &stats) noexcept
     return (value - stats.mean) / stats.deviation;
 }
 
-bool HybridUsesCoverage(QueryClass query_class) noexcept { return query_class == QueryClass::NaturalLanguage; }
-
-float FuseHybridScore(double dense, double bm25, double coverage, const ZScoreStats &dense_stats,
-                      const ZScoreStats &bm25_stats) noexcept
+float FuseHybridScore(double dense, double bm25, const ZScoreStats &dense_stats, const ZScoreStats &bm25_stats) noexcept
 {
-    const double lexical = HYBRID_LEXICAL_WEIGHT * ZScore(bm25, bm25_stats) * (coverage * coverage);
-    const double fused = (HYBRID_DENSE_WEIGHT * ZScore(dense, dense_stats)) + lexical;
+    const double fused =
+        (HYBRID_DENSE_WEIGHT * ZScore(dense, dense_stats)) + (HYBRID_LEXICAL_WEIGHT * ZScore(bm25, bm25_stats));
     return static_cast<float>(fused);
 }
 
-std::vector<float> FuseHybridScores(std::span<const double> dense, std::span<const double> bm25,
-                                    std::span<const double> coverage)
+std::vector<float> FuseHybridScores(std::span<const double> dense, std::span<const double> bm25)
 {
-    if (dense.size() != bm25.size() || dense.size() != coverage.size())
+    if (dense.size() != bm25.size())
     {
         return {};
     }
@@ -81,7 +76,7 @@ std::vector<float> FuseHybridScores(std::span<const double> dense, std::span<con
     fused.reserve(dense.size());
     for (std::size_t index = 0; index < dense.size(); ++index)
     {
-        fused.push_back(FuseHybridScore(dense[index], bm25[index], coverage[index], dense_stats, bm25_stats));
+        fused.push_back(FuseHybridScore(dense[index], bm25[index], dense_stats, bm25_stats));
     }
     return fused;
 }

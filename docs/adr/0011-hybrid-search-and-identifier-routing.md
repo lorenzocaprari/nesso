@@ -43,8 +43,7 @@ Chosen option: "z-score weighted fusion with query-class routing", because fusio
 * **BM25.** Okapi BM25 per line, not per distinct text. Identifiers can differ between lines that share one embedding, so a future dedup that masks variable tokens relies on the lexical scorer.
   * `k1 = 1.5`, `b = 0.75`, and `idf = ln(1 + (N − df + 0.5) / (df + 0.5))`.
   * The sum runs in double, over the distinct query terms in byte order.
-* **Fusion.** For hybrid scoring, `score = 0.8·z(dense) + 0.2·z(bm25)·coverage²` (amended 2026-11-20; see below).
-  * `coverage` is the share of the query's distinct lexical terms that occur in the line. A query term missing from the corpus still counts in the divisor. It is computed from integer counts, so it does not depend on term order.
+* **Fusion.** For hybrid scoring, `score = 0.8·z(dense) + 0.2·z(bm25)`.
   * `z` uses the mean and population standard deviation over all candidate lines, and a zero deviation gives 0.
   * The sums are taken in double, in fixed blocks of 4096 lines in ordinal order, so they never depend on the thread count.
   * Those weights are fixed constants. Forced `--mode hybrid` always uses them.
@@ -99,23 +98,3 @@ Chosen option: "z-score weighted fusion with query-class routing", because fusio
 ## More Information
 
 Amended 2026-11-09: routing classifies the query as identifier, mixed, or natural language. Pure identifiers still go to lexical mode. Mixed and natural-language queries, and forced `--mode hybrid`, keep `0.8·z(dense) + 0.2·z(bm25)`. Storage facts were refreshed for corpus v3 postings on `main`.
-
-Amended 2026-11-20: for natural-language queries, the lexical term is scaled by the line's query-term coverage squared, `0.8·z(dense) + 0.2·z(bm25)·coverage²`. A query with an identifier token (mixed, or an identifier under forced `--mode hybrid`) keeps coverage 1 on every line, which is the earlier `0.8·z(dense) + 0.2·z(bm25)`. Weights, routing, and the z-score sums are unchanged.
-
-Why: BM25 is zero on almost every line, so its standard deviation is tiny. A line that matches one uncommon word of a long natural-language query gets a very large `z(bm25)`, and even at weight 0.2 it outranks every dense match. In the needle benchmark (`docs/benchmarks.md`, Loghub 2.0 windows labelled by the system administrators), `auto` scored MRR 0.000 on Thunderbird symptom queries where `dense` scored 0.400. The top hit for "hardware raised an unexpected interrupt that cannot be masked" was a line with dense 0.25 that contains "unexpected". Coverage is the search-time signal this ADR deferred: it separates "the line matches the query" from "the line shares one word with it", without classifying the query string.
-
-Measured on `auto` (nesso `0.3.1+g86c7a39`, one run), MRR before → after:
-
-| Set | Before | After |
-| --- | --- | --- |
-| Thunderbird 1M needles, symptom (5) | 0.000 | 0.400 |
-| BGL 100k needles, symptom (17) | 0.204 | 0.296 |
-| Thunderbird 1M needles, keyword (5), nDCG@10 | 0.851 | 0.967 |
-| BGL 100k needles, keyword (17) | 1.000 | 1.000 |
-| Loghub 2k seeds, exact ID (30) | 1.000 | 1.000 |
-| Loghub 2k seeds, paraphrase (30) | 0.833 | 0.850 |
-| Loghub 2k seeds, cause (30) | 0.683 | 0.683 |
-
-Alternatives tried on the same sets and rejected: capping `z(bm25)` at 3 (symptom up, but Thunderbird keyword MRR fell to 0.452 and 2k exact ID to 0.944), capping both z-scores at 3 (worse everywhere), min-max scaling instead of z-scores (Thunderbird keyword MRR 0.644), linear coverage (symptom 0.267 on Thunderbird), and a 0.5 coverage gate (close to `coverage²`, but a hard threshold). The query sets are small, so these numbers show direction rather than precision.
-
-Why mixed queries are excluded: applying coverage to them as well cut the exact line's MRR from 0.961 to 0.762 on 60 probe queries built from the 2k exact-ID seeds (the identifier plus `error`, or plus the first words of its line). For `error 0x0b85eee0` the line holding the identifier fell from rank 1 to 85, because the identifier alone is half the query. With the rule above, every probe that contains an identifier token ranks as before. The known cost: a query whose rare word is not an identifier by these rules is natural language. In the probe, `error vivozap` (a user name) fell from rank 1 to 27, because `error` is not in that line. The bare word `vivozap` still covers its line fully.
