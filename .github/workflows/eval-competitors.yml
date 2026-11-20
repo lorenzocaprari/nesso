@@ -103,14 +103,6 @@ jobs:
       fail-fast: false
       matrix:
         engine: [diy-faiss, opensearch, opensearch-knn, ck, vecgrep, xerj, xerj-neural, xerj-semantic]
-        # ck and vecgrep build multi-line chunk indexes that exhaust the 16 GB
-        # hosted runner on the 100k needle window (the runner shuts down mid-
-        # step), so they score the 2k seed sets only.
-        include:
-          - engine: ck
-            needle: false
-          - engine: vecgrep
-            needle: false
     env:
       ENGINE: ${{ matrix.engine }}
     steps:
@@ -225,8 +217,13 @@ jobs:
             --skip-fetch \
             --out "build/eval/competitors/2k-${ENGINE}.json"
 
+      # ck and vecgrep build multi-line chunk indexes that exhaust the 16 GB
+      # hosted runner on the 100k needle window (the runner shuts down mid-
+      # step), so they score the 2k seed sets only. The condition names them
+      # explicitly: a matrix key that is absent for other engines compares equal
+      # to false in an expression, which skipped this step for every engine.
       - name: Score the BGL needle window
-        if: matrix.needle != false
+        if: matrix.engine != 'ck' && matrix.engine != 'vecgrep'
         shell: bash
         run: |
           set -euo pipefail
