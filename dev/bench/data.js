@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795183105944,
+  "lastUpdate": 1795184252698,
   "repoUrl": "https://github.com/lorenzocaprari/nesso",
   "entries": {
     "nesso": [
@@ -9773,6 +9773,60 @@ window.BENCHMARK_DATA = {
           {
             "name": "grep-100000-rss",
             "value": 145440768,
+            "unit": "bytes"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "caprarilorenzo5@gmail.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "committer": {
+            "email": "85455384+lorenzocaprari@users.noreply.github.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "distinct": true,
+          "id": "86c7a39a36fa7ea11bed7cffffebd48a92251c16",
+          "message": "test(eval): fetch labelled Loghub 2.0 windows for a needle benchmark\n\nAdd bgl-loghub2 and thunderbird-loghub2 (Zenodo 8275861, CC-BY-4.0) to\nfetch-loghub. --window START:COUNT (repeatable) streams the pinned archive\nonce and writes each window with the leading expert alert tag stripped,\nplus a .labels file with one tag per line, so the category is never\nsearchable text. The archives and the three benchmark windows (BGL 100k\nand 1M, Thunderbird 1M) are sha256-pinned.",
+          "timestamp": "2026-11-20T15:12:07+01:00",
+          "tree_id": "15753aa7384b39540655f7dc5b2caf353b45c7d7",
+          "url": "https://github.com/lorenzocaprari/nesso/commit/86c7a39a36fa7ea11bed7cffffebd48a92251c16"
+        },
+        "date": 1795184252021,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "grep-1000-wall",
+            "value": 0.15,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-1000-rss",
+            "value": 119361536,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-10000-wall",
+            "value": 0.17,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-10000-rss",
+            "value": 119287808,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-100000-wall",
+            "value": 0.35,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-100000-rss",
+            "value": 144146432,
             "unit": "bytes"
           }
         ]
