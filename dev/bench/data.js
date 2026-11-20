@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795175070313,
+  "lastUpdate": 1795178639451,
   "repoUrl": "https://github.com/lorenzocaprari/nesso",
   "entries": {
     "nesso": [
@@ -9611,6 +9611,60 @@ window.BENCHMARK_DATA = {
           {
             "name": "grep-100000-rss",
             "value": 145960960,
+            "unit": "bytes"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "caprarilorenzo5@gmail.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "committer": {
+            "email": "85455384+lorenzocaprari@users.noreply.github.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "distinct": true,
+          "id": "d62489a58673b6cca4cdd0cff7bb52a3012316c3",
+          "message": "test(eval): add an OpenSearch engine with BM25 and k-NN baselines\n\nScore a single-node OpenSearch node with the same labelled queries and\nmetrics. opensearch runs a BM25 match on text; opensearch-knn runs HNSW\nk-NN over the diy-faiss MiniLM vectors. The node is spawned from a local\ntarball (--opensearch-home / OPENSEARCH_HOME) or reached with\n--opensearch-url. Missing configuration or a missing k-NN plugin reports\nskipped. --measure spawns its own node so peak RSS includes the JVM.\n\nEsCompatEngine gains a bulk document hook and a version key; xerj reports\nare unchanged. Local or per-release only, not Pipeline or nightly.",
+          "timestamp": "2026-11-20T13:39:51+01:00",
+          "tree_id": "3280b7189b2a262fd1bec9a757c3898d08741035",
+          "url": "https://github.com/lorenzocaprari/nesso/commit/d62489a58673b6cca4cdd0cff7bb52a3012316c3"
+        },
+        "date": 1795178638751,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "grep-1000-wall",
+            "value": 0.21,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-1000-rss",
+            "value": 118661120,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-10000-wall",
+            "value": 0.13,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-10000-rss",
+            "value": 118702080,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-100000-wall",
+            "value": 0.26,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-100000-rss",
+            "value": 144482304,
             "unit": "bytes"
           }
         ]
