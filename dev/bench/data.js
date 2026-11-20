@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795184252698,
+  "lastUpdate": 1795186275106,
   "repoUrl": "https://github.com/lorenzocaprari/nesso",
   "entries": {
     "nesso": [
@@ -9827,6 +9827,60 @@ window.BENCHMARK_DATA = {
           {
             "name": "grep-100000-rss",
             "value": 144146432,
+            "unit": "bytes"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "caprarilorenzo5@gmail.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "committer": {
+            "email": "85455384+lorenzocaprari@users.noreply.github.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "distinct": true,
+          "id": "343646929ecd8645b01d26ac64ef62315a62388e",
+          "message": "test(eval): score alert-line needles on BGL and Thunderbird windows\n\nAdd needle datasets (bgl-needle-100k, bgl-needle-1m, thunderbird-needle-1m,\nall-needle) to eval-retrieval. The relevant set of a query is every line the\nadministrators tagged with its alert category in the Loghub 2.0 window, read\nfrom the .labels sidecar, so the labels are not ours. 27 BGL and 5\nThunderbird categories each get a keyword and a symptom query. The report\nadds precision@10, found@100, median first-hit rank and query-token overlap,\nand runs every existing engine, nesso in each mode.",
+          "timestamp": "2026-11-20T15:44:46+01:00",
+          "tree_id": "8cfe7b9b886702a05f5a3ad3612a990ddb248664",
+          "url": "https://github.com/lorenzocaprari/nesso/commit/343646929ecd8645b01d26ac64ef62315a62388e"
+        },
+        "date": 1795186274312,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "grep-1000-wall",
+            "value": 0.14,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-1000-rss",
+            "value": 118816768,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-10000-wall",
+            "value": 0.15,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-10000-rss",
+            "value": 118968320,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-100000-wall",
+            "value": 0.32,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-100000-rss",
+            "value": 145027072,
             "unit": "bytes"
           }
         ]
