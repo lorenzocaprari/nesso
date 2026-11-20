@@ -39,6 +39,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import hashlib
 import importlib.util
 import json
 import math
@@ -2722,6 +2723,31 @@ def merge_engine_measure_repeats(repeats: list[dict[str, Any]]) -> dict[str, Any
     return merged
 
 
+def model_identity(model_dir: Path | None) -> dict[str, Any] | None:
+    """Which embedding model files produced nesso's numbers (digests, not names).
+
+    Reports record this so runs with a different model, quantization, or
+    vocabulary cannot be mistaken for each other.
+    """
+    if model_dir is None:
+        return None
+    identity: dict[str, Any] = {"dir": model_dir.name}
+    for key, name in (("model_onnx", "model.onnx"), ("vocab", "vocab.txt")):
+        path = model_dir / name
+        if path.is_file():
+            identity[f"{key}_sha256"] = sha256_of_file(path)
+            identity[f"{key}_bytes"] = path.stat().st_size
+    return identity
+
+
+def sha256_of_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
 def tool_version_line(argv: list[str]) -> str:
     try:
         completed = subprocess.run(
@@ -2743,8 +2769,12 @@ def collect_measure_tool_versions(
     binary: Path | None,
     xerj_bin: str | None,
     opensearch_home: str | None = None,
+    model_dir: Path | None = None,
 ) -> dict[str, str]:
     tools: dict[str, str] = {"python": sys.version.split()[0]}
+    identity = model_identity(model_dir) if "nesso" in engines else None
+    if identity is not None and "model_onnx_sha256" in identity:
+        tools["nesso-model"] = f"{identity['dir']} onnx {identity['model_onnx_sha256'][:12]} {identity['model_onnx_bytes']}B"
     if OPENSEARCH_ENGINES.intersection(engines):
         home = resolve_opensearch_home(opensearch_home)
         tools["opensearch"] = "missing" if home is None else opensearch_version_from_home(home)
@@ -3734,13 +3764,8 @@ def format_measure_table(dataset: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
-def format_report_with_measure(payload: dict) -> str:
+def format_measure_sections(measure: dict) -> list[str]:
     sections: list[str] = []
-    if payload.get("datasets") and payload.get("overall") is not None:
-        sections.append(format_report(payload))
-    measure = payload.get("measure")
-    if not isinstance(measure, dict):
-        return "\n".join(sections)
     sections.append("=== measure ===")
     sections.append(
         f"platform={measure.get('platform')} cpu={measure.get('cpuModel')} "
@@ -3753,6 +3778,17 @@ def format_report_with_measure(payload: dict) -> str:
     for dataset in measure.get("datasets", []):
         sections.append(f"=== measure {dataset['name']} ===")
         sections.append(format_measure_table(dataset))
+    return sections
+
+
+def format_report_with_measure(payload: dict) -> str:
+    sections: list[str] = []
+    if payload.get("datasets") and payload.get("overall") is not None:
+        sections.append(format_report(payload))
+    measure = payload.get("measure")
+    if not isinstance(measure, dict):
+        return "\n".join(sections)
+    sections.extend(format_measure_sections(measure))
     return "\n".join(sections)
 
 
@@ -4173,9 +4209,62 @@ def format_needle_report(payload: dict) -> str:
     return "\n".join(sections)
 
 
+def measure_needle_datasets(
+    specs: list[NeedleSpec],
+    *,
+    args: argparse.Namespace,
+    engines: list[str],
+    modes: list[str],
+    binary: Path | None,
+    model_dir: Path | None,
+) -> dict:
+    """Speed, memory, and index size on each needle window, for the window's queries."""
+    repeats = DEFAULT_MEASURE_REPEAT if args.repeat is None else args.repeat
+    opensearch_home: str | None = None
+    if OPENSEARCH_ENGINES.intersection(engines):
+        resolved = resolve_opensearch_home(args.opensearch_home)
+        opensearch_home = str(resolved) if resolved is not None else None
+    datasets = []
+    for spec in specs:
+        lines = read_log_lines(spec.log_path)
+        present = set(lines_by_alert(load_labels(spec.labels_path, len(lines))))
+        texts = [query.query for query in load_needle_queries(spec.queries_path) if query.alert in present]
+        datasets.append(
+            measure_dataset(
+                dataset_name=spec.name,
+                log_path=spec.log_path,
+                query_texts=texts,
+                engines=engines,
+                modes=modes,
+                workdir=args.workdir / "measure" / spec.name,
+                binary=binary,
+                model_dir=model_dir,
+                xerj_bin=args.xerj_bin,
+                xerj_model_dir=args.xerj_model_dir,
+                repeats=repeats,
+                opensearch_home=opensearch_home,
+            )
+        )
+    return {
+        "cpuModel": cpu_model(),
+        "datasets": datasets,
+        "nproc": logical_cpus(),
+        "platform": platform.platform(),
+        "repeat": repeats,
+        "threads": threads_setting(),
+        "tool": collect_measure_tool_versions(
+            engines=engines,
+            binary=binary,
+            xerj_bin=args.xerj_bin,
+            opensearch_home=opensearch_home,
+            model_dir=model_dir,
+        ),
+    }
+
+
 def run_needles(args: argparse.Namespace, engines: list[str], modes: list[str]) -> None:
-    if args.measure:
-        raise SystemExit("error: --measure is not supported for needle datasets yet")
+    if args.measure_only and not args.measure:
+        raise SystemExit("error: --measure-only requires --measure")
     specs = parse_needle_datasets(args.dataset)
     binary: Path | None = None
     model_dir: Path | None = None
@@ -4184,50 +4273,69 @@ def run_needles(args: argparse.Namespace, engines: list[str], modes: list[str]) 
         model_dir = resolve_model_dir(args.model_dir)
     for spec in specs:
         ensure_needle_inputs(spec, skip_fetch=args.skip_fetch)
-    xerj = open_xerj_context(
-        engines=engines,
-        xerj_url=args.xerj_url,
-        xerj_bin=args.xerj_bin,
-        xerj_model_dir=args.xerj_model_dir,
+    # Measure spawns a fresh node per phase; an idle one would hold memory.
+    xerj = (
+        XerjContext()
+        if args.measure_only
+        else open_xerj_context(
+            engines=engines,
+            xerj_url=args.xerj_url,
+            xerj_bin=args.xerj_bin,
+            xerj_model_dir=args.xerj_model_dir,
+        )
     )
+    results: list[dict] = []
     opensearch = OpenSearchContext()
     try:
-        opensearch = open_opensearch_context(
-            engines=engines,
-            opensearch_url=args.opensearch_url,
-            opensearch_home=args.opensearch_home,
-        )
-        results = [
-            evaluate_needle_dataset(
-                spec,
+        if not args.measure_only:
+            opensearch = open_opensearch_context(
                 engines=engines,
-                modes=modes,
-                binary=binary,
-                model_dir=model_dir,
-                workdir=args.workdir / spec.name,
-                xerj=xerj,
-                opensearch=opensearch,
+                opensearch_url=args.opensearch_url,
+                opensearch_home=args.opensearch_home,
             )
-            for spec in specs
-        ]
+            results = [
+                evaluate_needle_dataset(
+                    spec,
+                    engines=engines,
+                    modes=modes,
+                    binary=binary,
+                    model_dir=model_dir,
+                    workdir=args.workdir / spec.name,
+                    xerj=xerj,
+                    opensearch=opensearch,
+                )
+                for spec in specs
+            ]
     finally:
         opensearch.shutdown()
         xerj.shutdown()
-    payload = {
+    payload: dict = {
         "datasets": results,
         "depth": NEEDLE_DEPTH,
         "k": K,
         "kind": "needle",
+        # Which model files produced nesso's rows, so a later model change is visible.
+        "nesso": (
+            {"version": tool_version_line([str(binary), "-V"]), "model": model_identity(model_dir)}
+            if "nesso" in engines and binary is not None
+            else None
+        ),
         "overall": {
-            "engines": aggregate_needle_overall(results),
+            "engines": aggregate_needle_overall(results) if results else [],
             "query_count": sum(item["query_count"] for item in results),
         },
         "schema_version": NEEDLE_SCHEMA_VERSION,
     }
+    sections = [format_needle_report(payload)] if results else []
+    if args.measure:
+        payload["measure"] = measure_needle_datasets(
+            specs, args=args, engines=engines, modes=modes, binary=binary, model_dir=model_dir
+        )
+        sections.extend(format_measure_sections(payload["measure"]))
     encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")) + "\n"
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(encoded, encoding="utf-8")
-    print(format_needle_report(payload))
+    print("\n".join(sections))
     print(f"wrote {args.out}")
 
 
@@ -4283,6 +4391,11 @@ def main(argv: list[str] | None = None) -> None:
         "--measure",
         action="store_true",
         help="Record wall time, peak RSS, index size, and time-to-first-result (machine-dependent)",
+    )
+    parser.add_argument(
+        "--measure-only",
+        action="store_true",
+        help="With --measure on needle datasets, skip the quality scoring and only measure",
     )
     parser.add_argument(
         "--repeat",
@@ -4349,6 +4462,8 @@ def main(argv: list[str] | None = None) -> None:
     if is_needle_request(args.dataset):
         run_needles(args, engines, parse_modes(args.modes))
         return
+    if args.measure_only:
+        raise SystemExit("error: --measure-only applies to needle datasets")
     nesso_only = engines == ["nesso"]
     needs_nesso = "nesso" in engines
     binary: Path | None = None
@@ -4523,6 +4638,7 @@ def main(argv: list[str] | None = None) -> None:
                     binary=binary,
                     xerj_bin=args.xerj_bin,
                     opensearch_home=opensearch_home,
+                    model_dir=model_dir,
                 ),
             }
 

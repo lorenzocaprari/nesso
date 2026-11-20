@@ -153,7 +153,7 @@ Metrics per engine and class:
 | `median 1st` | Median rank of the first tagged line, among queries that found one ("how far would I scroll") |
 | `overlap` | Mean share of query tokens that occur in the tagged lines |
 
-Every engine works here, nesso in each `--modes` value. diy-faiss, OpenSearch k-NN, ck, and vecgrep embed every line, which takes hours at 1,000,000 lines, so run them on `bgl-needle-100k`. The report is JSON with `"kind": "needle"` and its own `schema_version`; it is not the 2k report shape, and `scripts/eval-retrieval-compare` does not read it. `--measure` is not supported for needle datasets yet. `bgl-needle-100k` with nesso, grep, and BM25 also runs in the `eval-retrieval` workflow (nightly and on pull requests); the 1M windows and the embedding baselines stay local or per release.
+Every engine works here, nesso in each `--modes` value. diy-faiss, OpenSearch k-NN, ck, and vecgrep embed every line, which takes hours at 1,000,000 lines, so run them on `bgl-needle-100k`. The report is JSON with `"kind": "needle"` and its own `schema_version`; it is not the 2k report shape, and `scripts/eval-retrieval-compare` does not read it. `--measure` works on needle datasets, see below. `bgl-needle-100k` with nesso, grep, and BM25 also runs in the `eval-retrieval` workflow (nightly and on pull requests); the 1M windows and the embedding baselines stay local or per release.
 
 ```bash
 python3 scripts/eval-retrieval --dataset bgl-needle-100k \
@@ -221,3 +221,15 @@ The `bench` CI job runs on every pull request, on pushes to `main`, and nightly.
 The chart file is [dev/bench/index.html](https://github.com/lorenzocaprari/nesso/blob/gh-pages/dev/bench/index.html) on that branch. GitHub Pages does not serve this repository.
 
 Google Benchmark microbenchmarks build with `-o "&:bench=True"` on the Release profile and produce `build/Release/bench/nesso_bench`. That binary times the scalar and AVX2+FMA dot-product and squared-L2 kernels on 384-dimensional vectors (`DotProduct384Scalar`, `DotProduct384Avx2Fma`, `L2Squared384Scalar`, `L2Squared384Avx2Fma`). The AVX2+FMA cases skip when `SelectDistanceKernel("avx2", ...)` would not select that kernel.
+
+### Speed and memory on the needle windows
+
+`--measure` on a needle dataset times every engine on the window's log and the window's queries, with the same columns and method as the 2k measure above (GNU `time` around each phase's child process): index wall and peak RSS, index size and ratio to the raw log, query wall, p50 and p95, query peak RSS, and cold time to first result. That puts quality, memory, and speed on the same task and at 100,000 and 1,000,000 lines, where the 2k samples cannot show the differences.
+
+```bash
+python3 scripts/eval-retrieval --dataset bgl-needle-100k \
+  --engine nesso --engine grep --engine bm25 --modes auto,dense \
+  --measure --repeat 3 --out build/eval/needle_bgl_100k_measure.json
+```
+
+`--measure-only` skips the quality scoring and only measures, which saves the second pass over a slow engine. Quality and measurements share one report: the measurements are under `measure` and the scores under `datasets`. Run `--repeat 1` at 1,000,000 lines. `xerj` and OpenSearch run in a spawned node per phase, so their peak RSS includes the server, and `--xerj-url` and `--opensearch-url` are refused. The report records the machine, the tool versions, and, for nesso, a digest of `model.onnx` and `vocab.txt` (`measure.tool["nesso-model"]` and the top-level `nesso.model`), so numbers produced with a different embedding model, quantization, or vocabulary cannot be mistaken for each other. Timings from a laptop are for development. Published numbers should come from one fixed machine, with the platform fields kept beside the table, and are never produced by CI.

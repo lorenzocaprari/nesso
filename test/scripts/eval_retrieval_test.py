@@ -1,3 +1,4 @@
+import hashlib
 import http.server
 import importlib.machinery
 import importlib.util
@@ -1823,14 +1824,108 @@ class EvalRetrievalNeedleTest(unittest.TestCase):
             )
             self.assertNotEqual(mixed.returncode, 0)
             self.assertIn("cannot mix needle", mixed.stderr)
-            measured = subprocess.run(
-                [sys.executable, str(SCRIPT), "--dataset", "all-needle", "--engine", "grep", "--measure", "--out", str(out)],
+            for extra, message in (
+                (["--measure-only"], "--measure-only requires --measure"),
+                (["--measure", "--opensearch-url", "http://127.0.0.1:9200"], "not --opensearch-url"),
+                (["--measure", "--xerj-url", "http://127.0.0.1:9200"], "not --xerj-url"),
+            ):
+                rejected = subprocess.run(
+                    [sys.executable, str(SCRIPT), "--dataset", "all-needle", "--engine", "grep", *extra, "--out", str(out)],
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                )
+                self.assertNotEqual(rejected.returncode, 0, extra)
+                self.assertIn(message, rejected.stderr, extra)
+            not_needle = subprocess.run(
+                [sys.executable, str(SCRIPT), "--dataset", "hdfs-2k", "--engine", "grep", "--measure", "--measure-only", "--out", str(out)],
                 capture_output=True,
                 text=True,
                 check=False,
             )
-            self.assertNotEqual(measured.returncode, 0)
-            self.assertIn("--measure is not supported", measured.stderr)
+            self.assertNotEqual(not_needle.returncode, 0)
+            self.assertIn("--measure-only applies to needle datasets", not_needle.stderr)
+
+    @unittest.skipUnless(
+        pathlib.Path(os.environ.get("NESSO_BENCH_TIME", "/usr/bin/time")).is_file(),
+        "GNU time required",
+    )
+    def test_measure_only_on_a_fixture_window(self) -> None:
+        mod = self.mod
+        with tempfile.TemporaryDirectory() as temp:
+            directory = pathlib.Path(temp)
+            bench, needles = directory / "bench", directory / "needles"
+            bench.mkdir()
+            needles.mkdir()
+            lines = [f"RAS KERNEL FATAL data TLB error {n}" if n % 2 else f"RAS APP INFO job {n} done" for n in range(40)]
+            labels = ["KERNDTLB" if n % 2 else "-" for n in range(40)]
+            (bench / "BGL_loghub2_1_40.log").write_text("\n".join(lines) + "\n", encoding="utf-8")
+            (bench / "BGL_loghub2_1_40.labels").write_text("\n".join(labels) + "\n", encoding="utf-8")
+            (needles / "q.jsonl").write_text(
+                '{"id":"a","class":"keyword","alert":"KERNDTLB","query":"data TLB error"}\n'
+                '{"id":"b","class":"keyword","alert":"KERNMICRO","query":"Microloader"}\n',
+                encoding="utf-8",
+            )
+            spec = mod.NeedleSpec("tiny-needle", "bgl-loghub2", "BGL_loghub2", 1, 40, "q.jsonl")
+            args = mod.argparse.Namespace(
+                repeat=1,
+                opensearch_home=None,
+                xerj_bin=None,
+                xerj_model_dir=None,
+                workdir=directory / "work",
+            )
+            old_bench, old_needles = mod.BENCH_DIR, mod.NEEDLES_DIR
+            mod.BENCH_DIR, mod.NEEDLES_DIR = bench, needles
+            try:
+                measure = mod.measure_needle_datasets(
+                    [spec], args=args, engines=["grep", "bm25"], modes=["dense"], binary=None, model_dir=None
+                )
+            finally:
+                mod.BENCH_DIR, mod.NEEDLES_DIR = old_bench, old_needles
+        dataset = measure["datasets"][0]
+        self.assertEqual(dataset["name"], "tiny-needle")
+        self.assertEqual(dataset["logLines"], 40)
+        rows = {row["engine"]: row for row in dataset["engines"]}
+        # Only the query whose alert is in the window is timed.
+        self.assertIsNone(rows["grep"]["indexBytes"])
+        self.assertGreater(rows["bm25"]["indexBytes"], 0)
+        for row in rows.values():
+            self.assertGreater(row["queryPeakRssBytes"], 0)
+            self.assertIsNotNone(row["timeToFirstResultSeconds"])
+        text = "\n".join(mod.format_measure_sections(measure))
+        self.assertIn("=== measure tiny-needle ===", text)
+
+    def test_model_identity_records_digests(self) -> None:
+        mod = self.mod
+        self.assertIsNone(mod.model_identity(None))
+        with tempfile.TemporaryDirectory() as temp:
+            model_dir = pathlib.Path(temp) / "minilm-int8"
+            model_dir.mkdir()
+            (model_dir / "model.onnx").write_bytes(b"onnx-bytes")
+            (model_dir / "vocab.txt").write_bytes(b"[PAD]\n")
+            identity = mod.model_identity(model_dir)
+            only_vocab = mod.model_identity(pathlib.Path(temp))
+        self.assertEqual(identity["dir"], "minilm-int8")
+        self.assertEqual(identity["model_onnx_bytes"], 10)
+        self.assertEqual(identity["model_onnx_sha256"], hashlib.sha256(b"onnx-bytes").hexdigest())
+        self.assertEqual(identity["vocab_sha256"], hashlib.sha256(b"[PAD]\n").hexdigest())
+        self.assertNotIn("model_onnx_sha256", only_vocab)
+
+    def test_measure_tools_name_the_nesso_model(self) -> None:
+        mod = self.mod
+        with tempfile.TemporaryDirectory() as temp:
+            model_dir = pathlib.Path(temp) / "bge-small-int8"
+            model_dir.mkdir()
+            (model_dir / "model.onnx").write_bytes(b"x" * 5)
+            tools = mod.collect_measure_tool_versions(
+                engines=["nesso"], binary=None, xerj_bin=None, model_dir=model_dir
+            )
+            without_nesso = mod.collect_measure_tool_versions(
+                engines=["grep"], binary=None, xerj_bin=None, model_dir=model_dir
+            )
+        self.assertTrue(tools["nesso-model"].startswith("bge-small-int8 onnx "))
+        self.assertTrue(tools["nesso-model"].endswith(" 5B"))
+        self.assertNotIn("nesso-model", without_nesso)
 
 
 class EvalRetrievalMeasureStatsTest(unittest.TestCase):
