@@ -1,3 +1,4 @@
+import http.server
 import importlib.machinery
 import importlib.util
 import json
@@ -10,6 +11,7 @@ import subprocess
 import sys
 import tempfile
 import textwrap
+import threading
 import unittest
 
 
@@ -853,6 +855,293 @@ class EvalRetrievalDiyFaissTest(unittest.TestCase):
             "1110a243fdf4706b3f48f1d95db1a4f5529b4d41",
         )
         self.assertEqual(payload["queries"][0]["ranked_lines"], [1, 2])
+
+
+class _FakeEsHandler(http.server.BaseHTTPRequestHandler):
+    """Minimal Elasticsearch-compatible surface for EsCompatEngine unit tests."""
+
+    server_version = "FakeES/1.0"
+
+    def log_message(self, format: str, *args) -> None:  # noqa: A003
+        del format, args
+
+    def _read_json(self) -> object:
+        length = int(self.headers.get("Content-Length", "0"))
+        raw = self.rfile.read(length) if length else b""
+        if not raw:
+            return {}
+        return json.loads(raw.decode("utf-8"))
+
+    def _send(self, code: int, payload: object | None = None) -> None:
+        body = b""
+        if payload is not None:
+            body = json.dumps(payload).encode("utf-8")
+        self.send_response(code)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        if body:
+            self.wfile.write(body)
+
+    def do_PUT(self) -> None:  # noqa: N802
+        path = self.path.split("?", 1)[0]
+        self._read_json()
+        self.server.state["indices"].add(path.strip("/"))  # type: ignore[attr-defined]
+        self._send(200, {"acknowledged": True})
+
+    def do_DELETE(self) -> None:  # noqa: N802
+        path = self.path.split("?", 1)[0]
+        name = path.strip("/")
+        self.server.state["indices"].discard(name)  # type: ignore[attr-defined]
+        self.server.state["docs"].pop(name, None)  # type: ignore[attr-defined]
+        self._send(200, {"acknowledged": True})
+
+    def do_POST(self) -> None:  # noqa: N802
+        path = self.path.split("?", 1)[0]
+        parts = [part for part in path.split("/") if part]
+        if len(parts) == 2 and parts[1] == "_bulk":
+            index = parts[0]
+            length = int(self.headers.get("Content-Length", "0"))
+            raw = self.rfile.read(length).decode("utf-8")
+            lines = [line for line in raw.splitlines() if line.strip()]
+            docs = self.server.state["docs"].setdefault(index, {})  # type: ignore[attr-defined]
+            items = []
+            force_error = self.server.state.get("bulk_error")  # type: ignore[attr-defined]
+            for index_line, doc_line in zip(lines[0::2], lines[1::2], strict=True):
+                meta = json.loads(index_line)["index"]
+                doc_id = str(meta["_id"])
+                if force_error and doc_id == str(force_error):
+                    items.append({"index": {"_id": doc_id, "status": 400, "error": {"type": "bulk", "reason": "forced"}}})
+                    continue
+                docs[doc_id] = json.loads(doc_line)
+                items.append({"index": {"_id": doc_id, "status": 201}})
+            errors = any("error" in item["index"] for item in items)
+            self._send(200, {"errors": errors, "items": items})
+            return
+        if len(parts) == 2 and parts[1] == "_refresh":
+            self._read_json()
+            self._send(200, {"_shards": {"successful": 1}})
+            return
+        if len(parts) == 2 and parts[1] == "_search":
+            index = parts[0]
+            body = self._read_json()
+            assert isinstance(body, dict)
+            size = int(body.get("size", 10))
+            canned = self.server.state.get("search_hits")  # type: ignore[attr-defined]
+            if canned is not None:
+                hits = canned[:size]
+            else:
+                docs = self.server.state["docs"].get(index, {})  # type: ignore[attr-defined]
+                hits = [
+                    {"_id": doc_id, "_score": 1.0, "_source": doc}
+                    for doc_id, doc in docs.items()
+                ][:size]
+            self._send(200, {"hits": {"hits": hits}})
+            return
+        if path == "/_cluster/health":
+            self._send(200, {"status": "green"})
+            return
+        self._send(404, {"error": "not_found"})
+
+
+class _FakeEsServer(http.server.ThreadingHTTPServer):
+    def __init__(self, address: tuple[str, int], handler) -> None:
+        super().__init__(address, handler)
+        self.state: dict = {
+            "indices": set(),
+            "docs": {},
+            "bulk_error": None,
+            "search_hits": None,
+        }
+
+
+class EvalRetrievalEsCompatTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.mod = load_eval()
+
+    def _start_server(self) -> tuple[_FakeEsServer, str, threading.Thread]:
+        server = _FakeEsServer(("127.0.0.1", 0), _FakeEsHandler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        host, port = server.server_address[:2]
+        return server, f"http://{host}:{port}", thread
+
+    def tearDown(self) -> None:
+        server = getattr(self, "_server", None)
+        if server is not None:
+            server.shutdown()
+            server.server_close()
+
+    def test_line_id_mapping_and_tie_break(self) -> None:
+        mod = self.mod
+        server, base_url, _thread = self._start_server()
+        self._server = server
+        # Equal scores: client must order by ascending line id.
+        server.state["search_hits"] = [
+            {"_id": "5", "_score": 1.0},
+            {"_id": "2", "_score": 2.0},
+            {"_id": "3", "_score": 1.0},
+            {"_id": "1", "_score": 2.0},
+        ]
+        engine = mod.EsCompatEngine(
+            name="xerj",
+            base_url=base_url,
+            index_name="nesso-eval-xerj",
+            query_fn=mod.xerj_match_query,
+            mappings=mod.xerj_lexical_mappings(),
+            xerj_version="fake-1",
+            url_mode="external",
+        )
+        with tempfile.TemporaryDirectory() as temp:
+            directory = pathlib.Path(temp)
+            lines = ["a", "b", "c", "d", "e"]
+            engine.prepare(directory / "log", lines, directory)
+            ranked = engine.rank("anything", k=10)
+            engine.cleanup()
+        self.assertEqual(ranked, [1, 2, 3, 5])
+
+    def test_bulk_item_error_fails(self) -> None:
+        mod = self.mod
+        server, base_url, _thread = self._start_server()
+        self._server = server
+        server.state["bulk_error"] = "2"
+        engine = mod.EsCompatEngine(
+            name="xerj",
+            base_url=base_url,
+            index_name="nesso-eval-xerj",
+            query_fn=mod.xerj_match_query,
+            mappings=mod.xerj_lexical_mappings(),
+        )
+        with tempfile.TemporaryDirectory() as temp:
+            directory = pathlib.Path(temp)
+            with self.assertRaises(SystemExit) as raised:
+                engine.prepare(directory / "log", ["one", "two"], directory)
+        self.assertIn("bulk", str(raised.exception).lower())
+
+    def test_skipped_without_url_or_binary(self) -> None:
+        mod = self.mod
+        with tempfile.TemporaryDirectory() as temp:
+            directory = pathlib.Path(temp)
+            log_path = directory / "sample.log"
+            log_path.write_text("alpha\nbeta\n", encoding="utf-8")
+            structured = directory / "structured.csv"
+            structured.write_text("LineId,EventId\n1,E1\n2,E2\n", encoding="utf-8")
+            queries = directory / "queries.jsonl"
+            queries.write_text(
+                '{"id":"q1","class":"exact_id","query":"alpha","relevant_lines":[1]}\n',
+                encoding="utf-8",
+            )
+            out = directory / "out.json"
+            env = os.environ.copy()
+            env["PATH"] = str(directory / "empty-bin")
+            (directory / "empty-bin").mkdir()
+            completed = subprocess.run(
+                [
+                    sys.executable,
+                    str(SCRIPT),
+                    "--engine",
+                    "xerj",
+                    "--engine",
+                    "xerj-neural",
+                    "--log",
+                    str(log_path),
+                    "--structured",
+                    str(structured),
+                    "--queries",
+                    str(queries),
+                    "--out",
+                    str(out),
+                    "--workdir",
+                    str(directory / "work"),
+                    "--skip-fetch",
+                ],
+                capture_output=True,
+                text=True,
+                check=False,
+                env=env,
+            )
+            self.assertEqual(completed.returncode, 0, completed.stderr + completed.stdout)
+            report = json.loads(out.read_text(encoding="utf-8"))
+            self.assertEqual(report["schema_version"], 4)
+            engines = {item["engine"]: item for item in report["datasets"][0]["engines"]}
+            self.assertEqual(engines["xerj"]["status"], "skipped")
+            self.assertIn("xerj", engines["xerj"]["reason"])
+            self.assertNotIn("metrics", engines["xerj"])
+            self.assertEqual(engines["xerj-neural"]["status"], "skipped")
+            self.assertNotIn("metrics", engines["xerj-neural"])
+
+    def test_neural_skipped_when_model_absent(self) -> None:
+        mod = self.mod
+        with tempfile.TemporaryDirectory() as temp:
+            directory = pathlib.Path(temp)
+            fake_bin = directory / "xerj"
+            fake_bin.write_text(
+                "#!/bin/sh\necho 'xerj fake' >&2\nexit 1\n",
+                encoding="utf-8",
+            )
+            fake_bin.chmod(fake_bin.stat().st_mode | stat.S_IXUSR)
+            ctx = mod.open_xerj_context(
+                engines=["xerj-neural"],
+                xerj_url=None,
+                xerj_bin=str(fake_bin),
+                xerj_model_dir=str(directory / "missing-model"),
+            )
+            try:
+                engine = mod.make_xerj_engine(ctx, neural=True)
+                ok, reason = engine.availability()
+                self.assertFalse(ok)
+                self.assertIn("model", reason.lower())
+            finally:
+                ctx.shutdown()
+
+    def test_schema4_xerj_versions_shape(self) -> None:
+        mod = self.mod
+        server, base_url, _thread = self._start_server()
+        self._server = server
+        server.state["search_hits"] = [{"_id": "1", "_score": 1.0}]
+        ctx = mod.XerjContext(
+            url=base_url,
+            url_mode="external",
+            version="fake-xerj",
+        )
+        engine = mod.make_xerj_engine(ctx, neural=False)
+        with tempfile.TemporaryDirectory() as temp:
+            directory = pathlib.Path(temp)
+            payload = mod.evaluate_keyword_engine(
+                engine,
+                queries=[mod.Query("q1", "exact_id", "alpha", frozenset({1}), None)],
+                event_by_line={1: "E1"},
+                log_path=directory / "log",
+                lines=["alpha"],
+                workdir=directory,
+            )
+        self.assertEqual(payload["status"], "ok")
+        self.assertEqual(payload["engine"], "xerj")
+        self.assertIn("versions", payload)
+        self.assertEqual(payload["versions"]["url_mode"], "external")
+        self.assertEqual(payload["versions"]["xerj_version"], "fake-xerj")
+        self.assertIn("index_seconds", payload["versions"])
+        self.assertEqual(payload["queries"][0]["ranked_lines"], [1])
+        report = {
+            "datasets": [
+                {
+                    "dataset": "hdfs-2k",
+                    "engines": [payload],
+                    "query_count": 1,
+                }
+            ],
+            "k": 10,
+            "overall": {"engines": [payload], "query_count": 1},
+            "schema_version": 4,
+        }
+        text = mod.format_report(report)
+        self.assertIn("xerj_version=fake-xerj", text)
+        self.assertIn("url_mode=external", text)
+
+    def test_nesso_only_golden_unchanged(self) -> None:
+        # Re-assert the frozen schema-3 bytes still match after xerj wiring.
+        self.assertTrue(NESSO_ONLY_GOLDEN.endswith(b'"schema_version":3}\n'))
 
 
 @unittest.skipUnless(os.environ.get("NESSO_EVAL_DIY") == "1", "set NESSO_EVAL_DIY=1")
