@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795206100440,
+  "lastUpdate": 1795206808574,
   "repoUrl": "https://github.com/lorenzocaprari/nesso",
   "entries": {
     "nesso": [
@@ -10313,6 +10313,60 @@ window.BENCHMARK_DATA = {
           {
             "name": "grep-100000-rss",
             "value": 146178048,
+            "unit": "bytes"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "caprarilorenzo5@gmail.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "committer": {
+            "email": "85455384+lorenzocaprari@users.noreply.github.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "distinct": true,
+          "id": "ffcc64b51c81856c4ef6c4f7c2cf87b592230329",
+          "message": "ci(eval): run Eval competitors on demand only\n\nA full Eval competitors run takes over an hour, and its nine jobs compete\nwith Pipeline for runners, which pushed pull request Pipeline runs to almost\n30 minutes. Drop the pull_request trigger; run it with workflow_dispatch,\nalso on a branch to check a change to the workflow.",
+          "timestamp": "2026-11-20T21:17:03+01:00",
+          "tree_id": "b8391e9ed20b296160c8da68531e2fbed61bcd89",
+          "url": "https://github.com/lorenzocaprari/nesso/commit/ffcc64b51c81856c4ef6c4f7c2cf87b592230329"
+        },
+        "date": 1795206807549,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "grep-1000-wall",
+            "value": 0.15,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-1000-rss",
+            "value": 118890496,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-10000-wall",
+            "value": 0.17,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-10000-rss",
+            "value": 119189504,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-100000-wall",
+            "value": 0.35,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-100000-rss",
+            "value": 146194432,
             "unit": "bytes"
           }
         ]
