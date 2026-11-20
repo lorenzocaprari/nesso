@@ -55,15 +55,30 @@ go run -C scripts/ci . bench-baseline --output bench/baseline.json bench/results
 python3 scripts/eval-retrieval --dataset all-2k --out build/eval/all_2k.json
 ```
 
-Optional keyword and DIY semantic baselines share the same labels and metrics. Pass `--engine` repeatedly (`nesso`, `grep`, `ripgrep`, `bm25`, `diy-faiss`, `xerj`, `xerj-neural`; default is nesso only). Without `--engine` (or with `--engine nesso` alone) the JSON stays `schema_version` 3 and is byte-compatible with prior nesso-only reports. Any other engine writes `schema_version` 4 with an `engines[]` axis and a side-by-side text table. Scoring is unchanged: each engine only supplies ranked 1-based line ids.
+Optional keyword and DIY semantic baselines share the same labels and metrics. Pass `--engine` repeatedly (`nesso`, `grep`, `ripgrep`, `bm25`, `diy-faiss`, `xerj`, `xerj-neural`, `opensearch`, `opensearch-knn`; default is nesso only). Without `--engine` (or with `--engine nesso` alone) the JSON stays `schema_version` 3 and is byte-compatible with prior nesso-only reports. Any other engine writes `schema_version` 4 with an `engines[]` axis and a side-by-side text table. Scoring is unchanged: each engine only supplies ranked 1-based line ids.
 
 - **grep:** `grep -n -F -i -e <query> -- <log>`. If that has no hits, OR the query's whitespace tokens with one `-e` per token. Rank is file order (ascending line id), top 10. This is the "what people do today" baseline.
 - **ripgrep:** the same rule with `rg -n -F -i`. If `rg` is missing, the engine is reported as `skipped` (not zeros).
 - **bm25:** Python stdlib `sqlite3` FTS5, one row per line with `rowid = line id`, query = OR of FTS5-quoted tokens, `ORDER BY bm25(lines), rowid LIMIT 10`. The run fails clearly if the sqlite3 build lacks FTS5.
 - **diy-faiss:** the stack a team would hack together — Hugging Face `sentence-transformers/all-MiniLM-L6-v2` at the pinned revision in `bench/competitors/diy_faiss.py` (fp32, `normalize_embeddings=True`), one vector per log line (no dedup, no masking), FAISS `IndexFlatIP`, top 10, ties broken by line id. CPU only, one thread, fixed seeds. The engine lives in `bench/competitors/diy_faiss.py` and is imported only when selected. Missing packages fail with an install hint. The report's diy-faiss entry records `versions` (model revision plus sentence-transformers, torch, and faiss). Dependencies are hash-pinned in `bench/competitors/diy-faiss.hashes.txt` for a local venv; they are not in the build image, Pipeline, or the nightly job. The pin file avoids the `*requirements*.txt` name so PR dependency-review does not index it.
 - **xerj / xerj-neural:** [XERJ](https://github.com/xerj-org/xerj) over its Elasticsearch-compatible API (stdlib `urllib` only). One document per log line (`_id` = line id, fields `line` and `text`). `xerj` uses a plain `match` on `text` against the default lexical embedder (no custom analyzer). `xerj-neural` maps `text` as `semantic_text` and runs the documented `semantic` query; it needs the three MiniLM files staged locally (`--xerj-model-dir`) and never downloads them. Pass `--xerj-url http://127.0.0.1:9200` for an already running node, or `--xerj-bin` / `xerj` on `PATH` to spawn `--insecure --data-dir <tmp> --port <free>` (neural adds `--embed-mode neural` and a temp TOML `local_model_dir`). Missing URL and binary, or missing neural model files when spawning, report `skipped` (not zeros). Report `versions` carry xerj version, `url_mode` (`external` or `spawned`), index wall time, and `~90 MB` for neural. Local or per-release only — not Pipeline and not the nightly `eval-retrieval` job.
+- **opensearch / opensearch-knn:** single-node [OpenSearch](https://opensearch.org/) (Apache-2.0), the self-hosted search incumbent, through the same stdlib HTTP adapter as xerj. Each index has one primary shard and no replica, so BM25 statistics are not split across shards. `opensearch` maps `text` with the default standard analyzer and runs a plain `match`. `opensearch-knn` stores one `knn_vector` (384 dimensions, HNSW, Lucene engine, `cosinesimil`, default parameters) per line. The vectors come from the same fp32 MiniLM revision and encoder as diy-faiss, computed in the eval process. It needs the diy-faiss venv and reports `skipped` with the install hint when that stack is missing. OpenSearch ML Commons in-engine models are not used. Pass `--opensearch-url http://127.0.0.1:9200` for a node you already run with security off, or `--opensearch-home` (or `OPENSEARCH_HOME`) to spawn one from an extracted tarball. The spawned node is `bin/opensearch` with `discovery.type=single-node`, `network.host=127.0.0.1`, free HTTP and transport ports, a temp `path.data` and `path.logs`, the disk watermark check off, `plugins.security.disabled=true` when the security plugin is installed, and `OPENSEARCH_JAVA_OPTS` (default `-Xms1g -Xmx1g`). With no URL and no home, both engines report `skipped`. A node without the `opensearch-knn` plugin reports `opensearch-knn` as `skipped`. Report `versions` carry `opensearch_version`, `url_mode`, index wall time, `java_opts`, and, for k-NN, the method, model, and revision. Local or per-release only — not Pipeline and not the nightly `eval-retrieval` job.
 
-Fairness for published comparisons: same logs, queries, machine, and k=10. DIY uses the original Hub fp32 MiniLM; nesso uses the shipped int8 ONNX. Compare scores; do not expect identical vectors.
+Fetch the OpenSearch tarball yourself; the script never downloads it. The min distribution has no k-NN plugin, and the plugin is not published on its own, so use the full bundle (about 1.1 GB):
+
+```bash
+curl -LO https://artifacts.opensearch.org/releases/bundle/opensearch/3.10.0/opensearch-3.10.0-linux-x64.tar.gz
+curl -LO https://artifacts.opensearch.org/releases/bundle/opensearch/3.10.0/opensearch-3.10.0-linux-x64.tar.gz.sha512
+sha512sum -c opensearch-3.10.0-linux-x64.tar.gz.sha512
+tar -xzf opensearch-3.10.0-linux-x64.tar.gz
+PYTHONHASHSEED=0 .venv-diy/bin/python scripts/eval-retrieval --dataset all-2k \
+  --engine bm25 --engine diy-faiss --engine opensearch --engine opensearch-knn \
+  --opensearch-home opensearch-3.10.0 --out build/eval/opensearch.json
+```
+
+OpenSearch refuses to start as root. The bundled JDK means no system Java is needed.
+
+Fairness for published comparisons: same logs, queries, machine, and k=10. DIY and opensearch-knn use the original Hub fp32 MiniLM; nesso uses the shipped int8 ONNX. Compare scores; do not expect identical vectors. opensearch-knn and diy-faiss share vectors, so a score gap between them comes from HNSW being approximate where FAISS `IndexFlatIP` is exact. OpenSearch peak RSS follows the JVM heap in `OPENSEARCH_JAVA_OPTS`; keep that value beside any published number.
 
 ```bash
 python3 scripts/eval-retrieval --dataset all-2k \
@@ -90,14 +105,14 @@ Numbers (median across `--repeat`, default 3):
 
 | Field | Meaning |
 | --- | --- |
-| `indexWallSeconds` / `indexPeakRssBytes` | GNU `/usr/bin/time -f "%e %M"` around the index/build child (`nesso index`, FTS5 build, FAISS encode+build, or spawned xerj bulk). grep/ripgrep have no index: JSON `null`, tables print `none` (never `0`). |
-| `queryWallSeconds` | Wall for the full query set (GNU `%e` of the query child, or the sum of per-query latencies for xerj so spawn/re-index is not counted). |
+| `indexWallSeconds` / `indexPeakRssBytes` | GNU `/usr/bin/time -f "%e %M"` around the index/build child (`nesso index`, FTS5 build, FAISS encode+build, or spawned xerj or OpenSearch bulk; opensearch-knn also encodes in this child). grep/ripgrep have no index: JSON `null`, tables print `none` (never `0`). |
+| `queryWallSeconds` | Wall for the full query set (GNU `%e` of the query child, or the sum of per-query latencies for xerj and OpenSearch so spawn/re-index is not counted). |
 | `queryLatencyMedianSeconds` / `queryLatencyP95Seconds` | Median and nearest-rank p95 of per-query latencies inside that child. |
 | `queryPeakRssBytes` | Peak RSS of the query-phase child (same GNU time method). |
 | `indexBytes` / `indexToLogRatio` | On-disk index size and ratio to the raw log. |
-| `timeToFirstResultSeconds` | Cold one-shot: `nesso grep` / `grep` / `rg` on the first query; for indexed engines, index (and spawn for xerj) plus the first query in one timed child. |
+| `timeToFirstResultSeconds` | Cold one-shot: `nesso grep` / `grep` / `rg` on the first query; for indexed engines, index (and spawn for xerj and OpenSearch) plus the first query in one timed child. |
 
-Peak RSS always comes from GNU time on a child process. In-process Python engines (`bm25`, `diy-faiss`) run under `--measure-worker` so RSS is comparable. xerj measure requires a spawned node (`--xerj-bin` / `PATH`), not `--xerj-url`, so the server is inside the timed process tree.
+Peak RSS always comes from GNU time on a child process. In-process Python engines (`bm25`, `diy-faiss`) run under `--measure-worker` so RSS is comparable. xerj measure requires a spawned node (`--xerj-bin` / `PATH`), not `--xerj-url`, so the server is inside the timed process tree. OpenSearch measure likewise requires `--opensearch-home` / `OPENSEARCH_HOME`, not `--opensearch-url`; `indexBytes` is the spawned node's data directory after a flush.
 
 Platform, CPU model, `nproc`, `NESSO_THREADS`, and tool versions are recorded in `measure`. Published numbers should come from one fixed machine with those fields kept beside the table.
 

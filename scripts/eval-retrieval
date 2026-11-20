@@ -13,6 +13,8 @@ Engines (--engine, repeatable; default nesso only):
   diy-faiss sentence-transformers MiniLM + FAISS IndexFlatIP (optional deps)
   xerj      Elasticsearch-compatible match on text (local xerj lexical node)
   xerj-neural  semantic query on semantic_text (opt-in; local model files)
+  opensearch   single-node OpenSearch BM25 match on text (local node)
+  opensearch-knn  OpenSearch k-NN (HNSW) over the diy-faiss MiniLM vectors
 
 Without --engine (or --engine nesso alone) the JSON stays schema_version 3 and
 byte-compatible with prior nesso-only reports. Any other engine uses
@@ -66,8 +68,11 @@ VALID_ENGINES = (
     "diy-faiss",
     "xerj",
     "xerj-neural",
+    "opensearch",
+    "opensearch-knn",
 )
-SKIPPABLE_ENGINES = frozenset({"ripgrep", "xerj", "xerj-neural"})
+OPENSEARCH_ENGINES = frozenset({"opensearch", "opensearch-knn"})
+SKIPPABLE_ENGINES = frozenset({"ripgrep", "xerj", "xerj-neural"}) | OPENSEARCH_ENGINES
 DIY_FAISS_MODULE = ROOT / "bench" / "competitors" / "diy_faiss.py"
 K = 10
 FLOAT_DIGITS = 6
@@ -81,6 +86,21 @@ XERJ_NEURAL_MODEL_FILES = ("config.json", "tokenizer.json", "model.safetensors")
 XERJ_NEURAL_MODEL_SIZE = "~90 MB"
 XERJ_INDEX_LEXICAL = "nesso-eval-xerj"
 XERJ_INDEX_NEURAL = "nesso-eval-xerj-neural"
+OPENSEARCH_READY_TIMEOUT_S = 180.0
+OPENSEARCH_DEFAULT_JAVA_OPTS = "-Xms1g -Xmx1g"
+OPENSEARCH_INDEX_LEXICAL = "nesso-eval-opensearch"
+OPENSEARCH_INDEX_KNN = "nesso-eval-opensearch-knn"
+OPENSEARCH_KNN_PLUGIN = "opensearch-knn"
+OPENSEARCH_SECURITY_PLUGIN = "opensearch-security"
+OPENSEARCH_KNN_DIM = 384
+OPENSEARCH_KNN_METHOD = {
+    "name": "hnsw",
+    "engine": "lucene",
+    "space_type": "cosinesimil",
+}
+OPENSEARCH_NOT_CONFIGURED = (
+    "OpenSearch not configured (--opensearch-home, OPENSEARCH_HOME, or --opensearch-url)"
+)
 ALL_FULL = "all-full"
 DEFAULT_MEASURE_REPEAT = 3
 DEFAULT_LOG_PREFIX_LINES = 100_000
@@ -314,7 +334,7 @@ def execute_timed(
 
 
 def load_diy_faiss_module() -> Any:
-    """Load bench/competitors/diy_faiss.py only when --engine diy-faiss is used."""
+    """Load bench/competitors/diy_faiss.py only for diy-faiss and opensearch-knn."""
     if not DIY_FAISS_MODULE.is_file():
         raise SystemExit(f"error: missing diy-faiss module: {DIY_FAISS_MODULE}")
     spec = importlib.util.spec_from_file_location("nesso_diy_faiss", DIY_FAISS_MODULE)
@@ -909,13 +929,13 @@ def es_request(
         raise SystemExit(f"error: ES {method} {url} returned non-JSON") from exc
 
 
-def assert_loopback_url(url: str) -> str:
+def assert_loopback_url(url: str, *, flag: str = "--xerj-url") -> str:
     parsed = urllib.parse.urlparse(url)
     if parsed.scheme not in ("http", "https"):
-        raise SystemExit(f"error: --xerj-url must be http(s), got {url!r}")
+        raise SystemExit(f"error: {flag} must be http(s), got {url!r}")
     host = (parsed.hostname or "").lower()
     if host not in ("127.0.0.1", "localhost", "::1"):
-        raise SystemExit(f"error: --xerj-url must target localhost, got {host!r}")
+        raise SystemExit(f"error: {flag} must target localhost, got {host!r}")
     return url.rstrip("/")
 
 
@@ -1005,18 +1025,28 @@ def reserve_xerj_es_port() -> int:
     raise SystemExit("error: could not reserve three consecutive localhost ports for xerj")
 
 
-def wait_xerj_ready(base_url: str, *, timeout: float = XERJ_READY_TIMEOUT_S) -> None:
+def wait_xerj_ready(
+    base_url: str,
+    *,
+    timeout: float = XERJ_READY_TIMEOUT_S,
+    label: str = "xerj",
+    proc: subprocess.Popen[str] | None = None,
+) -> None:
     deadline = time.monotonic() + timeout
     health = f"{base_url}/_cluster/health"
     last_error = ""
     while time.monotonic() < deadline:
+        if proc is not None and proc.poll() is not None:
+            raise SystemExit(
+                f"error: {label} exited with code {proc.returncode} before it was ready at {base_url}"
+            )
         try:
             es_request("GET", health, timeout=2.0)
             return
         except SystemExit as exc:
             last_error = str(exc)
             time.sleep(0.25)
-    raise SystemExit(f"error: xerj not ready at {base_url} within {timeout:.0f}s: {last_error}")
+    raise SystemExit(f"error: {label} not ready at {base_url} within {timeout:.0f}s: {last_error}")
 
 
 @dataclass
@@ -1032,21 +1062,29 @@ class XerjContext:
     _log_handle: Any = None
 
     def shutdown(self) -> None:
-        if self._proc is not None:
-            if self._proc.poll() is None:
-                self._proc.send_signal(signal.SIGTERM)
-                try:
-                    self._proc.wait(timeout=30)
-                except subprocess.TimeoutExpired:
-                    self._proc.kill()
-                    self._proc.wait(timeout=10)
-            self._proc = None
-        if self._log_handle is not None:
-            self._log_handle.close()
-            self._log_handle = None
-        if self._tmpdir is not None:
-            self._tmpdir.cleanup()
-            self._tmpdir = None
+        stop_spawned_node(self._proc, self._log_handle, self._tmpdir)
+        self._proc = None
+        self._log_handle = None
+        self._tmpdir = None
+
+
+def stop_spawned_node(
+    proc: subprocess.Popen[str] | None,
+    log_handle: Any,
+    tmpdir: tempfile.TemporaryDirectory[str] | None,
+) -> None:
+    """SIGTERM a spawned search node, then drop its log handle and temp dir."""
+    if proc is not None and proc.poll() is None:
+        proc.send_signal(signal.SIGTERM)
+        try:
+            proc.wait(timeout=30)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.wait(timeout=10)
+    if log_handle is not None:
+        log_handle.close()
+    if tmpdir is not None:
+        tmpdir.cleanup()
 
 
 @dataclass
@@ -1078,6 +1116,11 @@ class EsCompatEngine:
     url_mode: str = "external"
     neural_model_download_size: str | None = None
     index_seconds: float = 0.0
+    # Bulk documents for lines[start:start+len(texts)]; default {"line", "text"}.
+    doc_batch_fn: Callable[[int, list[str]], list[dict]] | None = None
+    # versions() key for the server version (xerj keeps "xerj_version").
+    version_key: str = "xerj_version"
+    extra_versions: dict[str, Any] | None = None
     _prepared: bool = False
 
     def availability(self) -> tuple[bool, str]:
@@ -1087,11 +1130,25 @@ class EsCompatEngine:
         payload: dict[str, Any] = {
             "index_seconds": round(self.index_seconds, 6),
             "url_mode": self.url_mode,
-            "xerj_version": self.xerj_version,
+            self.version_key: self.xerj_version,
         }
         if self.neural_model_download_size is not None:
             payload["neural_model_download_size"] = self.neural_model_download_size
+        if self.extra_versions:
+            payload.update(self.extra_versions)
         return payload
+
+    def _bulk_docs(self, first_line_id: int, texts: list[str]) -> list[dict]:
+        if self.doc_batch_fn is not None:
+            docs = self.doc_batch_fn(first_line_id, texts)
+            if len(docs) != len(texts):
+                raise SystemExit(
+                    f"error: {self.name} produced {len(docs)} documents for {len(texts)} lines"
+                )
+            return docs
+        return [
+            {"line": first_line_id + offset, "text": text} for offset, text in enumerate(texts)
+        ]
 
     def prepare(self, log_path: Path, lines: list[str], workdir: Path) -> None:
         del log_path, workdir
@@ -1107,10 +1164,11 @@ class EsCompatEngine:
         for start in range(0, len(lines), ES_BULK_BATCH):
             chunk = lines[start : start + ES_BULK_BATCH]
             ndjson_parts: list[str] = []
-            for offset, text in enumerate(chunk):
+            docs = self._bulk_docs(start + 1, chunk)
+            for offset, doc in enumerate(docs):
                 line_id = start + offset + 1
                 ndjson_parts.append(json.dumps({"index": {"_id": str(line_id)}}))
-                ndjson_parts.append(json.dumps({"line": line_id, "text": text}))
+                ndjson_parts.append(json.dumps(doc))
             payload = "\n".join(ndjson_parts) + "\n"
             response = es_request(
                 "POST",
@@ -1152,6 +1210,10 @@ class EsCompatEngine:
             scored.append((score_value, line_id))
         scored.sort(key=lambda item: (-item[0], item[1]))
         return [line_id for _, line_id in scored[:k]]
+
+    def flush(self) -> None:
+        """Flush segments to disk so a data-dir size counts the index, not the translog."""
+        es_request("POST", f"{self.base_url}/{self.index_name}/_flush", {})
 
     def cleanup(self) -> None:
         if not self._prepared:
@@ -1295,6 +1357,319 @@ def make_xerj_engine(ctx: XerjContext, *, neural: bool) -> RankEngine:
         mappings=xerj_lexical_mappings(),
         xerj_version=ctx.version,
         url_mode=ctx.url_mode,
+    )
+
+
+def opensearch_index_settings(*, knn: bool) -> dict:
+    # One primary and no replica: BM25 statistics are not split across shards,
+    # and a single node stays green.
+    settings: dict[str, Any] = {"number_of_shards": 1, "number_of_replicas": 0}
+    if knn:
+        settings["knn"] = True
+    return {"index": settings}
+
+
+def opensearch_lexical_mappings() -> dict:
+    return {
+        "settings": opensearch_index_settings(knn=False),
+        "mappings": {
+            "properties": {
+                "line": {"type": "integer"},
+                "text": {"type": "text"},
+            }
+        },
+    }
+
+
+def opensearch_knn_mappings() -> dict:
+    return {
+        "settings": opensearch_index_settings(knn=True),
+        "mappings": {
+            "properties": {
+                "line": {"type": "integer"},
+                # Kept in _source for display, as a deployment would; not searched.
+                "text": {"type": "text", "index": False},
+                "vec": {
+                    "type": "knn_vector",
+                    "dimension": OPENSEARCH_KNN_DIM,
+                    "method": dict(OPENSEARCH_KNN_METHOD),
+                },
+            }
+        },
+    }
+
+
+def opensearch_match_query(query: str, k: int) -> dict:
+    return {"size": k, "_source": False, "query": {"match": {"text": query}}}
+
+
+def opensearch_knn_query(vector: list[float], k: int) -> dict:
+    return {
+        "size": k,
+        "_source": False,
+        "query": {"knn": {"vec": {"vector": vector, "k": k}}},
+    }
+
+
+def resolve_opensearch_home(explicit: str | None) -> Path | None:
+    raw = explicit or os.environ.get("OPENSEARCH_HOME") or None
+    if raw is None:
+        return None
+    home = Path(raw)
+    launcher = home / "bin" / "opensearch"
+    if not launcher.is_file():
+        raise SystemExit(f"error: OpenSearch launcher not found: {launcher}")
+    return home.resolve()
+
+
+def opensearch_version_from_home(home: Path | None) -> str:
+    """Read the version from lib/opensearch-X.Y.Z.jar without starting a JVM."""
+    if home is None:
+        return "unknown"
+    for jar in sorted((home / "lib").glob("opensearch-[0-9]*.jar")):
+        return jar.stem[len("opensearch-") :]
+    return "unknown"
+
+
+def opensearch_java_opts() -> str:
+    return os.environ.get("OPENSEARCH_JAVA_OPTS") or OPENSEARCH_DEFAULT_JAVA_OPTS
+
+
+def reserve_free_ports(count: int) -> list[int]:
+    holders: list[socket.socket] = []
+    try:
+        for _ in range(count):
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.bind(("127.0.0.1", 0))
+            holders.append(sock)
+        return [int(sock.getsockname()[1]) for sock in holders]
+    finally:
+        for sock in holders:
+            sock.close()
+
+
+def log_tail(path: Path, lines: int = 20) -> str:
+    try:
+        text = path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return ""
+    return "\n".join(text.splitlines()[-lines:])
+
+
+@dataclass
+class OpenSearchContext:
+    url: str | None = None
+    skip_reason: str | None = None
+    knn_skip_reason: str | None = None
+    url_mode: str = "external"
+    home: Path | None = None
+    version: str = "unknown"
+    java_opts: str | None = None
+    _proc: subprocess.Popen[str] | None = None
+    _tmpdir: tempfile.TemporaryDirectory[str] | None = None
+    _log_handle: Any = None
+
+    @property
+    def data_dir(self) -> Path | None:
+        if self._tmpdir is None:
+            return None
+        return Path(self._tmpdir.name) / "data"
+
+    def shutdown(self) -> None:
+        stop_spawned_node(self._proc, self._log_handle, self._tmpdir)
+        self._proc = None
+        self._log_handle = None
+        self._tmpdir = None
+
+
+def probe_opensearch(ctx: OpenSearchContext) -> None:
+    """Record the node version and whether the k-NN plugin is installed."""
+    assert ctx.url is not None
+    root = es_request("GET", f"{ctx.url}/", timeout=30.0)
+    version = root.get("version", {}) if isinstance(root, dict) else {}
+    number = version.get("number") if isinstance(version, dict) else None
+    if number:
+        ctx.version = str(number)
+    plugins = es_request("GET", f"{ctx.url}/_cat/plugins?format=json", timeout=30.0)
+    components: set[str] = set()
+    if isinstance(plugins, list):
+        components = {str(item.get("component")) for item in plugins if isinstance(item, dict)}
+    if OPENSEARCH_KNN_PLUGIN not in components:
+        ctx.knn_skip_reason = (
+            f"OpenSearch k-NN plugin ({OPENSEARCH_KNN_PLUGIN}) is not installed on the node"
+        )
+
+
+def open_opensearch_context(
+    *,
+    engines: list[str],
+    opensearch_url: str | None,
+    opensearch_home: str | None,
+) -> OpenSearchContext:
+    if not OPENSEARCH_ENGINES.intersection(engines):
+        return OpenSearchContext()
+    if opensearch_url:
+        ctx = OpenSearchContext(
+            url=assert_loopback_url(opensearch_url, flag="--opensearch-url"),
+            url_mode="external",
+        )
+        probe_opensearch(ctx)
+        return ctx
+    home = resolve_opensearch_home(opensearch_home)
+    if home is None:
+        return OpenSearchContext(skip_reason=OPENSEARCH_NOT_CONFIGURED)
+
+    tmp = tempfile.TemporaryDirectory(prefix="nesso-opensearch-")
+    tmp_path = Path(tmp.name)
+    data_dir = tmp_path / "data"
+    logs_dir = tmp_path / "logs"
+    data_dir.mkdir()
+    logs_dir.mkdir()
+    http_port, transport_port = reserve_free_ports(2)
+    cmd = [
+        str(home / "bin" / "opensearch"),
+        "-E",
+        "discovery.type=single-node",
+        "-E",
+        "network.host=127.0.0.1",
+        "-E",
+        f"http.port={http_port}",
+        "-E",
+        f"transport.port={transport_port}",
+        "-E",
+        f"path.data={data_dir}",
+        "-E",
+        f"path.logs={logs_dir}",
+        # A nearly full dev disk must not flip the index read-only mid-run.
+        "-E",
+        "cluster.routing.allocation.disk.threshold_enabled=false",
+    ]
+    # The min distribution has no security plugin and rejects its settings.
+    if (home / "plugins" / OPENSEARCH_SECURITY_PLUGIN).is_dir():
+        cmd.extend(["-E", "plugins.security.disabled=true"])
+    java_opts = opensearch_java_opts()
+    env = os.environ.copy()
+    env["OPENSEARCH_JAVA_OPTS"] = java_opts
+    env["DISABLE_INSTALL_DEMO_CONFIG"] = "true"
+
+    log_path = tmp_path / "opensearch.log"
+    log_handle = log_path.open("w", encoding="utf-8")
+    try:
+        proc = subprocess.Popen(
+            cmd,
+            stdout=log_handle,
+            stderr=subprocess.STDOUT,
+            text=True,
+            env=env,
+        )
+    except OSError as exc:
+        log_handle.close()
+        tmp.cleanup()
+        raise SystemExit(f"error: failed to start OpenSearch: {exc}") from exc
+
+    ctx = OpenSearchContext(
+        url=f"http://127.0.0.1:{http_port}",
+        url_mode="spawned",
+        home=home,
+        version=opensearch_version_from_home(home),
+        java_opts=java_opts,
+        _proc=proc,
+        _tmpdir=tmp,
+        _log_handle=log_handle,
+    )
+    try:
+        wait_xerj_ready(
+            ctx.url,
+            timeout=OPENSEARCH_READY_TIMEOUT_S,
+            label="OpenSearch",
+            proc=proc,
+        )
+        probe_opensearch(ctx)
+    except SystemExit as exc:
+        log_handle.flush()
+        tail = log_tail(log_path)
+        ctx.shutdown()
+        message = str(exc.code) if exc.code is not None else "error: OpenSearch failed to start"
+        if tail:
+            message = f"{message}\n--- OpenSearch log tail ---\n{tail}"
+        raise SystemExit(message) from exc
+    return ctx
+
+
+def skip_reason_from_exit(exc: SystemExit, fallback: str) -> str:
+    reason = exc.code if isinstance(exc.code, str) else fallback
+    if reason.startswith("error: "):
+        reason = reason[len("error: ") :]
+    return reason
+
+
+def make_opensearch_engine(
+    ctx: OpenSearchContext,
+    *,
+    knn: bool,
+    encoder: Callable[[list[str]], list[list[float]]] | None = None,
+) -> RankEngine:
+    name = "opensearch-knn" if knn else "opensearch"
+    if ctx.skip_reason:
+        return SkippedEngine(name=name, reason=ctx.skip_reason)
+    if not ctx.url:
+        return SkippedEngine(name=name, reason=OPENSEARCH_NOT_CONFIGURED)
+    extra: dict[str, Any] = {"java_opts": ctx.java_opts or "external"}
+    if not knn:
+        return EsCompatEngine(
+            name=name,
+            base_url=ctx.url,
+            index_name=OPENSEARCH_INDEX_LEXICAL,
+            query_fn=opensearch_match_query,
+            mappings=opensearch_lexical_mappings(),
+            xerj_version=ctx.version,
+            url_mode=ctx.url_mode,
+            version_key="opensearch_version",
+            extra_versions=extra,
+        )
+    if ctx.knn_skip_reason:
+        return SkippedEngine(name=name, reason=ctx.knn_skip_reason)
+    diy = load_diy_faiss_module()
+    if encoder is None:
+        try:
+            encoder = diy.make_encoder()
+        except SystemExit as exc:
+            return SkippedEngine(name=name, reason=skip_reason_from_exit(exc, diy.INSTALL_HINT))
+    encode = encoder
+
+    def doc_batch(first_line_id: int, texts: list[str]) -> list[dict]:
+        vectors = encode(texts)
+        if len(vectors) != len(texts):
+            raise SystemExit(
+                f"error: {name} encoder returned {len(vectors)} vectors for {len(texts)} lines"
+            )
+        return [
+            {"line": first_line_id + offset, "text": text, "vec": vector}
+            for offset, (text, vector) in enumerate(zip(texts, vectors, strict=True))
+        ]
+
+    def query(text: str, k: int) -> dict:
+        return opensearch_knn_query(encode([text])[0], k)
+
+    method = OPENSEARCH_KNN_METHOD
+    extra.update(
+        {
+            "knn_method": f"{method['name']}/{method['engine']}/{method['space_type']}",
+            "model": diy.MODEL_ID,
+            "model_revision": diy.MODEL_REVISION,
+        }
+    )
+    return EsCompatEngine(
+        name=name,
+        base_url=ctx.url,
+        index_name=OPENSEARCH_INDEX_KNN,
+        query_fn=query,
+        mappings=opensearch_knn_mappings(),
+        xerj_version=ctx.version,
+        url_mode=ctx.url_mode,
+        doc_batch_fn=doc_batch,
+        version_key="opensearch_version",
+        extra_versions=extra,
     )
 
 
@@ -1442,6 +1817,28 @@ def format_xerj_metadata_lines(payload: dict) -> list[str]:
     return lines
 
 
+def format_opensearch_metadata_lines(payload: dict) -> list[str]:
+    lines: list[str] = []
+    for dataset in payload.get("datasets", []):
+        for engine in dataset.get("engines", []):
+            if engine.get("status") != "ok" or engine.get("engine") not in OPENSEARCH_ENGINES:
+                continue
+            versions = engine.get("versions")
+            if not isinstance(versions, dict):
+                continue
+            parts = [
+                f"opensearch_version={versions.get('opensearch_version', 'unknown')}",
+                f"url_mode={versions.get('url_mode', 'unknown')}",
+                f"index_seconds={versions.get('index_seconds', 0)}",
+                f"java_opts={versions.get('java_opts', 'unknown')!r}",
+            ]
+            method = versions.get("knn_method")
+            if method is not None:
+                parts.append(f"knn_method={method}")
+            lines.append(f"# {dataset['dataset']}/{engine['engine']}: " + " ".join(parts))
+    return lines
+
+
 def format_report(payload: dict) -> str:
     sections: list[str] = []
     schema = payload.get("schema_version", SCHEMA_VERSION)
@@ -1452,6 +1849,7 @@ def format_report(payload: dict) -> str:
         sections.append("=== overall ===")
         sections.append(format_engine_table(payload["overall"]["engines"]))
         sections.extend(format_xerj_metadata_lines(payload))
+        sections.extend(format_opensearch_metadata_lines(payload))
         return "\n".join(sections)
     for dataset in payload["datasets"]:
         sections.append(f"=== {dataset['dataset']} ===")
@@ -1845,6 +2243,7 @@ def evaluate_dataset(
     corpus_name: str,
     dataset_name: str,
     xerj: XerjContext | None = None,
+    opensearch: OpenSearchContext | None = None,
 ) -> dict:
     workdir.mkdir(parents=True, exist_ok=True)
     nesso_only = engines == ["nesso"]
@@ -1899,6 +2298,11 @@ def evaluate_dataset(
             engine = make_xerj_engine(xerj or XerjContext(skip_reason="xerj not configured"), neural=False)
         elif engine_name == "xerj-neural":
             engine = make_xerj_engine(xerj or XerjContext(skip_reason="xerj not configured"), neural=True)
+        elif engine_name in OPENSEARCH_ENGINES:
+            engine = make_opensearch_engine(
+                opensearch or OpenSearchContext(skip_reason=OPENSEARCH_NOT_CONFIGURED),
+                knn=engine_name == "opensearch-knn",
+            )
         else:
             raise SystemExit(f"error: unknown engine {engine_name!r}")
         engine_payloads.append(
@@ -2051,8 +2455,12 @@ def collect_measure_tool_versions(
     engines: list[str],
     binary: Path | None,
     xerj_bin: str | None,
+    opensearch_home: str | None = None,
 ) -> dict[str, str]:
     tools: dict[str, str] = {"python": sys.version.split()[0]}
+    if OPENSEARCH_ENGINES.intersection(engines):
+        home = resolve_opensearch_home(opensearch_home)
+        tools["opensearch"] = "missing" if home is None else opensearch_version_from_home(home)
     if "nesso" in engines and binary is not None:
         tools["nesso"] = tool_version_line([str(binary), "-V"])
     if "grep" in engines:
@@ -2067,7 +2475,7 @@ def collect_measure_tool_versions(
         tools["xerj"] = xerj_version_from_binary(resolved)
     if "bm25" in engines:
         tools["sqlite3"] = sqlite3.sqlite_version
-    if "diy-faiss" in engines:
+    if "diy-faiss" in engines or "opensearch-knn" in engines:
         diy = load_diy_faiss_module()
         engine = diy.DiyFaissEngine()
         ok, _reason = engine.availability()
@@ -2185,6 +2593,7 @@ def run_measure_worker(
     xerj_bin: str | None = None,
     xerj_model_dir: str | None = None,
     neural: bool = False,
+    opensearch_home: str | None = None,
     timeout: float | None = None,
     env: dict[str, str] | None = None,
 ) -> dict[str, Any]:
@@ -2220,6 +2629,8 @@ def run_measure_worker(
         argv.extend(["--xerj-model-dir", xerj_model_dir])
     if neural:
         argv.append("--neural")
+    if opensearch_home is not None:
+        argv.extend(["--opensearch-home", opensearch_home])
     result = execute_timed(argv, time_path, timeout=timeout, env=env)
     if result["error"]:
         raise SystemExit(f"error: measure worker {engine}/{phase}: {result['error']}")
@@ -2246,6 +2657,7 @@ def measure_worker_main(argv: list[str]) -> None:
     parser.add_argument("--xerj-bin", default=None)
     parser.add_argument("--xerj-model-dir", default=None)
     parser.add_argument("--neural", action="store_true")
+    parser.add_argument("--opensearch-home", default=None)
     args = parser.parse_args(argv)
     queries: list[str] = json.loads(args.queries_json.read_text(encoding="utf-8"))
     if not isinstance(queries, list):
@@ -2266,6 +2678,7 @@ def measure_worker_main(argv: list[str]) -> None:
         xerj_bin=args.xerj_bin,
         xerj_model_dir=args.xerj_model_dir,
         neural=args.neural,
+        opensearch_home=args.opensearch_home,
     )
     print(json.dumps(payload, sort_keys=True, separators=(",", ":")))
 
@@ -2285,7 +2698,17 @@ def run_measure_worker_phase(
     xerj_bin: str | None,
     xerj_model_dir: str | None,
     neural: bool,
+    opensearch_home: str | None = None,
 ) -> dict[str, Any]:
+    if engine in OPENSEARCH_ENGINES:
+        return _worker_opensearch_phase(
+            phase=phase,
+            lines=lines,
+            workdir=workdir,
+            queries=queries,
+            opensearch_home=opensearch_home,
+            knn=engine == "opensearch-knn",
+        )
     if engine in ("bm25", "diy-faiss", "grep", "ripgrep", "nesso"):
         return _worker_local_phase(
             engine=engine,
@@ -2529,6 +2952,59 @@ def _worker_xerj_phase(
         ctx.shutdown()
 
 
+def _worker_opensearch_phase(
+    *,
+    phase: str,
+    lines: list[str],
+    workdir: Path,
+    queries: list[str],
+    opensearch_home: str | None,
+    knn: bool,
+) -> dict[str, Any]:
+    name = "opensearch-knn" if knn else "opensearch"
+    # Measure always owns a spawned JVM so GNU time includes server RSS.
+    ctx = open_opensearch_context(
+        engines=[name],
+        opensearch_url=None,
+        opensearch_home=opensearch_home,
+    )
+    try:
+        engine = make_opensearch_engine(ctx, knn=knn)
+        if isinstance(engine, SkippedEngine):
+            return {"skipped": True, "reason": engine.reason, "latencySeconds": []}
+        assert isinstance(engine, EsCompatEngine)
+        if phase == "index":
+            engine.prepare(Path("."), lines, workdir)
+            engine.flush()
+            data_dir = ctx.data_dir
+            index_bytes = directory_size_bytes(data_dir) if data_dir is not None else None
+            engine.cleanup()
+            return {"indexBytes": index_bytes, "latencySeconds": []}
+        if phase == "queries":
+            # Same as xerj: re-index in the owned node and report the summed
+            # query latencies so spawn and index time stay out of query wall.
+            engine.prepare(Path("."), lines, workdir)
+            latencies: list[float] = []
+            for query in queries:
+                started = time.perf_counter()
+                engine.rank(query)
+                latencies.append(time.perf_counter() - started)
+            engine.cleanup()
+            return {
+                "latencySeconds": latencies,
+                "queryWallSeconds": round(sum(latencies), 6),
+            }
+        engine.prepare(Path("."), lines, workdir)
+        started = time.perf_counter()
+        if queries:
+            engine.rank(queries[0])
+        elapsed = time.perf_counter() - started
+        engine.cleanup()
+        return {"latencySeconds": [elapsed], "includeSpawnInWall": True}
+    finally:
+        ctx.shutdown()
+
+
 def measure_cli_engine_once(
     *,
     engine: str,
@@ -2541,6 +3017,7 @@ def measure_cli_engine_once(
     modes: list[str],
     xerj_bin: str | None,
     xerj_model_dir: str | None,
+    opensearch_home: str | None = None,
 ) -> dict[str, Any]:
     workdir.mkdir(parents=True, exist_ok=True)
     if engine in ("grep", "ripgrep"):
@@ -2687,23 +3164,27 @@ def measure_cli_engine_once(
             "timeToFirstResultSeconds": ttfr_payload["wallSeconds"],
         }
 
-    if engine in ("xerj", "xerj-neural"):
-        neural = engine == "xerj-neural"
+    if engine in ("xerj", "xerj-neural") or engine in OPENSEARCH_ENGINES:
+        # Server engines: each phase spawns its own node inside the timed child.
+        server_args: dict[str, Any] = {
+            "xerj_bin": xerj_bin,
+            "xerj_model_dir": xerj_model_dir,
+            "neural": engine == "xerj-neural",
+            "opensearch_home": opensearch_home,
+        }
         index_payload = run_measure_worker(
             engine=engine,
             phase="index",
             log_path=log_path,
             workdir=workdir / "index",
             queries=[],
-            xerj_bin=xerj_bin,
-            xerj_model_dir=xerj_model_dir,
-            neural=neural,
+            **server_args,
         )
         if index_payload.get("skipped"):
             return {
                 "engine": engine,
                 "status": "skipped",
-                "reason": index_payload.get("reason", "xerj unavailable"),
+                "reason": index_payload.get("reason", f"{engine} unavailable"),
             }
         query_payload = run_measure_worker(
             engine=engine,
@@ -2711,9 +3192,7 @@ def measure_cli_engine_once(
             log_path=log_path,
             workdir=workdir / "queries",
             queries=queries,
-            xerj_bin=xerj_bin,
-            xerj_model_dir=xerj_model_dir,
-            neural=neural,
+            **server_args,
         )
         ttfr_payload = run_measure_worker(
             engine=engine,
@@ -2721,9 +3200,7 @@ def measure_cli_engine_once(
             log_path=log_path,
             workdir=workdir / "ttfr",
             queries=queries[:1],
-            xerj_bin=xerj_bin,
-            xerj_model_dir=xerj_model_dir,
-            neural=neural,
+            **server_args,
         )
         index_bytes = index_payload.get("indexBytes")
         query_wall = query_payload.get("queryWallSeconds", query_payload["wallSeconds"])
@@ -2758,6 +3235,7 @@ def measure_dataset(
     xerj_bin: str | None,
     xerj_model_dir: str | None,
     repeats: int,
+    opensearch_home: str | None = None,
 ) -> dict[str, Any]:
     log_bytes = log_path.stat().st_size
     log_lines = sum(1 for _ in log_path.open("r", encoding="utf-8", errors="replace"))
@@ -2780,6 +3258,7 @@ def measure_dataset(
                     modes=modes,
                     xerj_bin=xerj_bin,
                     xerj_model_dir=xerj_model_dir,
+                    opensearch_home=opensearch_home,
                 )
             )
         engine_rows.append(merge_engine_measure_repeats(repeats_out))
@@ -2975,6 +3454,16 @@ def main(argv: list[str] | None = None) -> None:
         default=None,
         help="Local all-MiniLM-L6-v2 dir for spawned xerj-neural (no download)",
     )
+    parser.add_argument(
+        "--opensearch-url",
+        default=None,
+        help="Existing OpenSearch node URL (localhost only, security off)",
+    )
+    parser.add_argument(
+        "--opensearch-home",
+        default=None,
+        help="Extracted OpenSearch tarball to spawn (default: $OPENSEARCH_HOME)",
+    )
     args = parser.parse_args(argv_list)
     if args.repeat is not None and not args.measure:
         raise SystemExit("error: --repeat requires --measure")
@@ -2982,6 +3471,11 @@ def main(argv: list[str] | None = None) -> None:
         raise SystemExit("error: --log-prefix-lines requires --measure")
     if args.measure and args.xerj_url:
         raise SystemExit("error: --measure requires a spawned xerj (--xerj-bin / PATH); not --xerj-url")
+    if args.measure and args.opensearch_url:
+        raise SystemExit(
+            "error: --measure requires a spawned OpenSearch (--opensearch-home / OPENSEARCH_HOME); "
+            "not --opensearch-url"
+        )
     if args.log_prefix_lines is not None and args.log_prefix_lines <= 0:
         raise SystemExit("error: --log-prefix-lines must be a positive integer")
     measure_repeats = DEFAULT_MEASURE_REPEAT if args.repeat is None else args.repeat
@@ -3011,7 +3505,13 @@ def main(argv: list[str] | None = None) -> None:
     prefix_lines = args.log_prefix_lines
     measure_only = prefix_lines is not None
 
+    opensearch_home: str | None = None
+    if OPENSEARCH_ENGINES.intersection(engines) and not args.opensearch_url:
+        resolved_home = resolve_opensearch_home(args.opensearch_home)
+        opensearch_home = str(resolved_home) if resolved_home is not None else None
+
     xerj = XerjContext()
+    opensearch = OpenSearchContext()
     if not measure_only:
         xerj = open_xerj_context(
             engines=engines,
@@ -3020,6 +3520,12 @@ def main(argv: list[str] | None = None) -> None:
             xerj_model_dir=args.xerj_model_dir,
         )
     try:
+        if not measure_only:
+            opensearch = open_opensearch_context(
+                engines=engines,
+                opensearch_url=args.opensearch_url,
+                opensearch_home=opensearch_home,
+            )
         dataset_results: list[dict] = []
         measure_targets: list[tuple[str, Path, list[str]]] = []
 
@@ -3055,6 +3561,7 @@ def main(argv: list[str] | None = None) -> None:
                         corpus_name="hdfs_2k.nesso",
                         dataset_name="hdfs-2k",
                         xerj=xerj,
+                        opensearch=opensearch,
                     )
                 )
                 measure_targets.append(
@@ -3088,6 +3595,7 @@ def main(argv: list[str] | None = None) -> None:
                             corpus_name=spec.corpus_name,
                             dataset_name=spec.name,
                             xerj=xerj,
+                            opensearch=opensearch,
                         )
                     )
                     measure_targets.append(
@@ -3134,6 +3642,7 @@ def main(argv: list[str] | None = None) -> None:
                         xerj_bin=args.xerj_bin,
                         xerj_model_dir=args.xerj_model_dir,
                         repeats=measure_repeats,
+                        opensearch_home=opensearch_home,
                     )
                 )
             payload["measure"] = {
@@ -3147,6 +3656,7 @@ def main(argv: list[str] | None = None) -> None:
                     engines=engines,
                     binary=binary,
                     xerj_bin=args.xerj_bin,
+                    opensearch_home=opensearch_home,
                 ),
             }
 
@@ -3156,6 +3666,7 @@ def main(argv: list[str] | None = None) -> None:
         print(format_report_with_measure(payload) if args.measure else format_report(payload))
         print(f"wrote {args.out}")
     finally:
+        opensearch.shutdown()
         xerj.shutdown()
 
 
