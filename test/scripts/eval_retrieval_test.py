@@ -1166,6 +1166,38 @@ class EvalRetrievalEsCompatTest(unittest.TestCase):
         self.assertIn("xerj_version=fake-xerj", text)
         self.assertIn("url_mode=external", text)
 
+    def test_xerj_semantic_uses_semantic_text_on_a_lexical_node(self) -> None:
+        mod = self.mod
+        server, base_url, _thread = self._start_server()
+        self._server = server
+        server.state["search_hits"] = [{"_id": "2", "_score": 1.0}]
+        ctx = mod.XerjContext(url=base_url, url_mode="spawned", version="fake-xerj")
+        engine = mod.make_xerj_engine(ctx, neural=False, semantic=True)
+        self.assertEqual(engine.name, "xerj-semantic")
+        with tempfile.TemporaryDirectory() as temp:
+            directory = pathlib.Path(temp)
+            engine.prepare(directory / "log", ["a", "b"], directory)
+            ranked = engine.rank("why did it fail", k=5)
+            engine.cleanup()
+        self.assertEqual(ranked, [2])
+        put = server.state["put_bodies"][mod.XERJ_INDEX_SEMANTIC]
+        self.assertEqual(put["mappings"]["properties"]["text"]["type"], "semantic_text")
+        self.assertEqual(
+            server.state["search_bodies"][0],
+            {"size": 5, "query": {"semantic": {"field": "text", "query": "why did it fail", "k": 5}}},
+        )
+        self.assertNotIn("neural_model_download_size", engine.versions())
+
+    def test_xerj_semantic_is_skipped_on_a_neural_node(self) -> None:
+        mod = self.mod
+        ctx = mod.XerjContext(url="http://127.0.0.1:1", url_mode="spawned", neural_node=True)
+        engine = mod.make_xerj_engine(ctx, neural=False, semantic=True)
+        ok, reason = engine.availability()
+        self.assertFalse(ok)
+        self.assertIn("--embed-mode neural", reason)
+        self.assertIn("xerj-semantic", mod.SKIPPABLE_ENGINES)
+        self.assertEqual(mod.make_rank_engine("xerj-semantic").name, "xerj-semantic")
+
     def test_nesso_only_golden_unchanged(self) -> None:
         # Re-assert the frozen schema-3 bytes still match after xerj wiring.
         self.assertTrue(NESSO_ONLY_GOLDEN.endswith(b'"schema_version":3}\n'))
