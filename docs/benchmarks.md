@@ -55,17 +55,31 @@ go run -C scripts/ci . bench-baseline --output bench/baseline.json bench/results
 python3 scripts/eval-retrieval --dataset all-2k --out build/eval/all_2k.json
 ```
 
-Optional keyword baselines share the same labels and metrics. Pass `--engine` repeatedly (`nesso`, `grep`, `ripgrep`, `bm25`; default is nesso only). Without `--engine` (or with `--engine nesso` alone) the JSON stays `schema_version` 3 and is byte-compatible with prior nesso-only reports. Any other engine writes `schema_version` 4 with an `engines[]` axis and a side-by-side text table. Scoring is unchanged: each engine only supplies ranked 1-based line ids.
+Optional keyword and DIY semantic baselines share the same labels and metrics. Pass `--engine` repeatedly (`nesso`, `grep`, `ripgrep`, `bm25`, `diy-faiss`; default is nesso only). Without `--engine` (or with `--engine nesso` alone) the JSON stays `schema_version` 3 and is byte-compatible with prior nesso-only reports. Any other engine writes `schema_version` 4 with an `engines[]` axis and a side-by-side text table. Scoring is unchanged: each engine only supplies ranked 1-based line ids.
 
 - **grep:** `grep -n -F -i -e <query> -- <log>`. If that has no hits, OR the query's whitespace tokens with one `-e` per token. Rank is file order (ascending line id), top 10. This is the "what people do today" baseline.
 - **ripgrep:** the same rule with `rg -n -F -i`. If `rg` is missing, the engine is reported as `skipped` (not zeros).
 - **bm25:** Python stdlib `sqlite3` FTS5, one row per line with `rowid = line id`, query = OR of FTS5-quoted tokens, `ORDER BY bm25(lines), rowid LIMIT 10`. The run fails clearly if the sqlite3 build lacks FTS5.
+- **diy-faiss:** the stack a team would hack together — Hugging Face `sentence-transformers/all-MiniLM-L6-v2` at the pinned revision in `bench/competitors/diy_faiss.py` (fp32, `normalize_embeddings=True`), one vector per log line (no dedup, no masking), FAISS `IndexFlatIP`, top 10, ties broken by line id. CPU only, one thread, fixed seeds. The engine lives in `bench/competitors/diy_faiss.py` and is imported only when selected. Missing packages fail with an install hint. The report's diy-faiss entry records `versions` (model revision plus sentence-transformers, torch, and faiss). Dependencies are hash-pinned in `bench/competitors/diy-faiss.hashes.txt` for a local venv; they are not in the build image, Pipeline, or the nightly job. The pin file avoids the `*requirements*.txt` name so PR dependency-review does not index it.
+
+Fairness for published comparisons: same logs, queries, machine, and k=10. DIY uses the original Hub fp32 MiniLM; nesso uses the shipped int8 ONNX. Compare scores; do not expect identical vectors.
 
 ```bash
 python3 scripts/eval-retrieval --dataset all-2k \
   --engine nesso --engine grep --engine ripgrep --engine bm25 \
   --out build/eval/all_2k_baselines.json
 ```
+
+```bash
+python3.12 -m venv .venv-diy
+.venv-diy/bin/pip install --require-hashes \
+  -r bench/competitors/diy-faiss.hashes.txt \
+  --extra-index-url https://download.pytorch.org/whl/cpu
+PYTHONHASHSEED=0 .venv-diy/bin/python scripts/eval-retrieval --dataset all-2k \
+  --engine diy-faiss --out build/eval/diy_faiss.json
+```
+
+Set `NESSO_EVAL_DIY=1` to run the opt-in live diy-faiss unit test against a tiny fixture (requires the venv packages).
 
 Baseline comparisons are a local or per-release tool: they are not Pipeline and are not the nightly `eval-retrieval` workflow. Published comparisons should be run on a fixed machine.
 

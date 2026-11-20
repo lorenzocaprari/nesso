@@ -1,0 +1,14 @@
+# DIY semantic baseline for scripts/eval-retrieval --engine diy-faiss
+# Compile with:
+#   uv pip compile --python 3.12 --generate-hashes \
+#     --extra-index-url https://download.pytorch.org/whl/cpu \
+#     --index-strategy unsafe-best-match \
+#     bench/competitors/diy-faiss.in -o bench/competitors/diy-faiss.hashes.txt
+sentence-transformers==6.3.0
+torch==2.15.0+cpu
+faiss-cpu==1.16.0
+# GHSA-7mj9-2mp8-4m2p: httpcore2/httpx2 < 2.10.0
+httpx2>=2.10.0
+httpcore2>=2.10.0
+# GHSA-5rjg-fvgr-3xxf / GHSA-h35f-9h28-mq5c: setuptools < 83.0.0
+setuptools>=83.0.0

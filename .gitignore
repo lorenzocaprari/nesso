@@ -10,3 +10,4 @@ build/fuzz/
 fuzz-*.log
 models/
 models-fp32/
+.venv-diy/
