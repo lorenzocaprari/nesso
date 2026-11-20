@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795204399289,
+  "lastUpdate": 1795206100440,
   "repoUrl": "https://github.com/lorenzocaprari/nesso",
   "entries": {
     "nesso": [
@@ -10259,6 +10259,60 @@ window.BENCHMARK_DATA = {
           {
             "name": "grep-100000-rss",
             "value": 147279872,
+            "unit": "bytes"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "caprarilorenzo5@gmail.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "committer": {
+            "email": "85455384+lorenzocaprari@users.noreply.github.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "distinct": true,
+          "id": "36f0c85c040f13134de7652d6078ca1a6591f080",
+          "message": "test(eval): measure speed and memory on the needle windows\n\n--measure now works on the needle datasets: index and query time, peak RSS,\nindex size and ratio, and cold time to first result for every engine on the\nwindow's log and the queries whose alert is in the window. --measure-only\nskips the quality scoring. The measure sections are shared with the 2k path\n(format_measure_sections).\n\nReports and measure tool lists also record a digest of nesso's model.onnx and\nvocab.txt (model_identity), so a run with another embedding model, a\ndifferent quantization or vocabulary cannot be mistaken for this one.",
+          "timestamp": "2026-11-20T21:16:49+01:00",
+          "tree_id": "3a3b6ea9e80a2b6515b2ec4d290eb9b8d75c5522",
+          "url": "https://github.com/lorenzocaprari/nesso/commit/36f0c85c040f13134de7652d6078ca1a6591f080"
+        },
+        "date": 1795206099283,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "grep-1000-wall",
+            "value": 1.21,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-1000-rss",
+            "value": 118112256,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-10000-wall",
+            "value": 1.22,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-10000-rss",
+            "value": 118509568,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-100000-wall",
+            "value": 1.46,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-100000-rss",
+            "value": 146178048,
             "unit": "bytes"
           }
         ]
