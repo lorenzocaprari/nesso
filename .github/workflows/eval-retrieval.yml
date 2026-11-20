@@ -1,19 +1,34 @@
 name: Eval retrieval
 
-# Not a Pipeline job. Scores nesso search ranking on the pinned Loghub 2k seed
-# sets and uploads the JSON report. Schedule and workflow_dispatch on main only.
-# Compares against the previous successful scheduled artifact and warns on
-# relative drops over 5%. Scores never fail the job; only script errors do.
-# No gh-pages write yet.
+# Not a Pipeline job and not in the CI gate. Scores nesso against grep and
+# SQLite BM25 on the pinned Loghub 2k seed sets, and on the BGL 100k needle
+# window (Loghub 2.0, administrators' alert labels). Runs nightly on main, on
+# workflow_dispatch, and on pull requests that touch ranking code, the eval
+# scripts, or the query sets. Every run compares against the latest successful
+# scheduled report on main and warns on relative drops over 5%. Scores never
+# fail the job; only script errors do. No gh-pages write yet.
 on:
   schedule:
     # 06:47 UTC, after real-log at 05:47 UTC (fuzz-test 03:17, index-rss 04:47).
     - cron: "47 6 * * *"
   workflow_dispatch:
+  pull_request:
+    paths:
+      - "src/**"
+      - "CMakeLists.txt"
+      - "conanfile.py"
+      - "conan.lock"
+      - "scripts/eval-retrieval"
+      - "scripts/eval-retrieval-compare"
+      - "scripts/fetch-loghub"
+      - "scripts/fetch-model"
+      - "test/eval/**"
+      - "bench/competitors/**"
+      - ".github/workflows/eval-retrieval.yml"
 
 concurrency:
   group: eval-retrieval-${{ github.ref }}
-  cancel-in-progress: false
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
@@ -36,7 +51,7 @@ jobs:
         with:
           egress-policy: audit
 
-      - name: Require schedule on main or a manual dispatch
+      - name: Require schedule on main, a manual dispatch, or a pull request
         shell: bash
         env:
           EVENT_NAME: ${{ github.event_name }}
@@ -49,7 +64,7 @@ jobs:
             fi
             exit 0
           fi
-          if [[ "${EVENT_NAME}" != "workflow_dispatch" ]]; then
+          if [[ "${EVENT_NAME}" != "workflow_dispatch" && "${EVENT_NAME}" != "pull_request" ]]; then
             echo "eval-retrieval: refusing event ${EVENT_NAME}" >&2
             exit 1
           fi
@@ -107,7 +122,7 @@ jobs:
 
   eval:
     needs: [guard, resolve]
-    if: github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main'
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 120
     permissions:
@@ -166,6 +181,15 @@ jobs:
             build/bench/Apache_2k.log_structured.csv
           key: loghub-all-2k-${{ hashFiles('scripts/fetch-loghub') }}
 
+      - name: Restore BGL needle window
+        id: needle_logs
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            build/bench/BGL_loghub2_4100001_100000.log
+            build/bench/BGL_loghub2_4100001_100000.labels
+          key: loghub2-bgl-needle-100k-${{ hashFiles('scripts/fetch-loghub') }}
+
       - name: Install Dependencies (Conan)
         run: |
           conan profile detect --force
@@ -177,18 +201,30 @@ jobs:
       - name: Fetch Loghub 2k inputs
         run: python3 scripts/fetch-loghub --dataset all-2k
 
+      # A restored window that matches its pin is kept; otherwise the 86 MB
+      # Loghub 2.0 BGL archive is downloaded, checked, cut, and deleted.
+      - name: Fetch BGL needle window
+        run: python3 scripts/fetch-loghub --dataset bgl-loghub2 --window 4100001:100000
+
       - name: Run retrieval evaluation
         run: |
           set -euo pipefail
           mkdir -p build/eval
           python3 scripts/eval-retrieval \
             --dataset all-2k \
+            --engine nesso \
+            --engine grep \
+            --engine bm25 \
             --binary build/Release/src/nesso \
             --model-dir models \
             --out build/eval/all_2k.json \
             | tee build/eval/all_2k.txt
           {
-            echo "### Retrieval evaluation (Loghub 2k seed sets)"
+            if [[ "${GITHUB_EVENT_NAME}" == "pull_request" ]]; then
+              echo "Pull request run: compared below with the latest nightly report on main."
+              echo
+            fi
+            echo "### Retrieval evaluation (Loghub 2k seed sets: nesso, grep, BM25)"
             echo
             current=""
             while IFS= read -r line || [[ -n "${line}" ]]; do
@@ -218,29 +254,57 @@ jobs:
             fi
           } >> "${GITHUB_STEP_SUMMARY}"
 
+      # Labels are the BGL administrators' alert tags, not ours. About 80 s.
+      - name: Run needle evaluation
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/eval-retrieval \
+            --dataset bgl-needle-100k \
+            --engine nesso \
+            --engine grep \
+            --engine bm25 \
+            --modes auto,dense,lexical \
+            --skip-fetch \
+            --binary build/Release/src/nesso \
+            --model-dir models \
+            --out build/eval/needle.json \
+            | tee build/eval/needle.txt
+          {
+            echo
+            echo "### Needle benchmark (BGL 100k, administrators' alert labels: nesso, grep, BM25)"
+            echo
+            echo '```'
+            grep -v '^wrote ' build/eval/needle.txt
+            echo '```'
+          } >> "${GITHUB_STEP_SUMMARY}"
+
       - name: Compare with previous evaluation report
         shell: bash
         run: |
           set -euo pipefail
-          previous="build/eval/previous/all_2k.json"
-          {
-            echo
-            if [[ ! -f "${previous}" ]]; then
-              echo "no previous run to compare"
-              exit 0
-            fi
-            python3 scripts/eval-retrieval-compare \
-              --current build/eval/all_2k.json \
-              --previous "${previous}" \
-              | tee build/eval/compare.txt
-          } >> "${GITHUB_STEP_SUMMARY}"
-          if [[ -f build/eval/compare.txt ]]; then
-            while IFS= read -r line || [[ -n "${line}" ]]; do
-              if [[ "${line}" == DROP\ * ]]; then
-                echo "::warning::${line}"
+          : > build/eval/compare.txt
+          for report in all_2k needle; do
+            previous="build/eval/previous/${report}.json"
+            {
+              echo
+              echo "#### Compare ${report} with the latest nightly report"
+              echo
+              if [[ ! -f "${previous}" ]]; then
+                echo "no previous run to compare"
+              else
+                python3 scripts/eval-retrieval-compare \
+                  --current "build/eval/${report}.json" \
+                  --previous "${previous}" \
+                  | tee -a build/eval/compare.txt
               fi
-            done < build/eval/compare.txt
-          fi
+            } >> "${GITHUB_STEP_SUMMARY}"
+          done
+          while IFS= read -r line || [[ -n "${line}" ]]; do
+            if [[ "${line}" == DROP\ * ]]; then
+              echo "::warning::${line}"
+            fi
+          done < build/eval/compare.txt
 
       - name: Note Loghub 2k inputs are ready to cache
         id: logfiles
@@ -271,7 +335,7 @@ jobs:
           echo "ready=${ready}" >> "${GITHUB_OUTPUT}"
 
       - name: Save Loghub 2k inputs
-        if: always() && !cancelled() && steps.logs.outputs.cache-hit != 'true' && steps.logfiles.outputs.ready == 'true'
+        if: always() && !cancelled() && github.event_name != 'pull_request' && steps.logs.outputs.cache-hit != 'true' && steps.logfiles.outputs.ready == 'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
@@ -289,11 +353,24 @@ jobs:
             build/bench/Apache_2k.log_structured.csv
           key: loghub-all-2k-${{ hashFiles('scripts/fetch-loghub') }}
 
+      - name: Save BGL needle window
+        if: always() && !cancelled() && github.event_name != 'pull_request' && steps.needle_logs.outputs.cache-hit != 'true' && hashFiles('build/bench/BGL_loghub2_4100001_100000.labels') != ''
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            build/bench/BGL_loghub2_4100001_100000.log
+            build/bench/BGL_loghub2_4100001_100000.labels
+          key: loghub2-bgl-needle-100k-${{ hashFiles('scripts/fetch-loghub') }}
+
+      # Pull request reports use their own name so they can never become the
+      # nightly baseline (resolve also filters on the schedule event).
       - name: Upload evaluation report
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: eval-retrieval
-          path: build/eval/all_2k.json
+          name: ${{ github.event_name == 'pull_request' && 'eval-retrieval-pr' || 'eval-retrieval' }}
+          path: |
+            build/eval/all_2k.json
+            build/eval/needle.json
           retention-days: 7
           if-no-files-found: warn
