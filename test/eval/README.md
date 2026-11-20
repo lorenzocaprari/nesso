@@ -29,3 +29,5 @@ python3 scripts/eval-retrieval --dataset all-2k --out build/eval/all_2k.json
 ```
 
 Keyword baselines (`--engine grep`, `ripgrep`, `bm25`), the optional DIY semantic baseline (`--engine diy-faiss`), the optional XERJ baselines (`--engine xerj`, `xerj-neural`), the optional OpenSearch baselines (`--engine opensearch`, `opensearch-knn`), and the semantic-grep CLIs (`--engine ck`, `vecgrep`) reuse these seeds and the same line metrics. See [docs/benchmarks.md](../../docs/benchmarks.md) for setup, fairness notes, and query rules. Those paths are local or per-release, not Pipeline or nightly.
+
+`needles/*.jsonl` are the needle benchmark queries: one `keyword` and one `symptom` query per alert category, with no relevance labels in the file. Relevance comes from the administrators' alert tags in the Loghub 2.0 windows that `scripts/fetch-loghub --window` writes. See [docs/benchmarks.md](../../docs/benchmarks.md#needle-benchmark).

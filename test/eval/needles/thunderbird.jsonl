@@ -1,0 +1,14 @@
+# Needle queries for the Loghub 2.0 Thunderbird window (thunderbird-needle-1m).
+# Relevance is every line the Thunderbird administrators tagged with "alert"
+# (Oliner & Stearley, DSN 2007), read from the window's .labels file. Same
+# keyword / symptom rules as bgl.jsonl.
+{"id":"cpu_kw","class":"keyword","alert":"CPU","meaning":"kernel losing timer ticks, CPU frequency may have changed","query":"Losing some ticks"}
+{"id":"cpu_sym","class":"symptom","alert":"CPU","meaning":"kernel losing timer ticks, CPU frequency may have changed","query":"clock interrupts are being missed and processor speed may have shifted"}
+{"id":"ecc_kw","class":"keyword","alert":"ECC","meaning":"server administrator reports memory device status critical","query":"Memory device status is critical"}
+{"id":"ecc_sym","class":"symptom","alert":"ECC","meaning":"server administrator reports memory device status critical","query":"hardware management agent flagged failing RAM"}
+{"id":"ext_fs_kw","class":"keyword","alert":"EXT_FS","meaning":"EXT3 filesystem error, journal aborted","query":"EXT3-fs error"}
+{"id":"ext_fs_sym","class":"symptom","alert":"EXT_FS","meaning":"EXT3 filesystem error, journal aborted","query":"local disk filesystem gave up on its write-ahead log"}
+{"id":"nmi_kw","class":"keyword","alert":"NMI","meaning":"non-maskable interrupt received","query":"NMI received"}
+{"id":"nmi_sym","class":"symptom","alert":"NMI","meaning":"non-maskable interrupt received","query":"hardware raised an unexpected interrupt that cannot be masked"}
+{"id":"scsi_kw","class":"keyword","alert":"SCSI","meaning":"SCSI layer rejecting I/O to an offline device","query":"rejecting I/O to offline device"}
+{"id":"scsi_sym","class":"symptom","alert":"SCSI","meaning":"SCSI layer rejecting I/O to an offline device","query":"disk controller refuses requests because the drive went away"}
