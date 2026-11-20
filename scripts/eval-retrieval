@@ -23,6 +23,11 @@ byte-compatible with prior nesso-only reports. Any other engine uses
 schema_version 4 with an engines[] axis. Report-only: exit 0 for any scores;
 non-zero only on errors.
 
+Needle datasets (--dataset bgl-needle-100k, bgl-needle-1m,
+thunderbird-needle-1m, all-needle) score each engine on Loghub 2.0 windows
+whose relevance labels are the system administrators' alert tags, not ours.
+They write a separate report kind ("kind": "needle").
+
 Optional --measure (off by default) adds wall time, peak RSS (GNU time), index
 size, and cold time-to-first-result. Quality-only JSON stays byte-identical.
 With --measure the report is machine-dependent. Never a CI or nightly gate.
@@ -613,9 +618,9 @@ def parse_search_json(stdout: str) -> list[dict]:
     return hits
 
 
-def lines_for_hits(hits: list[dict]) -> list[int]:
+def lines_for_hits(hits: list[dict], k: int = K) -> list[int]:
     ranked: list[int] = []
-    for hit in hits[:K]:
+    for hit in hits[:k]:
         try:
             line_id = int(hit["line"])
         except (TypeError, ValueError) as exc:
@@ -798,7 +803,7 @@ class NessoEngine:
             label=f"nesso search ({mode})",
             ok_codes=frozenset({0, 1}),
         )
-        return lines_for_hits(parse_search_json(completed.stdout))
+        return lines_for_hits(parse_search_json(completed.stdout), k)
 
 
 @dataclass
@@ -2463,6 +2468,35 @@ def aggregate_overall_engines(dataset_results: list[dict], engine_names: list[st
     return {"engines": engine_rows, "query_count": total_queries}
 
 
+def make_rank_engine(
+    engine_name: str,
+    *,
+    xerj: XerjContext | None = None,
+    opensearch: OpenSearchContext | None = None,
+) -> RankEngine:
+    """Build any non-nesso engine by name."""
+    if engine_name == "grep":
+        return GrepEngine()
+    if engine_name == "ripgrep":
+        return RipgrepEngine()
+    if engine_name == "bm25":
+        return Bm25Engine()
+    if engine_name == "diy-faiss":
+        return load_diy_faiss_module().DiyFaissEngine()
+    if engine_name == "xerj":
+        return make_xerj_engine(xerj or XerjContext(skip_reason="xerj not configured"), neural=False)
+    if engine_name == "xerj-neural":
+        return make_xerj_engine(xerj or XerjContext(skip_reason="xerj not configured"), neural=True)
+    if engine_name in CHUNK_CLI_ENGINES:
+        return ChunkCliEngine(CHUNK_CLI_SPECS[engine_name])
+    if engine_name in OPENSEARCH_ENGINES:
+        return make_opensearch_engine(
+            opensearch or OpenSearchContext(skip_reason=OPENSEARCH_NOT_CONFIGURED),
+            knn=engine_name == "opensearch-knn",
+        )
+    raise SystemExit(f"error: unknown engine {engine_name!r}")
+
+
 def evaluate_dataset(
     *,
     binary: Path | None,
@@ -2519,28 +2553,7 @@ def evaluate_dataset(
                 }
             )
             continue
-        if engine_name == "grep":
-            engine: RankEngine = GrepEngine()
-        elif engine_name == "ripgrep":
-            engine = RipgrepEngine()
-        elif engine_name == "bm25":
-            engine = Bm25Engine()
-        elif engine_name == "diy-faiss":
-            diy = load_diy_faiss_module()
-            engine = diy.DiyFaissEngine()
-        elif engine_name == "xerj":
-            engine = make_xerj_engine(xerj or XerjContext(skip_reason="xerj not configured"), neural=False)
-        elif engine_name == "xerj-neural":
-            engine = make_xerj_engine(xerj or XerjContext(skip_reason="xerj not configured"), neural=True)
-        elif engine_name in CHUNK_CLI_ENGINES:
-            engine = ChunkCliEngine(CHUNK_CLI_SPECS[engine_name])
-        elif engine_name in OPENSEARCH_ENGINES:
-            engine = make_opensearch_engine(
-                opensearch or OpenSearchContext(skip_reason=OPENSEARCH_NOT_CONFIGURED),
-                knn=engine_name == "opensearch-knn",
-            )
-        else:
-            raise SystemExit(f"error: unknown engine {engine_name!r}")
+        engine = make_rank_engine(engine_name, xerj=xerj, opensearch=opensearch)
         engine_payloads.append(
             evaluate_keyword_engine(
                 engine,
@@ -3703,6 +3716,481 @@ def format_report_with_measure(payload: dict) -> str:
     return "\n".join(sections)
 
 
+# --- Needle benchmark --------------------------------------------------------
+# Windows of the Loghub 2.0 BGL and Thunderbird logs, where the relevant set of
+# a query is every line the system administrators tagged with one alert
+# category (Oliner & Stearley, DSN 2007). scripts/fetch-loghub strips the tag
+# from the text and writes it to a .labels sidecar.
+
+NEEDLES_DIR = ROOT / "test" / "eval" / "needles"
+NEEDLE_DEPTH = 100
+NEEDLE_CLASSES = ("keyword", "symptom")
+NEEDLE_SCHEMA_VERSION = 1
+# Overlap is measured against at most this many relevant lines per query.
+NEEDLE_OVERLAP_SAMPLE = 2000
+
+
+@dataclass(frozen=True)
+class NeedleSpec:
+    name: str
+    source: str  # fetch-loghub dataset
+    stem: str  # fetch-loghub window file stem
+    start: int
+    count: int
+    queries_name: str
+
+    @property
+    def log_path(self) -> Path:
+        return BENCH_DIR / f"{self.stem}_{self.start}_{self.count}.log"
+
+    @property
+    def labels_path(self) -> Path:
+        return BENCH_DIR / f"{self.stem}_{self.start}_{self.count}.labels"
+
+    @property
+    def queries_path(self) -> Path:
+        return NEEDLES_DIR / self.queries_name
+
+    @property
+    def corpus_name(self) -> str:
+        return self.name.replace("-", "_") + ".nesso"
+
+
+DATASETS_NEEDLE: dict[str, NeedleSpec] = {
+    "bgl-needle-100k": NeedleSpec(
+        "bgl-needle-100k", "bgl-loghub2", "BGL_loghub2", 4_100_001, 100_000, "bgl.jsonl"
+    ),
+    "bgl-needle-1m": NeedleSpec(
+        "bgl-needle-1m", "bgl-loghub2", "BGL_loghub2", 3_200_001, 1_000_000, "bgl.jsonl"
+    ),
+    "thunderbird-needle-1m": NeedleSpec(
+        "thunderbird-needle-1m",
+        "thunderbird-loghub2",
+        "Thunderbird_loghub2",
+        8_550_001,
+        1_000_000,
+        "thunderbird.jsonl",
+    ),
+}
+ALL_NEEDLE = "all-needle"
+
+
+@dataclass(frozen=True)
+class NeedleQuery:
+    id: str
+    class_name: str
+    query: str
+    alert: str
+
+
+def load_needle_queries(path: Path) -> list[NeedleQuery]:
+    if not path.is_file():
+        raise SystemExit(f"error: needle query file not found: {path}")
+    queries: list[NeedleQuery] = []
+    seen: set[str] = set()
+    for lineno, raw in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        try:
+            payload = json.loads(line)
+        except json.JSONDecodeError as exc:
+            raise SystemExit(f"error: {path}:{lineno}: invalid JSON: {exc}") from exc
+        if not isinstance(payload, dict):
+            raise SystemExit(f"error: {path}:{lineno}: query must be a JSON object")
+        query_id = payload.get("id")
+        class_name = payload.get("class")
+        text = payload.get("query")
+        alert = payload.get("alert")
+        if not isinstance(query_id, str) or not query_id or query_id in seen:
+            raise SystemExit(f"error: {path}:{lineno}: missing or duplicate id")
+        if class_name not in NEEDLE_CLASSES:
+            raise SystemExit(f"error: {path}:{lineno}: class must be one of {list(NEEDLE_CLASSES)}")
+        if not isinstance(text, str) or not text.strip():
+            raise SystemExit(f"error: {path}:{lineno}: missing query")
+        if not isinstance(alert, str) or not alert or alert == "-":
+            raise SystemExit(f"error: {path}:{lineno}: alert must be an alert category")
+        unknown = set(payload) - {"id", "class", "query", "alert", "meaning"}
+        if unknown:
+            raise SystemExit(f"error: {path}:{lineno}: unknown keys {sorted(unknown)}")
+        seen.add(query_id)
+        queries.append(NeedleQuery(query_id, class_name, text, alert))
+    if not queries:
+        raise SystemExit(f"error: {path}: no queries")
+    return queries
+
+
+def load_labels(path: Path, expected_lines: int) -> list[str]:
+    if not path.is_file():
+        raise SystemExit(f"error: labels file not found: {path}")
+    labels = path.read_text(encoding="utf-8").splitlines()
+    if len(labels) != expected_lines:
+        raise SystemExit(
+            f"error: {path} has {len(labels)} labels but the log has {expected_lines} lines"
+        )
+    return labels
+
+
+def lines_by_alert(labels: list[str]) -> dict[str, frozenset[int]]:
+    grouped: dict[str, set[int]] = {}
+    for line_id, label in enumerate(labels, start=1):
+        if label != "-":
+            grouped.setdefault(label, set()).add(line_id)
+    return {alert: frozenset(ids) for alert, ids in grouped.items()}
+
+
+def word_tokens(text: str) -> set[str]:
+    tokens: set[str] = set()
+    current: list[str] = []
+    for char in text.lower():
+        if char in TOKEN_CHARS:
+            current.append(char)
+        elif current:
+            tokens.add("".join(current))
+            current = []
+    if current:
+        tokens.add("".join(current))
+    return tokens
+
+
+def query_overlap(query: str, relevant: frozenset[int], lines: list[str]) -> float:
+    """Share of the query's word tokens that occur in the relevant lines."""
+    query_tokens = word_tokens(query)
+    if not query_tokens:
+        return 0.0
+    line_tokens: set[str] = set()
+    for line_id in sorted(relevant)[:NEEDLE_OVERLAP_SAMPLE]:
+        line_tokens |= word_tokens(lines[line_id - 1])
+    return len(query_tokens & line_tokens) / len(query_tokens)
+
+
+def precision_at_k(ranked_lines: list[int], relevant: frozenset[int], k: int = K) -> float:
+    top = ranked_lines[:k]
+    if not top:
+        return 0.0
+    return sum(1 for line_id in top if line_id in relevant) / k
+
+
+def first_hit_rank(ranked_lines: list[int], relevant: frozenset[int], depth: int = NEEDLE_DEPTH) -> int | None:
+    for index, line_id in enumerate(ranked_lines[:depth], start=1):
+        if line_id in relevant:
+            return index
+    return None
+
+
+def needle_query_row(query: NeedleQuery, relevant: frozenset[int], ranked: list[int], overlap: float) -> dict:
+    metrics = score_ranking(ranked, relevant)
+    return {
+        "alert": query.alert,
+        "class": query.class_name,
+        "first_hit_rank": first_hit_rank(ranked, relevant),
+        "id": query.id,
+        "metrics": {
+            **metrics_dict(metrics),
+            "precision_at_10": round_metric(precision_at_k(ranked, relevant)),
+        },
+        "overlap": round_metric(overlap),
+        "ranked_lines": ranked[:K],
+        "relevant_count": len(relevant),
+    }
+
+
+def summarize_needle_rows(rows: list[dict]) -> dict:
+    if not rows:
+        return {"n": 0}
+    ranks = [row["first_hit_rank"] for row in rows if row["first_hit_rank"] is not None]
+    names = ("recall_at_10", "mrr", "ndcg_at_10", "precision_at_10")
+    return {
+        "found_at_depth": round_metric(len(ranks) / len(rows)),
+        "median_first_hit_rank": statistics.median(ranks) if ranks else None,
+        "metrics": {
+            name: round_metric(statistics.fmean(row["metrics"][name] for row in rows)) for name in names
+        },
+        "mean_overlap": round_metric(statistics.fmean(row["overlap"] for row in rows)),
+        "n": len(rows),
+    }
+
+
+def needle_buckets(rows: list[dict]) -> dict:
+    return {
+        "by_class": [
+            {"class": name, **summarize_needle_rows([row for row in rows if row["class"] == name])}
+            for name in NEEDLE_CLASSES
+        ],
+        "overall": summarize_needle_rows(rows),
+    }
+
+
+def score_needle_queries(
+    queries: list[NeedleQuery],
+    relevant_by_alert: dict[str, frozenset[int]],
+    overlaps: dict[str, float],
+    rank_fn: Callable[[str], list[int]],
+) -> dict:
+    rows = []
+    for query in queries:
+        relevant = relevant_by_alert[query.alert]
+        rows.append(needle_query_row(query, relevant, rank_fn(query.query), overlaps[query.id]))
+    return {**needle_buckets(rows), "queries": rows}
+
+
+def ensure_needle_inputs(spec: NeedleSpec, *, skip_fetch: bool) -> None:
+    if spec.log_path.is_file() and spec.labels_path.is_file():
+        return
+    if skip_fetch:
+        raise SystemExit(f"error: needle window missing and --skip-fetch is set: {spec.log_path}")
+    run_checked(
+        [
+            sys.executable,
+            str(ROOT / "scripts" / "fetch-loghub"),
+            "--dataset",
+            spec.source,
+            "--window",
+            f"{spec.start}:{spec.count}",
+            "--dest-dir",
+            str(BENCH_DIR),
+        ],
+        label="fetch-loghub",
+    )
+
+
+def parse_needle_datasets(raw: str) -> list[NeedleSpec]:
+    names: list[str] = []
+    for part in (piece.strip() for piece in raw.split(",")):
+        if not part:
+            continue
+        if part == ALL_NEEDLE:
+            names.extend(DATASETS_NEEDLE)
+        elif part in DATASETS_NEEDLE:
+            names.append(part)
+        else:
+            raise SystemExit(
+                f"error: cannot mix needle and other datasets, or unknown needle dataset {part!r}; "
+                f"expected {sorted(DATASETS_NEEDLE) + [ALL_NEEDLE]}"
+            )
+    ordered: list[NeedleSpec] = []
+    for name in dict.fromkeys(names):
+        ordered.append(DATASETS_NEEDLE[name])
+    if not ordered:
+        raise SystemExit("error: --dataset must list at least one needle dataset")
+    return ordered
+
+
+def is_needle_request(raw: str | None) -> bool:
+    if raw is None:
+        return False
+    parts = [part.strip() for part in raw.split(",") if part.strip()]
+    return any(part in DATASETS_NEEDLE or part == ALL_NEEDLE for part in parts)
+
+
+def evaluate_needle_dataset(
+    spec: NeedleSpec,
+    *,
+    engines: list[str],
+    modes: list[str],
+    binary: Path | None,
+    model_dir: Path | None,
+    workdir: Path,
+    xerj: XerjContext,
+    opensearch: OpenSearchContext,
+) -> dict:
+    lines = read_log_lines(spec.log_path)
+    labels = load_labels(spec.labels_path, len(lines))
+    relevant_by_alert = lines_by_alert(labels)
+    all_queries = load_needle_queries(spec.queries_path)
+    queries = [query for query in all_queries if query.alert in relevant_by_alert]
+    absent = sorted({query.alert for query in all_queries} - set(relevant_by_alert))
+    uncovered = sorted(set(relevant_by_alert) - {query.alert for query in all_queries})
+    if not queries:
+        raise SystemExit(f"error: no query in {spec.queries_path} matches an alert in {spec.name}")
+    overlaps = {
+        query.id: query_overlap(query.query, relevant_by_alert[query.alert], lines) for query in queries
+    }
+    workdir.mkdir(parents=True, exist_ok=True)
+    rows: list[dict] = []
+    for engine_name in engines:
+        if engine_name == "nesso":
+            assert binary is not None and model_dir is not None
+            engine = NessoEngine(binary=binary, model_dir=model_dir, corpus=workdir / spec.corpus_name)
+            engine.prepare(spec.log_path, lines, workdir)
+            for mode in modes:
+                scored = score_needle_queries(
+                    queries,
+                    relevant_by_alert,
+                    overlaps,
+                    lambda text, mode=mode: engine.rank_mode(text, mode, k=NEEDLE_DEPTH),
+                )
+                rows.append({"engine": f"nesso/{mode}", "status": "ok", **scored})
+            continue
+        other = make_rank_engine(engine_name, xerj=xerj, opensearch=opensearch)
+        ok, reason = other.availability()
+        if not ok:
+            if engine_name not in SKIPPABLE_ENGINES:
+                raise SystemExit(f"error: {reason}")
+            rows.append({"engine": engine_name, "status": "skipped", "reason": reason})
+            continue
+        try:
+            other.prepare(spec.log_path, lines, workdir)
+            scored = score_needle_queries(
+                queries,
+                relevant_by_alert,
+                overlaps,
+                lambda text: other.rank(text, k=NEEDLE_DEPTH),
+            )
+            row = {"engine": engine_name, "status": "ok", **scored}
+            versions_fn = getattr(other, "versions", None)
+            if callable(versions_fn):
+                row["versions"] = versions_fn()
+            rows.append(row)
+        finally:
+            cleanup = getattr(other, "cleanup", None)
+            if callable(cleanup):
+                cleanup()
+    return {
+        "alert_counts": {alert: len(ids) for alert, ids in sorted(relevant_by_alert.items())},
+        "dataset": spec.name,
+        "engines": rows,
+        "lines": len(lines),
+        "queries_absent_alert": absent,
+        "query_count": len(queries),
+        "uncovered_alerts": uncovered,
+        "window": {"count": spec.count, "source": spec.source, "start": spec.start},
+    }
+
+
+def aggregate_needle_overall(dataset_results: list[dict]) -> list[dict]:
+    names: list[str] = []
+    for dataset in dataset_results:
+        for row in dataset["engines"]:
+            if row["engine"] not in names:
+                names.append(row["engine"])
+    overall: list[dict] = []
+    for name in names:
+        entries = [
+            row for dataset in dataset_results for row in dataset["engines"] if row["engine"] == name
+        ]
+        skipped = [row for row in entries if row["status"] == "skipped"]
+        if skipped:
+            overall.append({"engine": name, "status": "skipped", "reason": skipped[0]["reason"]})
+            continue
+        rows = [query for entry in entries for query in entry["queries"]]
+        overall.append({"engine": name, "status": "ok", **needle_buckets(rows)})
+    return overall
+
+
+def format_needle_table(engines: list[dict]) -> str:
+    headers = ("engine", "class", "n", "p@10", "MRR", "nDCG@10", f"found@{NEEDLE_DEPTH}", "median 1st", "overlap")
+    rows: list[tuple[str, ...]] = []
+    for engine in engines:
+        if engine["status"] == "skipped":
+            rows.append((engine["engine"], "skipped", "-", engine.get("reason", ""), "", "", "", "", ""))
+            continue
+        buckets = [*engine["by_class"], {"class": "overall", **engine["overall"]}]
+        for bucket in buckets:
+            if not bucket.get("n"):
+                continue
+            metrics = bucket["metrics"]
+            median = bucket["median_first_hit_rank"]
+            rows.append(
+                (
+                    engine["engine"],
+                    bucket["class"],
+                    str(bucket["n"]),
+                    f"{metrics['precision_at_10']:0.3f}",
+                    f"{metrics['mrr']:0.3f}",
+                    f"{metrics['ndcg_at_10']:0.3f}",
+                    f"{bucket['found_at_depth']:0.3f}",
+                    "none" if median is None else f"{median:g}",
+                    f"{bucket['mean_overlap']:0.2f}",
+                )
+            )
+    widths = [len(header) for header in headers]
+    for row in rows:
+        for index, cell in enumerate(row):
+            widths[index] = max(widths[index], len(cell))
+    out = [
+        "  ".join(header.ljust(widths[index]) for index, header in enumerate(headers)),
+        "  ".join("-" * widths[index] for index in range(len(headers))),
+    ]
+    for row in rows:
+        out.append("  ".join(cell.ljust(widths[index]) for index, cell in enumerate(row)))
+    return "\n".join(out)
+
+
+def format_needle_report(payload: dict) -> str:
+    sections: list[str] = []
+    for dataset in payload["datasets"]:
+        alerts = dataset["alert_counts"]
+        sections.append(
+            f"=== {dataset['dataset']} ({dataset['lines']} lines, {len(alerts)} alert categories, "
+            f"{sum(alerts.values())} alert lines, {dataset['query_count']} queries) ==="
+        )
+        sections.append(format_needle_table(dataset["engines"]))
+        if dataset["uncovered_alerts"]:
+            sections.append("# alerts without a query: " + ", ".join(dataset["uncovered_alerts"]))
+    sections.append("=== overall ===")
+    sections.append(format_needle_table(payload["overall"]["engines"]))
+    return "\n".join(sections)
+
+
+def run_needles(args: argparse.Namespace, engines: list[str], modes: list[str]) -> None:
+    if args.measure:
+        raise SystemExit("error: --measure is not supported for needle datasets yet")
+    specs = parse_needle_datasets(args.dataset)
+    binary: Path | None = None
+    model_dir: Path | None = None
+    if "nesso" in engines:
+        binary = resolve_binary(args.binary)
+        model_dir = resolve_model_dir(args.model_dir)
+    for spec in specs:
+        ensure_needle_inputs(spec, skip_fetch=args.skip_fetch)
+    xerj = open_xerj_context(
+        engines=engines,
+        xerj_url=args.xerj_url,
+        xerj_bin=args.xerj_bin,
+        xerj_model_dir=args.xerj_model_dir,
+    )
+    opensearch = OpenSearchContext()
+    try:
+        opensearch = open_opensearch_context(
+            engines=engines,
+            opensearch_url=args.opensearch_url,
+            opensearch_home=args.opensearch_home,
+        )
+        results = [
+            evaluate_needle_dataset(
+                spec,
+                engines=engines,
+                modes=modes,
+                binary=binary,
+                model_dir=model_dir,
+                workdir=args.workdir / spec.name,
+                xerj=xerj,
+                opensearch=opensearch,
+            )
+            for spec in specs
+        ]
+    finally:
+        opensearch.shutdown()
+        xerj.shutdown()
+    payload = {
+        "datasets": results,
+        "depth": NEEDLE_DEPTH,
+        "k": K,
+        "kind": "needle",
+        "overall": {
+            "engines": aggregate_needle_overall(results),
+            "query_count": sum(item["query_count"] for item in results),
+        },
+        "schema_version": NEEDLE_SCHEMA_VERSION,
+    }
+    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")) + "\n"
+    args.out.parent.mkdir(parents=True, exist_ok=True)
+    args.out.write_text(encoded, encoding="utf-8")
+    print(format_needle_report(payload))
+    print(f"wrote {args.out}")
+
+
 def main(argv: list[str] | None = None) -> None:
     argv_list = list(sys.argv[1:] if argv is None else argv)
     if argv_list and argv_list[0] == "--measure-worker":
@@ -3715,7 +4203,8 @@ def main(argv: list[str] | None = None) -> None:
         "--dataset",
         default=None,
         help="Comma-separated 2k datasets or all-2k (maps log, CSV, and query file); "
-        "with --measure/--log-prefix-lines also hdfs-v1,bgl,thunderbird,all-full",
+        "with --measure/--log-prefix-lines also hdfs-v1,bgl,thunderbird,all-full; "
+        "or needle windows bgl-needle-100k,bgl-needle-1m,thunderbird-needle-1m,all-needle",
     )
     parser.add_argument("--queries", type=Path, default=DEFAULT_QUERIES, help="JSONL query set")
     parser.add_argument("--log", type=Path, default=DEFAULT_LOG, help="Loghub 2k log path")
@@ -3817,6 +4306,9 @@ def main(argv: list[str] | None = None) -> None:
         raise SystemExit("error: --repeat must be a positive integer")
 
     engines = parse_engines(args.engines)
+    if is_needle_request(args.dataset):
+        run_needles(args, engines, parse_modes(args.modes))
+        return
     nesso_only = engines == ["nesso"]
     needs_nesso = "nesso" in engines
     binary: Path | None = None

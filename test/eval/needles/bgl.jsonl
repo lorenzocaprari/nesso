@@ -1,0 +1,61 @@
+# Needle queries for the Loghub 2.0 BGL windows (bgl-needle-100k, bgl-needle-1m).
+# Relevance is not written here: it is every line the BGL administrators tagged
+# with "alert" (Oliner & Stearley, DSN 2007), read from the window's .labels file.
+# "meaning" is what the category's messages report, written for review.
+# keyword: the terse terms an engineer would grep for.
+# symptom: an operator's description that avoids the log's own words where it can;
+# the report prints each query's token overlap with the relevant lines.
+{"id":"appchild_kw","class":"keyword","alert":"APPCHILD","meaning":"I/O daemon cannot build the node map: no child processes","query":"No child processes"}
+{"id":"appchild_sym","class":"symptom","alert":"APPCHILD","meaning":"I/O daemon cannot build the node map: no child processes","query":"job launcher could not fork helpers while loading the topology layout"}
+{"id":"appres_kw","class":"keyword","alert":"APPRES","meaning":"I/O daemon stream closed by the remote side","query":"Connection reset by peer"}
+{"id":"appres_sym","class":"symptom","alert":"APPRES","meaning":"I/O daemon stream closed by the remote side","query":"the far end abruptly tore down the I/O daemon's network session"}
+{"id":"appsev_kw","class":"keyword","alert":"APPSEV","meaning":"I/O daemon stream lost after a load message","query":"Link has been severed"}
+{"id":"appsev_sym","class":"symptom","alert":"APPSEV","meaning":"I/O daemon stream lost after a load message","query":"job load request broke because the network path was cut"}
+{"id":"appto_kw","class":"keyword","alert":"APPTO","meaning":"I/O daemon stream timed out","query":"Connection timed out"}
+{"id":"appto_sym","class":"symptom","alert":"APPTO","meaning":"I/O daemon stream timed out","query":"I/O daemon gave up waiting for the front-end host to answer"}
+{"id":"apptorus_kw","class":"keyword","alert":"APPTORUS","meaning":"uncorrectable error on the torus interconnect","query":"uncorrectable torus error"}
+{"id":"apptorus_sym","class":"symptom","alert":"APPTORUS","meaning":"uncorrectable error on the torus interconnect","query":"unrecoverable fault on the 3D mesh network between compute chips"}
+{"id":"kerndtlb_kw","class":"keyword","alert":"KERNDTLB","meaning":"data TLB error interrupt","query":"data TLB error"}
+{"id":"kerndtlb_sym","class":"symptom","alert":"KERNDTLB","meaning":"data TLB error interrupt","query":"processor address translation cache fault"}
+{"id":"kernext_kw","class":"keyword","alert":"KERNEXT","meaning":"tree network header arrived with no receiver waiting","query":"tree header with no target"}
+{"id":"kernext_sym","class":"symptom","alert":"KERNEXT","meaning":"tree network header arrived with no receiver waiting","query":"collective network delivered a message nobody was listening for"}
+{"id":"kernmc_kw","class":"keyword","alert":"KERNMC","meaning":"machine check interrupt","query":"machine check interrupt"}
+{"id":"kernmc_sym","class":"symptom","alert":"KERNMC","meaning":"machine check interrupt","query":"CPU hardware self-test tripped on a cache fault"}
+{"id":"kernmicro_kw","class":"keyword","alert":"KERNMICRO","meaning":"microloader assertion","query":"Microloader Assertion"}
+{"id":"kernmicro_sym","class":"symptom","alert":"KERNMICRO","meaning":"microloader assertion","query":"boot firmware loader hit a failed sanity check"}
+{"id":"kernmnt_kw","class":"keyword","alert":"KERNMNT","meaning":"kernel unable to mount a filesystem","query":"unable to mount filesystem"}
+{"id":"kernmnt_sym","class":"symptom","alert":"KERNMNT","meaning":"kernel unable to mount a filesystem","query":"I/O node could not attach a disk volume at startup"}
+{"id":"kernmntf_kw","class":"keyword","alert":"KERNMNTF","meaning":"Lustre mount failed","query":"Lustre mount FAILED"}
+{"id":"kernmntf_sym","class":"symptom","alert":"KERNMNTF","meaning":"Lustre mount failed","query":"parallel cluster storage could not be attached on an I/O node"}
+{"id":"kernnoeth_kw","class":"keyword","alert":"KERNNOETH","meaning":"no ethernet link","query":"no ethernet link"}
+{"id":"kernnoeth_sym","class":"symptom","alert":"KERNNOETH","meaning":"no ethernet link","query":"network cable unplugged or the NIC lost carrier"}
+{"id":"kernpan_kw","class":"keyword","alert":"KERNPAN","meaning":"kernel panic","query":"kernel panic"}
+{"id":"kernpan_sym","class":"symptom","alert":"KERNPAN","meaning":"kernel panic","query":"operating system core crashed and halted the node"}
+{"id":"kernpow_kw","class":"keyword","alert":"KERNPOW","meaning":"power deactivated on a node card","query":"Power deactivated"}
+{"id":"kernpow_sym","class":"symptom","alert":"KERNPOW","meaning":"power deactivated on a node card","query":"electrical supply was switched off for a board"}
+{"id":"kernprog_kw","class":"keyword","alert":"KERNPROG","meaning":"program interrupt","query":"program interrupt"}
+{"id":"kernprog_sym","class":"symptom","alert":"KERNPROG","meaning":"program interrupt","query":"processor trapped on an illegal instruction"}
+{"id":"kernrec_kw","class":"keyword","alert":"KERNREC","meaning":"error receiving a tree network packet of the wrong type","query":"Error receiving packet on tree network"}
+{"id":"kernrec_sym","class":"symptom","alert":"KERNREC","meaning":"error receiving a tree network packet of the wrong type","query":"collective network got a message of an unexpected kind"}
+{"id":"kernrtsp_kw","class":"keyword","alert":"KERNRTSP","meaning":"runtime system panic, execution stopped","query":"rts panic"}
+{"id":"kernrtsp_sym","class":"symptom","alert":"KERNRTSP","meaning":"runtime system panic, execution stopped","query":"runtime crashed and froze the compute job"}
+{"id":"kernserv_kw","class":"keyword","alert":"KERNSERV","meaning":"power good signal dropped, service action needed","query":"Power Good signal deactivated"}
+{"id":"kernserv_sym","class":"symptom","alert":"KERNSERV","meaning":"power good signal dropped, service action needed","query":"board needs a technician because its supply health indicator went down"}
+{"id":"kernsock_kw","class":"keyword","alert":"KERNSOCK","meaning":"mailbox monitor socket closed","query":"socket closed"}
+{"id":"kernsock_sym","class":"symptom","alert":"KERNSOCK","meaning":"mailbox monitor socket closed","query":"monitoring loop lost its inter-process connection"}
+{"id":"kernstor_kw","class":"keyword","alert":"KERNSTOR","meaning":"data storage interrupt","query":"data storage interrupt"}
+{"id":"kernstor_sym","class":"symptom","alert":"KERNSTOR","meaning":"data storage interrupt","query":"processor faulted on a bad memory access"}
+{"id":"kernterm_kw","class":"keyword","alert":"KERNTERM","meaning":"runtime terminated the kernel with a reason code","query":"kernel terminated for reason"}
+{"id":"kernterm_sym","class":"symptom","alert":"KERNTERM","meaning":"runtime terminated the kernel with a reason code","query":"compute node OS was shut down by the runtime with an error code"}
+{"id":"linkbll_kw","class":"keyword","alert":"LINKBLL","meaning":"link card port clear failed","query":"bll_clear_port failed"}
+{"id":"linkbll_sym","class":"symptom","alert":"LINKBLL","meaning":"link card port clear failed","query":"could not wipe a port on the interconnect switch board"}
+{"id":"linkiap_kw","class":"keyword","alert":"LINKIAP","meaning":"link card training (iap) failed","query":"iap failed"}
+{"id":"linkiap_sym","class":"symptom","alert":"LINKIAP","meaning":"link card training (iap) failed","query":"link training on the interconnect switch did not complete"}
+{"id":"linkpap_kw","class":"keyword","alert":"LINKPAP","meaning":"link card parity alignment (pap) failed","query":"pap failed"}
+{"id":"linkpap_sym","class":"symptom","alert":"LINKPAP","meaning":"link card parity alignment (pap) failed","query":"lane alignment check on the interconnect switch went wrong"}
+{"id":"masabnorm_kw","class":"keyword","alert":"MASABNORM","meaning":"control database daemon exited abnormally","query":"ciodb exited abnormally"}
+{"id":"masabnorm_sym","class":"symptom","alert":"MASABNORM","meaning":"control database daemon exited abnormally","query":"central job-control database service died unexpectedly"}
+{"id":"mmcs_kw","class":"keyword","alert":"MMCS","meaning":"management system reports an L3 major internal error","query":"L3 major internal error"}
+{"id":"mmcs_sym","class":"symptom","alert":"MMCS","meaning":"management system reports an L3 major internal error","query":"control system saw a severe level-3 cache fault"}
+{"id":"monpow_kw","class":"keyword","alert":"MONPOW","meaning":"power module fault or missing power module","query":"power module status fault"}
+{"id":"monpow_sym","class":"symptom","alert":"MONPOW","meaning":"power module fault or missing power module","query":"monitoring found a broken or absent supply unit on a board"}

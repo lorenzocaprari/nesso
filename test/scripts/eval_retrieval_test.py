@@ -1647,6 +1647,160 @@ class EvalRetrievalChunkCliTest(unittest.TestCase):
         self.assertTrue(ttfr_root_has_marker)
 
 
+class EvalRetrievalNeedleTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.mod = load_eval()
+
+    def test_metrics_helpers(self) -> None:
+        mod = self.mod
+        relevant = frozenset({3, 7})
+        self.assertEqual(mod.precision_at_k([1, 3, 7], relevant), 0.2)
+        self.assertEqual(mod.precision_at_k([], relevant), 0.0)
+        self.assertEqual(mod.first_hit_rank([1, 2, 7], relevant), 3)
+        self.assertIsNone(mod.first_hit_rank([1, 2], relevant))
+        self.assertIsNone(mod.first_hit_rank([1, 2, 3], relevant, depth=2))
+        self.assertEqual(mod.word_tokens("Data TLB-error: x_1"), {"data", "tlb", "error", "x_1"})
+        lines = ["data TLB error interrupt", "kernel panic"]
+        self.assertEqual(mod.query_overlap("data TLB fault", frozenset({1}), lines), 2 / 3)
+        self.assertEqual(mod.query_overlap("", frozenset({1}), lines), 0.0)
+        self.assertEqual(
+            mod.lines_by_alert(["-", "KERNDTLB", "-", "KERNDTLB", "APPSEV"]),
+            {"KERNDTLB": frozenset({2, 4}), "APPSEV": frozenset({5})},
+        )
+
+    def test_query_file_validation(self) -> None:
+        mod = self.mod
+        cases = {
+            '{"id":"a","class":"paraphrase","query":"x","alert":"K"}': "class must be",
+            '{"id":"a","class":"keyword","query":"x"}': "alert must be",
+            '{"id":"a","class":"keyword","query":"x","alert":"-"}': "alert must be",
+            '{"id":"a","class":"keyword","query":"x","alert":"K","relevant_lines":[1]}': "unknown keys",
+            '{"id":"a","class":"keyword","query":"x","alert":"K"}\n{"id":"a","class":"symptom","query":"y","alert":"K"}': "duplicate id",
+        }
+        with tempfile.TemporaryDirectory() as temp:
+            path = pathlib.Path(temp) / "q.jsonl"
+            for content, message in cases.items():
+                path.write_text(content + "\n", encoding="utf-8")
+                with self.assertRaises(SystemExit) as raised:
+                    mod.load_needle_queries(path)
+                self.assertIn(message, str(raised.exception), content)
+
+    def test_committed_query_sets_pair_keyword_and_symptom(self) -> None:
+        mod = self.mod
+        for name in ("bgl.jsonl", "thunderbird.jsonl"):
+            queries = mod.load_needle_queries(mod.NEEDLES_DIR / name)
+            by_alert: dict[str, list[str]] = {}
+            for query in queries:
+                by_alert.setdefault(query.alert, []).append(query.class_name)
+            for alert, classes in by_alert.items():
+                self.assertEqual(sorted(classes), ["keyword", "symptom"], f"{name} {alert}")
+        bgl_alerts = {query.alert for query in mod.load_needle_queries(mod.NEEDLES_DIR / "bgl.jsonl")}
+        self.assertEqual(len(bgl_alerts), 27)
+        thunderbird = mod.load_needle_queries(mod.NEEDLES_DIR / "thunderbird.jsonl")
+        self.assertEqual({query.alert for query in thunderbird}, {"CPU", "ECC", "EXT_FS", "NMI", "SCSI"})
+
+    def test_needle_windows_match_fetch_loghub_pins(self) -> None:
+        mod = self.mod
+        loader = importlib.machinery.SourceFileLoader("fetch_loghub_pins", str(ROOT / "scripts" / "fetch-loghub"))
+        spec = importlib.util.spec_from_loader(loader.name, loader)
+        assert spec is not None
+        fetch = importlib.util.module_from_spec(spec)
+        loader.exec_module(fetch)
+        for needle in mod.DATASETS_NEEDLE.values():
+            self.assertIn((needle.source, needle.start, needle.count), fetch.WINDOW_PINS)
+            self.assertEqual(fetch.LABELLED_SETS[needle.source].stem, needle.stem)
+
+    def test_end_to_end_with_grep_and_bm25(self) -> None:
+        mod = self.mod
+        with tempfile.TemporaryDirectory() as temp:
+            directory = pathlib.Path(temp)
+            bench = directory / "bench"
+            needles = directory / "needles"
+            bench.mkdir()
+            needles.mkdir()
+            lines = [
+                "RAS KERNEL INFO data TLB error interrupt",
+                "RAS KERNEL FATAL data TLB error interrupt",
+                "RAS APP FATAL ciod: Error reading message prefix, Link has been severed",
+                "RAS KERNEL INFO instruction cache parity error corrected",
+                "RAS KERNEL FATAL kernel panic",
+            ]
+            labels = ["-", "KERNDTLB", "APPSEV", "-", "KERNPAN"]
+            (bench / "BGL_loghub2_1_5.log").write_text("\n".join(lines) + "\n", encoding="utf-8")
+            (bench / "BGL_loghub2_1_5.labels").write_text("\n".join(labels) + "\n", encoding="utf-8")
+            (needles / "q.jsonl").write_text(
+                "\n".join(
+                    [
+                        '{"id":"dtlb_kw","class":"keyword","alert":"KERNDTLB","query":"data TLB error"}',
+                        '{"id":"dtlb_sym","class":"symptom","alert":"KERNDTLB","query":"address translation fault"}',
+                        '{"id":"micro_kw","class":"keyword","alert":"KERNMICRO","query":"Microloader Assertion"}',
+                    ]
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            spec = mod.NeedleSpec("tiny-needle", "bgl-loghub2", "BGL_loghub2", 1, 5, "q.jsonl")
+            old_bench, old_needles = mod.BENCH_DIR, mod.NEEDLES_DIR
+            mod.BENCH_DIR, mod.NEEDLES_DIR = bench, needles
+            try:
+                result = mod.evaluate_needle_dataset(
+                    spec,
+                    engines=["grep", "bm25"],
+                    modes=["dense"],
+                    binary=None,
+                    model_dir=None,
+                    workdir=directory / "work",
+                    xerj=mod.XerjContext(),
+                    opensearch=mod.OpenSearchContext(),
+                )
+            finally:
+                mod.BENCH_DIR, mod.NEEDLES_DIR = old_bench, old_needles
+        self.assertEqual(result["alert_counts"], {"APPSEV": 1, "KERNDTLB": 1, "KERNPAN": 1})
+        self.assertEqual(result["queries_absent_alert"], ["KERNMICRO"])
+        self.assertEqual(result["uncovered_alerts"], ["APPSEV", "KERNPAN"])
+        self.assertEqual(result["query_count"], 2)
+        grep = next(row for row in result["engines"] if row["engine"] == "grep")
+        keyword = next(row for row in grep["queries"] if row["id"] == "dtlb_kw")
+        # File order: the INFO line (not an alert) comes first, the FATAL one second.
+        self.assertEqual(keyword["ranked_lines"][:2], [1, 2])
+        self.assertEqual(keyword["first_hit_rank"], 2)
+        self.assertEqual(keyword["metrics"]["precision_at_10"], 0.1)
+        self.assertEqual(keyword["overlap"], 1.0)
+        symptom = next(row for row in grep["queries"] if row["id"] == "dtlb_sym")
+        self.assertIsNone(symptom["first_hit_rank"])
+        self.assertEqual(symptom["overlap"], 0.0)
+        overall = mod.aggregate_needle_overall([result])
+        self.assertEqual([row["engine"] for row in overall], ["grep", "bm25"])
+        self.assertEqual(overall[0]["overall"]["n"], 2)
+        self.assertEqual(overall[0]["overall"]["found_at_depth"], 0.5)
+        table = mod.format_needle_report(
+            {"datasets": [result], "overall": {"engines": overall, "query_count": 2}}
+        )
+        self.assertIn("tiny-needle (5 lines, 3 alert categories, 3 alert lines, 2 queries)", table)
+        self.assertIn("# alerts without a query: APPSEV, KERNPAN", table)
+
+    def test_cli_rejects_mixing_and_measure(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            out = pathlib.Path(temp) / "out.json"
+            mixed = subprocess.run(
+                [sys.executable, str(SCRIPT), "--dataset", "bgl-needle-100k,hdfs-2k", "--engine", "grep", "--out", str(out)],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertNotEqual(mixed.returncode, 0)
+            self.assertIn("cannot mix needle", mixed.stderr)
+            measured = subprocess.run(
+                [sys.executable, str(SCRIPT), "--dataset", "all-needle", "--engine", "grep", "--measure", "--out", str(out)],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertNotEqual(measured.returncode, 0)
+            self.assertIn("--measure is not supported", measured.stderr)
+
+
 class EvalRetrievalMeasureStatsTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:

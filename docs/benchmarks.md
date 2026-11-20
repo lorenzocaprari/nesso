@@ -131,6 +131,36 @@ Each `--window START:COUNT` (1-based start line, repeatable) writes `build/bench
 
 The windows were chosen to hold the most distinct alert categories at each size, scanning Loghub 2.0 in 50,000-line steps. Loghub data is for research use and stays out of the repository.
 
+### Needle benchmark
+
+`scripts/eval-retrieval --dataset bgl-needle-100k` (also `bgl-needle-1m`, `thunderbird-needle-1m`, or `all-needle`) scores engines on those windows. Each query names one alert category, and its relevant set is every line the administrators tagged with that category. We write the queries; we do not write the labels. The task is "something like this happened, show me the lines", with real distractors. The same message text often appears untagged at a lower severity, and on Thunderbird 32 alert lines sit among 1,000,000.
+
+`test/eval/needles/bgl.jsonl` (27 categories) and `test/eval/needles/thunderbird.jsonl` (5 categories) hold two queries per category:
+
+- `keyword`: the terse terms an engineer would grep for, for example `data TLB error`.
+- `symptom`: an operator's description that avoids the log's own words where it can, for example `processor address translation cache fault`.
+
+Each query records the category's `meaning` for review. The report prints each class's mean token `overlap` with the relevant lines, so a symptom query that drifts into the log's vocabulary shows up instead of hiding. Queries whose category is absent from a window are left out of that window, and categories without a query are listed.
+
+Metrics per engine and class:
+
+| Column | Meaning |
+| --- | --- |
+| `p@10` | Share of the top 10 lines that carry the category |
+| `MRR`, `nDCG@10` | As in the 2k eval, on the tagged line set |
+| `found@100` | Share of queries with at least one tagged line in the top 100 |
+| `median 1st` | Median rank of the first tagged line, among queries that found one ("how far would I scroll") |
+| `overlap` | Mean share of query tokens that occur in the tagged lines |
+
+Every engine works here, nesso in each `--modes` value. diy-faiss, OpenSearch k-NN, ck, and vecgrep embed every line, which takes hours at 1,000,000 lines, so run them on `bgl-needle-100k`. The report is JSON with `"kind": "needle"` and its own `schema_version`; it is not the 2k report shape, and `scripts/eval-retrieval-compare` does not read it. `--measure` is not supported for needle datasets yet. This is a local or per-release run, not Pipeline or nightly.
+
+```bash
+python3 scripts/eval-retrieval --dataset bgl-needle-100k \
+  --engine nesso --engine grep --engine bm25 --out build/eval/needle_bgl_100k.json
+python3 scripts/eval-retrieval --dataset thunderbird-needle-1m,bgl-needle-1m \
+  --engine nesso --engine grep --engine bm25 --modes auto,dense,lexical --out build/eval/needle_1m.json
+```
+
 ### Retrieval eval `--measure`
 
 Off by default. Without it, quality JSON stays byte-identical with prior runs. With `--measure`, the report gains a top-level `measure` object that is machine-dependent and must not be used as a CI or nightly gate.
