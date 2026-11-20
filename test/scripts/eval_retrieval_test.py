@@ -1144,6 +1144,152 @@ class EvalRetrievalEsCompatTest(unittest.TestCase):
         self.assertTrue(NESSO_ONLY_GOLDEN.endswith(b'"schema_version":3}\n'))
 
 
+class EvalRetrievalMeasureStatsTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.mod = load_eval()
+
+    def test_median_odd_and_even(self) -> None:
+        self.assertEqual(self.mod.median_value([1.0, 2.0, 3.0]), 2.0)
+        self.assertEqual(self.mod.median_value([1.0, 2.0, 3.0, 4.0]), 2.5)
+        self.assertIsNone(self.mod.median_value([]))
+
+    def test_percentile_p95_nearest_rank(self) -> None:
+        # ceil(0.95 * 20) - 1 == 18 → value 19 for 1..20
+        self.assertEqual(self.mod.percentile_p95([float(x) for x in range(1, 21)]), 19.0)
+        self.assertEqual(self.mod.percentile_p95([1.0]), 1.0)
+        self.assertIsNone(self.mod.percentile_p95([]))
+
+    def test_index_to_log_ratio_and_none(self) -> None:
+        self.assertEqual(self.mod.index_to_log_ratio(200, 100), 2.0)
+        self.assertIsNone(self.mod.index_to_log_ratio(None, 100))
+        self.assertEqual(self.mod.format_measure_none(None), "none")
+        self.assertEqual(self.mod.format_measure_none(1.5), "1.500000")
+
+    def test_no_index_fields_are_null(self) -> None:
+        fields = self.mod.no_index_fields(100)
+        self.assertIsNone(fields["indexWallSeconds"])
+        self.assertIsNone(fields["indexPeakRssBytes"])
+        self.assertIsNone(fields["indexBytes"])
+        self.assertIsNone(fields["indexToLogRatio"])
+        table = self.mod.format_measure_table(
+            {
+                "name": "hdfs-2k",
+                "engines": [
+                    {
+                        "engine": "grep",
+                        "status": "ok",
+                        **fields,
+                        "queryWallSeconds": 0.1,
+                        "queryPeakRssBytes": 1024,
+                        "queryLatencyMedianSeconds": 0.01,
+                        "queryLatencyP95Seconds": 0.02,
+                        "timeToFirstResultSeconds": 0.05,
+                    }
+                ],
+            }
+        )
+        self.assertIn("none", table)
+
+
+@unittest.skipUnless(
+    pathlib.Path(os.environ.get("NESSO_BENCH_TIME", "/usr/bin/time")).is_file(),
+    "GNU time required",
+)
+class EvalRetrievalMeasureRssWrapperTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.mod = load_eval()
+
+    def test_execute_timed_fake_child(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            directory = pathlib.Path(temp)
+            time_path = directory / "time.txt"
+            result = self.mod.execute_timed(
+                [sys.executable, "-c", "print('worker-ok')"],
+                time_path,
+            )
+        self.assertEqual(result["exitCode"], 0)
+        self.assertIn("worker-ok", result["stdout"])
+        self.assertIsInstance(result["wallSeconds"], float)
+        self.assertGreaterEqual(result["wallSeconds"], 0.0)
+        self.assertIsInstance(result["peakRssBytes"], int)
+        self.assertGreater(result["peakRssBytes"], 0)
+
+    def test_measure_worker_bm25_index_json(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            directory = pathlib.Path(temp)
+            log_path = directory / "log.txt"
+            log_path.write_text("alpha one\nbeta two\ngamma three\n", encoding="utf-8")
+            workdir = directory / "work"
+            payload = self.mod.run_measure_worker(
+                engine="bm25",
+                phase="index",
+                log_path=log_path,
+                workdir=workdir,
+                queries=[],
+            )
+        self.assertIsInstance(payload["wallSeconds"], float)
+        self.assertIsInstance(payload["peakRssBytes"], int)
+        self.assertGreater(payload["indexBytes"], 0)
+        self.assertEqual(payload["latencySeconds"], [])
+
+
+@unittest.skipUnless(os.environ.get("NESSO_EVAL_MEASURE") == "1", "set NESSO_EVAL_MEASURE=1")
+class EvalRetrievalMeasureLiveTest(unittest.TestCase):
+    def test_measure_hdfs_2k_smoke(self) -> None:
+        mod = load_eval()
+        out = pathlib.Path(tempfile.mkdtemp()) / "measure.json"
+        # Prefer a real binary when present; otherwise skip.
+        try:
+            binary = mod.resolve_binary(None)
+        except SystemExit as exc:
+            self.skipTest(str(exc))
+        log_path = ROOT / "build" / "bench" / "HDFS_2k.log"
+        structured = ROOT / "build" / "bench" / "HDFS_2k.log_structured.csv"
+        if not log_path.is_file() or not structured.is_file():
+            self.skipTest("HDFS_2k fixtures missing; run scripts/fetch-loghub --dataset hdfs-2k")
+        completed = subprocess.run(
+            [
+                sys.executable,
+                str(SCRIPT),
+                "--dataset",
+                "hdfs-2k",
+                "--engine",
+                "nesso",
+                "--engine",
+                "grep",
+                "--modes",
+                "dense",
+                "--binary",
+                str(binary),
+                "--measure",
+                "--repeat",
+                "1",
+                "--skip-fetch",
+                "--out",
+                str(out),
+                "--workdir",
+                str(out.parent / "work"),
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        payload = json.loads(out.read_text(encoding="utf-8"))
+        self.assertIn("measure", payload)
+        measure = payload["measure"]
+        self.assertEqual(measure["repeat"], 1)
+        self.assertIn("cpuModel", measure)
+        self.assertIn("tool", measure)
+        engines = {row["engine"]: row for row in measure["datasets"][0]["engines"]}
+        self.assertIn("nesso", engines)
+        self.assertIn("grep", engines)
+        self.assertIsNone(engines["grep"]["indexBytes"])
+        self.assertIsNotNone(engines["nesso"]["indexBytes"])
+
+
 @unittest.skipUnless(os.environ.get("NESSO_EVAL_DIY") == "1", "set NESSO_EVAL_DIY=1")
 class EvalRetrievalDiyFaissLiveTest(unittest.TestCase):
     def test_real_stack_tiny_fixture(self) -> None:
