@@ -110,17 +110,13 @@ def ranker_label(engine: str) -> str:
     return engine.removeprefix("nesso/")
 
 
-def flatten(report: dict[str, Any]) -> dict[tuple[str, str, str, str], float]:
-    """Map (system, ranker, class, metric) -> score."""
-    flat: dict[tuple[str, str, str, str], float] = {}
+def iter_buckets(report: dict[str, Any]) -> list[tuple[str, str, str, dict[str, Any]]]:
+    """Every (system, ranker, class, bucket) in report order."""
+    found: list[tuple[str, str, str, dict[str, Any]]] = []
 
     def add_buckets(system: str, ranker: str, payload: dict[str, Any]) -> None:
         for class_name, bucket in index_classes(payload).items():
-            metrics = metrics_from(bucket)
-            if metrics is None:
-                continue
-            for metric, value in metrics.items():
-                flat[(system, ranker, class_name, metric)] = value
+            found.append((system, ranker, class_name, bucket))
 
     def add_modes(system: str, modes_payload: Any) -> None:
         for mode_name, mode in index_modes(modes_payload).items():
@@ -159,7 +155,112 @@ def flatten(report: dict[str, Any]) -> dict[tuple[str, str, str, str], float]:
     if isinstance(overall, dict):
         add_scope("overall", overall)
 
+    return found
+
+
+def flatten(report: dict[str, Any]) -> dict[tuple[str, str, str, str], float]:
+    """Map (system, ranker, class, metric) -> score."""
+    flat: dict[tuple[str, str, str, str], float] = {}
+    for system, ranker, class_name, bucket in iter_buckets(report):
+        metrics = metrics_from(bucket)
+        if metrics is None:
+            continue
+        for metric, value in metrics.items():
+            flat[(system, ranker, class_name, metric)] = value
     return flat
+
+
+def query_counts(report: dict[str, Any]) -> dict[tuple[str, str, str], int]:
+    counts: dict[tuple[str, str, str], int] = {}
+    for system, ranker, class_name, bucket in iter_buckets(report):
+        count = bucket.get("n")
+        if isinstance(count, int) and not isinstance(count, bool):
+            counts[(system, ranker, class_name)] = count
+    return counts
+
+
+NESSO_MODES = ("auto", "hybrid", "dense", "lexical")
+# Below this many queries, one query moves a class's MRR by more than ~3%.
+NOISE_QUERY_COUNT = 30
+
+
+def headline_nesso_mode(flat: dict[tuple[str, str, str, str], float]) -> str | None:
+    present = {ranker for _system, ranker, _class, _metric in flat}
+    for mode in NESSO_MODES:
+        if mode in present:
+            return mode
+    return None
+
+
+def margins(current: dict[str, Any], references: list[dict[str, Any]]) -> str:
+    """Per system and class: nesso against the best other engine, by MRR."""
+    cur = flatten(current)
+    counts = query_counts(current)
+    nesso = headline_nesso_mode(cur)
+    family = report_family(current)
+    if nesso is None:
+        return f"### nesso margin ({family})\n\nno nesso rows in the current report\n"
+    rivals: dict[tuple[str, str], dict[str, tuple[float, float, str]]] = {}
+
+    def add_rivals(flat: dict[tuple[str, str, str, str], float], source: str) -> None:
+        for (system, ranker, class_name, metric), value in flat.items():
+            if metric != "mrr" or ranker in NESSO_MODES:
+                continue
+            bucket = rivals.setdefault((system, class_name), {})
+            if ranker in bucket:
+                continue
+            bucket[ranker] = (value, flat.get((system, ranker, class_name, "ndcg_at_10"), 0.0), source)
+
+    add_rivals(cur, "this run")
+    used = 0
+    for reference in references:
+        if report_family(reference) != family:
+            continue
+        used += 1
+        add_rivals(flatten(reference), "reference")
+
+    order: list[tuple[str, str]] = []
+    for system, ranker, class_name, _bucket in iter_buckets(current):
+        if ranker == nesso and (system, class_name) not in order and (system, nesso, class_name, "mrr") in cur:
+            order.append((system, class_name))
+
+    lines = [
+        f"### nesso margin ({family}, nesso `{nesso}` against the best other engine by MRR)",
+        "",
+        "| system | class | n | nesso MRR | nesso nDCG@10 | best other | other MRR | other nDCG@10 | margin |",
+        "| --- | --- | --- | --- | --- | --- | --- | --- | --- |",
+    ]
+    small = False
+    for system, class_name in order:
+        count = counts.get((system, nesso, class_name))
+        if count is not None and count < NOISE_QUERY_COUNT:
+            small = True
+        nesso_mrr = cur[(system, nesso, class_name, "mrr")]
+        nesso_ndcg = cur.get((system, nesso, class_name, "ndcg_at_10"), 0.0)
+        candidates = rivals.get((system, class_name), {})
+        if candidates:
+            name, (other_mrr, other_ndcg, source) = max(candidates.items(), key=lambda item: (item[1][0], item[0]))
+            label = name if source == "this run" else f"{name} (reference)"
+            other = [label, f"{other_mrr:.3f}", f"{other_ndcg:.3f}", f"{nesso_mrr - other_mrr:+.3f}"]
+        else:
+            other = ["none", "—", "—", "—"]
+        lines.append(
+            "| "
+            + " | ".join(
+                [system, class_name, "—" if count is None else str(count), f"{nesso_mrr:.3f}", f"{nesso_ndcg:.3f}", *other]
+            )
+            + " |"
+        )
+    lines.append("")
+    lines.append(
+        f"Margin is nesso MRR minus the best other engine's MRR. References used: {used}."
+        + (
+            f" Some classes have fewer than {NOISE_QUERY_COUNT} queries; there one query moves MRR by more than 1/{NOISE_QUERY_COUNT}, so small margins are noise."
+            if small
+            else ""
+        )
+    )
+    return "\n".join(lines) + "\n"
 
 
 def format_score(value: float | None) -> str:
@@ -259,7 +360,19 @@ def compare(current: dict[str, Any], previous: dict[str, Any], tolerance: float)
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--current", type=Path, required=True, help="Current eval JSON report")
-    parser.add_argument("--previous", type=Path, required=True, help="Previous eval JSON report")
+    parser.add_argument("--previous", type=Path, default=None, help="Previous eval JSON report")
+    parser.add_argument(
+        "--margins",
+        action="store_true",
+        help="Print nesso against the best other engine per system and class (no --previous needed)",
+    )
+    parser.add_argument(
+        "--reference",
+        type=Path,
+        action="append",
+        default=None,
+        help="Report with more engines for --margins (repeatable; other report kinds are ignored)",
+    )
     parser.add_argument(
         "--tolerance",
         type=float,
@@ -275,10 +388,16 @@ def main() -> int:
     except ValueError as exc:
         raise SystemExit(f"error: invalid tolerance: {exc}") from exc
 
+    if args.previous is None and not args.margins:
+        raise SystemExit("error: pass --previous, --margins, or both")
     current = load_report(args.current)
-    previous = load_report(args.previous)
-    text, _drops = compare(current, previous, tolerance)
-    sys.stdout.write(text)
+    if args.margins:
+        references = [load_report(path) for path in args.reference or []]
+        sys.stdout.write(margins(current, references))
+    if args.previous is not None:
+        previous = load_report(args.previous)
+        text, _drops = compare(current, previous, tolerance)
+        sys.stdout.write(text)
     return 0
 
 

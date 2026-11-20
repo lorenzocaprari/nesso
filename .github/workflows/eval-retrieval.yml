@@ -5,7 +5,8 @@ name: Eval retrieval
 # window (Loghub 2.0, administrators' alert labels). Runs nightly on main, on
 # workflow_dispatch, and on pull requests that touch ranking code, the eval
 # scripts, or the query sets. Every run compares against the latest successful
-# scheduled report on main and warns on relative drops over 5%. Scores never
+# scheduled report on main and warns on relative drops over 5%. The summary
+# also shows nesso's margin over the best other engine per class. Scores never
 # fail the job; only script errors do. No gh-pages write yet.
 on:
   schedule:
@@ -278,6 +279,28 @@ jobs:
             grep -v '^wrote ' build/eval/needle.txt
             echo '```'
           } >> "${GITHUB_STEP_SUMMARY}"
+
+      # nesso against the best other engine per class: the baselines scored in
+      # this run, plus the committed reference reports of the heavy competitors
+      # (test/eval/reference/, from the eval-competitors workflow) when present.
+      - name: Nesso margin against other engines
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          references=()
+          for file in test/eval/reference/*.json; do
+            references+=(--reference "${file}")
+          done
+          for report in all_2k needle; do
+            {
+              echo
+              python3 scripts/eval-retrieval-compare \
+                --current "build/eval/${report}.json" \
+                --margins \
+                "${references[@]}"
+            } >> "${GITHUB_STEP_SUMMARY}"
+          done
 
       - name: Compare with previous evaluation report
         shell: bash

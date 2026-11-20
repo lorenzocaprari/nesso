@@ -170,6 +170,12 @@ Which model each semantic engine uses matters for reading the results. **Same-mo
 
 `scripts/eval-retrieval-merge` combines engine reports (`schema_version` 4) or needle reports that cover the same datasets into one report, in input order. It refuses a mix of kinds, different datasets, and an engine that appears twice. `--markdown` also writes the overall table.
 
+### nesso margin
+
+`scripts/eval-retrieval-compare --current report.json --margins` prints, per system and class, nesso against the best other engine by MRR. It needs no previous report. The headline nesso ranker is `auto`, else the first of `hybrid`, `dense`, `lexical` present. The candidates are the engines scored in the same report plus the reports passed with `--reference` (repeatable). A reference that is a different kind (2k engine report or needle) is ignored, and an engine in the current report wins over the same engine in a reference. The margin is nesso MRR minus the best other MRR, and the table notes classes with fewer than 30 queries, where one query moves MRR by more than 1/30 and small margins are noise. `--margins` and `--previous` can be combined.
+
+The `eval-retrieval` workflow prints this table for the 2k report and the needle report in every run. Its candidates are grep and BM25 from that run, plus the committed reports in `test/eval/reference/` when present, which come from the `eval-competitors` workflow (see that directory's README for the refresh steps).
+
 ### Retrieval eval `--measure`
 
 Off by default. Without it, quality JSON stays byte-identical with prior runs. With `--measure`, the report gains a top-level `measure` object that is machine-dependent and must not be used as a CI or nightly gate.

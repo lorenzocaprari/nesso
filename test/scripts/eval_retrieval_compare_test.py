@@ -293,5 +293,76 @@ class EvalRetrievalCompareTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("schema_version mismatch: current=needle 1 previous=retrieval 3", result.stdout)
 
+    def run_margins(self, current: dict, references: list[dict], extra: list[str] | None = None) -> subprocess.CompletedProcess[str]:
+        with tempfile.TemporaryDirectory() as temp:
+            directory = pathlib.Path(temp)
+            current_path = directory / "current.json"
+            current_path.write_text(json.dumps(current), encoding="utf-8")
+            command = ["python3", str(COMPARE), "--current", str(current_path), "--margins"]
+            for index, payload in enumerate(references):
+                path = directory / f"ref{index}.json"
+                path.write_text(json.dumps(payload), encoding="utf-8")
+                command += ["--reference", str(path)]
+            return subprocess.run(command + (extra or []), capture_output=True, text=True, check=False)
+
+    def test_margins_pick_the_best_other_engine(self) -> None:
+        current = engine_report(
+            [
+                {"engine": "nesso", "modes": [mode_entry("auto", class_metrics=metrics(1.0, 0.6, 0.6)), mode_entry("dense")], "status": "ok"},
+                baseline_entry("grep", metrics(0.2, 0.2, 0.2)),
+                baseline_entry("bm25", metrics(0.5, 0.5, 0.5)),
+            ]
+        )
+        result = self.run_margins(current, [])
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("nesso `auto` against the best other engine by MRR", result.stdout)
+        # nesso MRR 0.6 against bm25 0.5; grep and the nesso `dense` mode are not candidates.
+        self.assertIn("| hdfs-2k | paraphrase | 1 | 0.600 | 0.600 | bm25 | 0.500 | 0.500 | +0.100 |", result.stdout)
+        self.assertIn("References used: 0.", result.stdout)
+
+    def test_margins_use_references_and_flag_small_classes(self) -> None:
+        current = engine_report(
+            [
+                {"engine": "nesso", "modes": [mode_entry("auto", class_metrics=metrics(1.0, 0.6, 0.6))], "status": "ok"},
+                baseline_entry("bm25", metrics(0.5, 0.5, 0.5)),
+            ]
+        )
+        reference = engine_report([baseline_entry("diy-faiss", metrics(0.9, 0.9, 0.9)), baseline_entry("bm25", metrics(0.99, 0.99, 0.99))])
+        result = self.run_margins(current, [reference, needle_report([needle_entry("ck", 1.0, 1.0)])])
+        self.assertEqual(result.returncode, 0, result.stderr)
+        # The reference's diy-faiss is the best other engine; its bm25 does not override this run's bm25.
+        self.assertIn("| hdfs-2k | paraphrase | 1 | 0.600 | 0.600 | diy-faiss (reference) | 0.900 | 0.900 | -0.300 |", result.stdout)
+        # The needle reference is ignored for an engine report.
+        self.assertIn("References used: 1.", result.stdout)
+        self.assertIn("fewer than 30 queries", result.stdout)
+
+    def test_margins_for_needle_reports_and_missing_nesso(self) -> None:
+        current = needle_report([needle_entry("nesso/auto", 0.4, 0.2), needle_entry("grep", 0.1, 0.1)])
+        result = self.run_margins(current, [])
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("| bgl-needle-100k | symptom | 1 | 0.400 | 0.400 | grep | 0.100 | 0.100 | +0.300 |", result.stdout)
+        no_nesso = self.run_margins(engine_report([baseline_entry("bm25")]), [])
+        self.assertEqual(no_nesso.returncode, 0, no_nesso.stderr)
+        self.assertIn("no nesso rows", no_nesso.stdout)
+
+    def test_margins_and_previous_can_be_combined_but_one_is_required(self) -> None:
+        current = engine_report([{"engine": "nesso", "modes": [mode_entry("auto")], "status": "ok"}, baseline_entry("bm25")])
+        with tempfile.TemporaryDirectory() as temp:
+            path = pathlib.Path(temp) / "r.json"
+            path.write_text(json.dumps(current), encoding="utf-8")
+            neither = subprocess.run(["python3", str(COMPARE), "--current", str(path)], capture_output=True, text=True, check=False)
+            both = subprocess.run(
+                ["python3", str(COMPARE), "--current", str(path), "--previous", str(path), "--margins"],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+        self.assertNotEqual(neither.returncode, 0)
+        self.assertIn("pass --previous, --margins, or both", neither.stderr)
+        self.assertEqual(both.returncode, 0, both.stderr)
+        self.assertIn("### nesso margin", both.stdout)
+        self.assertIn("### Retrieval eval compare", both.stdout)
+
+
 if __name__ == "__main__":
     unittest.main()
