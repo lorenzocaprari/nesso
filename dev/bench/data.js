@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795196838115,
+  "lastUpdate": 1795198007912,
   "repoUrl": "https://github.com/lorenzocaprari/nesso",
   "entries": {
     "nesso": [
@@ -10043,6 +10043,60 @@ window.BENCHMARK_DATA = {
           {
             "name": "grep-100000-rss",
             "value": 146042880,
+            "unit": "bytes"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "caprarilorenzo5@gmail.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "committer": {
+            "email": "85455384+lorenzocaprari@users.noreply.github.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "distinct": true,
+          "id": "a67a80fd9ff9d1306a778e506daa727733bfafdb",
+          "message": "test(eval): score xerj's default semantic search as shipped\n\nAdd --engine xerj-semantic: text mapped as semantic_text and queried with\nsemantic on a node that keeps xerj's default lexical feature-hashing\nembedder. That is xerj out of the box; xerj-neural (MiniLM) is its opt-in\nmode. A run that also selects xerj-neural shares a neural node, so\nxerj-semantic reports skipped there. The eval-competitors workflow scores it\nin its own job.",
+          "timestamp": "2026-11-20T18:58:40+01:00",
+          "tree_id": "740fb0da1d6f69a7abf377a090e91abbaaa32539",
+          "url": "https://github.com/lorenzocaprari/nesso/commit/a67a80fd9ff9d1306a778e506daa727733bfafdb"
+        },
+        "date": 1795198006933,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "grep-1000-wall",
+            "value": 0.15,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-1000-rss",
+            "value": 118493184,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-10000-wall",
+            "value": 0.16,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-10000-rss",
+            "value": 118824960,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-100000-wall",
+            "value": 0.33,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-100000-rss",
+            "value": 145907712,
             "unit": "bytes"
           }
         ]
