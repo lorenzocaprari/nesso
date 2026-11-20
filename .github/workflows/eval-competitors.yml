@@ -7,20 +7,17 @@ name: Eval competitors
 # --measure, because runner timings are too noisy to publish. Each engine runs
 # in its own job; the merge job combines whatever finished into one 2k report
 # and one needle report. The merged reports are the source for the committed
-# reference in test/eval/reference/. Runs on workflow_dispatch, and on pull
-# requests that change this workflow, the merge script, or the competitor pins.
+# reference in test/eval/reference/. Manual only (workflow_dispatch): a full
+# run takes over an hour and its nine jobs compete with Pipeline for runners,
+# so it never runs on pull requests. To check a change to this workflow, run
+# it on the branch with `gh workflow run eval-competitors.yml --ref <branch>`.
 # nesso is not built here; the eval-retrieval workflow scores it.
 on:
   workflow_dispatch:
-  pull_request:
-    paths:
-      - ".github/workflows/eval-competitors.yml"
-      - "scripts/eval-retrieval-merge"
-      - "bench/competitors/**"
 
 concurrency:
   group: eval-competitors-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  cancel-in-progress: false
 
 permissions:
   contents: read
