@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795178639451,
+  "lastUpdate": 1795180614465,
   "repoUrl": "https://github.com/lorenzocaprari/nesso",
   "entries": {
     "nesso": [
@@ -9665,6 +9665,60 @@ window.BENCHMARK_DATA = {
           {
             "name": "grep-100000-rss",
             "value": 144482304,
+            "unit": "bytes"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "caprarilorenzo5@gmail.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "committer": {
+            "email": "85455384+lorenzocaprari@users.noreply.github.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "distinct": true,
+          "id": "238645e781b42324e96c8153254366caae42cf4f",
+          "message": "test(eval): score the ck and vecgrep semantic-grep CLIs\n\nRun ck --sem and vecgrep as installed, each in its own corpus directory\nholding only the log, and parse their JSON results. Both rank multi-line\nchunks; the adapter orders chunks by score, then start line, and emits\neach chunk's lines in file order without repeats, up to 10. --threshold 0\nkeeps ck's 0.6 default from cutting the list short. A missing executable\nreports skipped. --measure covers index, queries and time to first result.\n\nLocal or per-release only, not Pipeline or nightly.",
+          "timestamp": "2026-11-20T14:10:59+01:00",
+          "tree_id": "3bf535b84970b1dff6eb95e25d61f725d85d284f",
+          "url": "https://github.com/lorenzocaprari/nesso/commit/238645e781b42324e96c8153254366caae42cf4f"
+        },
+        "date": 1795180613487,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "grep-1000-wall",
+            "value": 0.13,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-1000-rss",
+            "value": 119549952,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-10000-wall",
+            "value": 0.14,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-10000-rss",
+            "value": 117960704,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-100000-wall",
+            "value": 0.3,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-100000-rss",
+            "value": 144568320,
             "unit": "bytes"
           }
         ]
