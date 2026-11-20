@@ -77,6 +77,38 @@ EncodeFn = Callable[[Sequence[str]], Any]
 MakeIndexFn = Callable[[Any], Any]
 
 
+def load_model(sentence_transformers: Any) -> Any:
+    return sentence_transformers(MODEL_ID, revision=MODEL_REVISION, device="cpu")
+
+
+def encode_normalized(model: Any, np: Any, texts: Sequence[str]) -> Any:
+    """Encode texts to an L2-normalized float32 (n, dim) matrix."""
+    embeddings = model.encode(
+        list(texts),
+        normalize_embeddings=True,
+        convert_to_numpy=True,
+        show_progress_bar=False,
+    )
+    return np.asarray(embeddings, dtype=np.float32)
+
+
+def make_encoder() -> Callable[[Sequence[str]], list[list[float]]]:
+    """Return the diy-faiss MiniLM encoder as plain float lists (for other engines).
+
+    Raises SystemExit with the install hint when the optional stack is missing.
+    """
+    faiss, np, torch, SentenceTransformer = import_diy_stack()
+    apply_determinism(torch, faiss)
+    model = load_model(SentenceTransformer)
+
+    def encode(texts: Sequence[str]) -> list[list[float]]:
+        if not texts:
+            return []
+        return encode_normalized(model, np, texts).tolist()
+
+    return encode
+
+
 @dataclass
 class DiyFaissEngine:
     """Brute-force FAISS IP over sentence-transformers MiniLM embeddings."""
@@ -125,18 +157,8 @@ class DiyFaissEngine:
         assert self._sentence_transformers is not None
         assert self._faiss is not None
         assert self._np is not None
-        model = self._sentence_transformers(
-            MODEL_ID,
-            revision=MODEL_REVISION,
-            device="cpu",
-        )
-        embeddings = model.encode(
-            list(lines),
-            normalize_embeddings=True,
-            convert_to_numpy=True,
-            show_progress_bar=False,
-        )
-        matrix = self._np.asarray(embeddings, dtype=self._np.float32)
+        model = load_model(self._sentence_transformers)
+        matrix = encode_normalized(model, self._np, lines)
         if matrix.ndim != 2 or matrix.shape[0] != len(lines):
             raise SystemExit(
                 f"error: diy-faiss encode returned shape {getattr(matrix, 'shape', None)}; "
@@ -159,13 +181,7 @@ class DiyFaissEngine:
         else:
             assert self._model is not None
             assert self._np is not None
-            query_vec = self._model.encode(
-                [query],
-                normalize_embeddings=True,
-                convert_to_numpy=True,
-                show_progress_bar=False,
-            )
-            query_vec = self._np.asarray(query_vec, dtype=self._np.float32)
+            query_vec = encode_normalized(self._model, self._np, [query])
             scores, indices = self._index.search(query_vec, self._n)
         row_scores = scores[0]
         row_indices = indices[0]
@@ -195,11 +211,7 @@ class DiyFaissEngine:
         self._index = self._faiss.read_index(str(path))
         self._n = n
         assert self._sentence_transformers is not None
-        self._model = self._sentence_transformers(
-            MODEL_ID,
-            revision=MODEL_REVISION,
-            device="cpu",
-        )
+        self._model = load_model(self._sentence_transformers)
 
     def versions(self) -> dict[str, str]:
         if self.encode_fn is not None and self.make_index_fn is not None:

@@ -883,10 +883,25 @@ class _FakeEsHandler(http.server.BaseHTTPRequestHandler):
         if body:
             self.wfile.write(body)
 
+    def do_GET(self) -> None:  # noqa: N802
+        path = self.path.split("?", 1)[0]
+        state = self.server.state  # type: ignore[attr-defined]
+        if path == "/":
+            self._send(200, {"version": {"number": state["version"]}})
+            return
+        if path == "/_cat/plugins":
+            self._send(200, [{"component": name} for name in state["plugins"]])
+            return
+        if path == "/_cluster/health":
+            self._send(200, {"status": "green"})
+            return
+        self._send(404, {"error": "not_found"})
+
     def do_PUT(self) -> None:  # noqa: N802
         path = self.path.split("?", 1)[0]
-        self._read_json()
+        body = self._read_json()
         self.server.state["indices"].add(path.strip("/"))  # type: ignore[attr-defined]
+        self.server.state["put_bodies"][path.strip("/")] = body  # type: ignore[attr-defined]
         self._send(200, {"acknowledged": True})
 
     def do_DELETE(self) -> None:  # noqa: N802
@@ -918,14 +933,16 @@ class _FakeEsHandler(http.server.BaseHTTPRequestHandler):
             errors = any("error" in item["index"] for item in items)
             self._send(200, {"errors": errors, "items": items})
             return
-        if len(parts) == 2 and parts[1] == "_refresh":
+        if len(parts) == 2 and parts[1] in ("_refresh", "_flush"):
             self._read_json()
+            self.server.state["calls"].append(parts[1])  # type: ignore[attr-defined]
             self._send(200, {"_shards": {"successful": 1}})
             return
         if len(parts) == 2 and parts[1] == "_search":
             index = parts[0]
             body = self._read_json()
             assert isinstance(body, dict)
+            self.server.state["search_bodies"].append(body)  # type: ignore[attr-defined]
             size = int(body.get("size", 10))
             canned = self.server.state.get("search_hits")  # type: ignore[attr-defined]
             if canned is not None:
@@ -952,6 +969,11 @@ class _FakeEsServer(http.server.ThreadingHTTPServer):
             "docs": {},
             "bulk_error": None,
             "search_hits": None,
+            "put_bodies": {},
+            "search_bodies": [],
+            "calls": [],
+            "version": "9.9.9-fake",
+            "plugins": [],
         }
 
 
@@ -1122,6 +1144,11 @@ class EvalRetrievalEsCompatTest(unittest.TestCase):
         self.assertEqual(payload["versions"]["url_mode"], "external")
         self.assertEqual(payload["versions"]["xerj_version"], "fake-xerj")
         self.assertIn("index_seconds", payload["versions"])
+        # OpenSearch generalization must not add keys to the xerj report.
+        self.assertEqual(
+            set(payload["versions"]),
+            {"index_seconds", "url_mode", "xerj_version"},
+        )
         self.assertEqual(payload["queries"][0]["ranked_lines"], [1])
         report = {
             "datasets": [
@@ -1142,6 +1169,264 @@ class EvalRetrievalEsCompatTest(unittest.TestCase):
     def test_nesso_only_golden_unchanged(self) -> None:
         # Re-assert the frozen schema-3 bytes still match after xerj wiring.
         self.assertTrue(NESSO_ONLY_GOLDEN.endswith(b'"schema_version":3}\n'))
+
+
+def _run_eval_cli(directory: pathlib.Path, extra: list[str], env: dict[str, str]) -> tuple[
+    subprocess.CompletedProcess[str], pathlib.Path
+]:
+    log_path = directory / "sample.log"
+    log_path.write_text("alpha\nbeta\n", encoding="utf-8")
+    structured = directory / "structured.csv"
+    structured.write_text("LineId,EventId\n1,E1\n2,E2\n", encoding="utf-8")
+    queries = directory / "queries.jsonl"
+    queries.write_text(
+        '{"id":"q1","class":"exact_id","query":"alpha","relevant_lines":[1]}\n',
+        encoding="utf-8",
+    )
+    out = directory / "out.json"
+    completed = subprocess.run(
+        [
+            sys.executable,
+            str(SCRIPT),
+            *extra,
+            "--log",
+            str(log_path),
+            "--structured",
+            str(structured),
+            "--queries",
+            str(queries),
+            "--out",
+            str(out),
+            "--workdir",
+            str(directory / "work"),
+            "--skip-fetch",
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+        env=env,
+    )
+    return completed, out
+
+
+def _env_without_opensearch() -> dict[str, str]:
+    env = os.environ.copy()
+    env.pop("OPENSEARCH_HOME", None)
+    return env
+
+
+class EvalRetrievalOpenSearchTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.mod = load_eval()
+
+    def _start_server(self) -> tuple[_FakeEsServer, str]:
+        server = _FakeEsServer(("127.0.0.1", 0), _FakeEsHandler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        self._server = server
+        host, port = server.server_address[:2]
+        return server, f"http://{host}:{port}"
+
+    def tearDown(self) -> None:
+        server = getattr(self, "_server", None)
+        if server is not None:
+            server.shutdown()
+            server.server_close()
+
+    def test_external_probe_and_lexical_engine(self) -> None:
+        mod = self.mod
+        server, base_url = self._start_server()
+        server.state["search_hits"] = [
+            {"_id": "2", "_score": 1.0},
+            {"_id": "1", "_score": 1.0},
+        ]
+        ctx = mod.open_opensearch_context(
+            engines=["opensearch", "opensearch-knn"],
+            opensearch_url=base_url + "/",
+            opensearch_home=None,
+        )
+        self.assertEqual(ctx.version, "9.9.9-fake")
+        self.assertEqual(ctx.url_mode, "external")
+        # No k-NN plugin on the fake node: the k-NN engine is skipped, not zeroed.
+        skipped = mod.make_opensearch_engine(ctx, knn=True, encoder=lambda texts: [])
+        ok, reason = skipped.availability()
+        self.assertFalse(ok)
+        self.assertIn("opensearch-knn", reason)
+
+        engine = mod.make_opensearch_engine(ctx, knn=False)
+        with tempfile.TemporaryDirectory() as temp:
+            directory = pathlib.Path(temp)
+            payload = mod.evaluate_keyword_engine(
+                engine,
+                queries=[mod.Query("q1", "exact_id", "alpha", frozenset({1}), None)],
+                event_by_line={1: "E1", 2: "E2"},
+                log_path=directory / "log",
+                lines=["alpha", "beta"],
+                workdir=directory,
+            )
+        put = server.state["put_bodies"][mod.OPENSEARCH_INDEX_LEXICAL]
+        self.assertEqual(put["settings"]["index"]["number_of_shards"], 1)
+        self.assertEqual(put["settings"]["index"]["number_of_replicas"], 0)
+        self.assertEqual(
+            server.state["search_bodies"][0],
+            {"size": 10, "_source": False, "query": {"match": {"text": "alpha"}}},
+        )
+        self.assertEqual(payload["status"], "ok")
+        self.assertEqual(payload["queries"][0]["ranked_lines"], [1, 2])
+        versions = payload["versions"]
+        self.assertEqual(versions["opensearch_version"], "9.9.9-fake")
+        self.assertEqual(versions["java_opts"], "external")
+        self.assertNotIn("xerj_version", versions)
+        report = {
+            "datasets": [{"dataset": "hdfs-2k", "engines": [payload], "query_count": 1}],
+            "k": 10,
+            "overall": {"engines": [payload], "query_count": 1},
+            "schema_version": 4,
+        }
+        text = mod.format_report(report)
+        self.assertIn("opensearch_version=9.9.9-fake", text)
+        self.assertNotIn("xerj_version", text)
+
+    def test_knn_engine_sends_vectors(self) -> None:
+        mod = self.mod
+        server, base_url = self._start_server()
+        server.state["plugins"] = ["opensearch-knn"]
+        server.state["search_hits"] = [{"_id": "2", "_score": 0.9}]
+        ctx = mod.open_opensearch_context(
+            engines=["opensearch-knn"],
+            opensearch_url=base_url,
+            opensearch_home=None,
+        )
+        self.assertIsNone(ctx.knn_skip_reason)
+
+        def encoder(texts: list[str]) -> list[list[float]]:
+            return [[float(len(text)), 0.5] for text in texts]
+
+        engine = mod.make_opensearch_engine(ctx, knn=True, encoder=encoder)
+        with tempfile.TemporaryDirectory() as temp:
+            directory = pathlib.Path(temp)
+            engine.prepare(directory / "log", ["a", "bbb"], directory)
+            docs = dict(server.state["docs"][mod.OPENSEARCH_INDEX_KNN])
+            ranked = engine.rank("cc", k=5)
+            engine.flush()
+            versions = engine.versions()
+            engine.cleanup()
+        self.assertEqual(ranked, [2])
+        put = server.state["put_bodies"][mod.OPENSEARCH_INDEX_KNN]
+        self.assertTrue(put["settings"]["index"]["knn"])
+        vec_mapping = put["mappings"]["properties"]["vec"]
+        self.assertEqual(vec_mapping["type"], "knn_vector")
+        self.assertEqual(vec_mapping["dimension"], 384)
+        self.assertEqual(vec_mapping["method"]["name"], "hnsw")
+        self.assertEqual(docs["2"], {"line": 2, "text": "bbb", "vec": [3.0, 0.5]})
+        # cleanup() drops the index.
+        self.assertNotIn(mod.OPENSEARCH_INDEX_KNN, server.state["docs"])
+        self.assertEqual(
+            server.state["search_bodies"][0],
+            {
+                "size": 5,
+                "_source": False,
+                "query": {"knn": {"vec": {"vector": [2.0, 0.5], "k": 5}}},
+            },
+        )
+        self.assertIn("_flush", server.state["calls"])
+        self.assertEqual(versions["knn_method"], "hnsw/lucene/cosinesimil")
+        self.assertEqual(versions["model_revision"], "1110a243fdf4706b3f48f1d95db1a4f5529b4d41")
+
+    def test_knn_bulk_documents_carry_vectors(self) -> None:
+        mod = self.mod
+        ctx = mod.OpenSearchContext(url="http://127.0.0.1:1", version="x")
+        engine = mod.make_opensearch_engine(
+            ctx,
+            knn=True,
+            encoder=lambda texts: [[1.0] for _ in texts],
+        )
+        docs = engine._bulk_docs(7, ["x", "y"])
+        self.assertEqual(
+            docs,
+            [
+                {"line": 7, "text": "x", "vec": [1.0]},
+                {"line": 8, "text": "y", "vec": [1.0]},
+            ],
+        )
+        short = mod.make_opensearch_engine(ctx, knn=True, encoder=lambda texts: [])
+        with self.assertRaises(SystemExit) as raised:
+            short._bulk_docs(1, ["x"])
+        self.assertIn("0 vectors", str(raised.exception))
+
+    def test_skipped_without_home_or_url(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            directory = pathlib.Path(temp)
+            completed, out = _run_eval_cli(
+                directory,
+                ["--engine", "opensearch", "--engine", "opensearch-knn"],
+                _env_without_opensearch(),
+            )
+            self.assertEqual(completed.returncode, 0, completed.stderr + completed.stdout)
+            report = json.loads(out.read_text(encoding="utf-8"))
+        engines = {item["engine"]: item for item in report["datasets"][0]["engines"]}
+        for name in ("opensearch", "opensearch-knn"):
+            self.assertEqual(engines[name]["status"], "skipped")
+            self.assertIn("OpenSearch not configured", engines[name]["reason"])
+            self.assertNotIn("metrics", engines[name])
+
+    def test_spawn_failure_reports_log_tail(self) -> None:
+        mod = self.mod
+        with tempfile.TemporaryDirectory() as temp:
+            home = pathlib.Path(temp) / "opensearch"
+            (home / "bin").mkdir(parents=True)
+            launcher = home / "bin" / "opensearch"
+            launcher.write_text(
+                "#!/bin/sh\necho \"fake opensearch: $OPENSEARCH_JAVA_OPTS\"\nexit 3\n",
+                encoding="utf-8",
+            )
+            launcher.chmod(launcher.stat().st_mode | stat.S_IXUSR)
+            with self.assertRaises(SystemExit) as raised:
+                mod.open_opensearch_context(
+                    engines=["opensearch"],
+                    opensearch_url=None,
+                    opensearch_home=str(home),
+                )
+        message = str(raised.exception)
+        self.assertIn("OpenSearch exited with code 3", message)
+        self.assertIn(f"fake opensearch: {mod.opensearch_java_opts()}", message)
+
+    def test_missing_launcher_is_an_error(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            with self.assertRaises(SystemExit) as raised:
+                self.mod.resolve_opensearch_home(temp)
+        self.assertIn("launcher not found", str(raised.exception))
+
+    def test_version_from_home_reads_jar_name(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            home = pathlib.Path(temp)
+            (home / "lib").mkdir()
+            (home / "lib" / "opensearch-core-3.1.0.jar").write_bytes(b"")
+            self.assertEqual(self.mod.opensearch_version_from_home(home), "unknown")
+            (home / "lib" / "opensearch-3.1.0.jar").write_bytes(b"")
+            self.assertEqual(self.mod.opensearch_version_from_home(home), "3.1.0")
+
+    def test_url_must_be_loopback(self) -> None:
+        with self.assertRaises(SystemExit) as raised:
+            self.mod.assert_loopback_url("http://example.com:9200", flag="--opensearch-url")
+        self.assertIn("--opensearch-url", str(raised.exception))
+
+    def test_measure_refuses_external_url(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            completed, _out = _run_eval_cli(
+                pathlib.Path(temp),
+                [
+                    "--engine",
+                    "opensearch",
+                    "--measure",
+                    "--opensearch-url",
+                    "http://127.0.0.1:9200",
+                ],
+                _env_without_opensearch(),
+            )
+        self.assertNotEqual(completed.returncode, 0)
+        self.assertIn("not --opensearch-url", completed.stderr)
 
 
 class EvalRetrievalMeasureStatsTest(unittest.TestCase):
