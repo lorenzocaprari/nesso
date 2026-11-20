@@ -425,9 +425,9 @@ static std::vector<GrepHit> HybridGrepHits(const std::vector<GrepWaiting> &all_l
     const std::vector<double> &bm25_scores = lexical.scores;
     std::vector<double> dense_values;
     dense_values.reserve(all_lines.size());
-    for (size_t index = 0; index < all_lines.size(); ++index)
+    for (const GrepWaiting &item : all_lines)
     {
-        dense_values.push_back(static_cast<double>(scores[all_lines[index].distinct_id]));
+        dense_values.push_back(static_cast<double>(scores[item.distinct_id]));
     }
     const std::vector<float> fused = nesso::core::FuseHybridScores(dense_values, bm25_scores, lexical.coverage);
     std::vector<GrepHit> hits;
