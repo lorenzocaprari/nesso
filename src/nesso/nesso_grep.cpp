@@ -140,6 +140,7 @@ struct GrepEmbedState
 struct GrepBm25
 {
     std::vector<double> scores;
+    std::vector<double> coverage;
     EffectiveMode effective = EffectiveMode::Dense;
     bool lexical_fallback = false;
 };
@@ -344,7 +345,8 @@ static TextResults DenseGrepResults(GrepEmbedState &state, TextResults results)
 }
 
 static GrepBm25 BuildGrepBm25Scores(const std::vector<GrepWaiting> &all_lines,
-                                    const nesso::core::QueryTokens &query_tokens, EffectiveMode effective)
+                                    const nesso::core::QueryTokens &query_tokens, EffectiveMode effective,
+                                    nesso::core::QueryClass query_class)
 {
     nesso::core::Bm25Index bm25;
     for (const GrepWaiting &item : all_lines)
@@ -365,7 +367,12 @@ static GrepBm25 BuildGrepBm25Scores(const std::vector<GrepWaiting> &all_lines,
         bm25.AddLinePostings(entries, static_cast<std::uint32_t>(terms.size()));
     }
     const std::vector<std::string> query_terms = nesso::core::LexicalTerms(query_tokens.stripped);
-    std::vector<double> bm25_scores = bm25.Scores(QueryTermViews(query_terms));
+    nesso::core::Bm25Result bm25_result = bm25.ScoresAndCoverage(QueryTermViews(query_terms));
+    if (!nesso::core::HybridUsesCoverage(query_class))
+    {
+        std::ranges::fill(bm25_result.coverage, 1.0);
+    }
+    std::vector<double> bm25_scores = std::move(bm25_result.scores);
 
     bool lexical_fallback = false;
     if (effective == EffectiveMode::Lexical)
@@ -377,7 +384,10 @@ static GrepBm25 BuildGrepBm25Scores(const std::vector<GrepWaiting> &all_lines,
             lexical_fallback = true;
         }
     }
-    return GrepBm25{.scores = std::move(bm25_scores), .effective = effective, .lexical_fallback = lexical_fallback};
+    return GrepBm25{.scores = std::move(bm25_scores),
+                    .coverage = std::move(bm25_result.coverage),
+                    .effective = effective,
+                    .lexical_fallback = lexical_fallback};
 }
 
 static std::vector<GrepHit> LexicalGrepHits(const std::vector<GrepWaiting> &all_lines,
@@ -410,18 +420,16 @@ static std::vector<GrepHit> LexicalGrepHits(const std::vector<GrepWaiting> &all_
 }
 
 static std::vector<GrepHit> HybridGrepHits(const std::vector<GrepWaiting> &all_lines, const std::vector<float> &scores,
-                                           const std::vector<double> &bm25_scores)
+                                           const GrepBm25 &lexical)
 {
+    const std::vector<double> &bm25_scores = lexical.scores;
     std::vector<double> dense_values;
-    std::vector<double> lexical_values;
     dense_values.reserve(all_lines.size());
-    lexical_values.reserve(all_lines.size());
     for (size_t index = 0; index < all_lines.size(); ++index)
     {
         dense_values.push_back(static_cast<double>(scores[all_lines[index].distinct_id]));
-        lexical_values.push_back(bm25_scores[index]);
     }
-    const std::vector<float> fused = nesso::core::FuseHybridScores(dense_values, lexical_values);
+    const std::vector<float> fused = nesso::core::FuseHybridScores(dense_values, bm25_scores, lexical.coverage);
     std::vector<GrepHit> hits;
     hits.reserve(all_lines.size());
     for (size_t index = 0; index < all_lines.size(); ++index)
@@ -543,10 +551,11 @@ static TextResults MaterializeGrepHits(const GrepEmbedState &state, std::span<co
 static TextResults RankLexicalGrep(GrepEmbedState &state, const nesso::core::QueryTokens &query_tokens,
                                    EffectiveMode effective)
 {
-    const GrepBm25 lexical = BuildGrepBm25Scores(state.all_lines, query_tokens, effective);
+    const GrepBm25 lexical =
+        BuildGrepBm25Scores(state.all_lines, query_tokens, effective, nesso::core::ClassifyQuery(state.request->query));
     std::vector<GrepHit> hits = lexical.effective == EffectiveMode::Lexical
                                     ? LexicalGrepHits(state.all_lines, lexical.scores, query_tokens)
-                                    : HybridGrepHits(state.all_lines, state.scores, lexical.scores);
+                                    : HybridGrepHits(state.all_lines, state.scores, lexical);
     if (state.request->group)
     {
         hits = GroupGrepHits(hits, state.all_lines, state.scores, lexical.effective, state.request->top_k);

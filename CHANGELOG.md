@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Hybrid ranking of natural-language queries (no identifier token, under `auto` or `--mode hybrid`) scales a line's BM25 term by the square of the share of query terms it contains. A line that matches one word of a long description no longer outranks meaning matches; lines that match the whole query keep the full lexical weight. Queries with an identifier token rank as before. See ADR 0011.
+
 ### Added
 
 - `scripts/eval-retrieval` scores `nesso search --json -k 10` on the pinned Loghub HDFS_2k sample against a seed query set. It is report-only and is not a Pipeline gate. `scripts/fetch-loghub` also downloads the matching structured CSV.
