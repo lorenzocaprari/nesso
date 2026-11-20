@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795189701768,
+  "lastUpdate": 1795194644175,
   "repoUrl": "https://github.com/lorenzocaprari/nesso",
   "entries": {
     "nesso": [
@@ -9935,6 +9935,60 @@ window.BENCHMARK_DATA = {
           {
             "name": "grep-100000-rss",
             "value": 145481728,
+            "unit": "bytes"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "caprarilorenzo5@gmail.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "committer": {
+            "email": "85455384+lorenzocaprari@users.noreply.github.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "distinct": true,
+          "id": "c8f7a950f490356402269810b5924a8c7a2efdbc",
+          "message": "ci(eval): score grep, BM25 and the BGL needle window nightly and on pull requests\n\nThe eval-retrieval workflow now runs nesso, grep and SQLite BM25 on the 2k\nseed sets and on the bgl-needle-100k window, and also runs on pull requests\nthat touch ranking code, the eval scripts or the query sets. Every run\ncompares with the latest scheduled report on main; pull request reports are\nuploaded under their own name so they never become the baseline.\n\neval-retrieval-compare flattens nesso-only (schema 3), engine (schema 4) and\nneedle reports to system, ranker, class and metric, so schema 3 and 4\ncompare with each other and needle reports gain precision@10. Report-only,\nnot in the CI gate.",
+          "timestamp": "2026-11-20T18:06:49+01:00",
+          "tree_id": "7266535a669a977a334ff03f37e21a1c94af94dd",
+          "url": "https://github.com/lorenzocaprari/nesso/commit/c8f7a950f490356402269810b5924a8c7a2efdbc"
+        },
+        "date": 1795194643718,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "grep-1000-wall",
+            "value": 0.14,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-1000-rss",
+            "value": 118681600,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-10000-wall",
+            "value": 0.15,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-10000-rss",
+            "value": 118763520,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-100000-wall",
+            "value": 0.32,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-100000-rss",
+            "value": 145907712,
             "unit": "bytes"
           }
         ]
