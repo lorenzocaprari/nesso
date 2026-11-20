@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795201377399,
+  "lastUpdate": 1795204399289,
   "repoUrl": "https://github.com/lorenzocaprari/nesso",
   "entries": {
     "nesso": [
@@ -10205,6 +10205,60 @@ window.BENCHMARK_DATA = {
           {
             "name": "grep-100000-rss",
             "value": 145973248,
+            "unit": "bytes"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "caprarilorenzo5@gmail.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "committer": {
+            "email": "85455384+lorenzocaprari@users.noreply.github.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "distinct": true,
+          "id": "09ef326dbeaf884391668a02a0f6d4bdb896745a",
+          "message": "ci(eval): run the needle step for every engine except ck and vecgrep\n\nThe needle step was guarded by matrix.needle != false. For an engine with no\nneedle key the value is undefined, and an undefined matrix key compares equal\nto false in an expression, so the step was skipped for every engine and the\nmerged report had no needle scores. Name ck and vecgrep, which exhaust a\n16 GB runner on the 100k window, in the condition instead.",
+          "timestamp": "2026-11-20T20:45:34+01:00",
+          "tree_id": "dcab0e98faf0e0d04b5e0e02c2a2e2bb2ec4afbb",
+          "url": "https://github.com/lorenzocaprari/nesso/commit/09ef326dbeaf884391668a02a0f6d4bdb896745a"
+        },
+        "date": 1795204398640,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "grep-1000-wall",
+            "value": 0.12,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-1000-rss",
+            "value": 117673984,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-10000-wall",
+            "value": 0.14,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-10000-rss",
+            "value": 117698560,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-100000-wall",
+            "value": 0.3,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-100000-rss",
+            "value": 147279872,
             "unit": "bytes"
           }
         ]
