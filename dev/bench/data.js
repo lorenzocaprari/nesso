@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795180614465,
+  "lastUpdate": 1795183105944,
   "repoUrl": "https://github.com/lorenzocaprari/nesso",
   "entries": {
     "nesso": [
@@ -9719,6 +9719,60 @@ window.BENCHMARK_DATA = {
           {
             "name": "grep-100000-rss",
             "value": 144568320,
+            "unit": "bytes"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "caprarilorenzo5@gmail.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "committer": {
+            "email": "85455384+lorenzocaprari@users.noreply.github.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "distinct": true,
+          "id": "0c61ca48f69e3e0ef5b2a8448ba9ad047add0626",
+          "message": "test(eval): add the Loghub Apache 2k seed set\n\nPin Apache_2k.log and its structured CSV at the same loghub commit as the\nother 2k samples, add apache-2k to fetch-loghub, eval-retrieval and the\nnightly cache, and seed five exact-ID (child PIDs and client IPs), five\nparaphrase and five cause queries. Each exact-ID token occurs on exactly\none line.",
+          "timestamp": "2026-11-20T14:52:45+01:00",
+          "tree_id": "50c7f067b859f06635ddf1641d625287d493b918",
+          "url": "https://github.com/lorenzocaprari/nesso/commit/0c61ca48f69e3e0ef5b2a8448ba9ad047add0626"
+        },
+        "date": 1795183104996,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "grep-1000-wall",
+            "value": 0.13,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-1000-rss",
+            "value": 120107008,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-10000-wall",
+            "value": 0.14,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-10000-rss",
+            "value": 117813248,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-100000-wall",
+            "value": 0.31,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-100000-rss",
+            "value": 145440768,
             "unit": "bytes"
           }
         ]
