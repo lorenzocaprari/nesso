@@ -1,0 +1,18 @@
+# Seed queries for scripts/eval-retrieval on Loghub Apache_2k.
+# exact_id uses relevant_lines; paraphrase and cause use relevant_events.
+# Not the published benchmark.
+{"id":"exact_01","class":"exact_id","query":"6726","relevant_lines":[4]}
+{"id":"exact_02","class":"exact_id","query":"222.166.160.184","relevant_lines":[132]}
+{"id":"exact_03","class":"exact_id","query":"1763","relevant_lines":[807]}
+{"id":"exact_04","class":"exact_id","query":"141.153.150.164","relevant_lines":[1421]}
+{"id":"exact_05","class":"exact_id","query":"6790","relevant_lines":[1998]}
+{"id":"para_01","class":"paraphrase","query":"worker environment initialised successfully from its properties file","relevant_events":["E2"]}
+{"id":"para_02","class":"paraphrase","query":"connector worker environment reported a failure state","relevant_events":["E3"]}
+{"id":"para_03","class":"paraphrase","query":"directory listing denied by a configuration rule","relevant_events":["E4"]}
+{"id":"para_04","class":"paraphrase","query":"could not locate the child process in the scoreboard","relevant_events":["E5"]}
+{"id":"para_05","class":"paraphrase","query":"connector initialising a new child worker","relevant_events":["E6"]}
+{"id":"cause_01","class":"cause","query":"client asked for a folder that has no index page while autoindex is off","relevant_events":["E4"]}
+{"id":"cause_02","class":"cause","query":"Tomcat connector failed to bring up its worker environment","relevant_events":["E3"]}
+{"id":"cause_03","class":"cause","query":"scoreboard has no entry for a forked httpd child","relevant_events":["E5"]}
+{"id":"cause_04","class":"cause","query":"new httpd child process registered in a scoreboard slot","relevant_events":["E1"]}
+{"id":"cause_05","class":"cause","query":"connector setup ran for a freshly spawned child process","relevant_events":["E6"]}

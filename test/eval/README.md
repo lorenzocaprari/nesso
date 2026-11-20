@@ -2,7 +2,7 @@
 
 `queries/*_2k.jsonl` are **seed** query sets for `scripts/eval-retrieval`. Each file
 has about five queries in each class (`exact_id`, `paraphrase`, `cause`) against one
-pinned Loghub 2k sample (HDFS, BGL, Thunderbird, OpenSSH, Linux).
+pinned Loghub 2k sample (HDFS, BGL, Thunderbird, OpenSSH, Linux, Apache).
 
 A query sets exactly one of `relevant_lines` (1-based LineIds) or `relevant_events`
 (Loghub EventIds from the matching `*_2k.log_structured.csv`). Exact-ID seeds use
