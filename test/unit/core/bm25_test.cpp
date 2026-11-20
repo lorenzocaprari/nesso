@@ -240,51 +240,6 @@ TEST_CASE("ScoresFromPostings matches Bm25Index for a sorted dictionary", "[bm25
     }
 }
 
-TEST_CASE("coverage counts the distinct query terms each line contains", "[bm25]")
-{
-    const nesso::core::Bm25Index index = ThreeLineCorpus();
-    // "zzz" is in no line but still counts in the divisor; "cat" repeats once.
-    const std::array<std::string_view, 4> query{"cat", "elf", "zzz", "cat"};
-    const nesso::core::Bm25Result result = index.ScoresAndCoverage(query);
-    REQUIRE(result.coverage.size() == 3);
-    CHECK(result.coverage[0] == Catch::Approx(2.0 / 3.0));
-    CHECK(result.coverage[1] == Catch::Approx(1.0 / 3.0));
-    CHECK(result.coverage[2] == 0.0);
-    const std::vector<double> scores = index.Scores(query);
-    REQUIRE(scores.size() == result.scores.size());
-    for (std::size_t line = 0; line < scores.size(); ++line)
-    {
-        ExpectBits(result.scores[line], std::bit_cast<std::uint64_t>(scores[line]));
-    }
-
-    const nesso::core::Bm25Result empty = index.ScoresAndCoverage({});
-    CHECK(empty.coverage == std::vector<double>{0.0, 0.0, 0.0});
-}
-
-TEST_CASE("ScoresAndCoverageFromPostings matches Bm25Index", "[bm25]")
-{
-    const std::array<std::string_view, 3> dictionary{"cat", "dog", "elf"};
-    const std::array<std::pair<std::uint32_t, std::uint32_t>, 2> row0{{{0, 1}, {2, 1}}};
-    const std::array<std::pair<std::uint32_t, std::uint32_t>, 1> row1{{{0, 1}}};
-    const std::array<std::pair<std::uint32_t, std::uint32_t>, 1> row2{{{1, 1}}};
-    const std::array<nesso::core::Bm25LinePostings, 3> lines{
-        nesso::core::Bm25LinePostings{.length = 2, .entries = row0},
-        nesso::core::Bm25LinePostings{.length = 1, .entries = row1},
-        nesso::core::Bm25LinePostings{.length = 1, .entries = row2},
-    };
-    const nesso::core::Bm25Index index = ThreeLineCorpus();
-    const std::array<std::string_view, 2> query{"elf", "cat"};
-    const nesso::core::Bm25Result from_index = index.ScoresAndCoverage(query);
-    const nesso::core::Bm25Result from_postings = nesso::core::ScoresAndCoverageFromPostings(dictionary, lines, query);
-    CHECK(from_postings.coverage == from_index.coverage);
-    CHECK(from_postings.coverage == std::vector<double>{1.0, 0.5, 0.0});
-    REQUIRE(from_index.scores.size() == from_postings.scores.size());
-    for (std::size_t line = 0; line < from_index.scores.size(); ++line)
-    {
-        ExpectBits(from_postings.scores[line], std::bit_cast<std::uint64_t>(from_index.scores[line]));
-    }
-}
-
 TEST_CASE("tied BM25 scores stay on their line ordinals", "[bm25]")
 {
     // line 0: red blue   |D| = 2

@@ -86,11 +86,11 @@ static std::optional<std::uint32_t> DictionaryId(std::span<const std::string_vie
     return static_cast<std::uint32_t>(found - dictionary.begin());
 }
 
-static Bm25Result ScoreLines(std::size_t line_count, std::size_t total_length,
-                             std::span<const std::size_t> document_frequency, auto &&line_at,
-                             std::span<const std::string_view> query, auto &&resolve_id)
+static std::vector<double> ScoreLines(std::size_t line_count, std::size_t total_length,
+                                      std::span<const std::size_t> document_frequency, auto &&line_at,
+                                      std::span<const std::string_view> query, auto &&resolve_id)
 {
-    Bm25Result result{.scores = std::vector<double>(line_count, 0.0), .coverage = std::vector<double>(line_count, 0.0)};
+    std::vector<double> result(line_count, 0.0);
     if (line_count == 0 || query.empty() || total_length == 0)
     {
         return result;
@@ -98,9 +98,6 @@ static Bm25Result ScoreLines(std::size_t line_count, std::size_t total_length,
 
     const double average_length = static_cast<double>(total_length) / static_cast<double>(line_count);
     const std::vector<std::string> distinct = DistinctQueryTerms(query);
-    // Integer counts, divided once at the end, so coverage does not depend on
-    // the order terms were visited.
-    std::vector<std::uint32_t> matched(line_count, 0);
 
     for (const std::string &term : distinct)
     {
@@ -123,17 +120,8 @@ static Bm25Result ScoreLines(std::size_t line_count, std::size_t total_length,
             {
                 continue;
             }
-            result.scores[line] +=
+            result[line] +=
                 idf * TermWeight({.frequency = frequency, .length = length, .average_length = average_length});
-            ++matched[line];
-        }
-    }
-    if (!distinct.empty())
-    {
-        const auto terms = static_cast<double>(distinct.size());
-        for (std::size_t line = 0; line < line_count; ++line)
-        {
-            result.coverage[line] = static_cast<double>(matched[line]) / terms;
         }
     }
     return result;
@@ -207,11 +195,6 @@ double Bm25Index::AverageLength() const noexcept
 
 std::vector<double> Bm25Index::Scores(std::span<const std::string_view> query) const
 {
-    return ScoresAndCoverage(query).scores;
-}
-
-Bm25Result Bm25Index::ScoresAndCoverage(std::span<const std::string_view> query) const
-{
     return ScoreLines(
         lines_.size(), total_length_, document_frequency_,
         [this](std::size_t line)
@@ -233,13 +216,6 @@ Bm25Result Bm25Index::ScoresAndCoverage(std::span<const std::string_view> query)
 
 std::vector<double> ScoresFromPostings(std::span<const std::string_view> dictionary,
                                        std::span<const Bm25LinePostings> lines, std::span<const std::string_view> query)
-{
-    return ScoresAndCoverageFromPostings(dictionary, lines, query).scores;
-}
-
-Bm25Result ScoresAndCoverageFromPostings(std::span<const std::string_view> dictionary,
-                                         std::span<const Bm25LinePostings> lines,
-                                         std::span<const std::string_view> query)
 {
     std::vector<std::size_t> document_frequency(dictionary.size(), 0);
     std::size_t total_length = 0;

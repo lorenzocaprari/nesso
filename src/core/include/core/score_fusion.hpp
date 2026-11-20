@@ -4,8 +4,6 @@
 #ifndef CORE_SCORE_FUSION_HPP
 #define CORE_SCORE_FUSION_HPP
 
-#include <core/query_class.hpp>
-
 #include <cstddef>
 #include <span>
 #include <vector>
@@ -36,27 +34,13 @@ struct ZScoreStats
 /// `(value - mean) / deviation`, or `0` when `deviation` is 0.
 [[nodiscard]] double ZScore(double value, const ZScoreStats &stats) noexcept;
 
-/// `HYBRID_DENSE_WEIGHT * z(dense) + HYBRID_LEXICAL_WEIGHT * z(bm25) *
-/// coverage²`, then `static_cast<float>`. Callers sort on that float.
-///
-/// `coverage` is the line's share of distinct query terms (`Bm25Result`). It
-/// keeps a line that matches one rare word of a long description from
-/// outranking dense matches: BM25 is zero on most lines, so that word alone
-/// gives a very large z(bm25). A line that matches the whole query keeps the
-/// full lexical weight.
-/// Whether hybrid fusion scales the lexical term by coverage for this query.
-/// Only natural-language queries do. A query with an identifier token keeps
-/// coverage 1 on every line, so a line holding only the identifier still gets
-/// the full lexical weight ([ADR 0011](docs/adr/0011-hybrid-search-and-identifier-routing.md)).
-[[nodiscard]] bool HybridUsesCoverage(QueryClass query_class) noexcept;
-
-[[nodiscard]] float FuseHybridScore(double dense, double bm25, double coverage, const ZScoreStats &dense_stats,
+/// `HYBRID_DENSE_WEIGHT * z(dense) + HYBRID_LEXICAL_WEIGHT * z(bm25)`, then
+/// `static_cast<float>`. Callers sort on that float.
+[[nodiscard]] float FuseHybridScore(double dense, double bm25, const ZScoreStats &dense_stats,
                                     const ZScoreStats &bm25_stats) noexcept;
 
-/// One fused float per aligned dense/bm25/coverage triple. Lengths must match,
-/// otherwise the result is empty.
-[[nodiscard]] std::vector<float> FuseHybridScores(std::span<const double> dense, std::span<const double> bm25,
-                                                  std::span<const double> coverage);
+/// One fused float per aligned dense/bm25 pair. Lengths must match.
+[[nodiscard]] std::vector<float> FuseHybridScores(std::span<const double> dense, std::span<const double> bm25);
 
 } // namespace nesso::core
 

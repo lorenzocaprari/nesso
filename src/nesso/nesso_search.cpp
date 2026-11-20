@@ -128,8 +128,8 @@ static std::expected<void, Error> RequireLexicalReady(nesso::core::LexicalStatus
     return std::unexpected(std::move(error));
 }
 
-static nesso::core::Bm25Result Bm25ScoresFromCorpus(const nesso::core::MappedCorpus &corpus,
-                                                    std::span<const std::string_view> query)
+static std::vector<double> Bm25ScoresFromCorpus(const nesso::core::MappedCorpus &corpus,
+                                                std::span<const std::string_view> query)
 {
     const std::span<const nesso::core::LexicalLinePostings> rows = corpus.LexicalPostings();
     std::vector<nesso::core::Bm25LinePostings> lines;
@@ -138,7 +138,7 @@ static nesso::core::Bm25Result Bm25ScoresFromCorpus(const nesso::core::MappedCor
     {
         lines.push_back(nesso::core::Bm25LinePostings{.length = row.length, .entries = row.entries});
     }
-    return nesso::core::ScoresAndCoverageFromPostings(corpus.LexicalDictionary(), lines, query);
+    return nesso::core::ScoresFromPostings(corpus.LexicalDictionary(), lines, query);
 }
 
 static size_t ScoringThreads(const Config &config)
@@ -313,15 +313,13 @@ struct HybridScoreInputs
 
 static HybridScoreInputs CollectHybridScores(const nesso::core::MappedCorpus &corpus,
                                              const std::vector<float> &distinct_scores,
-                                             const nesso::core::Bm25Result &bm25)
+                                             const std::vector<double> &bm25_scores)
 {
     std::vector<double> dense_values;
     std::vector<double> lexical_values;
-    std::vector<double> coverage_values;
     HybridScoreInputs inputs;
     dense_values.reserve(corpus.Lines().size());
     lexical_values.reserve(corpus.Lines().size());
-    coverage_values.reserve(corpus.Lines().size());
     inputs.ordinals.reserve(corpus.Lines().size());
     for (size_t ordinal = 0; ordinal < corpus.Lines().size(); ++ordinal)
     {
@@ -332,10 +330,9 @@ static HybridScoreInputs CollectHybridScores(const nesso::core::MappedCorpus &co
         }
         inputs.ordinals.push_back(ordinal);
         dense_values.push_back(static_cast<double>(distinct_scores[line.distinct_id]));
-        lexical_values.push_back(bm25.scores[ordinal]);
-        coverage_values.push_back(bm25.coverage[ordinal]);
+        lexical_values.push_back(bm25_scores[ordinal]);
     }
-    inputs.fused = nesso::core::FuseHybridScores(dense_values, lexical_values, coverage_values);
+    inputs.fused = nesso::core::FuseHybridScores(dense_values, lexical_values);
     return inputs;
 }
 
@@ -447,15 +444,15 @@ static std::vector<RankedLine> RankHybridUngrouped(const nesso::core::MappedCorp
 
 static std::vector<RankedLine> RankHybridLines(const nesso::core::MappedCorpus &corpus,
                                                const std::vector<float> &distinct_scores,
-                                               const nesso::core::Bm25Result &bm25, size_t top_k, size_t threads,
+                                               const std::vector<double> &bm25_scores, size_t top_k, size_t threads,
                                                bool group)
 {
-    const HybridScoreInputs inputs = CollectHybridScores(corpus, distinct_scores, bm25);
+    const HybridScoreInputs inputs = CollectHybridScores(corpus, distinct_scores, bm25_scores);
     if (group)
     {
-        return RankHybridGrouped(corpus, distinct_scores, bm25.scores, inputs, top_k);
+        return RankHybridGrouped(corpus, distinct_scores, bm25_scores, inputs, top_k);
     }
-    return RankHybridUngrouped(corpus, distinct_scores, bm25.scores, inputs, top_k, threads);
+    return RankHybridUngrouped(corpus, distinct_scores, bm25_scores, inputs, top_k, threads);
 }
 
 struct LexicalCandidate
@@ -788,7 +785,8 @@ struct SearchRankOptions
 };
 
 static std::vector<RankedLine> SelectSearchRanked(const nesso::core::MappedCorpus &corpus,
-                                                  const std::vector<float> &scores, const nesso::core::Bm25Result &bm25,
+                                                  const std::vector<float> &scores,
+                                                  const std::vector<double> &bm25_scores,
                                                   const nesso::core::QueryTokens &query_tokens,
                                                   const SearchRankOptions &options)
 {
@@ -798,9 +796,9 @@ static std::vector<RankedLine> SelectSearchRanked(const nesso::core::MappedCorpu
     }
     if (options.effective == EffectiveMode::Lexical)
     {
-        return RankLexicalLines(corpus, bm25.scores, query_tokens.stripped, options.top_k, options.group);
+        return RankLexicalLines(corpus, bm25_scores, query_tokens.stripped, options.top_k, options.group);
     }
-    return RankHybridLines(corpus, scores, bm25, options.top_k, options.threads, options.group);
+    return RankHybridLines(corpus, scores, bm25_scores, options.top_k, options.threads, options.group);
 }
 
 static std::expected<std::vector<float>, nesso::embed::EmbedError> EmbedSearchQuery(const nesso::embed::Embedder &model,
@@ -879,8 +877,7 @@ std::expected<TextResults, Error> Nesso::Search(const SearchRequest &request) co
     }
 
     const nesso::core::QueryTokens query_tokens = nesso::core::TokenizeQuery(request.query);
-    const nesso::core::QueryClass query_class = nesso::core::ClassifyQuery(request.query);
-    EffectiveMode effective = ResolveEffectiveMode(request.mode, query_class);
+    EffectiveMode effective = ResolveEffectiveMode(request.mode, nesso::core::ClassifyQuery(request.query));
     bool lexical_fallback = false;
 
     const ScopedStage stage{"rank"};
@@ -905,20 +902,16 @@ std::expected<TextResults, Error> Nesso::Search(const SearchRequest &request) co
     }
 
     const SearchLineMeta line_meta = TallySearchLineMeta(*corpus);
-    nesso::core::Bm25Result bm25;
+    std::vector<double> bm25_scores;
     if (effective != EffectiveMode::Dense)
     {
         const std::vector<std::string> query_terms = nesso::core::LexicalTerms(query_tokens.stripped);
-        bm25 = Bm25ScoresFromCorpus(*corpus, QueryTermViews(query_terms));
-        if (!nesso::core::HybridUsesCoverage(query_class))
-        {
-            std::ranges::fill(bm25.coverage, 1.0);
-        }
+        bm25_scores = Bm25ScoresFromCorpus(*corpus, QueryTermViews(query_terms));
     }
-    effective = MaybeLexicalFallback(effective, bm25.scores, lexical_fallback);
+    effective = MaybeLexicalFallback(effective, bm25_scores, lexical_fallback);
 
     const std::vector<RankedLine> ranked = SelectSearchRanked(
-        *corpus, dense.scores, bm25, query_tokens,
+        *corpus, dense.scores, bm25_scores, query_tokens,
         {.effective = effective, .top_k = request.top_k, .threads = threads, .group = request.group});
     if (ranked.empty())
     {

@@ -1562,7 +1562,7 @@ def open_xerj_context(
         _log_handle=log_handle,
     )
     try:
-        wait_xerj_ready(url)
+        wait_xerj_ready(url, proc=proc)
     except SystemExit:
         ctx.shutdown()
         raise
@@ -1789,6 +1789,12 @@ def open_opensearch_context(
     java_opts = opensearch_java_opts()
     env = os.environ.copy()
     env["OPENSEARCH_JAVA_OPTS"] = java_opts
+    # OpenSearch prefers JAVA_HOME over its bundled JDK, and a host JAVA_HOME
+    # often points at an older Java than OpenSearch requires. Use the bundled
+    # JDK unless OPENSEARCH_JAVA_HOME is set explicitly.
+    bundled_jdk = home / "jdk"
+    if not env.get("OPENSEARCH_JAVA_HOME") and bundled_jdk.is_dir():
+        env["OPENSEARCH_JAVA_HOME"] = str(bundled_jdk)
     env["DISABLE_INSTALL_DEMO_CONFIG"] = "true"
 
     log_path = tmp_path / "opensearch.log"

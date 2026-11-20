@@ -1,0 +1,123 @@
+#!/usr/bin/env python3
+"""Merge eval-retrieval reports that each scored different engines.
+
+Each input must be the same kind of report (an engine report with
+schema_version 4, or a needle report) over the same datasets in the same
+order, with the same per-dataset fields apart from engines. The output lists
+every input's engines, in input order, per dataset and in overall. An engine
+that appears in two inputs is an error. Writes deterministic JSON.
+
+Used by the eval-competitors workflow, where each heavy engine runs in its own
+job, and for refreshing the committed reference report by hand.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import sys
+from pathlib import Path
+from typing import Any
+
+
+def load(path: Path) -> dict[str, Any]:
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except OSError as exc:
+        raise SystemExit(f"error: cannot read {path}: {exc}") from exc
+    except json.JSONDecodeError as exc:
+        raise SystemExit(f"error: malformed JSON in {path}: {exc}") from exc
+    if not isinstance(payload, dict) or not isinstance(payload.get("datasets"), list):
+        raise SystemExit(f"error: {path} is not an eval-retrieval report")
+    if payload.get("kind") != "needle" and payload.get("schema_version") != 4:
+        raise SystemExit(f"error: {path} must be an engine report (schema_version 4) or a needle report")
+    return payload
+
+
+def shape(payload: dict[str, Any]) -> tuple[Any, Any]:
+    return payload.get("kind", "retrieval"), payload.get("schema_version")
+
+
+def without_engines(entry: dict[str, Any]) -> dict[str, Any]:
+    return {key: value for key, value in entry.items() if key != "engines"}
+
+
+def merge(reports: list[tuple[Path, dict[str, Any]]]) -> dict[str, Any]:
+    if not reports:
+        raise SystemExit("error: no reports to merge")
+    first_path, first = reports[0]
+    merged = json.loads(json.dumps(first))
+    seen = {engine["engine"]: first_path for engine in first["overall"]["engines"]}
+    for path, payload in reports[1:]:
+        if shape(payload) != shape(first):
+            raise SystemExit(f"error: {path} is a {shape(payload)} report; {first_path} is {shape(first)}")
+        names = [entry.get("dataset") for entry in payload["datasets"]]
+        expected = [entry.get("dataset") for entry in merged["datasets"]]
+        if names != expected:
+            raise SystemExit(f"error: {path} has datasets {names}; expected {expected}")
+        for target, entry in zip(merged["datasets"], payload["datasets"], strict=True):
+            if without_engines(target) != without_engines(entry):
+                raise SystemExit(f"error: {path} dataset {entry['dataset']} differs outside engines")
+        for engine in payload["overall"]["engines"]:
+            name = engine["engine"]
+            if name in seen:
+                raise SystemExit(f"error: engine {name} is in both {seen[name]} and {path}")
+            seen[name] = path
+        for target, entry in zip(merged["datasets"], payload["datasets"], strict=True):
+            target["engines"].extend(entry["engines"])
+        merged["overall"]["engines"].extend(payload["overall"]["engines"])
+    return merged
+
+
+def markdown_table(report: dict[str, Any]) -> str:
+    """Overall scores per engine and class as a Markdown table."""
+    needle = report.get("kind") == "needle"
+    title = "needle" if needle else "2k seed sets"
+    headers = ["engine", "class", "n", "MRR", "nDCG@10"] + (["p@10", "found@100"] if needle else ["recall@10"])
+    lines = [f"#### Overall ({title})", "", "| " + " | ".join(headers) + " |", "|" + " --- |" * len(headers)]
+    for engine in report["overall"]["engines"]:
+        if engine.get("status") == "skipped":
+            lines.append(f"| {engine['engine']} | skipped: {engine.get('reason', '')} |" + " |" * (len(headers) - 2))
+            continue
+        groups = [(engine["engine"], engine)]
+        if "modes" in engine:
+            groups = [(f"{engine['engine']}/{mode['mode']}", mode) for mode in engine["modes"]]
+        for name, payload in groups:
+            for bucket in [*payload["by_class"], {"class": "overall", **payload["overall"]}]:
+                if not bucket.get("n"):
+                    continue
+                metrics = bucket["metrics"]
+                cells = [name, bucket["class"], str(bucket["n"]), f"{metrics['mrr']:.3f}", f"{metrics['ndcg_at_10']:.3f}"]
+                if needle:
+                    cells += [f"{metrics['precision_at_10']:.3f}", f"{bucket['found_at_depth']:.3f}"]
+                else:
+                    cells += [f"{metrics['recall_at_10']:.3f}"]
+                lines.append("| " + " | ".join(cells) + " |")
+    return "\n".join(lines) + "\n"
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("reports", nargs="+", type=Path, help="Reports to merge, in output order")
+    parser.add_argument("--out", type=Path, required=True, help="Merged report path")
+    parser.add_argument("--markdown", type=Path, default=None, help="Also write an overall Markdown table here")
+    args = parser.parse_args(argv)
+    merged = merge([(path, load(path)) for path in args.reports])
+    args.out.parent.mkdir(parents=True, exist_ok=True)
+    args.out.write_text(json.dumps(merged, sort_keys=True, separators=(",", ":")) + "\n", encoding="utf-8")
+    if args.markdown is not None:
+        args.markdown.parent.mkdir(parents=True, exist_ok=True)
+        args.markdown.write_text(markdown_table(merged), encoding="utf-8")
+    names = [engine["engine"] for engine in merged["overall"]["engines"]]
+    print(f"merged {len(args.reports)} reports ({', '.join(names)}) into {args.out}")
+    return 0
+
+
+if __name__ == "__main__":
+    try:
+        raise SystemExit(main())
+    except SystemExit as exc:
+        if isinstance(exc.code, str):
+            print(exc.code, file=sys.stderr)
+            raise SystemExit(1) from exc
+        raise
