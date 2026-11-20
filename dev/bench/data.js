@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795194644175,
+  "lastUpdate": 1795196838115,
   "repoUrl": "https://github.com/lorenzocaprari/nesso",
   "entries": {
     "nesso": [
@@ -9989,6 +9989,60 @@ window.BENCHMARK_DATA = {
           {
             "name": "grep-100000-rss",
             "value": 145907712,
+            "unit": "bytes"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "caprarilorenzo5@gmail.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "committer": {
+            "email": "85455384+lorenzocaprari@users.noreply.github.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "distinct": true,
+          "id": "f9eb596b9e0eb521c1c2882cb8dbff3622268977",
+          "message": "ci(eval): add a workflow that scores the heavy competitors\n\neval-competitors.yml scores diy-faiss, OpenSearch BM25 and k-NN, ck, vecgrep\nand xerj (BM25 match and neural with the pinned all-MiniLM-L6-v2 files) on the\nLoghub 2k seed sets and the BGL 100k needle window, retrieval quality only.\nA prepare job fetches the inputs once; each engine then runs in its own host\njob with a pinned install (hashes, sha256 or sha512, curl limited to HTTPS).\nck and vecgrep score the 2k sets only, because their chunk indexes exhaust a\n16 GB hosted runner on the needle window. A merge job combines the finished\nreports with the new eval-retrieval-merge script and writes a summary table.\nRuns on workflow_dispatch and on pull requests that change the workflow, the\nmerge script or the competitor pins. Not part of the CI gate.",
+          "timestamp": "2026-11-20T18:40:46+01:00",
+          "tree_id": "6dc5f2406e9c13d2c91088c7d58a7522a0c837e5",
+          "url": "https://github.com/lorenzocaprari/nesso/commit/f9eb596b9e0eb521c1c2882cb8dbff3622268977"
+        },
+        "date": 1795196837558,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "grep-1000-wall",
+            "value": 0.14,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-1000-rss",
+            "value": 118992896,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-10000-wall",
+            "value": 0.14,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-10000-rss",
+            "value": 118923264,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-100000-wall",
+            "value": 0.34,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-100000-rss",
+            "value": 146042880,
             "unit": "bytes"
           }
         ]
