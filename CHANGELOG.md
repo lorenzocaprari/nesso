@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `scripts/eval-retrieval --engine` scores grep, ripgrep, and SQLite FTS5 BM25 baselines with the same labelled queries and metrics. Default nesso-only output stays `schema_version` 3; any non-nesso engine writes `schema_version` 4. Not Pipeline or nightly.
 - `scripts/eval-retrieval --engine diy-faiss` scores a local sentence-transformers MiniLM (fp32) + FAISS `IndexFlatIP` baseline. Optional deps are hash-pinned under `bench/competitors/`; not Pipeline or nightly.
 - `scripts/eval-retrieval --engine xerj` / `xerj-neural` scores an Elasticsearch-compatible XERJ baseline (stdlib HTTP adapter). Lexical `match` by default; neural uses a local MiniLM dir and never downloads. Missing binary/URL or neural model files report `skipped`. Not Pipeline or nightly.
+- `scripts/eval-retrieval --measure` records per-engine index/build wall and peak RSS, query median/p95 latency, query peak RSS, on-disk index size (or `none` for grep/rg), and cold time-to-first-result via GNU `/usr/bin/time`. Off by default so quality JSON stays byte-identical. `--log-prefix-lines` (default 100k; published size 1M) measures speed/memory on pinned full Loghub sets without quality labels. Not a CI or nightly gate.
 
 ### Fixed
 

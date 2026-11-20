@@ -80,7 +80,43 @@ PYTHONHASHSEED=0 .venv-diy/bin/python scripts/eval-retrieval --dataset all-2k \
   --engine diy-faiss --out build/eval/diy_faiss.json
 ```
 
-Set `NESSO_EVAL_DIY=1` to run the opt-in live diy-faiss unit test against a tiny fixture (requires the venv packages).
+Set `NESSO_EVAL_DIY=1` to run the opt-in live diy-faiss unit test against a tiny fixture (requires the venv packages). Set `NESSO_EVAL_MEASURE=1` to run the opt-in measure smoke on HDFS 2k.
+
+### Retrieval eval `--measure`
+
+Off by default. Without it, quality JSON stays byte-identical with prior runs. With `--measure`, the report gains a top-level `measure` object that is machine-dependent and must not be used as a CI or nightly gate.
+
+Numbers (median across `--repeat`, default 3):
+
+| Field | Meaning |
+| --- | --- |
+| `indexWallSeconds` / `indexPeakRssBytes` | GNU `/usr/bin/time -f "%e %M"` around the index/build child (`nesso index`, FTS5 build, FAISS encode+build, or spawned xerj bulk). grep/ripgrep have no index: JSON `null`, tables print `none` (never `0`). |
+| `queryWallSeconds` | Wall for the full query set (GNU `%e` of the query child, or the sum of per-query latencies for xerj so spawn/re-index is not counted). |
+| `queryLatencyMedianSeconds` / `queryLatencyP95Seconds` | Median and nearest-rank p95 of per-query latencies inside that child. |
+| `queryPeakRssBytes` | Peak RSS of the query-phase child (same GNU time method). |
+| `indexBytes` / `indexToLogRatio` | On-disk index size and ratio to the raw log. |
+| `timeToFirstResultSeconds` | Cold one-shot: `nesso grep` / `grep` / `rg` on the first query; for indexed engines, index (and spawn for xerj) plus the first query in one timed child. |
+
+Peak RSS always comes from GNU time on a child process. In-process Python engines (`bm25`, `diy-faiss`) run under `--measure-worker` so RSS is comparable. xerj measure requires a spawned node (`--xerj-bin` / `PATH`), not `--xerj-url`, so the server is inside the timed process tree.
+
+Platform, CPU model, `nproc`, `NESSO_THREADS`, and tool versions are recorded in `measure`. Published numbers should come from one fixed machine with those fields kept beside the table.
+
+Larger inputs (speed/memory only, no quality labels):
+
+```bash
+python3 scripts/eval-retrieval --measure --log-prefix-lines 100000 \
+  --dataset hdfs-v1 --engine nesso --engine grep --engine bm25 \
+  --modes dense --repeat 3 --out build/eval/hdfs_100k_measure.json
+```
+
+Default `--log-prefix-lines` (when the flag is present without a value) is 100000. The published comparison size is 1000000 lines (the same pin `scripts/fetch-loghub` uses for full sets).
+
+```bash
+python3 scripts/eval-retrieval --dataset hdfs-2k \
+  --engine nesso --engine grep --engine ripgrep --engine bm25 \
+  --measure --repeat 3 --modes dense \
+  --out build/eval/hdfs_2k_measure.json
+```
 
 Baseline comparisons are a local or per-release tool: they are not Pipeline and are not the nightly `eval-retrieval` workflow. Published comparisons should be run on a fixed machine.
 

@@ -18,6 +18,10 @@ Without --engine (or --engine nesso alone) the JSON stays schema_version 3 and
 byte-compatible with prior nesso-only reports. Any other engine uses
 schema_version 4 with an engines[] axis. Report-only: exit 0 for any scores;
 non-zero only on errors.
+
+Optional --measure (off by default) adds wall time, peak RSS (GNU time), index
+size, and cold time-to-first-result. Quality-only JSON stays byte-identical.
+With --measure the report is machine-dependent. Never a CI or nightly gate.
 """
 
 from __future__ import annotations
@@ -28,6 +32,7 @@ import importlib.util
 import json
 import math
 import os
+import platform
 import shutil
 import signal
 import socket
@@ -76,6 +81,37 @@ XERJ_NEURAL_MODEL_FILES = ("config.json", "tokenizer.json", "model.safetensors")
 XERJ_NEURAL_MODEL_SIZE = "~90 MB"
 XERJ_INDEX_LEXICAL = "nesso-eval-xerj"
 XERJ_INDEX_NEURAL = "nesso-eval-xerj-neural"
+ALL_FULL = "all-full"
+DEFAULT_MEASURE_REPEAT = 3
+DEFAULT_LOG_PREFIX_LINES = 100_000
+PUBLISHED_LOG_PREFIX_LINES = 1_000_000
+MEASURE_PHASES = ("index", "queries", "ttfr")
+
+
+@dataclass(frozen=True)
+class FullDatasetSpec:
+    name: str
+    dest_name: str
+    queries_name: str
+
+    @property
+    def log_path(self) -> Path:
+        return BENCH_DIR / self.dest_name
+
+    @property
+    def queries_path(self) -> Path:
+        return QUERIES_DIR / self.queries_name
+
+    @property
+    def corpus_name(self) -> str:
+        return self.name.replace("-", "_") + ".nesso"
+
+
+DATASETS_FULL: dict[str, FullDatasetSpec] = {
+    "hdfs-v1": FullDatasetSpec("hdfs-v1", "HDFS_1m.log", "hdfs_2k.jsonl"),
+    "bgl": FullDatasetSpec("bgl", "BGL_1m.log", "bgl_2k.jsonl"),
+    "thunderbird": FullDatasetSpec("thunderbird", "Thunderbird_1m.log", "thunderbird_2k.jsonl"),
+}
 
 
 @dataclass(frozen=True)
@@ -141,6 +177,140 @@ class RankEngine(Protocol):
 
 def round_metric(value: float) -> float:
     return round(value, FLOAT_DIGITS)
+
+
+def median_value(values: list[float] | list[int]) -> float | None:
+    if not values:
+        return None
+    return round_metric(float(statistics.median(values)))
+
+
+def percentile_p95(values: list[float]) -> float | None:
+    """Nearest-rank 95th percentile: index = ceil(0.95 * n) - 1."""
+    if not values:
+        return None
+    ordered = sorted(values)
+    index = max(0, math.ceil(0.95 * len(ordered)) - 1)
+    return round_metric(ordered[index])
+
+
+def index_to_log_ratio(index_bytes: int | None, log_bytes: int) -> float | None:
+    if index_bytes is None:
+        return None
+    if log_bytes <= 0:
+        raise SystemExit("error: log bytes must be positive for index ratio")
+    return round_metric(index_bytes / float(log_bytes))
+
+
+def directory_size_bytes(path: Path) -> int:
+    if path.is_file():
+        return path.stat().st_size
+    if not path.exists():
+        return 0
+    total = 0
+    for root, _dirs, files in os.walk(path):
+        for name in files:
+            total += (Path(root) / name).stat().st_size
+    return total
+
+
+def format_measure_none(value: float | int | None) -> str:
+    if value is None:
+        return "none"
+    if isinstance(value, float):
+        return f"{value:0.6f}"
+    return str(value)
+
+
+def gnu_time_binary() -> str:
+    return os.environ.get("NESSO_BENCH_TIME", "/usr/bin/time")
+
+
+def read_gnu_time(time_path: Path) -> tuple[float | None, int | None]:
+    if not time_path.is_file():
+        return None, None
+    for line in reversed(time_path.read_text(encoding="utf-8", errors="replace").splitlines()):
+        parts = line.split()
+        if len(parts) < 2:
+            continue
+        try:
+            return float(parts[0]), int(parts[1]) * 1024
+        except ValueError:
+            continue
+    return None, None
+
+
+def parse_cpu_model(text: str) -> str:
+    for line in text.splitlines():
+        if line.lower().startswith("model name"):
+            return line.split(":", 1)[1].strip()
+    return "unknown"
+
+
+def cpu_model() -> str:
+    path = Path("/proc/cpuinfo")
+    if not path.is_file():
+        return "unknown"
+    return parse_cpu_model(path.read_text(encoding="utf-8", errors="replace"))
+
+
+def logical_cpus() -> int:
+    try:
+        return int(subprocess.check_output(["nproc"], text=True).strip())
+    except (OSError, subprocess.CalledProcessError, ValueError) as exc:
+        raise SystemExit(f"error: nproc failed: {exc}") from exc
+
+
+def threads_setting() -> str | None:
+    value = os.environ.get("NESSO_THREADS")
+    if value is None or value == "":
+        return None
+    return value
+
+
+def execute_timed(
+    argv: list[str],
+    time_path: Path,
+    *,
+    timeout: float | None = None,
+    env: dict[str, str] | None = None,
+) -> dict[str, Any]:
+    command = [gnu_time_binary(), "-f", "%e %M", "-o", str(time_path), *argv]
+    started = time.perf_counter()
+    merged = os.environ.copy()
+    if env:
+        merged.update(env)
+    process = subprocess.Popen(
+        command,
+        env=merged,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        start_new_session=True,
+    )
+    try:
+        stdout, stderr_bytes = process.communicate(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        os.killpg(process.pid, signal.SIGKILL)
+        process.communicate()
+        return {
+            "exitCode": None,
+            "stdout": "",
+            "stderr": "",
+            "wallSeconds": round(time.perf_counter() - started, 6),
+            "peakRssBytes": None,
+            "error": f"timed out after {timeout}s",
+        }
+    wall_seconds, peak_rss_bytes = read_gnu_time(time_path)
+    if wall_seconds is None:
+        wall_seconds = time.perf_counter() - started
+    return {
+        "exitCode": process.returncode,
+        "stdout": stdout.decode("utf-8", "replace"),
+        "stderr": stderr_bytes.decode("utf-8", "replace"),
+        "wallSeconds": round(wall_seconds, 6),
+        "peakRssBytes": peak_rss_bytes,
+        "error": None,
+    }
 
 
 def load_diy_faiss_module() -> Any:
@@ -1291,6 +1461,33 @@ def format_report(payload: dict) -> str:
     return "\n".join(sections)
 
 
+def parse_full_datasets(raw: str | None) -> list[FullDatasetSpec]:
+    if raw is None:
+        return [DATASETS_FULL[name] for name in ("hdfs-v1", "bgl", "thunderbird")]
+    parts = [part.strip() for part in raw.split(",") if part.strip()]
+    if not parts:
+        raise SystemExit("error: --dataset must list at least one full dataset")
+    names: list[str] = []
+    for part in parts:
+        if part == ALL_FULL:
+            names.extend(DATASETS_FULL)
+            continue
+        if part not in DATASETS_FULL:
+            raise SystemExit(
+                f"error: unknown full dataset {part!r}; expected one of "
+                f"{sorted(DATASETS_FULL) + [ALL_FULL]}"
+            )
+        names.append(part)
+    ordered: list[FullDatasetSpec] = []
+    seen: set[str] = set()
+    for name in names:
+        if name in seen:
+            continue
+        seen.add(name)
+        ordered.append(DATASETS_FULL[name])
+    return ordered
+
+
 def parse_datasets(raw: str | None) -> list[DatasetSpec] | None:
     if raw is None:
         return None
@@ -1732,13 +1929,980 @@ def parse_modes(raw: str) -> list[str]:
     return modes
 
 
+def no_index_fields(log_bytes: int) -> dict[str, Any]:
+    del log_bytes
+    return {
+        "indexWallSeconds": None,
+        "indexPeakRssBytes": None,
+        "indexBytes": None,
+        "indexToLogRatio": None,
+    }
+
+
+def query_metric_fields(
+    *,
+    wall: float | None,
+    peak_rss: int | None,
+    latencies: list[float],
+) -> dict[str, Any]:
+    return {
+        "queryWallSeconds": wall,
+        "queryPeakRssBytes": peak_rss,
+        "queryLatencyMedianSeconds": median_value(latencies),
+        "queryLatencyP95Seconds": percentile_p95(latencies),
+    }
+
+
+def median_optional_ints(values: list[int | None]) -> int | None:
+    present = [value for value in values if value is not None]
+    if not present:
+        return None
+    return int(statistics.median(present))
+
+
+def median_optional_floats(values: list[float | None]) -> float | None:
+    present = [value for value in values if value is not None]
+    if not present:
+        return None
+    return median_value(present)
+
+
+def merge_engine_measure_repeats(repeats: list[dict[str, Any]]) -> dict[str, Any]:
+    if not repeats:
+        raise SystemExit("error: measure produced no repeats")
+    first = repeats[0]
+    merged: dict[str, Any] = {"engine": first["engine"]}
+    if first.get("status") == "skipped":
+        merged["status"] = "skipped"
+        merged["reason"] = first.get("reason", "")
+        return merged
+    merged["status"] = "ok"
+    for key in (
+        "indexWallSeconds",
+        "indexPeakRssBytes",
+        "indexBytes",
+        "indexToLogRatio",
+        "timeToFirstResultSeconds",
+    ):
+        if key in ("indexPeakRssBytes", "indexBytes"):
+            merged[key] = median_optional_ints([item.get(key) for item in repeats])
+        else:
+            merged[key] = median_optional_floats([item.get(key) for item in repeats])
+    if "modes" in first:
+        mode_names = [mode["mode"] for mode in first["modes"]]
+        modes_out: list[dict[str, Any]] = []
+        for mode_name in mode_names:
+            mode_repeats = []
+            for item in repeats:
+                for mode in item["modes"]:
+                    if mode["mode"] == mode_name:
+                        mode_repeats.append(mode)
+                        break
+            modes_out.append(
+                {
+                    "mode": mode_name,
+                    **{
+                        key: (
+                            median_optional_ints([mode.get(key) for mode in mode_repeats])
+                            if key == "queryPeakRssBytes"
+                            else median_optional_floats([mode.get(key) for mode in mode_repeats])
+                        )
+                        for key in (
+                            "queryWallSeconds",
+                            "queryPeakRssBytes",
+                            "queryLatencyMedianSeconds",
+                            "queryLatencyP95Seconds",
+                        )
+                    },
+                }
+            )
+        merged["modes"] = modes_out
+    else:
+        for key in (
+            "queryWallSeconds",
+            "queryPeakRssBytes",
+            "queryLatencyMedianSeconds",
+            "queryLatencyP95Seconds",
+        ):
+            if key == "queryPeakRssBytes":
+                merged[key] = median_optional_ints([item.get(key) for item in repeats])
+            else:
+                merged[key] = median_optional_floats([item.get(key) for item in repeats])
+    return merged
+
+
+def tool_version_line(argv: list[str]) -> str:
+    try:
+        completed = subprocess.run(
+            argv,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=30,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return "unknown"
+    text = (completed.stdout or completed.stderr or "").strip()
+    return text.splitlines()[0].strip() if text else "unknown"
+
+
+def collect_measure_tool_versions(
+    *,
+    engines: list[str],
+    binary: Path | None,
+    xerj_bin: str | None,
+) -> dict[str, str]:
+    tools: dict[str, str] = {"python": sys.version.split()[0]}
+    if "nesso" in engines and binary is not None:
+        tools["nesso"] = tool_version_line([str(binary), "-V"])
+    if "grep" in engines:
+        tools["grep"] = tool_version_line(["grep", "--version"])
+    if "ripgrep" in engines:
+        if shutil.which("rg") is None:
+            tools["rg"] = "missing"
+        else:
+            tools["rg"] = tool_version_line(["rg", "--version"])
+    if "xerj" in engines or "xerj-neural" in engines:
+        resolved = resolve_xerj_binary(xerj_bin)
+        tools["xerj"] = xerj_version_from_binary(resolved)
+    if "bm25" in engines:
+        tools["sqlite3"] = sqlite3.sqlite_version
+    if "diy-faiss" in engines:
+        diy = load_diy_faiss_module()
+        engine = diy.DiyFaissEngine()
+        ok, _reason = engine.availability()
+        if ok:
+            versions = engine.versions()
+            tools["diy-faiss"] = (
+                f"st={versions.get('sentence_transformers')} "
+                f"torch={versions.get('torch')} faiss={versions.get('faiss')}"
+            )
+        else:
+            tools["diy-faiss"] = "unavailable"
+    return tools
+
+
+def ensure_full_log(spec: FullDatasetSpec, *, lines: int, skip_fetch: bool) -> Path:
+    dest = spec.log_path
+    if skip_fetch and not dest.is_file():
+        raise SystemExit(f"error: full log missing and --skip-fetch is set: {dest}")
+    if not skip_fetch:
+        fetch = ROOT / "scripts" / "fetch-loghub"
+        if not fetch.is_file():
+            raise SystemExit(f"error: missing fetch-loghub: {fetch}")
+        run_checked(
+            [
+                sys.executable,
+                str(fetch),
+                "--dataset",
+                spec.name,
+                "--lines",
+                str(lines),
+                "--dest",
+                str(dest),
+            ],
+            label="fetch-loghub",
+        )
+    if not dest.is_file():
+        raise SystemExit(f"error: full log still missing: {dest}")
+    # Exact N-line prefix beside the fetch dest (fetch may write the 1M pin name).
+    prefix_path = dest.with_name(f"{dest.stem}_{lines}{dest.suffix}")
+    written = 0
+    with dest.open("r", encoding="utf-8", errors="replace") as source, prefix_path.open(
+        "w", encoding="utf-8", newline="\n"
+    ) as out:
+        for line in source:
+            if written >= lines:
+                break
+            out.write(line if line.endswith("\n") else line + "\n")
+            written += 1
+    if written < lines:
+        raise SystemExit(f"error: {dest} has only {written} lines; need {lines}")
+    return prefix_path
+
+
+def load_query_texts(path: Path) -> list[str]:
+    queries = load_queries(path)
+    return [query.query for query in queries]
+
+
+def bm25_build_db(db_path: Path, lines: list[str]) -> None:
+    require_fts5()
+    if db_path.exists():
+        db_path.unlink()
+    conn = sqlite3.connect(str(db_path))
+    try:
+        conn.execute("CREATE VIRTUAL TABLE lines USING fts5(content)")
+        conn.executemany(
+            "INSERT INTO lines(rowid, content) VALUES (?, ?)",
+            ((index, text) for index, text in enumerate(lines, start=1)),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def bm25_rank_db(db_path: Path, query: str, *, k: int = K) -> list[int]:
+    conn = sqlite3.connect(str(db_path))
+    try:
+        tokens = query_tokens(query)
+        if not tokens:
+            return []
+        match = fts5_or_query(tokens)
+        rows = conn.execute(
+            "SELECT rowid FROM lines WHERE lines MATCH ? ORDER BY bm25(lines), rowid LIMIT ?",
+            (match, k),
+        ).fetchall()
+        return [int(row[0]) for row in rows]
+    finally:
+        conn.close()
+
+
+def parse_worker_json(stdout: str) -> dict[str, Any]:
+    text = stdout.strip()
+    if not text:
+        raise SystemExit("error: measure worker produced no JSON")
+    try:
+        payload = json.loads(text.splitlines()[-1])
+    except json.JSONDecodeError as exc:
+        raise SystemExit(f"error: measure worker JSON parse failed: {exc}") from exc
+    if not isinstance(payload, dict):
+        raise SystemExit("error: measure worker JSON must be an object")
+    return payload
+
+
+def run_measure_worker(
+    *,
+    engine: str,
+    phase: str,
+    log_path: Path,
+    workdir: Path,
+    queries: list[str],
+    binary: Path | None = None,
+    model_dir: Path | None = None,
+    mode: str | None = None,
+    corpus: Path | None = None,
+    xerj_bin: str | None = None,
+    xerj_model_dir: str | None = None,
+    neural: bool = False,
+    timeout: float | None = None,
+    env: dict[str, str] | None = None,
+) -> dict[str, Any]:
+    workdir.mkdir(parents=True, exist_ok=True)
+    queries_path = workdir / f"measure-queries-{phase}.json"
+    queries_path.write_text(json.dumps(queries), encoding="utf-8")
+    time_path = workdir / f"gnu-time-{engine}-{phase}.txt"
+    argv = [
+        sys.executable,
+        str(Path(__file__).resolve()),
+        "--measure-worker",
+        engine,
+        "--phase",
+        phase,
+        "--log",
+        str(log_path),
+        "--workdir",
+        str(workdir),
+        "--queries-json",
+        str(queries_path),
+    ]
+    if binary is not None:
+        argv.extend(["--binary", str(binary)])
+    if model_dir is not None:
+        argv.extend(["--model-dir", str(model_dir)])
+    if mode is not None:
+        argv.extend(["--mode", mode])
+    if corpus is not None:
+        argv.extend(["--corpus", str(corpus)])
+    if xerj_bin is not None:
+        argv.extend(["--xerj-bin", xerj_bin])
+    if xerj_model_dir is not None:
+        argv.extend(["--xerj-model-dir", xerj_model_dir])
+    if neural:
+        argv.append("--neural")
+    result = execute_timed(argv, time_path, timeout=timeout, env=env)
+    if result["error"]:
+        raise SystemExit(f"error: measure worker {engine}/{phase}: {result['error']}")
+    if result["exitCode"] not in (0,):
+        detail = result["stderr"].strip() or result["stdout"].strip() or f"exit {result['exitCode']}"
+        raise SystemExit(f"error: measure worker {engine}/{phase} failed: {detail}")
+    payload = parse_worker_json(result["stdout"])
+    payload["wallSeconds"] = result["wallSeconds"]
+    payload["peakRssBytes"] = result["peakRssBytes"]
+    return payload
+
+
+def measure_worker_main(argv: list[str]) -> None:
+    parser = argparse.ArgumentParser(prog="eval-retrieval --measure-worker")
+    parser.add_argument("engine", choices=list(VALID_ENGINES))
+    parser.add_argument("--phase", choices=list(MEASURE_PHASES), required=True)
+    parser.add_argument("--log", type=Path, required=True)
+    parser.add_argument("--workdir", type=Path, required=True)
+    parser.add_argument("--queries-json", type=Path, required=True)
+    parser.add_argument("--binary", type=Path, default=None)
+    parser.add_argument("--model-dir", type=Path, default=None)
+    parser.add_argument("--mode", default=None)
+    parser.add_argument("--corpus", type=Path, default=None)
+    parser.add_argument("--xerj-bin", default=None)
+    parser.add_argument("--xerj-model-dir", default=None)
+    parser.add_argument("--neural", action="store_true")
+    args = parser.parse_args(argv)
+    queries: list[str] = json.loads(args.queries_json.read_text(encoding="utf-8"))
+    if not isinstance(queries, list):
+        raise SystemExit("error: queries JSON must be a list of strings")
+    lines = read_log_lines(args.log)
+    args.workdir.mkdir(parents=True, exist_ok=True)
+    payload = run_measure_worker_phase(
+        engine=args.engine,
+        phase=args.phase,
+        log_path=args.log,
+        lines=lines,
+        workdir=args.workdir,
+        queries=queries,
+        binary=args.binary,
+        model_dir=args.model_dir,
+        mode=args.mode,
+        corpus=args.corpus,
+        xerj_bin=args.xerj_bin,
+        xerj_model_dir=args.xerj_model_dir,
+        neural=args.neural,
+    )
+    print(json.dumps(payload, sort_keys=True, separators=(",", ":")))
+
+
+def run_measure_worker_phase(
+    *,
+    engine: str,
+    phase: str,
+    log_path: Path,
+    lines: list[str],
+    workdir: Path,
+    queries: list[str],
+    binary: Path | None,
+    model_dir: Path | None,
+    mode: str | None,
+    corpus: Path | None,
+    xerj_bin: str | None,
+    xerj_model_dir: str | None,
+    neural: bool,
+) -> dict[str, Any]:
+    if engine in ("bm25", "diy-faiss", "grep", "ripgrep", "nesso"):
+        return _worker_local_phase(
+            engine=engine,
+            phase=phase,
+            log_path=log_path,
+            lines=lines,
+            workdir=workdir,
+            queries=queries,
+            binary=binary,
+            model_dir=model_dir,
+            mode=mode,
+            corpus=corpus,
+        )
+    if engine in ("xerj", "xerj-neural"):
+        return _worker_xerj_phase(
+            phase=phase,
+            log_path=log_path,
+            lines=lines,
+            workdir=workdir,
+            queries=queries,
+            xerj_bin=xerj_bin,
+            xerj_model_dir=xerj_model_dir,
+            neural=neural or engine == "xerj-neural",
+        )
+    raise SystemExit(f"error: unknown measure worker engine {engine!r}")
+
+
+def _worker_local_phase(
+    *,
+    engine: str,
+    phase: str,
+    log_path: Path,
+    lines: list[str],
+    workdir: Path,
+    queries: list[str],
+    binary: Path | None,
+    model_dir: Path | None,
+    mode: str | None,
+    corpus: Path | None,
+) -> dict[str, Any]:
+    if engine == "bm25":
+        db_path = workdir / "bm25.sqlite"
+        if phase == "index":
+            bm25_build_db(db_path, lines)
+            return {"indexBytes": db_path.stat().st_size, "latencySeconds": []}
+        if phase == "queries":
+            if not db_path.is_file():
+                bm25_build_db(db_path, lines)
+            latencies: list[float] = []
+            for query in queries:
+                started = time.perf_counter()
+                bm25_rank_db(db_path, query)
+                latencies.append(time.perf_counter() - started)
+            return {"latencySeconds": latencies}
+        # ttfr
+        if db_path.exists():
+            db_path.unlink()
+        started = time.perf_counter()
+        bm25_build_db(db_path, lines)
+        if queries:
+            bm25_rank_db(db_path, queries[0])
+        return {"latencySeconds": [time.perf_counter() - started]}
+
+    if engine == "diy-faiss":
+        diy = load_diy_faiss_module()
+        index_path = workdir / "diy_faiss.index"
+        meta_path = workdir / "diy_faiss_meta.json"
+        if phase == "index":
+            engine_obj = diy.DiyFaissEngine()
+            engine_obj.prepare(log_path, lines, workdir)
+            engine_obj.write_index(index_path)
+            meta_path.write_text(json.dumps({"n": len(lines)}), encoding="utf-8")
+            return {"indexBytes": index_path.stat().st_size, "latencySeconds": []}
+        if phase == "queries":
+            meta = json.loads(meta_path.read_text(encoding="utf-8"))
+            engine_obj = diy.DiyFaissEngine()
+            engine_obj.read_index(index_path, int(meta["n"]))
+            latencies = []
+            for query in queries:
+                started = time.perf_counter()
+                engine_obj.rank(query)
+                latencies.append(time.perf_counter() - started)
+            return {"latencySeconds": latencies}
+        engine_obj = diy.DiyFaissEngine()
+        started = time.perf_counter()
+        engine_obj.prepare(log_path, lines, workdir)
+        if queries:
+            engine_obj.rank(queries[0])
+        return {"latencySeconds": [time.perf_counter() - started]}
+
+    if engine in ("grep", "ripgrep"):
+        argv_prefix = ["grep", "-n", "-F", "-i"] if engine == "grep" else ["rg", "-n", "-F", "-i"]
+        label = engine
+        if phase == "index":
+            return {"indexBytes": None, "latencySeconds": []}
+        if phase == "queries":
+            latencies = []
+            for query in queries:
+                started = time.perf_counter()
+                fixed_pattern_rank(argv_prefix, log_path, query, label=label)
+                latencies.append(time.perf_counter() - started)
+            return {"latencySeconds": latencies}
+        started = time.perf_counter()
+        if queries:
+            fixed_pattern_rank(argv_prefix, log_path, queries[0], label=label)
+        return {"latencySeconds": [time.perf_counter() - started]}
+
+    if engine == "nesso":
+        if binary is None or model_dir is None:
+            raise SystemExit("error: nesso measure worker needs --binary and --model-dir")
+        if phase == "index":
+            if corpus is None:
+                raise SystemExit("error: nesso index phase needs --corpus")
+            if corpus.exists():
+                shutil.rmtree(corpus)
+            run_checked(
+                [
+                    str(binary),
+                    "index",
+                    "-o",
+                    str(corpus),
+                    str(log_path),
+                    "--model-dir",
+                    str(model_dir),
+                ],
+                label="nesso index",
+            )
+            return {"indexBytes": directory_size_bytes(corpus), "latencySeconds": []}
+        if phase == "queries":
+            if corpus is None:
+                raise SystemExit("error: nesso queries phase needs --corpus")
+            if mode is None:
+                raise SystemExit("error: nesso queries phase needs --mode")
+            latencies = []
+            for query in queries:
+                started = time.perf_counter()
+                completed = run_command(
+                    [
+                        str(binary),
+                        "search",
+                        query,
+                        "-i",
+                        str(corpus),
+                        "--json",
+                        "-k",
+                        str(K),
+                        "--mode",
+                        mode,
+                        "--model-dir",
+                        str(model_dir),
+                    ],
+                    label=f"nesso search ({mode})",
+                    ok_codes=frozenset({0, 1}),
+                )
+                parse_search_json(completed.stdout)
+                latencies.append(time.perf_counter() - started)
+            return {"latencySeconds": latencies}
+        # ttfr: cold nesso grep
+        started = time.perf_counter()
+        if queries:
+            run_command(
+                [
+                    str(binary),
+                    "grep",
+                    queries[0],
+                    str(log_path),
+                    "--model-dir",
+                    str(model_dir),
+                    "-k",
+                    str(K),
+                ],
+                label="nesso grep",
+                ok_codes=frozenset({0, 1}),
+            )
+        return {"latencySeconds": [time.perf_counter() - started]}
+
+    raise SystemExit(f"error: unsupported local measure engine {engine!r}")
+
+
+def _worker_xerj_phase(
+    *,
+    phase: str,
+    log_path: Path,
+    lines: list[str],
+    workdir: Path,
+    queries: list[str],
+    xerj_bin: str | None,
+    xerj_model_dir: str | None,
+    neural: bool,
+) -> dict[str, Any]:
+    del log_path
+    engines = ["xerj-neural"] if neural else ["xerj"]
+    # Measure always owns a spawned node so GNU time includes server RSS.
+    ctx = open_xerj_context(
+        engines=engines,
+        xerj_url=None,
+        xerj_bin=xerj_bin,
+        xerj_model_dir=xerj_model_dir,
+    )
+    try:
+        if ctx.skip_reason or (neural and ctx.neural_skip_reason):
+            reason = ctx.skip_reason or ctx.neural_skip_reason or "xerj unavailable"
+            return {"skipped": True, "reason": reason, "latencySeconds": []}
+        engine = make_xerj_engine(ctx, neural=neural)
+        if isinstance(engine, SkippedEngine):
+            return {"skipped": True, "reason": engine.reason, "latencySeconds": []}
+        assert isinstance(engine, EsCompatEngine)
+        data_dir = None
+        if ctx._tmpdir is not None:
+            data_dir = Path(ctx._tmpdir.name) / "data"
+        marker = workdir / ("xerj-neural-ready" if neural else "xerj-ready")
+        if phase == "index":
+            engine.prepare(Path("."), lines, workdir)
+            index_bytes = directory_size_bytes(data_dir) if data_dir is not None else 0
+            marker.write_text("1", encoding="utf-8")
+            engine.cleanup()
+            return {"indexBytes": index_bytes, "latencySeconds": []}
+        if phase == "queries":
+            # Re-index inside the owned node; query wall is the sum of query
+            # latencies so spawn/index are not attributed to the query set.
+            engine.prepare(Path("."), lines, workdir)
+            latencies: list[float] = []
+            for query in queries:
+                started = time.perf_counter()
+                engine.rank(query)
+                latencies.append(time.perf_counter() - started)
+            engine.cleanup()
+            return {
+                "latencySeconds": latencies,
+                "queryWallSeconds": round(sum(latencies), 6),
+            }
+        engine.prepare(Path("."), lines, workdir)
+        started = time.perf_counter()
+        if queries:
+            engine.rank(queries[0])
+        elapsed = time.perf_counter() - started
+        engine.cleanup()
+        # TTFR includes spawn+index+first query; wall comes from GNU time on this process.
+        return {"latencySeconds": [elapsed], "includeSpawnInWall": True}
+    finally:
+        ctx.shutdown()
+
+
+def measure_cli_engine_once(
+    *,
+    engine: str,
+    log_path: Path,
+    log_bytes: int,
+    queries: list[str],
+    workdir: Path,
+    binary: Path | None,
+    model_dir: Path | None,
+    modes: list[str],
+    xerj_bin: str | None,
+    xerj_model_dir: str | None,
+) -> dict[str, Any]:
+    workdir.mkdir(parents=True, exist_ok=True)
+    if engine in ("grep", "ripgrep"):
+        if engine == "ripgrep" and shutil.which("rg") is None:
+            return {"engine": engine, "status": "skipped", "reason": "rg executable not found"}
+        index_fields = no_index_fields(log_bytes)
+        query_payload = run_measure_worker(
+            engine=engine,
+            phase="queries",
+            log_path=log_path,
+            workdir=workdir / "queries",
+            queries=queries,
+        )
+        ttfr_payload = run_measure_worker(
+            engine=engine,
+            phase="ttfr",
+            log_path=log_path,
+            workdir=workdir / "ttfr",
+            queries=queries[:1],
+        )
+        return {
+            "engine": engine,
+            "status": "ok",
+            **index_fields,
+            **query_metric_fields(
+                wall=query_payload["wallSeconds"],
+                peak_rss=query_payload["peakRssBytes"],
+                latencies=list(query_payload.get("latencySeconds", [])),
+            ),
+            "timeToFirstResultSeconds": ttfr_payload["wallSeconds"],
+        }
+
+    if engine == "nesso":
+        assert binary is not None and model_dir is not None
+        corpus = workdir / "corpus.nesso"
+        index_payload = run_measure_worker(
+            engine="nesso",
+            phase="index",
+            log_path=log_path,
+            workdir=workdir / "index",
+            queries=[],
+            binary=binary,
+            model_dir=model_dir,
+            corpus=corpus,
+        )
+        modes_out: list[dict[str, Any]] = []
+        for mode in modes:
+            query_payload = run_measure_worker(
+                engine="nesso",
+                phase="queries",
+                log_path=log_path,
+                workdir=workdir / f"queries-{mode}",
+                queries=queries,
+                binary=binary,
+                model_dir=model_dir,
+                mode=mode,
+                corpus=corpus,
+            )
+            modes_out.append(
+                {
+                    "mode": mode,
+                    **query_metric_fields(
+                        wall=query_payload["wallSeconds"],
+                        peak_rss=query_payload["peakRssBytes"],
+                        latencies=list(query_payload.get("latencySeconds", [])),
+                    ),
+                }
+            )
+        ttfr_dir = workdir / "ttfr"
+        ttfr_dir.mkdir(parents=True, exist_ok=True)
+        ttfr_cache = ttfr_dir / "xdg-cache"
+        ttfr_cache.mkdir(parents=True, exist_ok=True)
+        ttfr_payload = run_measure_worker(
+            engine="nesso",
+            phase="ttfr",
+            log_path=log_path,
+            workdir=ttfr_dir,
+            queries=queries[:1],
+            binary=binary,
+            model_dir=model_dir,
+            env={"XDG_CACHE_HOME": str(ttfr_cache)},
+        )
+        index_bytes = index_payload.get("indexBytes")
+        return {
+            "engine": "nesso",
+            "status": "ok",
+            "indexWallSeconds": index_payload["wallSeconds"],
+            "indexPeakRssBytes": index_payload["peakRssBytes"],
+            "indexBytes": index_bytes,
+            "indexToLogRatio": index_to_log_ratio(index_bytes, log_bytes),
+            "timeToFirstResultSeconds": ttfr_payload["wallSeconds"],
+            "modes": modes_out,
+        }
+
+    if engine in ("bm25", "diy-faiss"):
+        index_payload = run_measure_worker(
+            engine=engine,
+            phase="index",
+            log_path=log_path,
+            workdir=workdir / "index",
+            queries=[],
+        )
+        # Share the index workdir artifacts with the queries phase.
+        if engine == "bm25":
+            db_src = workdir / "index" / "bm25.sqlite"
+            query_dir = workdir / "queries"
+            query_dir.mkdir(parents=True, exist_ok=True)
+            if db_src.is_file():
+                shutil.copy2(db_src, query_dir / "bm25.sqlite")
+        else:
+            query_dir = workdir / "queries"
+            query_dir.mkdir(parents=True, exist_ok=True)
+            for name in ("diy_faiss.index", "diy_faiss_meta.json"):
+                src = workdir / "index" / name
+                if src.is_file():
+                    shutil.copy2(src, query_dir / name)
+        query_payload = run_measure_worker(
+            engine=engine,
+            phase="queries",
+            log_path=log_path,
+            workdir=query_dir,
+            queries=queries,
+        )
+        ttfr_payload = run_measure_worker(
+            engine=engine,
+            phase="ttfr",
+            log_path=log_path,
+            workdir=workdir / "ttfr",
+            queries=queries[:1],
+        )
+        index_bytes = index_payload.get("indexBytes")
+        return {
+            "engine": engine,
+            "status": "ok",
+            "indexWallSeconds": index_payload["wallSeconds"],
+            "indexPeakRssBytes": index_payload["peakRssBytes"],
+            "indexBytes": index_bytes,
+            "indexToLogRatio": index_to_log_ratio(index_bytes, log_bytes),
+            **query_metric_fields(
+                wall=query_payload["wallSeconds"],
+                peak_rss=query_payload["peakRssBytes"],
+                latencies=list(query_payload.get("latencySeconds", [])),
+            ),
+            "timeToFirstResultSeconds": ttfr_payload["wallSeconds"],
+        }
+
+    if engine in ("xerj", "xerj-neural"):
+        neural = engine == "xerj-neural"
+        index_payload = run_measure_worker(
+            engine=engine,
+            phase="index",
+            log_path=log_path,
+            workdir=workdir / "index",
+            queries=[],
+            xerj_bin=xerj_bin,
+            xerj_model_dir=xerj_model_dir,
+            neural=neural,
+        )
+        if index_payload.get("skipped"):
+            return {
+                "engine": engine,
+                "status": "skipped",
+                "reason": index_payload.get("reason", "xerj unavailable"),
+            }
+        query_payload = run_measure_worker(
+            engine=engine,
+            phase="queries",
+            log_path=log_path,
+            workdir=workdir / "queries",
+            queries=queries,
+            xerj_bin=xerj_bin,
+            xerj_model_dir=xerj_model_dir,
+            neural=neural,
+        )
+        ttfr_payload = run_measure_worker(
+            engine=engine,
+            phase="ttfr",
+            log_path=log_path,
+            workdir=workdir / "ttfr",
+            queries=queries[:1],
+            xerj_bin=xerj_bin,
+            xerj_model_dir=xerj_model_dir,
+            neural=neural,
+        )
+        index_bytes = index_payload.get("indexBytes")
+        query_wall = query_payload.get("queryWallSeconds", query_payload["wallSeconds"])
+        return {
+            "engine": engine,
+            "status": "ok",
+            "indexWallSeconds": index_payload["wallSeconds"],
+            "indexPeakRssBytes": index_payload["peakRssBytes"],
+            "indexBytes": index_bytes,
+            "indexToLogRatio": index_to_log_ratio(index_bytes, log_bytes),
+            **query_metric_fields(
+                wall=query_wall,
+                peak_rss=query_payload["peakRssBytes"],
+                latencies=list(query_payload.get("latencySeconds", [])),
+            ),
+            "timeToFirstResultSeconds": ttfr_payload["wallSeconds"],
+        }
+
+    raise SystemExit(f"error: unknown measure engine {engine!r}")
+
+
+def measure_dataset(
+    *,
+    dataset_name: str,
+    log_path: Path,
+    query_texts: list[str],
+    engines: list[str],
+    modes: list[str],
+    workdir: Path,
+    binary: Path | None,
+    model_dir: Path | None,
+    xerj_bin: str | None,
+    xerj_model_dir: str | None,
+    repeats: int,
+) -> dict[str, Any]:
+    log_bytes = log_path.stat().st_size
+    log_lines = sum(1 for _ in log_path.open("r", encoding="utf-8", errors="replace"))
+    engine_rows: list[dict[str, Any]] = []
+    for engine in engines:
+        repeats_out: list[dict[str, Any]] = []
+        for index in range(repeats):
+            repeat_dir = workdir / f"{engine}-r{index}"
+            if repeat_dir.exists():
+                shutil.rmtree(repeat_dir)
+            repeats_out.append(
+                measure_cli_engine_once(
+                    engine=engine,
+                    log_path=log_path,
+                    log_bytes=log_bytes,
+                    queries=query_texts,
+                    workdir=repeat_dir,
+                    binary=binary,
+                    model_dir=model_dir,
+                    modes=modes,
+                    xerj_bin=xerj_bin,
+                    xerj_model_dir=xerj_model_dir,
+                )
+            )
+        engine_rows.append(merge_engine_measure_repeats(repeats_out))
+    return {
+        "name": dataset_name,
+        "logBytes": log_bytes,
+        "logLines": log_lines,
+        "engines": engine_rows,
+    }
+
+
+def format_measure_table(dataset: dict[str, Any]) -> str:
+    headers = (
+        "engine",
+        "index_s",
+        "index_rss",
+        "index_bytes",
+        "ratio",
+        "q_wall_s",
+        "q_rss",
+        "q_p50_s",
+        "q_p95_s",
+        "ttfr_s",
+    )
+    rows: list[tuple[str, ...]] = []
+    for engine in dataset["engines"]:
+        name = engine["engine"]
+        if engine.get("status") == "skipped":
+            rows.append((name, "skipped", engine.get("reason", ""), "", "", "", "", "", "", ""))
+            continue
+        if "modes" in engine:
+            rows.append(
+                (
+                    name,
+                    format_measure_none(engine.get("indexWallSeconds")),
+                    format_measure_none(engine.get("indexPeakRssBytes")),
+                    format_measure_none(engine.get("indexBytes")),
+                    format_measure_none(engine.get("indexToLogRatio")),
+                    "-",
+                    "-",
+                    "-",
+                    "-",
+                    format_measure_none(engine.get("timeToFirstResultSeconds")),
+                )
+            )
+            for mode in engine["modes"]:
+                rows.append(
+                    (
+                        f"{name}/{mode['mode']}",
+                        "-",
+                        "-",
+                        "-",
+                        "-",
+                        format_measure_none(mode.get("queryWallSeconds")),
+                        format_measure_none(mode.get("queryPeakRssBytes")),
+                        format_measure_none(mode.get("queryLatencyMedianSeconds")),
+                        format_measure_none(mode.get("queryLatencyP95Seconds")),
+                        "-",
+                    )
+                )
+            continue
+        rows.append(
+            (
+                name,
+                format_measure_none(engine.get("indexWallSeconds")),
+                format_measure_none(engine.get("indexPeakRssBytes")),
+                format_measure_none(engine.get("indexBytes")),
+                format_measure_none(engine.get("indexToLogRatio")),
+                format_measure_none(engine.get("queryWallSeconds")),
+                format_measure_none(engine.get("queryPeakRssBytes")),
+                format_measure_none(engine.get("queryLatencyMedianSeconds")),
+                format_measure_none(engine.get("queryLatencyP95Seconds")),
+                format_measure_none(engine.get("timeToFirstResultSeconds")),
+            )
+        )
+    widths = [len(header) for header in headers]
+    for row in rows:
+        for index, cell in enumerate(row):
+            widths[index] = max(widths[index], len(cell))
+    lines = [
+        "  ".join(header.ljust(widths[index]) for index, header in enumerate(headers)),
+        "  ".join("-" * widths[index] for index in range(len(headers))),
+    ]
+    for row in rows:
+        lines.append("  ".join(cell.ljust(widths[index]) for index, cell in enumerate(row)))
+    return "\n".join(lines)
+
+
+def format_report_with_measure(payload: dict) -> str:
+    sections: list[str] = []
+    if payload.get("datasets") and payload.get("overall") is not None:
+        sections.append(format_report(payload))
+    measure = payload.get("measure")
+    if not isinstance(measure, dict):
+        return "\n".join(sections)
+    sections.append("=== measure ===")
+    sections.append(
+        f"platform={measure.get('platform')} cpu={measure.get('cpuModel')} "
+        f"nproc={measure.get('nproc')} threads={measure.get('threads')} "
+        f"repeat={measure.get('repeat')}"
+    )
+    tools = measure.get("tool")
+    if isinstance(tools, dict):
+        sections.append("tools: " + " ".join(f"{key}={value}" for key, value in sorted(tools.items())))
+    for dataset in measure.get("datasets", []):
+        sections.append(f"=== measure {dataset['name']} ===")
+        sections.append(format_measure_table(dataset))
+    return "\n".join(sections)
+
+
 def main(argv: list[str] | None = None) -> None:
+    argv_list = list(sys.argv[1:] if argv is None else argv)
+    if argv_list and argv_list[0] == "--measure-worker":
+        measure_worker_main(argv_list[1:])
+        return
+
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--out", type=Path, required=True, help="Deterministic JSON report path")
     parser.add_argument(
         "--dataset",
         default=None,
-        help="Comma-separated 2k datasets or all-2k (maps log, CSV, and query file)",
+        help="Comma-separated 2k datasets or all-2k (maps log, CSV, and query file); "
+        "with --measure/--log-prefix-lines also hdfs-v1,bgl,thunderbird,all-full",
     )
     parser.add_argument("--queries", type=Path, default=DEFAULT_QUERIES, help="JSONL query set")
     parser.add_argument("--log", type=Path, default=DEFAULT_LOG, help="Loghub 2k log path")
@@ -1774,6 +2938,29 @@ def main(argv: list[str] | None = None) -> None:
         help="Do not call fetch-loghub when inputs are missing",
     )
     parser.add_argument(
+        "--measure",
+        action="store_true",
+        help="Record wall time, peak RSS, index size, and time-to-first-result (machine-dependent)",
+    )
+    parser.add_argument(
+        "--repeat",
+        type=int,
+        default=None,
+        help=f"With --measure, median over N repeats (default {DEFAULT_MEASURE_REPEAT})",
+    )
+    parser.add_argument(
+        "--log-prefix-lines",
+        type=int,
+        nargs="?",
+        const=DEFAULT_LOG_PREFIX_LINES,
+        default=None,
+        help=(
+            f"With --measure, use the first N lines of pinned full Loghub sets "
+            f"(default {DEFAULT_LOG_PREFIX_LINES}; published size is {PUBLISHED_LOG_PREFIX_LINES}). "
+            "Speed/memory only; no quality labels."
+        ),
+    )
+    parser.add_argument(
         "--xerj-url",
         default=None,
         help="Existing Elasticsearch-compatible xerj URL (localhost only)",
@@ -1788,7 +2975,19 @@ def main(argv: list[str] | None = None) -> None:
         default=None,
         help="Local all-MiniLM-L6-v2 dir for spawned xerj-neural (no download)",
     )
-    args = parser.parse_args(argv)
+    args = parser.parse_args(argv_list)
+    if args.repeat is not None and not args.measure:
+        raise SystemExit("error: --repeat requires --measure")
+    if args.log_prefix_lines is not None and not args.measure:
+        raise SystemExit("error: --log-prefix-lines requires --measure")
+    if args.measure and args.xerj_url:
+        raise SystemExit("error: --measure requires a spawned xerj (--xerj-bin / PATH); not --xerj-url")
+    if args.log_prefix_lines is not None and args.log_prefix_lines <= 0:
+        raise SystemExit("error: --log-prefix-lines must be a positive integer")
+    measure_repeats = DEFAULT_MEASURE_REPEAT if args.repeat is None else args.repeat
+    if args.measure and measure_repeats <= 0:
+        raise SystemExit("error: --repeat must be a positive integer")
+
     engines = parse_engines(args.engines)
     nesso_only = engines == ["nesso"]
     needs_nesso = "nesso" in engines
@@ -1809,73 +3008,100 @@ def main(argv: list[str] | None = None) -> None:
         if not ok:
             raise SystemExit(f"error: {reason}")
     modes = parse_modes(args.modes)
-    dataset_specs = parse_datasets(args.dataset)
-    xerj = open_xerj_context(
-        engines=engines,
-        xerj_url=args.xerj_url,
-        xerj_bin=args.xerj_bin,
-        xerj_model_dir=args.xerj_model_dir,
-    )
+    prefix_lines = args.log_prefix_lines
+    measure_only = prefix_lines is not None
+
+    xerj = XerjContext()
+    if not measure_only:
+        xerj = open_xerj_context(
+            engines=engines,
+            xerj_url=args.xerj_url,
+            xerj_bin=args.xerj_bin,
+            xerj_model_dir=args.xerj_model_dir,
+        )
     try:
         dataset_results: list[dict] = []
-        if dataset_specs is None:
-            queries = load_queries(args.queries)
-            if not args.skip_fetch:
-                ensure_inputs(args.log, args.structured)
-            elif not args.log.is_file() or not args.structured.is_file():
-                raise SystemExit("error: --log and --structured must exist when --skip-fetch is set")
-            lines = read_log_lines(args.log)
-            event_by_line = load_event_ids(args.structured)
-            assert_line_id_alignment(args.log, event_by_line, lines)
-            validate_relevant_lines(queries, args.log, lines)
-            dataset_results.append(
-                evaluate_dataset(
-                    binary=binary,
-                    model_dir=model_dir,
-                    queries=queries,
-                    event_by_line=event_by_line,
-                    log_path=args.log,
-                    lines=lines,
-                    modes=modes,
-                    engines=engines,
-                    workdir=args.workdir,
-                    corpus_name="hdfs_2k.nesso",
-                    dataset_name="hdfs-2k",
-                    xerj=xerj,
-                )
-            )
+        measure_targets: list[tuple[str, Path, list[str]]] = []
+
+        if measure_only:
+            full_specs = parse_full_datasets(args.dataset)
+            for spec in full_specs:
+                log_path = ensure_full_log(spec, lines=prefix_lines, skip_fetch=args.skip_fetch)
+                query_texts = load_query_texts(spec.queries_path)
+                measure_targets.append((spec.name, log_path, query_texts))
         else:
-            for spec in dataset_specs:
+            dataset_specs = parse_datasets(args.dataset)
+            if dataset_specs is None:
+                queries = load_queries(args.queries)
                 if not args.skip_fetch:
-                    ensure_inputs(spec.log_path, spec.structured_path, fetch_dataset=spec.name)
-                elif not spec.log_path.is_file() or not spec.structured_path.is_file():
-                    raise SystemExit(
-                        f"error: --log and --structured must exist when --skip-fetch is set "
-                        f"({spec.log_path}, {spec.structured_path})"
-                    )
-                queries = load_queries(spec.queries_path)
-                lines = read_log_lines(spec.log_path)
-                event_by_line = load_event_ids(spec.structured_path)
-                assert_line_id_alignment(spec.log_path, event_by_line, lines)
-                validate_relevant_lines(queries, spec.log_path, lines)
+                    ensure_inputs(args.log, args.structured)
+                elif not args.log.is_file() or not args.structured.is_file():
+                    raise SystemExit("error: --log and --structured must exist when --skip-fetch is set")
+                lines = read_log_lines(args.log)
+                event_by_line = load_event_ids(args.structured)
+                assert_line_id_alignment(args.log, event_by_line, lines)
+                validate_relevant_lines(queries, args.log, lines)
                 dataset_results.append(
                     evaluate_dataset(
                         binary=binary,
                         model_dir=model_dir,
                         queries=queries,
                         event_by_line=event_by_line,
-                        log_path=spec.log_path,
+                        log_path=args.log,
                         lines=lines,
                         modes=modes,
                         engines=engines,
                         workdir=args.workdir,
-                        corpus_name=spec.corpus_name,
-                        dataset_name=spec.name,
+                        corpus_name="hdfs_2k.nesso",
+                        dataset_name="hdfs-2k",
                         xerj=xerj,
                     )
                 )
+                measure_targets.append(
+                    ("hdfs-2k", args.log, [query.query for query in queries])
+                )
+            else:
+                for spec in dataset_specs:
+                    if not args.skip_fetch:
+                        ensure_inputs(spec.log_path, spec.structured_path, fetch_dataset=spec.name)
+                    elif not spec.log_path.is_file() or not spec.structured_path.is_file():
+                        raise SystemExit(
+                            f"error: --log and --structured must exist when --skip-fetch is set "
+                            f"({spec.log_path}, {spec.structured_path})"
+                        )
+                    queries = load_queries(spec.queries_path)
+                    lines = read_log_lines(spec.log_path)
+                    event_by_line = load_event_ids(spec.structured_path)
+                    assert_line_id_alignment(spec.log_path, event_by_line, lines)
+                    validate_relevant_lines(queries, spec.log_path, lines)
+                    dataset_results.append(
+                        evaluate_dataset(
+                            binary=binary,
+                            model_dir=model_dir,
+                            queries=queries,
+                            event_by_line=event_by_line,
+                            log_path=spec.log_path,
+                            lines=lines,
+                            modes=modes,
+                            engines=engines,
+                            workdir=args.workdir,
+                            corpus_name=spec.corpus_name,
+                            dataset_name=spec.name,
+                            xerj=xerj,
+                        )
+                    )
+                    measure_targets.append(
+                        (spec.name, spec.log_path, [query.query for query in queries])
+                    )
 
-        if nesso_only:
+        if measure_only:
+            payload = {
+                "datasets": [],
+                "k": K,
+                "overall": None,
+                "schema_version": SCHEMA_VERSION_ENGINES if not nesso_only else SCHEMA_VERSION,
+            }
+        elif nesso_only:
             overall = aggregate_overall(dataset_results, modes)
             payload = {
                 "datasets": dataset_results,
@@ -1891,10 +3117,43 @@ def main(argv: list[str] | None = None) -> None:
                 "overall": overall,
                 "schema_version": SCHEMA_VERSION_ENGINES,
             }
+
+        if args.measure:
+            measure_datasets = []
+            for name, log_path, query_texts in measure_targets:
+                measure_datasets.append(
+                    measure_dataset(
+                        dataset_name=name,
+                        log_path=log_path,
+                        query_texts=query_texts,
+                        engines=engines,
+                        modes=modes,
+                        workdir=args.workdir / "measure" / name,
+                        binary=binary,
+                        model_dir=model_dir,
+                        xerj_bin=args.xerj_bin,
+                        xerj_model_dir=args.xerj_model_dir,
+                        repeats=measure_repeats,
+                    )
+                )
+            payload["measure"] = {
+                "cpuModel": cpu_model(),
+                "datasets": measure_datasets,
+                "nproc": logical_cpus(),
+                "platform": platform.platform(),
+                "repeat": measure_repeats,
+                "threads": threads_setting(),
+                "tool": collect_measure_tool_versions(
+                    engines=engines,
+                    binary=binary,
+                    xerj_bin=args.xerj_bin,
+                ),
+            }
+
         encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")) + "\n"
         args.out.parent.mkdir(parents=True, exist_ok=True)
         args.out.write_text(encoded, encoding="utf-8")
-        print(format_report(payload))
+        print(format_report_with_measure(payload) if args.measure else format_report(payload))
         print(f"wrote {args.out}")
     finally:
         xerj.shutdown()

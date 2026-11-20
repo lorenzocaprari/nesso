@@ -177,6 +177,30 @@ class DiyFaissEngine:
         scored_lines.sort(key=lambda item: (-item[0], item[1]))
         return [line_id for _, line_id in scored_lines[:k]]
 
+    def write_index(self, path: Path) -> None:
+        if self._index is None:
+            raise SystemExit("error: diy-faiss engine not prepared")
+        if self.encode_fn is not None and self.make_index_fn is not None:
+            path.write_bytes(b"fake-diy-faiss-index")
+            return
+        assert self._faiss is not None
+        self._faiss.write_index(self._index, str(path))
+
+    def read_index(self, path: Path, n: int) -> None:
+        if self.encode_fn is not None and self.make_index_fn is not None:
+            self._n = n
+            return
+        self._ensure_stack()
+        assert self._faiss is not None
+        self._index = self._faiss.read_index(str(path))
+        self._n = n
+        assert self._sentence_transformers is not None
+        self._model = self._sentence_transformers(
+            MODEL_ID,
+            revision=MODEL_REVISION,
+            device="cpu",
+        )
+
     def versions(self) -> dict[str, str]:
         if self.encode_fn is not None and self.make_index_fn is not None:
             return {
