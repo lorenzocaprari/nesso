@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795245769661,
+  "lastUpdate": 1795250997384,
   "repoUrl": "https://github.com/lorenzocaprari/nesso",
   "entries": {
     "nesso": [
@@ -10475,6 +10475,60 @@ window.BENCHMARK_DATA = {
           {
             "name": "grep-100000-rss",
             "value": 146137088,
+            "unit": "bytes"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "caprarilorenzo5@gmail.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "committer": {
+            "email": "85455384+lorenzocaprari@users.noreply.github.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "distinct": true,
+          "id": "a6fb1c57a157eecd6a6381e30574eabbee95a8cc",
+          "message": "test(eval): remove the retrieval eval harness, now in nesso-bench\n\nThe eval-retrieval workflow runs nesso-bench's harness at a pinned\ncommit, so nesso's copies are unused. Remove scripts/eval-retrieval,\neval-retrieval-compare, and eval-retrieval-merge with their tests,\ntest/eval/ (seed sets, needle queries, and reference reports), and\nbench/competitors/. docs/benchmarks.md keeps nesso's own benchmarks and\npoints at nesso-bench for the retrieval evaluation. scripts/fetch-loghub\nstays for bench, check-index-rss, and the real-log bench. The unreleased\nchangelog entries for the eval collapse into what this repository ships.",
+          "timestamp": "2026-11-21T09:45:42+01:00",
+          "tree_id": "b016d7e0905c2bb71303da50364dc42d1e3f3640",
+          "url": "https://github.com/lorenzocaprari/nesso/commit/a6fb1c57a157eecd6a6381e30574eabbee95a8cc"
+        },
+        "date": 1795250996501,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "grep-1000-wall",
+            "value": 0.11,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-1000-rss",
+            "value": 117805056,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-10000-wall",
+            "value": 0.16,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-10000-rss",
+            "value": 121958400,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-100000-wall",
+            "value": 0.28,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-100000-rss",
+            "value": 146702336,
             "unit": "bytes"
           }
         ]
