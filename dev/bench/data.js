@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795264831999,
+  "lastUpdate": 1795271554647,
   "repoUrl": "https://github.com/lorenzocaprari/nesso",
   "entries": {
     "nesso": [
@@ -10691,6 +10691,60 @@ window.BENCHMARK_DATA = {
           {
             "name": "grep-100000-rss",
             "value": 147525632,
+            "unit": "bytes"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "caprarilorenzo5@gmail.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "committer": {
+            "email": "85455384+lorenzocaprari@users.noreply.github.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "distinct": true,
+          "id": "8b4b83c00ef28567f98af338e8c07088dc413a92",
+          "message": "build(deps): fall back to nesso-vendor for sources that vanished upstream\n\nmicrosoft/onnxruntime returns 404 since 18 Nov 2026, so no build-env image can be rebuilt. The images now set core.sources:download_urls to the original URL, then nesso-vendor's conan-sources release. Its onnxruntime 1.18.1 archive is byte-identical to the original (sha256 480ff5d2, ConanCenter's pin), rebuilt from Software Heritage. Recipe, recipe revision and conan.lock are unchanged.",
+          "timestamp": "2026-11-21T15:25:30+01:00",
+          "tree_id": "6569535b8e26085c207d5a0a82f8b9af241a54c9",
+          "url": "https://github.com/lorenzocaprari/nesso/commit/8b4b83c00ef28567f98af338e8c07088dc413a92"
+        },
+        "date": 1795271554015,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "grep-1000-wall",
+            "value": 1.13,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-1000-rss",
+            "value": 119332864,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-10000-wall",
+            "value": 1.13,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-10000-rss",
+            "value": 118640640,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-100000-wall",
+            "value": 1.35,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-100000-rss",
+            "value": 145059840,
             "unit": "bytes"
           }
         ]
