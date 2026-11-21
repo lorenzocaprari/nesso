@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795271554647,
+  "lastUpdate": 1795272511796,
   "repoUrl": "https://github.com/lorenzocaprari/nesso",
   "entries": {
     "nesso": [
@@ -10745,6 +10745,60 @@ window.BENCHMARK_DATA = {
           {
             "name": "grep-100000-rss",
             "value": 145059840,
+            "unit": "bytes"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "caprarilorenzo5@gmail.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "committer": {
+            "email": "85455384+lorenzocaprari@users.noreply.github.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "distinct": true,
+          "id": "4c32b1cc01b50301d6313c6a100d2ea4563a58d9",
+          "message": "ci(eval): bump nesso-bench and flag a stale pin\n\nMove NESSO_BENCH_REF from e0f46ab to nesso-bench main 5a75296. The new\ncommits add nesso-bench's Eval competitors workflow and progress lines\non stderr for needle runs; the harness's stdout, the JSON reports, the\nquery sets, and the reference reports are unchanged, so scores stay the\nsame.\n\nThe pin is bumped by hand, so the resolve job now compares it with\nnesso-bench's main through the GitHub compare API. A pin that is behind\nmain, or not on it, gets a warning annotation and a line in the job\nsummary. The check never fails the run, including when the API is\nunreachable.",
+          "timestamp": "2026-11-21T15:44:32+01:00",
+          "tree_id": "6f5963bc34495bed59142c5472169f29f9544345",
+          "url": "https://github.com/lorenzocaprari/nesso/commit/4c32b1cc01b50301d6313c6a100d2ea4563a58d9"
+        },
+        "date": 1795272510999,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "grep-1000-wall",
+            "value": 0.15,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-1000-rss",
+            "value": 119681024,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-10000-wall",
+            "value": 0.16,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-10000-rss",
+            "value": 118988800,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-100000-wall",
+            "value": 0.36,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-100000-rss",
+            "value": 145154048,
             "unit": "bytes"
           }
         ]
