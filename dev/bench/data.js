@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795272511796,
+  "lastUpdate": 1795282027677,
   "repoUrl": "https://github.com/lorenzocaprari/nesso",
   "entries": {
     "nesso": [
@@ -10799,6 +10799,60 @@ window.BENCHMARK_DATA = {
           {
             "name": "grep-100000-rss",
             "value": 145154048,
+            "unit": "bytes"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "85455384+lorenzocaprari@users.noreply.github.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "a74a387ef22e4c250b8044814414c74f296aa1be",
+          "message": "ci(soak): retire the index-rss workflow (#354)\n\nThe Index RSS workflow gated nesso index peak RSS on the HDFS 2k sample\nrepeated to 1M lines. The nightly real-log benchmark already gates peak\nRSS on real 1M-line HDFS and Thunderbird logs, for index, grep, and\nsearch at 1 and 8 threads, so the repeated sample added a weaker copy of\nthe same check on an input with few distinct messages. Remove the\nworkflow and keep scripts/check-index-rss as a local check.\n\nAGENTS.md, CONTRIBUTING.md, docs/benchmarks.md, docs/building.md, and\nthe changelog no longer list the workflow; the Harden-Runner list drops\nit.",
+          "timestamp": "2026-11-21T18:22:15+01:00",
+          "tree_id": "d459b7b69c33483f14c75e4d31019312fcb0a678",
+          "url": "https://github.com/lorenzocaprari/nesso/commit/a74a387ef22e4c250b8044814414c74f296aa1be"
+        },
+        "date": 1795282026960,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "grep-1000-wall",
+            "value": 0.14,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-1000-rss",
+            "value": 118878208,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-10000-wall",
+            "value": 0.15,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-10000-rss",
+            "value": 119717888,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-100000-wall",
+            "value": 0.33,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-100000-rss",
+            "value": 144908288,
             "unit": "bytes"
           }
         ]
