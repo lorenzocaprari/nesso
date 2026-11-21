@@ -8,7 +8,7 @@ import (
 	"os"
 )
 
-const ciUsage = "usage: ci <patch-coverage|junit-summary|bench-external|bench-history|bench-scale|bench-summary|bench-baseline|trivy-summary|runtime-scan-dockerfile|ci-gate|ci-gate-needs|wait-build-env|clang-tidy-cache> [flags]"
+const ciUsage = "usage: ci <patch-coverage|junit-summary|bench-scale|bench-summary|bench-baseline|trivy-summary|runtime-scan-dockerfile|ci-gate|ci-gate-needs|wait-build-env|clang-tidy-cache> [flags]"
 
 func main() {
 	if len(os.Args) < 2 {
@@ -21,10 +21,6 @@ func main() {
 		code = patchMain(os.Args[2:])
 	case "junit-summary":
 		code = junitMain(os.Args[2:])
-	case "bench-external":
-		code = benchExternalMain(os.Args[2:])
-	case "bench-history":
-		code = benchHistoryMain(os.Args[2:])
 	case "bench-scale":
 		code = benchScaleMain(os.Args[2:])
 	case "bench-summary":
