@@ -64,7 +64,11 @@ def load_bench():
 class BenchRealLogTest(unittest.TestCase):
     def test_prefix_does_not_repeat_a_short_file(self) -> None:
         bench = load_bench()
-        self.assertEqual(bench.REAL_LOG_DEFAULT_LINES, 1_000_000)
+        self.assertEqual(set(bench.REAL_LOG_DEFAULT_LINES), set(bench.REAL_LOG_FILES))
+        self.assertEqual(bench.REAL_LOG_DEFAULT_LINES["hdfs-v1"], bench.REAL_LOG_FETCH_LINES)
+        for count in bench.REAL_LOG_DEFAULT_LINES.values():
+            self.assertGreater(count, 0)
+            self.assertLessEqual(count, bench.REAL_LOG_FETCH_LINES)
         self.assertEqual(bench.REAL_LOG_THREAD_COUNTS, (1, 8))
         self.assertEqual(bench.REAL_LOG_DEFAULT_CORPORA, ("hdfs-v1", "thunderbird"))
         self.assertEqual(bench.parse_real_log_corpora(None), ("hdfs-v1", "thunderbird"))
@@ -137,7 +141,7 @@ class BenchRealLogTest(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
             payload = json.loads(output.read_text(encoding="utf-8"))
             self.assertEqual(payload["dataset"], "real-log")
-            self.assertEqual(payload["lines"], 2)
+            self.assertEqual(payload["lines"], {name: 2 for name in bench.REAL_LOG_DEFAULT_CORPORA})
             default = bench.REAL_LOG_DEFAULT_CORPORA
             self.assertEqual(len(payload["cases"]), len(default) * len(bench.REAL_LOG_THREAD_COUNTS))
             names = [case["corpus"] for case in payload["cases"]]
@@ -194,6 +198,61 @@ class BenchRealLogTest(unittest.TestCase):
                 len(all_payload["cases"]),
                 len(bench.REAL_LOG_FILES) * len(bench.REAL_LOG_THREAD_COUNTS),
             )
+    def test_real_log_uses_each_corpus_default_without_lines(self) -> None:
+        bench = load_bench()
+        with tempfile.TemporaryDirectory() as temp:
+            directory = pathlib.Path(temp)
+            root = directory / "logs"
+            root.mkdir()
+            longest = max(bench.REAL_LOG_DEFAULT_LINES.values())
+            for name in bench.REAL_LOG_FILES.values():
+                (root / name).write_bytes(b"a\n" * (longest + 1))
+            model = directory / "model"
+            model.mkdir()
+            (model / "model.onnx").write_bytes(b"x")
+            (model / "vocab.txt").write_bytes(b"x")
+            binary = directory / "nesso"
+            binary.write_text(STUB, encoding="utf-8")
+            binary.chmod(binary.stat().st_mode | stat.S_IEXEC)
+            timer = directory / "time"
+            timer.write_text(FAKE_TIME, encoding="utf-8")
+            timer.chmod(timer.stat().st_mode | stat.S_IEXEC)
+            output = directory / "out.json"
+            env = os.environ.copy()
+            env.pop("GITHUB_SHA", None)
+            env["NESSO_BENCH_TIME"] = str(timer)
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(SCRIPT),
+                    "--dataset",
+                    "real-log",
+                    "--corpora",
+                    "all",
+                    "--real-log-root",
+                    str(root),
+                    "--binary",
+                    str(binary),
+                    "--model-dir",
+                    str(model),
+                    "--output",
+                    str(output),
+                ],
+                capture_output=True,
+                text=True,
+                check=False,
+                env=env,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+            payload = json.loads(output.read_text(encoding="utf-8"))
+            self.assertEqual(payload["lines"], bench.REAL_LOG_DEFAULT_LINES)
+            for case in payload["cases"]:
+                want = bench.REAL_LOG_DEFAULT_LINES[case["corpus"]]
+                self.assertEqual(case["lines"], want)
+                self.assertEqual(case["inputBytes"], 2 * want)
+                for command in case["commands"]:
+                    self.assertEqual(command["lines"], want)
+
 
 if __name__ == "__main__":
     unittest.main()
