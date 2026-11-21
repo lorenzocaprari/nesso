@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795206808574,
+  "lastUpdate": 1795243933419,
   "repoUrl": "https://github.com/lorenzocaprari/nesso",
   "entries": {
     "nesso": [
@@ -10367,6 +10367,60 @@ window.BENCHMARK_DATA = {
           {
             "name": "grep-100000-rss",
             "value": 146194432,
+            "unit": "bytes"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "caprarilorenzo5@gmail.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "committer": {
+            "email": "85455384+lorenzocaprari@users.noreply.github.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "distinct": true,
+          "id": "66a8ac891992227121c6eb4e9502a39987441ed5",
+          "message": "ci(eval): run the retrieval eval from nesso-bench at a pinned commit\n\nThe eval-retrieval workflow checks out lorenzocaprari/nesso-bench at\nNESSO_BENCH_REF and runs its eval-retrieval, eval-retrieval-compare,\nfetch-loghub, query sets, and reference reports against the nesso it\nbuilt. The pinned scripts match the in-tree copies, so scores and the\ncomparison with the latest nightly report are unchanged. Loghub inputs now\nlive under nesso-bench/build/bench and their cache keys hash nesso-bench's\nfetch-loghub. Pull requests run the workflow when they touch ranking code,\nscripts/fetch-model, or the workflow, which holds the pin.",
+          "timestamp": "2026-11-21T07:47:37+01:00",
+          "tree_id": "87fef810bb5b46064da113e3cfeae3bee6c86c78",
+          "url": "https://github.com/lorenzocaprari/nesso/commit/66a8ac891992227121c6eb4e9502a39987441ed5"
+        },
+        "date": 1795243933009,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "grep-1000-wall",
+            "value": 0.13,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-1000-rss",
+            "value": 117956608,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-10000-wall",
+            "value": 0.14,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-10000-rss",
+            "value": 117153792,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-100000-wall",
+            "value": 0.28,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-100000-rss",
+            "value": 144752640,
             "unit": "bytes"
           }
         ]
