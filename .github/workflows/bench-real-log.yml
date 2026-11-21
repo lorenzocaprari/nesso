@@ -31,6 +31,10 @@ env:
   CONAN_WERROR_ARGS: "-c user.nesso:werror=True"
   NESSO_BENCH_RSS_TOLERANCE: "0.15"
   NESSO_BENCH_WALL_TOLERANCE: "0.15"
+  # nesso-bench owns scripts/fetch-loghub. Keep this commit equal to
+  # NESSO_BENCH_REF in eval-retrieval.yml and bump both in the same pull request.
+  NESSO_BENCH_REPOSITORY: lorenzocaprari/nesso-bench
+  NESSO_BENCH_REF: 5a7529615d8466a38137d877ec5f439ec0e16399
 
 jobs:
   guard:
@@ -136,6 +140,14 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Checkout nesso-bench
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ env.NESSO_BENCH_REPOSITORY }}
+          ref: ${{ env.NESSO_BENCH_REF }}
+          path: nesso-bench
+          persist-credentials: false
+
       - name: Restore MiniLM models
         id: models
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -194,7 +206,7 @@ jobs:
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ steps.corpora.outputs.paths }}
-          key: loghub-1m-${{ steps.corpora.outputs.cache_key }}-${{ hashFiles('scripts/fetch-loghub') }}
+          key: loghub-1m-${{ steps.corpora.outputs.cache_key }}-${{ hashFiles('nesso-bench/scripts/fetch-loghub') }}
 
       - name: Fetch truncated Loghub logs
         shell: bash
@@ -203,13 +215,13 @@ jobs:
         run: |
           set -euo pipefail
           if [[ "${CORPORA}" == "all" ]]; then
-            python3 scripts/fetch-loghub --dataset all-full
+            python3 nesso-bench/scripts/fetch-loghub --dataset all-full --dest-dir build/bench
             exit 0
           fi
           IFS=',' read -r -a names <<< "${CORPORA}"
           for name in "${names[@]}"; do
             name="$(printf '%s' "${name}" | tr -d '[:space:]')"
-            python3 scripts/fetch-loghub --dataset "${name}"
+            python3 nesso-bench/scripts/fetch-loghub --dataset "${name}" --dest-dir build/bench
           done
 
       - name: Install Dependencies (Conan)
@@ -230,7 +242,7 @@ jobs:
           set -euo pipefail
           mem_kb=$(awk '/^MemTotal:/ {print $2}' /proc/meminfo)
           export NESSO_BENCH_AS_LIMIT_KB=$((mem_kb * 3 / 4))
-          python3 scripts/bench --dataset real-log --corpora "${CORPORA}" --binary build/Release/src/nesso --timeout 1200 \
+          python3 scripts/bench --dataset real-log --corpora "${CORPORA}" --loghub-dir build/bench --binary build/Release/src/nesso --timeout 1200 \
             --output bench/results/real-log.json
 
       - name: Download previous nightly result
@@ -280,7 +292,7 @@ jobs:
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ steps.corpora.outputs.paths }}
-          key: loghub-1m-${{ steps.corpora.outputs.cache_key }}-${{ hashFiles('scripts/fetch-loghub') }}
+          key: loghub-1m-${{ steps.corpora.outputs.cache_key }}-${{ hashFiles('nesso-bench/scripts/fetch-loghub') }}
 
       - name: Upload benchmark results
         if: always()

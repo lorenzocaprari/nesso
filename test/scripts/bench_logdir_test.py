@@ -112,6 +112,21 @@ def model_dir(directory: pathlib.Path) -> pathlib.Path:
 
 
 class BenchLogdirTest(unittest.TestCase):
+    def test_shared_defaults(self) -> None:
+        bench = load_bench()
+        self.assertEqual(bench.DEFAULT_SIZES, (1000, 10_000, 100_000))
+        self.assertEqual(bench.gnu_time_binary(), "/usr/bin/time")
+
+    def test_lines_without_a_dataset_is_rejected(self) -> None:
+        result = subprocess.run(
+            [sys.executable, str(SCRIPT), "--lines", "10"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("--lines applies to --dataset logdir", result.stderr)
+
     def test_tree_is_deterministic_and_lists_regular_files(self) -> None:
         bench = load_bench()
         self.assertEqual(bench.LOGDIR_DEFAULT_LINES, 256)
@@ -360,11 +375,10 @@ class BenchLogdirTest(unittest.TestCase):
     def test_dataset_flags_are_rejected_on_the_wrong_mode(self) -> None:
         cases = (
             (["--mib", "1"], "--dataset logdir"),
-            (["--dataset", "hdfs", "--mib", "1"], "--dataset logdir"),
-            (["--dataset", "logdir", "--sample", "x"], "--dataset hdfs"),
+            (["--dataset", "real-log", "--mib", "1"], "--dataset logdir"),
             (["--dataset", "logdir", "--sizes", "10"], "synthetic grep"),
             (["--dataset", "logdir", "--lines", "40", "--mib", "1"], "--lines"),
-            (["--lines", "10"], "--dataset hdfs"),
+            (["--lines", "10"], "--dataset logdir"),
         )
         for args, needle in cases:
             with self.subTest(args=args):

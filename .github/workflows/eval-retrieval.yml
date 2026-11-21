@@ -41,6 +41,7 @@ env:
   # pull request when nesso-bench changes; that pull request runs this
   # workflow, so its summary shows any score change the bump brings. The
   # resolve job warns when this commit is behind nesso-bench's main.
+  # bench-real-log.yml pins the same commit for fetch-loghub; bump both together.
   NESSO_BENCH_REPOSITORY: lorenzocaprari/nesso-bench
   NESSO_BENCH_REF: 5a7529615d8466a38137d877ec5f439ec0e16399
 

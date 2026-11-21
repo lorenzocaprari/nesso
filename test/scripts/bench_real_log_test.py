@@ -124,7 +124,7 @@ class BenchRealLogTest(unittest.TestCase):
                     "real-log",
                     "--lines",
                     "2",
-                    "--real-log-root",
+                    "--loghub-dir",
                     str(root),
                     "--binary",
                     str(binary),
@@ -178,7 +178,7 @@ class BenchRealLogTest(unittest.TestCase):
                     "all",
                     "--lines",
                     "2",
-                    "--real-log-root",
+                    "--loghub-dir",
                     str(root),
                     "--binary",
                     str(binary),
@@ -229,7 +229,7 @@ class BenchRealLogTest(unittest.TestCase):
                     "real-log",
                     "--corpora",
                     "all",
-                    "--real-log-root",
+                    "--loghub-dir",
                     str(root),
                     "--binary",
                     str(binary),
@@ -252,6 +252,30 @@ class BenchRealLogTest(unittest.TestCase):
                 self.assertEqual(case["inputBytes"], 2 * want)
                 for command in case["commands"]:
                     self.assertEqual(command["lines"], want)
+
+    def test_missing_log_names_the_nesso_bench_command(self) -> None:
+        bench = load_bench()
+        with tempfile.TemporaryDirectory() as temp:
+            root = pathlib.Path(temp)
+            (root / bench.REAL_LOG_FILES["hdfs-v1"]).write_text("alpha\n", encoding="utf-8")
+            self.assertEqual(bench.ensure_real_log_root(root, ("hdfs-v1",)), root)
+            with self.assertRaises(SystemExit) as missing:
+                bench.ensure_real_log_root(root, ("hdfs-v1", "thunderbird"))
+            message = str(missing.exception)
+            self.assertIn(bench.REAL_LOG_FILES["thunderbird"], message)
+            self.assertNotIn(bench.REAL_LOG_FILES["hdfs-v1"], message)
+            self.assertIn(f"scripts/fetch-loghub --dataset thunderbird --dest-dir {root}", message)
+
+    def test_workflows_pin_the_same_nesso_bench_commit(self) -> None:
+        workflows = ROOT / ".github" / "workflows"
+        pins = {}
+        for name in ("bench-real-log.yml", "eval-retrieval.yml"):
+            text = (workflows / name).read_text(encoding="utf-8")
+            found = [line.split(":", 1)[1].strip() for line in text.splitlines() if line.strip().startswith("NESSO_BENCH_REF:")]
+            self.assertEqual(len(found), 1, name)
+            pins[name] = found[0]
+        self.assertEqual(len(set(pins.values())), 1, pins)
+        self.assertRegex(pins["bench-real-log.yml"], r"^[0-9a-f]{40}$")
 
 
 if __name__ == "__main__":
