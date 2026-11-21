@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
 """Run deterministic benchmarks and write JSON under bench/results/.
 
-Without --dataset, time grep on fixed-seed synthetic logs. --dataset hdfs
-indexes the Loghub HDFS sample and writes bench/results/<sha>.hdfs.json.
+Without --dataset, time grep on fixed-seed synthetic logs.
 --dataset logdir generates a synthetic log directory, times a cold index and
 the first search, and writes bench/results/<sha>.logdir.json. nesso index
 reads regular files, so logdir passes each file on its own. --dataset ttfa
@@ -29,7 +28,6 @@ import random
 import re
 import signal
 import subprocess
-import sys
 import tarfile
 import tempfile
 import time
@@ -37,7 +35,6 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_SIZES = (1000, 10_000, 100_000)
-HDFS_DEFAULT_LINES = 100_000
 # nesso-bench's fetch-loghub writes (and pins) a 1M-line prefix of each corpus. Varied logs
 # index far slower than HDFS, whose lines repeat: BGL 1M took about 22 minutes
 # per command on a GitHub runner, and Thunderbird 1M did not finish in an hour.
@@ -323,20 +320,6 @@ def read_gnu_time(time_path: Path) -> tuple[float | None, int | None]:
     return None, None
 
 
-def repeat_lines(source: Path, dest: Path, count: int) -> tuple[int, int]:
-    if count <= 0:
-        raise SystemExit("error: --lines must be a positive integer")
-    lines = source.read_text(encoding="utf-8").splitlines()
-    if not lines:
-        raise SystemExit(f"error: {source} has no lines")
-    with dest.open("w", encoding="utf-8", newline="\n") as handle:
-        for index in range(count):
-            handle.write(lines[index % len(lines)])
-            handle.write("\n")
-    size = dest.stat().st_size
-    return count, size
-
-
 def parse_cpu_model(text: str) -> str:
     for line in text.splitlines():
         if line.lower().startswith("model name"):
@@ -370,38 +353,6 @@ def threads_setting() -> str | None:
     return value
 
 
-def hdfs_measurement(
-    *,
-    lines: int,
-    wall_seconds: float,
-    peak_rss_bytes: int | None,
-    input_bytes: int,
-    corpus_bytes: int | None,
-    exit_code: int | None,
-    ok: bool,
-    error: str | None = None,
-) -> dict:
-    wall = round(wall_seconds, 6)
-    per_second = round(lines / wall, 6) if wall > 0 else None
-    ratio = None
-    if corpus_bytes is not None and input_bytes > 0:
-        ratio = round(corpus_bytes / input_bytes, 6)
-    case = {
-        "lines": lines,
-        "ok": ok,
-        "exitCode": exit_code,
-        "wallSeconds": wall,
-        "peakRssBytes": peak_rss_bytes,
-        "linesPerSecond": per_second,
-        "inputBytes": input_bytes,
-        "corpusBytes": corpus_bytes,
-        "corpusToInputRatio": ratio,
-    }
-    if error is not None:
-        case["error"] = error
-    return case
-
-
 def grep_payload(*, sha: str, binary: Path, query: str, cpu: str, nproc: int, threads: str | None, cases: list) -> dict:
     return {
         "sha": sha,
@@ -411,18 +362,6 @@ def grep_payload(*, sha: str, binary: Path, query: str, cpu: str, nproc: int, th
         "nproc": nproc,
         "threads": threads,
         "cases": cases,
-    }
-
-
-def hdfs_payload(*, sha: str, binary: Path, cpu: str, nproc: int, threads: str | None, case: dict) -> dict:
-    return {
-        "sha": sha,
-        "binary": str(binary),
-        "dataset": "hdfs",
-        "cpuModel": cpu,
-        "nproc": nproc,
-        "threads": threads,
-        "cases": [case],
     }
 
 
@@ -502,150 +441,6 @@ def run_case(binary: Path, model_dir: Path, lines: int, timeout: float | None) -
             else:
                 case["error"] = "missing peak RSS"
         return case
-
-
-def index_failure(return_code: int | None, stderr: str, peak_rss_bytes: int | None, corpus: Path) -> str | None:
-    if return_code == 0 and peak_rss_bytes is not None and corpus.is_file() and corpus.stat().st_size > 0:
-        return None
-    if "Failed to allocate memory" in stderr:
-        return "embedder failed to allocate"
-    if return_code is not None and return_code < 0:
-        return f"killed by signal {-return_code}"
-    if return_code is not None and return_code > 128:
-        return f"killed by signal {return_code - 128}"
-    if return_code not in (0, None):
-        return f"nesso exited {return_code}"
-    if not corpus.is_file() or corpus.stat().st_size == 0:
-        return "missing corpus"
-    return "missing peak RSS"
-
-
-def ensure_hdfs_sample(explicit: Path | None) -> Path:
-    if explicit is not None:
-        if not explicit.is_file():
-            raise SystemExit(f"error: sample not found: {explicit}")
-        return explicit
-    script = Path(__file__).resolve().parent / "fetch-loghub"
-    completed = subprocess.run([sys.executable, str(script)], check=False)
-    if completed.returncode != 0:
-        raise SystemExit(completed.returncode)
-    dest = ROOT / "build" / "bench" / "HDFS_2k.log"
-    if not dest.is_file():
-        raise SystemExit(f"error: fetch-loghub did not write {dest}")
-    return dest
-
-
-def run_hdfs_index(binary: Path, model_dir: Path, sample: Path, lines: int, timeout: float | None) -> dict:
-    with tempfile.TemporaryDirectory(prefix="nesso-bench-hdfs-") as tmp:
-        directory = Path(tmp)
-        log_path = directory / "hdfs.log"
-        _, input_bytes = repeat_lines(sample, log_path, lines)
-        corpus = directory / "corpus.nesso"
-        time_path = directory / "time.txt"
-        command = with_address_limit(
-            [
-                gnu_time_binary(),
-                "-f",
-                "%e %M",
-                "-o",
-                str(time_path),
-                str(binary),
-                "index",
-                "-o",
-                str(corpus),
-                str(log_path),
-                "--model-dir",
-                str(model_dir),
-                "--quiet",
-            ]
-        )
-        started = time.perf_counter()
-        process = subprocess.Popen(
-            command,
-            env=os.environ.copy(),
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            start_new_session=True,
-        )
-        try:
-            _stdout, stderr_bytes = process.communicate(timeout=timeout)
-        except subprocess.TimeoutExpired:
-            os.killpg(process.pid, signal.SIGKILL)
-            process.communicate()
-            return hdfs_measurement(
-                lines=lines,
-                wall_seconds=time.perf_counter() - started,
-                peak_rss_bytes=None,
-                input_bytes=input_bytes,
-                corpus_bytes=None,
-                exit_code=None,
-                ok=False,
-                error=f"timed out after {timeout}s",
-            )
-        wall_seconds = time.perf_counter() - started
-        stderr = stderr_bytes.decode("utf-8", "replace")
-        timed_wall, peak_rss_bytes = read_gnu_time(time_path)
-        if timed_wall is not None:
-            wall_seconds = timed_wall
-        corpus_bytes = corpus.stat().st_size if corpus.is_file() else None
-        error = index_failure(process.returncode, stderr, peak_rss_bytes, corpus)
-        return hdfs_measurement(
-            lines=lines,
-            wall_seconds=wall_seconds,
-            peak_rss_bytes=peak_rss_bytes,
-            input_bytes=input_bytes,
-            corpus_bytes=corpus_bytes,
-            exit_code=process.returncode,
-            ok=error is None,
-            error=error,
-        )
-
-
-def run_hdfs(args: argparse.Namespace) -> None:
-    if args.sizes is not None:
-        raise SystemExit("error: --sizes applies to the synthetic grep benchmark")
-    lines = HDFS_DEFAULT_LINES if args.lines is None else args.lines
-    if lines <= 0:
-        raise SystemExit("error: --lines must be a positive integer")
-    binary = resolve_binary(args.binary)
-    if not binary.is_file():
-        raise SystemExit(f"error: binary not found: {binary}")
-    model_dir = resolve_model_dir(args.model_dir)
-    if not (model_dir / "model.onnx").is_file() or not (model_dir / "vocab.txt").is_file():
-        raise SystemExit(f"error: {model_dir} must contain model.onnx and vocab.txt")
-    time_bin = gnu_time_binary()
-    if not Path(time_bin).is_file():
-        raise SystemExit(f"error: {time_bin} is required")
-    sample = ensure_hdfs_sample(args.sample)
-    print(f"bench: hdfs index {lines} lines", flush=True)
-    case = run_hdfs_index(binary, model_dir, sample, lines, args.timeout)
-    status = "ok" if case["ok"] else case.get("error", "failed")
-    print(
-        f"bench: {lines} lines {status} wall={case['wallSeconds']}s "
-        f"lines/s={case['linesPerSecond']} peak={case['peakRssBytes']} "
-        f"corpusBytes={case['corpusBytes']} inputBytes={case['inputBytes']} "
-        f"ratio={case['corpusToInputRatio']}",
-        flush=True,
-    )
-    cpu = cpu_model()
-    count = logical_cpus()
-    threads = threads_setting()
-    shown_threads = threads if threads is not None else "unset"
-    print(f"bench: cpu={cpu} nproc={count} NESSO_THREADS={shown_threads}", flush=True)
-    payload = hdfs_payload(
-        sha=git_sha(),
-        binary=binary,
-        cpu=cpu,
-        nproc=count,
-        threads=threads,
-        case=case,
-    )
-    output = args.output or (ROOT / "bench" / "results" / f"{payload['sha']}.hdfs.json")
-    output.parent.mkdir(parents=True, exist_ok=True)
-    output.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
-    print(f"bench: wrote {output}")
-    if not case.get("ok"):
-        raise SystemExit(1)
 
 
 def syslog_stamp(rng: random.Random) -> str:
@@ -1105,8 +900,6 @@ def logdir_payload(*, sha: str, binary: Path, cpu: str, nproc: int, threads: str
 def run_logdir(args: argparse.Namespace) -> None:
     if args.sizes is not None:
         raise SystemExit("error: --sizes applies to the synthetic grep benchmark")
-    if args.sample is not None:
-        raise SystemExit("error: --sample applies to --dataset hdfs")
     if args.lines is not None and args.mib is not None:
         raise SystemExit("error: pass only one of --lines and --mib")
     binary = resolve_binary(args.binary)
@@ -1217,8 +1010,6 @@ def ttfa_payload(*, sha: str, binary: Path, cpu: str, nproc: int, threads: str |
 def run_ttfa(args: argparse.Namespace) -> None:
     if args.sizes is not None:
         raise SystemExit("error: --sizes applies to the synthetic grep benchmark")
-    if args.sample is not None:
-        raise SystemExit("error: --sample applies to --dataset hdfs")
     if args.lines is not None and args.mib is not None:
         raise SystemExit("error: pass only one of --lines and --mib")
     binary = resolve_binary(args.binary)
@@ -1364,8 +1155,6 @@ def search_profile_payload(
 def run_search_profile(args: argparse.Namespace) -> None:
     if args.sizes is not None:
         raise SystemExit("error: --sizes applies to the synthetic grep benchmark")
-    if args.sample is not None:
-        raise SystemExit("error: --sample applies to --dataset hdfs")
     if args.mib is not None:
         raise SystemExit("error: --mib applies to --dataset logdir or --dataset ttfa")
     lines = SEARCH_PROFILE_DEFAULT_LINES if args.lines is None else args.lines
@@ -1606,8 +1395,6 @@ def real_log_payload(*, sha: str, binary: Path, cpu: str, nproc: int, lines: dic
 def run_real_log(args: argparse.Namespace) -> None:
     if args.sizes is not None:
         raise SystemExit("error: --sizes applies to the synthetic grep benchmark")
-    if args.sample is not None:
-        raise SystemExit("error: --sample applies to --dataset hdfs")
     if args.mib is not None:
         raise SystemExit("error: --mib applies to --dataset logdir or --dataset ttfa")
     if args.lines is not None and args.lines <= 0:
@@ -1772,9 +1559,9 @@ def main() -> None:
     parser.add_argument("--model-dir", help="Directory with model.onnx and vocab.txt")
     parser.add_argument(
         "--dataset",
-        choices=("hdfs", "logdir", "ttfa", "search-profile", "real-log"),
+        choices=("logdir", "ttfa", "search-profile", "real-log"),
         help=(
-            "hdfs indexes the Loghub sample. logdir indexes a generated log directory "
+            "logdir indexes a generated log directory "
             "and runs one search. ttfa indexes a generated bundle directory and runs one search. "
             "search-profile indexes one generated log and splits one search into corpus read, "
             "model load, query embedding, and distance. real-log times index, grep, and search "
@@ -1791,8 +1578,7 @@ def main() -> None:
         type=int,
         default=None,
         help=(
-            "Line count for --dataset hdfs (repeat the sample), --dataset logdir "
-            "(generate the tree), --dataset ttfa / --ttfa (generate the bundle), "
+            "Line count for --dataset logdir (generate the tree), --dataset ttfa / --ttfa (generate the bundle), "
             "--dataset search-profile (generate the log), or --dataset real-log "
             "(first N lines of each Loghub set, never repeated; the default is per "
             "corpus, see REAL_LOG_DEFAULT_LINES)"
@@ -1804,7 +1590,6 @@ def main() -> None:
         default=None,
         help="Build the logdir or ttfa tree until the on-disk files reach this many MiB",
     )
-    parser.add_argument("--sample", type=Path, help="HDFS sample to repeat (default: scripts/fetch-loghub)")
     parser.add_argument(
         "--loghub-dir",
         type=Path,
@@ -1833,11 +1618,6 @@ def main() -> None:
         args.dataset = "ttfa"
     if args.corpora is not None and args.dataset != "real-log":
         raise SystemExit("error: --corpora applies to --dataset real-log")
-    if args.dataset == "hdfs":
-        if args.mib is not None:
-            raise SystemExit("error: --mib applies to --dataset logdir or --dataset ttfa")
-        run_hdfs(args)
-        return
     if args.dataset == "logdir":
         run_logdir(args)
         return
@@ -1852,11 +1632,9 @@ def main() -> None:
         return
     if args.mib is not None:
         raise SystemExit("error: --mib applies to --dataset logdir or --dataset ttfa")
-    if args.sample is not None:
-        raise SystemExit("error: --sample applies to --dataset hdfs")
     if args.lines is not None:
         raise SystemExit(
-            "error: --lines applies to --dataset hdfs, --dataset logdir, --dataset ttfa, or --dataset real-log"
+            "error: --lines applies to --dataset logdir, --dataset ttfa, --dataset search-profile, or --dataset real-log"
         )
 
     binary = resolve_binary(args.binary)

@@ -376,12 +376,11 @@ class BenchTtfaTest(unittest.TestCase):
     def test_dataset_flags_are_rejected_on_the_wrong_mode(self) -> None:
         cases = (
             (["--mib", "1"], "--dataset logdir"),
-            (["--dataset", "hdfs", "--mib", "1"], "--dataset logdir"),
-            (["--ttfa", "--sample", "x"], "--dataset hdfs"),
+            (["--dataset", "real-log", "--mib", "1"], "--dataset logdir"),
             (["--dataset", "ttfa", "--sizes", "10"], "synthetic grep"),
             (["--ttfa", "--lines", "40", "--mib", "1"], "--lines"),
             (["--ttfa", "--dataset", "logdir"], "--ttfa"),
-            (["--lines", "10"], "--dataset hdfs"),
+            (["--lines", "10"], "--dataset logdir"),
         )
         for args, needle in cases:
             with self.subTest(args=args):
