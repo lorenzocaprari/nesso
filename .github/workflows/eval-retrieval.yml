@@ -39,9 +39,10 @@ env:
   # nesso-bench commit that supplies eval-retrieval, eval-retrieval-compare,
   # fetch-loghub, the query sets, and test/eval/reference/. Bump it in its own
   # pull request when nesso-bench changes; that pull request runs this
-  # workflow, so its summary shows any score change the bump brings.
+  # workflow, so its summary shows any score change the bump brings. The
+  # resolve job warns when this commit is behind nesso-bench's main.
   NESSO_BENCH_REPOSITORY: lorenzocaprari/nesso-bench
-  NESSO_BENCH_REF: e0f46ab745a4bcecdd814c8eb697c34ff1c5715d
+  NESSO_BENCH_REF: 5a7529615d8466a38137d877ec5f439ec0e16399
 
 jobs:
   guard:
@@ -104,6 +105,36 @@ jobs:
           owner_lc="$(printf '%s' "${GITHUB_REPOSITORY_OWNER}" | tr '[:upper:]' '[:lower:]')"
           deps_hash="$(./scripts/ci/build-env-hash amd64)"
           echo "image=${REGISTRY_NAME}/${owner_lc}/nesso-build-env:deps-${deps_hash}" >> "${GITHUB_OUTPUT}"
+
+      # The pin is bumped by hand, so a forgotten bump only shows up here. A
+      # lagging pin is a warning, never a failure: a nesso-bench change does not
+      # always change scores, and an unreachable API must not block the eval.
+      - name: Check the nesso-bench pin
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          short="${NESSO_BENCH_REF:0:7}"
+          if ! compare="$(gh api "repos/${NESSO_BENCH_REPOSITORY}/compare/${NESSO_BENCH_REF}...main" --jq '[.status, .ahead_by] | @tsv')"; then
+            echo "::warning::could not compare NESSO_BENCH_REF ${short} with ${NESSO_BENCH_REPOSITORY} main"
+            exit 0
+          fi
+          read -r status behind <<< "${compare}"
+          case "${status}" in
+            identical)
+              message="NESSO_BENCH_REF ${short} is ${NESSO_BENCH_REPOSITORY} main."
+              ;;
+            ahead)
+              message="NESSO_BENCH_REF ${short} is ${behind} commit(s) behind ${NESSO_BENCH_REPOSITORY} main. Bump it in its own pull request."
+              echo "::warning::${message}"
+              ;;
+            *)
+              message="NESSO_BENCH_REF ${short} is not on ${NESSO_BENCH_REPOSITORY} main (compare status: ${status}). Pin a commit from main."
+              echo "::warning::${message}"
+              ;;
+          esac
+          { echo "### nesso-bench pin"; echo; echo "${message}"; } >> "${GITHUB_STEP_SUMMARY}"
 
       - name: Find previous successful scheduled run
         id: prev
