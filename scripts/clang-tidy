@@ -43,6 +43,24 @@ sed -i \
 # translation units under both trees; Catch2 headers stay out via SystemHeaders.
 FILE_REGEX='(src|test)/.*'
 
+# With NESSO_CLANG_TIDY_CACHE set, skip units whose clean result is cached.
+# The key covers the preprocessed source with comments, the compile arguments,
+# the clang-tidy version and every .clang-tidy file (scripts/ci clang-tidy-cache).
+if [ -n "${NESSO_CLANG_TIDY_CACHE:-}" ]; then
+    tidy_bin="$(command -v clang-tidy-21 || command -v clang-tidy || true)"
+    if [ -z "$tidy_bin" ]; then
+        echo "clang-tidy: clang-tidy-21 or clang-tidy not found" >&2
+        exit 1
+    fi
+    cache_dir="$(realpath -m "$NESSO_CLANG_TIDY_CACHE")"
+    echo "clang-tidy: cached run with $tidy_bin, cache $cache_dir"
+    go run -C "$PROJECT_ROOT/scripts/ci" . clang-tidy-cache \
+        -root "$PROJECT_ROOT" -p "$(realpath "$BUILD_DIR")" -cache-dir "$cache_dir" \
+        -clang-tidy "$tidy_bin" -j "$(nproc)" -files "$FILE_REGEX"
+    echo "clang-tidy: check completed."
+    exit 0
+fi
+
 if command -v run-clang-tidy &> /dev/null; then
     echo "clang-tidy: running parallel analysis with run-clang-tidy..."
     run-clang-tidy -p "$BUILD_DIR" -j"$(nproc)" "$FILE_REGEX"

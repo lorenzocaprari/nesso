@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The `clang-tidy` CI job skips translation units whose clean result is cached. The key covers the preprocessed source with comments and macro definitions, the raw bytes of every repository file the unit includes, the compile arguments, the clang-tidy version, and every `.clang-tidy` file, so any change that can alter a finding re-analyses the unit. Only clean units are recorded. Pull requests restore the cache from `main`; only pushes to `main` save it. Locally, set `NESSO_CLANG_TIDY_CACHE` to a directory to use it with `scripts/clang-tidy`.
 - Hybrid ranking of natural-language queries (no identifier token, under `auto` or `--mode hybrid`) scales a line's BM25 term by the square of the share of query terms it contains. A line that matches one word of a long description no longer outranks meaning matches; lines that match the whole query keep the full lexical weight. Queries with an identifier token rank as before. See ADR 0011.
 
 ### Fixed
