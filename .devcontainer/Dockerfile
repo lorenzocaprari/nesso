@@ -62,7 +62,9 @@ WORKDIR /tmp/nesso
 COPY conanfile.py /tmp/nesso/conanfile.py
 COPY conan.lock /tmp/nesso/conan.lock
 COPY conan/profiles/gcc-26 /tmp/nesso/conan/profiles/gcc-26
+COPY conan/global.conf /tmp/nesso/conan/global.conf
 RUN conan profile detect --force \
+    && cat conan/global.conf >> "${CONAN_HOME}/global.conf" \
     && conan remote add conancenter https://center2.conan.io --force \
     && conan install . -pr:h=conan/profiles/gcc-26 -pr:b=default --lockfile=conan.lock --build=missing \
     && conan cache clean "*" --build --source --download --temp
