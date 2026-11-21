@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795282027677,
+  "lastUpdate": 1795289846909,
   "repoUrl": "https://github.com/lorenzocaprari/nesso",
   "entries": {
     "nesso": [
@@ -10853,6 +10853,60 @@ window.BENCHMARK_DATA = {
           {
             "name": "grep-100000-rss",
             "value": 144908288,
+            "unit": "bytes"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "85455384+lorenzocaprari@users.noreply.github.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "dfce9bcbca27474b7eff7cb6fd8829774a4feb4b",
+          "message": "fix(bench): size the real-log corpora to finish on a CI runner (#355)\n\n* fix(bench): give each real-log corpus its own default line count\n\nVaried logs index far slower than HDFS, whose lines repeat. On a GitHub\nrunner BGL 1M took about 22 minutes per command, and Thunderbird 1M index\nand grep each ran past the one-hour timeout, so the nightly never got a\nThunderbird peak RSS. Time the first 100000 lines of BGL and Thunderbird\nand keep 1000000 for HDFS. --lines still sets every corpus. fetch-loghub\nstill writes the pinned 1M prefix, so the cached logs and their key do\nnot change. The result's top-level lines is now a corpus-to-count map;\neach case and command already records its own count.\n\n* ci(bench): fail a stuck real-log command within the job timeout\n\nAt 3600 s per command, two slow commands per thread count used most of\nthe 300-minute job. Lower the per-command timeout to 1200 s and note that\nit is a hang guard, not a speed budget.\n\n* docs(bench): describe the per-corpus real-log prefixes\n\nThe real-log benchmark times 1M HDFS lines and 100k BGL and Thunderbird\nlines by default. Say why: HDFS lines repeat and index about 100 times\nfaster than the varied logs. Note that --lines sets every corpus and that\nthe per-command timeout is a hang guard.",
+          "timestamp": "2026-11-21T20:31:47+01:00",
+          "tree_id": "412705b95f6127b19f315c612642c4680c6be636",
+          "url": "https://github.com/lorenzocaprari/nesso/commit/dfce9bcbca27474b7eff7cb6fd8829774a4feb4b"
+        },
+        "date": 1795289845857,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "grep-1000-wall",
+            "value": 0.12,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-1000-rss",
+            "value": 118448128,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-10000-wall",
+            "value": 0.13,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-10000-rss",
+            "value": 118906880,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-100000-wall",
+            "value": 0.27,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-100000-rss",
+            "value": 146755584,
             "unit": "bytes"
           }
         ]
