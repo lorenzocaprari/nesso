@@ -9,6 +9,16 @@
 
 ## Build
 
+### Sources that vanished upstream
+
+`microsoft/onnxruntime` returns 404 on GitHub since 18 Nov 2026, so Conan cannot download the onnxruntime 1.18.1 source from its recipe URL. A cache that does not already hold the onnxruntime package needs the fallback the build-env images use. Append [conan/global.conf](../conan/global.conf) to your Conan home's `global.conf` once:
+
+```bash
+cat conan/global.conf >> "$(conan config home)/global.conf"
+```
+
+Conan then tries the original URL first and falls back to the `conan-sources` release of [nesso-vendor](https://github.com/lorenzocaprari/nesso-vendor), checking the sha256 pinned in the recipe. That archive is byte-identical to the original; nesso-vendor's README shows how to rebuild it from Software Heritage.
+
 ### Debug (day-to-day develop)
 
 Matches the CI Debug lane. On low-RAM hosts (for example ~20 GiB WSL), pass `-c user.nesso:link_jobs=1` on **both** `conan install` and `conan build` so Ninja does not link many ASan binaries at once. Do not put that conf in `conan/profiles/gcc-26-debug` itself: that file is a build-env image hash input.
