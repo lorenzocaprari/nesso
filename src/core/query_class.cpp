@@ -147,6 +147,58 @@ static bool MatchPrefixedCode(std::string_view token) noexcept
     return digits >= 3U;
 }
 
+// 2-16 ASCII letters, then two or more "_" segments of ASCII letters and digits, one of them
+// four or more digits: Hadoop/YARN ids such as attempt_1445144423722_0020_m_000002_1,
+// container_1445144423722_0020_01_000002, jvm_..., job_..., and application_....
+static bool MatchUnderscoreSegmentedId(std::string_view token) noexcept
+{
+    const std::size_t first_underscore = token.find('_');
+    if (first_underscore == std::string_view::npos || first_underscore < 2U || first_underscore > 16U)
+    {
+        return false;
+    }
+    if (!std::ranges::all_of(token.substr(0, first_underscore),
+                             [](const char code_unit) { return IsAsciiLetter(static_cast<unsigned char>(code_unit)); }))
+    {
+        return false;
+    }
+
+    std::string_view rest = token.substr(first_underscore + 1U);
+    std::size_t segments = 0;
+    bool has_long_number = false;
+    while (true)
+    {
+        const std::size_t next_underscore = rest.find('_');
+        const std::string_view segment = rest.substr(0, next_underscore);
+        if (segment.empty())
+        {
+            return false;
+        }
+        bool all_digits = true;
+        for (const char code_unit : segment)
+        {
+            const auto byte = static_cast<unsigned char>(code_unit);
+            if (IsAsciiDigit(byte))
+            {
+                continue;
+            }
+            if (!IsAsciiLetter(byte))
+            {
+                return false;
+            }
+            all_digits = false;
+        }
+        has_long_number = has_long_number || (all_digits && segment.size() >= 4U);
+        ++segments;
+        if (next_underscore == std::string_view::npos)
+        {
+            break;
+        }
+        rest.remove_prefix(next_underscore + 1U);
+    }
+    return segments >= 2U && has_long_number;
+}
+
 static bool ParseDecimalPort(std::string_view text, std::uint32_t &port) noexcept
 {
     if (text.empty())
@@ -456,7 +508,7 @@ QueryTokens TokenizeQuery(std::string_view query)
 bool IsIdentifierToken(std::string_view token)
 {
     return MatchUuid(token) || MatchLongHex(token) || MatchDecimalDigits(token) || MatchPrefixedCode(token) ||
-           MatchIpv4(token) || MatchIpv6(token) || MatchUnixAbsolutePath(token);
+           MatchUnderscoreSegmentedId(token) || MatchIpv4(token) || MatchIpv6(token) || MatchUnixAbsolutePath(token);
 }
 
 QueryClass ClassifyQuery(std::string_view query)

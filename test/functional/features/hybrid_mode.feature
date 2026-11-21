@@ -43,6 +43,18 @@ Feature: hybrid search modes
     And stdout contains "blk_-1608999687919862906"
     And stdout contains "line 2:"
 
+  Scenario: an underscore-segmented id ranks its line first under auto
+    Given a file "yarn.log" with:
+      """
+      Progress of TaskAttempt attempt_1445144423722_0020_m_000002_0 is : 0.5
+      TaskAttempt attempt_1445144423722_0020_m_000002_1 transitioned from NEW to UNASSIGNED
+      Progress of TaskAttempt attempt_1445144423722_0020_m_000001_0 is : 0.9
+      """
+    When I run nesso with arguments grep "attempt_1445144423722_0020_m_000002_1" {dir}/yarn.log --mode auto --json -k 1
+    Then the exit code is 0
+    And stdout contains "\"mode\":\"lexical\""
+    And stdout contains "\"line\":2"
+
   Scenario: natural-language and mixed classes under auto
     Given a file "app.log" with:
       """
