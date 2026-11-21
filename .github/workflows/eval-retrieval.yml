@@ -43,7 +43,7 @@ env:
   # resolve job warns when this commit is behind nesso-bench's main.
   # bench-real-log.yml pins the same commit for fetch-loghub; bump both together.
   NESSO_BENCH_REPOSITORY: lorenzocaprari/nesso-bench
-  NESSO_BENCH_REF: 5a7529615d8466a38137d877ec5f439ec0e16399
+  NESSO_BENCH_REF: 22c797347137999886e83b0c3e66f329058ecc48
 
 jobs:
   guard:
@@ -227,6 +227,21 @@ jobs:
             nesso-bench/build/bench/Apache_2k.log_structured.csv
           key: loghub-all-2k-${{ hashFiles('nesso-bench/scripts/fetch-loghub') }}
 
+      # Hadoop, OpenStack, and HealthApp: log shapes nesso-bench keeps out of
+      # all-2k so the six original sets stay comparable.
+      - name: Restore Loghub format inputs
+        id: format_logs
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            nesso-bench/build/bench/Hadoop_2k.log
+            nesso-bench/build/bench/Hadoop_2k.log_structured.csv
+            nesso-bench/build/bench/OpenStack_2k.log
+            nesso-bench/build/bench/OpenStack_2k.log_structured.csv
+            nesso-bench/build/bench/HealthApp_2k.log
+            nesso-bench/build/bench/HealthApp_2k.log_structured.csv
+          key: loghub-all-formats-${{ hashFiles('nesso-bench/scripts/fetch-loghub') }}
+
       - name: Restore BGL needle window
         id: needle_logs
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -247,6 +262,9 @@ jobs:
       - name: Fetch Loghub 2k inputs
         run: python3 nesso-bench/scripts/fetch-loghub --dataset all-2k
 
+      - name: Fetch Loghub format inputs
+        run: python3 nesso-bench/scripts/fetch-loghub --dataset all-formats
+
       # A restored window that matches its pin is kept; otherwise the 86 MB
       # Loghub 2.0 BGL archive is downloaded, checked, cut, and deleted.
       - name: Fetch BGL needle window
@@ -258,6 +276,7 @@ jobs:
           mkdir -p build/eval
           python3 nesso-bench/scripts/eval-retrieval \
             --dataset all-2k \
+            --split dev \
             --engine nesso \
             --engine grep \
             --engine bm25 \
@@ -270,7 +289,7 @@ jobs:
               echo "Pull request run: compared below with the latest nightly report on main."
               echo
             fi
-            echo "### Retrieval evaluation (Loghub 2k seed sets: nesso, grep, BM25)"
+            echo "### Retrieval evaluation (Loghub 2k seed sets, dev queries: nesso, grep, BM25)"
             echo
             current=""
             while IFS= read -r line || [[ -n "${line}" ]]; do
@@ -300,6 +319,30 @@ jobs:
             fi
           } >> "${GITHUB_STEP_SUMMARY}"
 
+      - name: Run format evaluation
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 nesso-bench/scripts/eval-retrieval \
+            --dataset all-formats \
+            --split dev \
+            --engine nesso \
+            --engine grep \
+            --engine bm25 \
+            --skip-fetch \
+            --binary build/Release/src/nesso \
+            --model-dir models \
+            --out build/eval/formats.json \
+            | tee build/eval/formats.txt
+          {
+            echo
+            echo "### Format sets (Hadoop, OpenStack, HealthApp 2k, dev queries: nesso, grep, BM25)"
+            echo
+            echo '```'
+            grep -v '^wrote ' build/eval/formats.txt
+            echo '```'
+          } >> "${GITHUB_STEP_SUMMARY}"
+
       # Labels are the BGL administrators' alert tags, not ours. About 80 s.
       - name: Run needle evaluation
         shell: bash
@@ -311,6 +354,7 @@ jobs:
             --engine grep \
             --engine bm25 \
             --modes auto,dense,lexical \
+            --split dev \
             --skip-fetch \
             --binary build/Release/src/nesso \
             --model-dir models \
@@ -325,26 +369,20 @@ jobs:
             echo '```'
           } >> "${GITHUB_STEP_SUMMARY}"
 
-      # nesso against the best other engine per class: the baselines scored in
-      # this run, plus the committed reference reports of the heavy competitors
-      # (nesso-bench's test/eval/reference/, from its eval-competitors
-      # workflow) when present.
+      # nesso against the best other engine per class, among the engines scored
+      # in this run on the same dev queries. nesso-bench's committed competitor
+      # references (test/eval/reference/) are not used: they were scored on an
+      # older query set and record no split.
       - name: Nesso margin against other engines
         shell: bash
         run: |
           set -euo pipefail
-          shopt -s nullglob
-          references=()
-          for file in nesso-bench/test/eval/reference/*.json; do
-            references+=(--reference "${file}")
-          done
-          for report in all_2k needle; do
+          for report in all_2k formats needle; do
             {
               echo
               python3 nesso-bench/scripts/eval-retrieval-compare \
                 --current "build/eval/${report}.json" \
-                --margins \
-                "${references[@]}"
+                --margins
             } >> "${GITHUB_STEP_SUMMARY}"
           done
 
@@ -353,7 +391,7 @@ jobs:
         run: |
           set -euo pipefail
           : > build/eval/compare.txt
-          for report in all_2k needle; do
+          for report in all_2k formats needle; do
             previous="build/eval/previous/${report}.json"
             {
               echo
@@ -422,6 +460,19 @@ jobs:
             nesso-bench/build/bench/Apache_2k.log_structured.csv
           key: loghub-all-2k-${{ hashFiles('nesso-bench/scripts/fetch-loghub') }}
 
+      - name: Save Loghub format inputs
+        if: always() && !cancelled() && github.event_name != 'pull_request' && steps.format_logs.outputs.cache-hit != 'true' && hashFiles('nesso-bench/build/bench/HealthApp_2k.log_structured.csv') != '' && hashFiles('nesso-bench/build/bench/OpenStack_2k.log_structured.csv') != '' && hashFiles('nesso-bench/build/bench/Hadoop_2k.log_structured.csv') != ''
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            nesso-bench/build/bench/Hadoop_2k.log
+            nesso-bench/build/bench/Hadoop_2k.log_structured.csv
+            nesso-bench/build/bench/OpenStack_2k.log
+            nesso-bench/build/bench/OpenStack_2k.log_structured.csv
+            nesso-bench/build/bench/HealthApp_2k.log
+            nesso-bench/build/bench/HealthApp_2k.log_structured.csv
+          key: loghub-all-formats-${{ hashFiles('nesso-bench/scripts/fetch-loghub') }}
+
       - name: Save BGL needle window
         if: always() && !cancelled() && github.event_name != 'pull_request' && steps.needle_logs.outputs.cache-hit != 'true' && hashFiles('nesso-bench/build/bench/BGL_loghub2_4100001_100000.labels') != ''
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -440,6 +491,7 @@ jobs:
           name: ${{ github.event_name == 'pull_request' && 'eval-retrieval-pr' || 'eval-retrieval' }}
           path: |
             build/eval/all_2k.json
+            build/eval/formats.json
             build/eval/needle.json
           retention-days: 7
           if-no-files-found: warn

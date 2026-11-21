@@ -34,7 +34,7 @@ env:
   # nesso-bench owns scripts/fetch-loghub. Keep this commit equal to
   # NESSO_BENCH_REF in eval-retrieval.yml and bump both in the same pull request.
   NESSO_BENCH_REPOSITORY: lorenzocaprari/nesso-bench
-  NESSO_BENCH_REF: 5a7529615d8466a38137d877ec5f439ec0e16399
+  NESSO_BENCH_REF: 22c797347137999886e83b0c3e66f329058ecc48
 
 jobs:
   guard:
