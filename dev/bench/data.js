@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795263633322,
+  "lastUpdate": 1795264831999,
   "repoUrl": "https://github.com/lorenzocaprari/nesso",
   "entries": {
     "nesso": [
@@ -10637,6 +10637,60 @@ window.BENCHMARK_DATA = {
           {
             "name": "grep-100000-rss",
             "value": 145203200,
+            "unit": "bytes"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "caprarilorenzo5@gmail.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "committer": {
+            "email": "85455384+lorenzocaprari@users.noreply.github.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "distinct": true,
+          "id": "5c4e9f01b453f3523e2f3f8e2a07efd3d26d7cf4",
+          "message": "ci(clang-tidy): skip translation units already found clean\n\nThe clang-tidy job analysed all 86 units on every run, about 2,500 CPU-seconds (6-11 min). scripts/ci clang-tidy-cache keys each unit on its -E -C -dD output, the raw bytes of every repository file the preprocessor entered, the compile arguments, the clang-tidy version and every .clang-tidy file, records only clean units, and prunes unused markers. Pull requests restore main's cache; only a push to main saves it.",
+          "timestamp": "2026-11-21T13:24:27+01:00",
+          "tree_id": "ebd2a3ee442caf5d44a56edc6594335d3e49c1c6",
+          "url": "https://github.com/lorenzocaprari/nesso/commit/5c4e9f01b453f3523e2f3f8e2a07efd3d26d7cf4"
+        },
+        "date": 1795264831383,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "grep-1000-wall",
+            "value": 1.22,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-1000-rss",
+            "value": 117739520,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-10000-wall",
+            "value": 1.22,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-10000-rss",
+            "value": 118317056,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-100000-wall",
+            "value": 1.43,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-100000-rss",
+            "value": 147525632,
             "unit": "bytes"
           }
         ]
