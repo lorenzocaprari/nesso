@@ -141,6 +141,9 @@ jobs:
             corpora="hdfs-v1,thunderbird"
           fi
           echo "corpora=${corpora}" >> "${GITHUB_OUTPUT}"
+          # Cache keys cannot contain commas, so the key joins the names with "-".
+          cache_key="$(printf '%s' "${corpora}" | tr -d '[:space:]' | tr ',' '-')"
+          echo "cache_key=${cache_key}" >> "${GITHUB_OUTPUT}"
           paths=()
           IFS=',' read -r -a names <<< "${corpora}"
           for name in "${names[@]}"; do
@@ -171,7 +174,7 @@ jobs:
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ steps.corpora.outputs.paths }}
-          key: loghub-1m-${{ steps.corpora.outputs.corpora }}-${{ hashFiles('scripts/fetch-loghub') }}
+          key: loghub-1m-${{ steps.corpora.outputs.cache_key }}-${{ hashFiles('scripts/fetch-loghub') }}
 
       - name: Fetch truncated Loghub logs
         shell: bash
@@ -246,7 +249,7 @@ jobs:
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ steps.corpora.outputs.paths }}
-          key: loghub-1m-${{ steps.corpora.outputs.corpora }}-${{ hashFiles('scripts/fetch-loghub') }}
+          key: loghub-1m-${{ steps.corpora.outputs.cache_key }}-${{ hashFiles('scripts/fetch-loghub') }}
 
       - name: Upload benchmark results
         if: always()

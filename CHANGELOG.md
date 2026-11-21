@@ -11,6 +11,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Hybrid ranking of natural-language queries (no identifier token, under `auto` or `--mode hybrid`) scales a line's BM25 term by the square of the share of query terms it contains. A line that matches one word of a long description no longer outranks meaning matches; lines that match the whole query keep the full lexical weight. Queries with an identifier token rank as before. See ADR 0011.
 
+### Fixed
+
+- The nightly real-log benchmark failed before it ran when more than one corpus was selected, because its cache key contained a comma. The key now joins corpus names with `-`.
+
 ### Added
 
 - Retrieval evaluation, in [nesso-bench](https://github.com/lorenzocaprari/nesso-bench): recall@10, MRR, and nDCG@10 on labelled queries over the pinned Loghub 2k samples (HDFS, BGL, Thunderbird, OpenSSH, Linux, Apache), and needle queries on Loghub 2.0 BGL and Thunderbird windows, where relevance is the administrators' alert tags. It scores nesso next to grep, ripgrep, SQLite BM25, a sentence-transformers and FAISS stack, OpenSearch BM25 and k-NN, xerj, ck, and vecgrep, and can measure index and query time, peak RSS, index size, and time to first result. Report-only; not part of the CI gate.
