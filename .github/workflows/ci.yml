@@ -329,8 +329,31 @@ jobs:
             -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
           grep -q 'clang++-21' build/Release/compile_commands.json
 
+      # One marker per unit that clang-tidy found clean, keyed on the
+      # preprocessed source, the project files it read, the compile arguments,
+      # the clang-tidy version and every .clang-tidy file. Pull requests
+      # restore main's markers; only a push to main saves them.
+      - name: Restore clang-tidy cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: build/clang-tidy-cache
+          key: clang-tidy-${{ runner.arch }}-${{ github.sha }}
+          restore-keys: |
+            clang-tidy-${{ runner.arch }}-
+
       - name: Run Clang-Tidy
+        env:
+          NESSO_CLANG_TIDY_CACHE: build/clang-tidy-cache
         run: bash scripts/clang-tidy
+
+      # Markers are written only for clean units, so a failed run still saves
+      # valid ones.
+      - name: Save clang-tidy cache
+        if: always() && !cancelled() && github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: build/clang-tidy-cache
+          key: clang-tidy-${{ runner.arch }}-${{ github.sha }}
 
   cppcheck:
     needs: [prepare-image-amd64, changes]
