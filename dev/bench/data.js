@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795250997384,
+  "lastUpdate": 1795262720342,
   "repoUrl": "https://github.com/lorenzocaprari/nesso",
   "entries": {
     "nesso": [
@@ -10529,6 +10529,60 @@ window.BENCHMARK_DATA = {
           {
             "name": "grep-100000-rss",
             "value": 146702336,
+            "unit": "bytes"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "caprarilorenzo5@gmail.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "committer": {
+            "email": "85455384+lorenzocaprari@users.noreply.github.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "distinct": true,
+          "id": "a8fed677d4f7682adb3ebedcdb263f24bd0c0d2f",
+          "message": "fix(ci): use a comma-free cache key in the real-log benchmark\n\nGitHub rejects cache keys that contain commas. The nightly default corpora are hdfs-v1,thunderbird, so the restore step failed before any benchmark ran on 2026-11-19 and 2026-11-20.",
+          "timestamp": "2026-11-21T13:00:15+01:00",
+          "tree_id": "37e81730a2c6668b89f338b050e4b4a664672a5b",
+          "url": "https://github.com/lorenzocaprari/nesso/commit/a8fed677d4f7682adb3ebedcdb263f24bd0c0d2f"
+        },
+        "date": 1795262719629,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "grep-1000-wall",
+            "value": 0.17,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-1000-rss",
+            "value": 118743040,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-10000-wall",
+            "value": 0.19,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-10000-rss",
+            "value": 118681600,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-100000-wall",
+            "value": 0.42,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-100000-rss",
+            "value": 145600512,
             "unit": "bytes"
           }
         ]
