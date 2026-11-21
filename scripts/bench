@@ -38,7 +38,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_SIZES = (1000, 10_000, 100_000)
 HDFS_DEFAULT_LINES = 100_000
-# fetch-loghub writes (and pins) a 1M-line prefix of each corpus. Varied logs
+# nesso-bench's fetch-loghub writes (and pins) a 1M-line prefix of each corpus. Varied logs
 # index far slower than HDFS, whose lines repeat: BGL 1M took about 22 minutes
 # per command on a GitHub runner, and Thunderbird 1M did not finish in an hour.
 # The bench times a shorter prefix of those so a nightly run fits the job.
@@ -1537,29 +1537,20 @@ def parse_real_log_corpora(raw: str | None) -> tuple[str, ...]:
     return tuple(names)
 
 
-def ensure_real_log_root(explicit: Path | None, lines: int | None, corpora: tuple[str, ...]) -> Path:
-    wanted = [REAL_LOG_FILES[name] for name in corpora]
-    if explicit is not None:
-        missing = [name for name in wanted if not (explicit / name).is_file()]
-        if missing:
-            raise SystemExit(f"error: missing real-log samples in {explicit}: {', '.join(missing)}")
-        return explicit
-    script = Path(__file__).resolve().parent / "fetch-loghub"
-    # Fetch the pinned prefix; the run truncates it to each corpus's count.
-    fetch_lines = max(lines or 0, REAL_LOG_FETCH_LINES)
-    for corpus in corpora:
-        completed = subprocess.run(
-            [sys.executable, str(script), "--dataset", corpus, "--lines", str(fetch_lines)],
-            check=False,
-        )
-        if completed.returncode != 0:
-            raise SystemExit(completed.returncode)
-    root = ROOT / "build" / "bench"
-    missing = [name for name in wanted if not (root / name).is_file()]
+def ensure_real_log_root(root: Path, corpora: tuple[str, ...]) -> Path:
+    """Return root when it holds every selected *_1m.log. Nothing is downloaded."""
+    missing = [name for name in corpora if not (root / REAL_LOG_FILES[name]).is_file()]
     if missing:
-        raise SystemExit(f"error: fetch-loghub did not write {', '.join(missing)}")
+        commands = "\n".join(
+            f"  python3 <nesso-bench>/scripts/fetch-loghub --dataset {name} --dest-dir {root}" for name in missing
+        )
+        raise SystemExit(
+            f"error: missing real-log logs in {root}: "
+            + ", ".join(REAL_LOG_FILES[name] for name in missing)
+            + "\nfetch them with nesso-bench (github.com/lorenzocaprari/nesso-bench):\n"
+            + commands
+        )
     return root
-
 
 def real_log_command(
     *,
@@ -1632,7 +1623,7 @@ def run_real_log(args: argparse.Namespace) -> None:
     time_bin = gnu_time_binary()
     if not Path(time_bin).is_file():
         raise SystemExit(f"error: {time_bin} is required")
-    root = ensure_real_log_root(args.real_log_root, args.lines, corpora)
+    root = ensure_real_log_root(args.loghub_dir, corpora)
     cases = []
     with tempfile.TemporaryDirectory(prefix="nesso-bench-real-log-") as tmp:
         work = Path(tmp)
@@ -1815,9 +1806,10 @@ def main() -> None:
     )
     parser.add_argument("--sample", type=Path, help="HDFS sample to repeat (default: scripts/fetch-loghub)")
     parser.add_argument(
-        "--real-log-root",
+        "--loghub-dir",
         type=Path,
-        help="Directory of selected real-log samples (default: fetch into build/bench)",
+        default=ROOT / "build" / "bench",
+        help="Directory with the Loghub logs nesso-bench's fetch-loghub wrote (default: build/bench)",
     )
     parser.add_argument(
         "--corpora",
