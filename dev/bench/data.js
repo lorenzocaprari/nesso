@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795262720342,
+  "lastUpdate": 1795263633322,
   "repoUrl": "https://github.com/lorenzocaprari/nesso",
   "entries": {
     "nesso": [
@@ -10583,6 +10583,60 @@ window.BENCHMARK_DATA = {
           {
             "name": "grep-100000-rss",
             "value": 145600512,
+            "unit": "bytes"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "caprarilorenzo5@gmail.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "committer": {
+            "email": "85455384+lorenzocaprari@users.noreply.github.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "distinct": true,
+          "id": "385562d8a2c6e60a98a666945d87af3f1baaf48e",
+          "message": "test(functional): run bdd scenarios with one nesso thread each\n\ngodog runs one scenario per logical CPU and each nesso process sized its ONNX sessions to every CPU, so the suite oversubscribed the runner. bdd took 349 s and 948 s of the coverage job on two recent runs while every other test finished in the first minute. Results are identical at any thread count; scenarios that set NESSO_THREADS or --threads keep their value.",
+          "timestamp": "2026-11-21T13:15:17+01:00",
+          "tree_id": "40624375c2d8213fd5e6cfb99bd1f67016bf0659",
+          "url": "https://github.com/lorenzocaprari/nesso/commit/385562d8a2c6e60a98a666945d87af3f1baaf48e"
+        },
+        "date": 1795263632319,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "grep-1000-wall",
+            "value": 1.21,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-1000-rss",
+            "value": 118272000,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-10000-wall",
+            "value": 1.22,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-10000-rss",
+            "value": 118169600,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-100000-wall",
+            "value": 1.47,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-100000-rss",
+            "value": 145203200,
             "unit": "bytes"
           }
         ]
