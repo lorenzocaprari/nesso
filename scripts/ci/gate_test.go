@@ -19,10 +19,6 @@ func TestPipelineWorkflowSatisfiesGate(t *testing.T) {
 	var always []string
 	for _, job := range parsed.jobs {
 		switch job.id {
-		case "bench-history":
-			if job.class != classMainHistory {
-				t.Fatalf("bench-history class %d", job.class)
-			}
 		case gateJobID:
 			if job.class != classGate || parsed.gateName != gateJobName || parsed.gateIf != "always()" {
 				t.Fatalf("gate class %d name %q if %q", job.class, parsed.gateName, parsed.gateIf)
@@ -48,7 +44,7 @@ func TestSkipClassification(t *testing.T) {
 	parsed := mustPipeline(t)
 	docs := map[string]string{}
 	for _, job := range parsed.jobs {
-		if job.class == classDocs || job.class == classMainHistory {
+		if job.class == classDocs {
 			docs[job.id] = "skipped"
 		}
 	}
@@ -64,11 +60,9 @@ func TestSkipClassification(t *testing.T) {
 			name:  "code pull request",
 			event: "pull_request",
 			code:  "true",
-			patch: map[string]string{"bench-history": "skipped"},
 			verdict: map[string]string{
-				"bench-history": "skipped, not a push to main",
-				"lint":          "success",
-				"clang-tidy":    "success",
+				"lint":       "success",
+				"clang-tidy": "success",
 			},
 		},
 		{
@@ -86,7 +80,6 @@ func TestSkipClassification(t *testing.T) {
 				"clang-tidy":              "skipped, docs-only pull request",
 				"test-gcc-26-amd64":       "skipped, docs-only pull request",
 				"prepare-image-arm64":     "skipped, docs-only pull request",
-				"bench-history":           "skipped, not a push to main",
 			},
 		},
 		{
@@ -94,7 +87,6 @@ func TestSkipClassification(t *testing.T) {
 			event: "pull_request",
 			code:  "true",
 			patch: map[string]string{
-				"bench-history":       "skipped",
 				"prepare-image-amd64": "failure",
 				"clang-tidy":          "skipped",
 				"build-gcc-26-amd64":  "failure",
@@ -110,28 +102,16 @@ func TestSkipClassification(t *testing.T) {
 			wantErr: "lint cancelled\ncppcheck result \"neutral\"",
 		},
 		{
-			name:  "push runs history",
+			name:  "push runs every job",
 			event: "push",
 			code:  "true",
 		},
 		{
-			name:    "push skips history",
-			event:   "push",
+			name:    "schedule does not skip bench",
+			event:   "schedule",
 			code:    "true",
-			patch:   map[string]string{"bench-history": "skipped"},
-			wantErr: "bench-history skipped",
-		},
-		{
-			name:  "schedule skips history only",
-			event: "schedule",
-			code:  "true",
-			patch: map[string]string{"bench-history": "skipped"},
-		},
-		{
-			name:  "dispatch skips history",
-			event: "workflow_dispatch",
-			code:  "true",
-			patch: map[string]string{"bench-history": "skipped"},
+			patch:   map[string]string{"bench": "skipped"},
+			wantErr: "bench skipped, not an intentional skip",
 		},
 		{
 			name:    "failed changes is not docs-only",
@@ -163,9 +143,6 @@ func TestSkipClassification(t *testing.T) {
 				if want != "" && !strings.Contains(joined, want) {
 					t.Errorf("missing %q in\n%s", want, joined)
 				}
-			}
-			if tc.name == "dependency failure is its own skip" && strings.Contains(joined, "bench-history") {
-				t.Fatalf("deliberate skips reported:\n%s", joined)
 			}
 			for job, verdict := range tc.verdict {
 				assertVerdict(t, rows, job, verdict)
