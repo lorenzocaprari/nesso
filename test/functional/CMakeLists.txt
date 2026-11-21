@@ -18,6 +18,10 @@ if(NOT NESSO_GO_EXECUTABLE)
   return()
 endif()
 
+# Scenarios run one per logical CPU. NESSO_THREADS=1 keeps each nesso process to
+# one session so concurrent scenarios do not oversubscribe the CPUs. Results are
+# identical at any thread count. A scenario that sets NESSO_THREADS or passes
+# --threads still overrides it.
 add_test(
   NAME bdd
   COMMAND "${NESSO_GO_EXECUTABLE}" test -count=1 -timeout 20m ./...
@@ -28,5 +32,5 @@ set_tests_properties(
     LABELS
     functional
     ENVIRONMENT
-    "NESSO_BINARY=$<TARGET_FILE:nesso>;NESSO_MODEL_DIR=${CMAKE_SOURCE_DIR}/models;NESSO_FIXTURE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/features/testdata"
+    "NESSO_THREADS=1;NESSO_BINARY=$<TARGET_FILE:nesso>;NESSO_MODEL_DIR=${CMAKE_SOURCE_DIR}/models;NESSO_FIXTURE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/features/testdata"
 )

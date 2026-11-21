@@ -30,7 +30,7 @@ ctest --test-dir build/Debug -L integration
 ctest --test-dir build/Debug -L functional
 
 # CI adds --output-on-failure and -j "$(nproc)" on every ctest invocation, including scripts/code-coverage.
-# The bdd test runs godog scenarios concurrently, one per logical CPU (runtime.NumCPU()).
+# The bdd test runs godog scenarios concurrently, one per logical CPU (runtime.NumCPU()), with NESSO_THREADS=1 unless a scenario sets it.
 
 # Local gate. clang-tidy needs compile_commands.json. scripts/clang-tidy drops GCC-only -W flags and Clang @*.modmap args from that database before analysis. Optional NESSO_CLANG_TIDY_BUILD_DIR selects a compile DB. CI's clang-tidy job configures with clang-26 so the compile DB matches the Clang build lane. portability-restrict-system-includes allowlists stdlib, OS, and dependency angle includes in .clang-tidy (comma-separated GlobList). scripts/clang-tidy-diff lints only the diff against the main remote-tracking branch; CI still runs the full-tree script. Coverage floors are REQUIRED_* in scripts/code-coverage.
 # scripts/lint --format-only is clang-format and cmake-format. --hygiene-only is the whitespace, line-ending, YAML, merge-marker, and large-file hooks.

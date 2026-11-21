@@ -66,7 +66,7 @@ ctest --test-dir build/Debug -L functional
 
 The functional label includes the `bdd` test. It runs `go test` in `test/functional/` (godog v0.16.0). Specs are `test/functional/features/*.feature`. Without Go, CMake skips `bdd`. `NESSO_REQUIRE_BDD=1` turns a missing Go toolchain into a configure error; CI sets it. `NESSO_REQUIRE_MODEL=1` fails model-backed tests instead of skipping them; CI sets that too.
 
-`bdd` runs godog scenarios concurrently, one per logical CPU. Each scenario has its own temporary directory, environment, and pty. CI passes `-j "$(nproc)"` and `--output-on-failure` to every ctest invocation. The test jobs also pass `--output-junit` and list failing tests in the job summary.
+`bdd` runs godog scenarios concurrently, one per logical CPU, with `NESSO_THREADS=1` in its environment so the concurrent `nesso` processes do not oversubscribe the CPUs. A scenario that sets `NESSO_THREADS` or passes `--threads` overrides it. Each scenario has its own temporary directory, environment, and pty. CI passes `-j "$(nproc)"` and `--output-on-failure` to every ctest invocation. The test jobs also pass `--output-junit` and list failing tests in the job summary.
 
 `gcc-26-debug` passes `-fno-sanitize-recover=all`, so a local debug build stops on the first ASan or UBSan error. Debug ctest in CI also sets `ASAN_OPTIONS` and `UBSAN_OPTIONS`. Pipeline also runs `gcc-26-asan-release-amd64` (full ctest suite), `clang-26-asan-amd64` (unit, integration, and functional), and `clang-26-tsan-amd64` (`ctest -L tsan`). The commands are in [docs/building.md](docs/building.md). `ctest -L tsan` selects `top_k_test`, `scan_threads_test`, and `inference_wave_test`. `session_pool_test` stays on the `unit` label only, because it opens ONNX Runtime sessions.
 

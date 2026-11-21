@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- The `bdd` functional test sets `NESSO_THREADS=1`, so its concurrent scenarios no longer start one ONNX session per CPU each. That oversubscription made it the slowest part of the `coverage` job. A scenario that sets `NESSO_THREADS` or `--threads` keeps its own value.
 - The nightly real-log benchmark failed before it ran when more than one corpus was selected, because its cache key contained a comma. The key now joins corpus names with `-`.
 
 ### Added
