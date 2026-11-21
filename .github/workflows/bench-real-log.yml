@@ -200,6 +200,9 @@ jobs:
       - name: Build
         run: conan build . -pr:h ./conan/profiles/gcc-26 -pr:b default --lockfile=conan.lock --build=missing --no-remote -o tests=False $CONAN_WERROR_ARGS
 
+      # --timeout is a per-command hang guard, not a speed budget. scripts/bench
+      # sizes each corpus (REAL_LOG_DEFAULT_LINES) so a normal run stays far
+      # below it, and 1200 s keeps a stuck run inside timeout-minutes.
       - name: Run real-log benchmark
         env:
           CORPORA: ${{ steps.corpora.outputs.corpora }}
@@ -207,7 +210,7 @@ jobs:
           set -euo pipefail
           mem_kb=$(awk '/^MemTotal:/ {print $2}' /proc/meminfo)
           export NESSO_BENCH_AS_LIMIT_KB=$((mem_kb * 3 / 4))
-          python3 scripts/bench --dataset real-log --corpora "${CORPORA}" --binary build/Release/src/nesso --timeout 3600 \
+          python3 scripts/bench --dataset real-log --corpora "${CORPORA}" --binary build/Release/src/nesso --timeout 1200 \
             --output bench/results/real-log.json
 
       - name: Gate peak RSS and report speed
