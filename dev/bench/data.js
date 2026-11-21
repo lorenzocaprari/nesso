@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795243933419,
+  "lastUpdate": 1795245769661,
   "repoUrl": "https://github.com/lorenzocaprari/nesso",
   "entries": {
     "nesso": [
@@ -10421,6 +10421,60 @@ window.BENCHMARK_DATA = {
           {
             "name": "grep-100000-rss",
             "value": 144752640,
+            "unit": "bytes"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "caprarilorenzo5@gmail.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "committer": {
+            "email": "85455384+lorenzocaprari@users.noreply.github.com",
+            "name": "Lorenzo Caprari",
+            "username": "lorenzocaprari"
+          },
+          "distinct": true,
+          "id": "448cb65e28abe26474c8ea5c6dc8741ba76c2313",
+          "message": "ci(eval): drop the Eval competitors workflow, now in nesso-bench\n\nnesso-bench runs the manual competitor workflow and keeps the reference\nreports the eval-retrieval workflow reads at its pinned commit. Remove\nnesso's copy and point the docs, the changelog entry, and the AGENTS.md\nHarden-Runner list at nesso-bench.",
+          "timestamp": "2026-11-21T08:16:49+01:00",
+          "tree_id": "841ff7e41cd70559f5ac3c34c3331807fbe0f0b1",
+          "url": "https://github.com/lorenzocaprari/nesso/commit/448cb65e28abe26474c8ea5c6dc8741ba76c2313"
+        },
+        "date": 1795245769202,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "grep-1000-wall",
+            "value": 1.23,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-1000-rss",
+            "value": 118915072,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-10000-wall",
+            "value": 1.24,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-10000-rss",
+            "value": 118710272,
+            "unit": "bytes"
+          },
+          {
+            "name": "grep-100000-wall",
+            "value": 1.52,
+            "unit": "seconds"
+          },
+          {
+            "name": "grep-100000-rss",
+            "value": 146137088,
             "unit": "bytes"
           }
         ]
