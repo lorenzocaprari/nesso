@@ -13,7 +13,8 @@ until the query sets, the labels, or a competitor version change.
 
 Refresh them by hand when that happens:
 
-1. Run **Eval competitors** from Actions (`workflow_dispatch`) and wait for the `merge` job.
+1. Run **Eval competitors** from nesso-bench's Actions (`workflow_dispatch`) and wait for the
+   `merge` job.
 2. Download the `eval-competitors` artifact.
 3. Copy `competitors-2k.json` and `competitors-needle.json` here and commit them with the
    competitor versions (see `docs/benchmarks.md`) in the message.
