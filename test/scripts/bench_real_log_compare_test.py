@@ -21,13 +21,14 @@ def command(peak: int, wall: float, *, ok: bool = True) -> dict:
     }
 
 
-def payload(peak: int, wall: float = 1.0) -> dict:
+def payload(peak: int, wall: float = 1.0, lines: int = 1000) -> dict:
     return {
         "dataset": "real-log",
         "cases": [
             {
                 "corpus": "hdfs-v1",
                 "threads": "1",
+                "lines": lines,
                 "commands": [
                     command(peak, wall),
                     {
@@ -75,7 +76,7 @@ class BenchRealLogCompareTest(unittest.TestCase):
             result.write_text(json.dumps(payload(1024)), encoding="utf-8")
             completed = run_compare("--result", str(result), "--rss-tolerance", "0")
             self.assertEqual(completed.returncode, 0, completed.stderr)
-            self.assertIn("no nightly history", completed.stdout)
+            self.assertIn("no previous result", completed.stdout)
             self.assertNotIn("exceeds", completed.stderr)
 
     def test_wall_over_the_median_warns_without_failing(self) -> None:
@@ -102,44 +103,33 @@ class BenchRealLogCompareTest(unittest.TestCase):
             self.assertIn("above the median", completed.stdout)
             self.assertIn("search-dense", completed.stdout)
 
-    def test_data_js_history_and_export(self) -> None:
+    def test_previous_result_is_history_for_the_same_prefix_only(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             directory = pathlib.Path(temp)
-            data = {
-                "entries": {
-                    "nesso real-log": [
-                        {
-                            "benches": [
-                                {"name": "real-log/hdfs-v1/threads-1/index/wall", "unit": "s", "value": 2.0},
-                            ]
-                        }
-                    ]
-                }
-            }
-            history = directory / "data.js"
-            history.write_text("window.BENCHMARK_DATA = " + json.dumps(data) + ";\n", encoding="utf-8")
+            previous = directory / "previous.json"
+            previous.write_text(json.dumps(payload(1024, 1.0)), encoding="utf-8")
             result = directory / "result.json"
-            result.write_text(json.dumps(payload(1024, 2.0)), encoding="utf-8")
-            external = directory / "external.json"
-            completed = run_compare(
-                "--result",
-                str(result),
-                "--history",
-                str(history),
-                "--rss-tolerance",
-                "0",
-                "--wall-tolerance",
-                "0.15",
-                "--export-external",
-                str(external),
-            )
-            self.assertEqual(completed.returncode, 0, completed.stderr + completed.stdout)
-            self.assertNotIn("above the median", completed.stdout)
-            exported = json.loads(external.read_text(encoding="utf-8"))
-            names = [entry["name"] for entry in exported]
-            self.assertIn("real-log/hdfs-v1/threads-1/index/wall", names)
-            self.assertIn("real-log/hdfs-v1/threads-1/search-dense/wall", names)
-            self.assertTrue(all(entry["unit"] == "s" for entry in exported))
+            result.write_text(json.dumps(payload(1024, 10.0)), encoding="utf-8")
+            args = ["--history", str(previous), "--rss-tolerance", "0", "--wall-tolerance", "0.15"]
+            slower = run_compare("--result", str(result), *args)
+            self.assertEqual(slower.returncode, 0, slower.stderr)
+            self.assertIn("real-log/hdfs-v1/lines-1000/threads-1/index/wall", slower.stdout)
+            self.assertIn("above the median 1.0s of 1 earlier result(s)", slower.stdout)
+
+            other_prefix = directory / "other.json"
+            other_prefix.write_text(json.dumps(payload(1024, 10.0, lines=2000)), encoding="utf-8")
+            unmatched = run_compare("--result", str(other_prefix), *args)
+            self.assertEqual(unmatched.returncode, 0, unmatched.stderr)
+            self.assertNotIn("above the median", unmatched.stdout)
+            self.assertIn("lines-2000/threads-1/index/wall: no history", unmatched.stdout)
+
+    def test_removed_gh_pages_flags_are_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            result = pathlib.Path(temp) / "result.json"
+            result.write_text(json.dumps(payload(1024)), encoding="utf-8")
+            for flag in (["--repo", "owner/name"], ["--export-only"]):
+                completed = run_compare("--result", str(result), *flag)
+                self.assertEqual(completed.returncode, 2, completed.stderr)
 
 
 if __name__ == "__main__":
