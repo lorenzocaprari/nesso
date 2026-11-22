@@ -8,7 +8,7 @@ import (
 	"os"
 )
 
-const ciUsage = "usage: ci <patch-coverage|junit-summary|bench-scale|bench-summary|bench-baseline|trivy-summary|runtime-scan-dockerfile|ci-gate|ci-gate-needs|wait-build-env|clang-tidy-cache> [flags]"
+const ciUsage = "usage: ci <patch-coverage|junit-summary|bench-scale|bench-summary|bench-baseline|trivy-summary|runtime-scan-dockerfile|ci-gate|ci-gate-needs|wait-build-env|clang-tidy-cache|eval-ratios> [flags]"
 
 func main() {
 	if len(os.Args) < 2 {
@@ -39,6 +39,8 @@ func main() {
 		code = waitBuildEnvMain(os.Args[2:])
 	case "clang-tidy-cache":
 		code = clangTidyCacheMain(os.Args[2:])
+	case "eval-ratios":
+		code = evalRatiosMain(os.Args[2:])
 	case "-h", "--help", "help":
 		fmt.Fprintln(os.Stderr, ciUsage)
 	default:

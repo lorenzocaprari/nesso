@@ -10,6 +10,17 @@ name: Eval retrieval
 # and warns on relative drops over 5%. The summary also shows nesso's margin
 # over the best other engine per class. Scores never fail the job; only
 # script errors do. No gh-pages write yet.
+#
+# Scheduled and workflow_dispatch runs also time the 2k and needle evaluations
+# (nesso-bench eval-retrieval --measure, median of EVAL_MEASURE_REPEAT runs):
+# index wall and peak RSS, index size, query wall, p50, p95, query peak RSS,
+# and time to first result, per engine and per nesso mode. The three engines
+# share one runner in one job, so `go run -C scripts/ci . eval-ratios` shows
+# ratios between them (nesso over grep and BM25), next to the previous
+# nightly's. Those are development-only numbers: absolute timings change with
+# the runner, and nothing here gates on time or memory. Pull request runs stay
+# quality-only, because timing roughly doubles the job and a single PR run's
+# timings say little; the next nightly times the merged change.
 on:
   schedule:
     # 06:47 UTC, after real-log at 05:47 UTC (fuzz-test 03:17, index-rss 04:47).
@@ -44,6 +55,8 @@ env:
   # bench-real-log.yml pins the same commit for fetch-loghub; bump both together.
   NESSO_BENCH_REPOSITORY: lorenzocaprari/nesso-bench
   NESSO_BENCH_REF: 003dfeb748907d3aec594047b5c105e1476487e5
+  # Timed runs per engine for --measure on schedule and workflow_dispatch.
+  EVAL_MEASURE_REPEAT: "3"
 
 jobs:
   guard:
@@ -273,16 +286,22 @@ jobs:
       - name: Fetch BGL needle window
         run: python3 nesso-bench/scripts/fetch-loghub --dataset bgl-loghub2 --window 4100001:100000
 
+      # Pull requests score quality only; other events also time each engine.
       - name: Run retrieval evaluation
         run: |
           set -euo pipefail
           mkdir -p build/eval
+          measure=()
+          if [[ "${GITHUB_EVENT_NAME}" != "pull_request" ]]; then
+            measure=(--measure --repeat "${EVAL_MEASURE_REPEAT}")
+          fi
           python3 nesso-bench/scripts/eval-retrieval \
             --dataset all-2k \
             --split dev \
             --engine nesso \
             --engine grep \
             --engine bm25 \
+            "${measure[@]}" \
             --binary build/Release/src/nesso \
             --model-dir models \
             --out build/eval/all_2k.json \
@@ -345,16 +364,22 @@ jobs:
             echo '```'
           } >> "${GITHUB_STEP_SUMMARY}"
 
-      # Labels are the BGL administrators' alert tags, not ours. About 80 s.
+      # Labels are the BGL administrators' alert tags, not ours. About 80 s
+      # without --measure.
       - name: Run needle evaluation
         run: |
           set -euo pipefail
+          measure=()
+          if [[ "${GITHUB_EVENT_NAME}" != "pull_request" ]]; then
+            measure=(--measure --repeat "${EVAL_MEASURE_REPEAT}")
+          fi
           python3 nesso-bench/scripts/eval-retrieval \
             --dataset bgl-needle-100k \
             --engine nesso \
             --engine grep \
             --engine bm25 \
             --modes auto,dense,lexical \
+            "${measure[@]}" \
             --split dev \
             --skip-fetch \
             --binary build/Release/src/nesso \
@@ -411,6 +436,21 @@ jobs:
               echo "::warning::${line}"
             fi
           done < build/eval/compare.txt
+
+      # Development-only: ratios between engines timed on this runner, never a
+      # gate. A previous nightly without a measure section only adds a note.
+      - name: Speed ratios against grep and BM25
+        if: github.event_name != 'pull_request'
+        run: |
+          set -euo pipefail
+          go run -C scripts/ci . eval-ratios \
+            --current build/eval/all_2k.json \
+            --previous build/eval/previous/all_2k.json \
+            --title "Loghub 2k seed sets, dev queries"
+          go run -C scripts/ci . eval-ratios \
+            --current build/eval/needle.json \
+            --previous build/eval/previous/needle.json \
+            --title "BGL 100k needle window"
 
       - name: Note Loghub 2k inputs are ready to cache
         id: logfiles
