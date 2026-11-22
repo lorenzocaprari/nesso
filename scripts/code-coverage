@@ -15,26 +15,117 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 cd "${ROOT}"
 
-conan profile detect --force
-# In CI, stick to packages baked into nesso-build-env (no ConanCenter drift).
-# NESSO_REQUIRE_MODEL is read when CMake configures the test binaries.
-remote_args=()
-if [[ "${CI:-}" == "true" ]]; then
-  remote_args+=(--no-remote)
-  export NESSO_REQUIRE_MODEL=1
+usage() {
+  cat <<'EOF'
+usage: scripts/code-coverage [options] [profile]
+
+  Default (no --mode): build, run all ctest, capture, remove, floor check.
+  profile defaults to conan/profiles/code-coverage.
+
+  --mode MODE     full | build | test | capture | merge
+  --out-dir DIR   coverage output root (default: build/coverage)
+  --info PATH     capture/merge output .info (default: <out-dir>/coverage.info)
+  --cleaned PATH  cleaned trace after --remove (default: <out-dir>/coverage.cleaned)
+  --report-dir D  genhtml output (default: <out-dir>/report)
+  --ctest-arg ARG extra ctest argument (repeatable; test mode / full)
+  --merge TRACE   input .info for merge mode (repeatable; at least one)
+
+  Modes:
+    build    conan build only
+    test     ctest only (instrumented tree must already exist)
+    capture  lcov --capture into --info
+    merge    lcov -a of --merge traces, then --remove, floors, genhtml
+    full     build + test + capture + remove + floors (default)
+EOF
+}
+
+mode=full
+out_dir=build/coverage
+info_path=""
+cleaned_path=""
+report_dir=""
+profile=""
+ctest_args=()
+merge_traces=()
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -h | --help)
+      usage
+      exit 0
+      ;;
+    --mode)
+      mode=${2:?}
+      shift 2
+      ;;
+    --out-dir)
+      out_dir=${2:?}
+      shift 2
+      ;;
+    --info)
+      info_path=${2:?}
+      shift 2
+      ;;
+    --cleaned)
+      cleaned_path=${2:?}
+      shift 2
+      ;;
+    --report-dir)
+      report_dir=${2:?}
+      shift 2
+      ;;
+    --ctest-arg)
+      ctest_args+=("${2:?}")
+      shift 2
+      ;;
+    --merge)
+      merge_traces+=("${2:?}")
+      shift 2
+      ;;
+    --)
+      shift
+      break
+      ;;
+    -*)
+      echo "unknown option: $1" >&2
+      usage >&2
+      exit 2
+      ;;
+    *)
+      if [[ -n "${profile}" ]]; then
+        echo "unexpected argument: $1" >&2
+        usage >&2
+        exit 2
+      fi
+      profile=$1
+      shift
+      ;;
+  esac
+done
+if [[ $# -gt 0 ]]; then
+  echo "unexpected argument: $1" >&2
+  usage >&2
+  exit 2
 fi
-# Off by default. conan build regenerates the toolchain, so the flag has to be
-# on this call. This script has no separate conan install.
-werror_args=()
-if [[ "${NESSO_WERROR:-}" == "1" ]]; then
-  werror_args+=(-c "user.nesso:werror=True")
+
+profile=${profile:-conan/profiles/code-coverage}
+info_path=${info_path:-${out_dir}/coverage.info}
+cleaned_path=${cleaned_path:-${out_dir}/coverage.cleaned}
+report_dir=${report_dir:-${out_dir}/report}
+build_dir=${out_dir}/build/Debug
+
+case "${mode}" in
+  full | build | test | capture | merge) ;;
+  *)
+    echo "unknown --mode ${mode}" >&2
+    usage >&2
+    exit 2
+    ;;
+esac
+if [[ "${mode}" == merge && ${#merge_traces[@]} -eq 0 ]]; then
+  echo "merge mode requires at least one --merge TRACE" >&2
+  exit 2
 fi
-conan build . -of build/coverage -pr:h "${1:-conan/profiles/code-coverage}" -pr:b default --lockfile=conan.lock --build=missing "${remote_args[@]}" "${werror_args[@]}"
-# Text commands run past the embedder only after the ONNX model loads.
-if [[ ! -s "${ROOT}/models/model.onnx" || ! -s "${ROOT}/models/vocab.txt" ]]; then
-  "${ROOT}/scripts/fetch-model" "${ROOT}/models"
-fi
-ctest --test-dir build/coverage/build/Debug --output-on-failure -j "$(nproc)"
 
 # Local default: ~/.conan2. CI: CONAN_HOME=/opt/conan2 (GHA overrides HOME).
 conan_cache="${CONAN_HOME:-${HOME}/.conan2}"
@@ -64,67 +155,152 @@ lcov() {
   rm -f "$stdout_file" "$stderr_file"
   return "$status"
 }
-# Keep libstdc++ and the Conan cache out of the merge. Those headers emit the
-# mismatched exception tags. The --remove below stays as a safety net.
-# A "negative taken count" from lcov is a capture race, not a floor miss.
-# conan/profiles/code-coverage passes -fprofile-update=atomic because inferAll
-# runs infer on one thread per int8 session and plain --coverage counters drift
-# (seen on onnx_embedder.cpp). Never add "negative" to the ignore lists, never
-# drop that flag, and never lower REQUIRED_*.
-lcov --directory build/coverage/build/Debug --capture \
-  --include "${ROOT}/src/*" --include "${ROOT}/test/*" \
-  --output-file build/coverage/coverage.info
-# onnx_embedder.cpp needs a downloaded model and is covered by its own
-# harness. The removed test files are compiled with -fno-profile-arcs.
-# Capture still reads that .gcda. int8 infer runs one thread per session, and
-# non-atomic gcov arcs there go negative; code-coverage passes
-# -fprofile-update=atomic so this capture does not abort before the remove.
-lcov --remove build/coverage/coverage.info \
-  '/usr/*' \
-  "${conan_cache}/*" \
-  '*/test/unit/embed/onnx_embedder_test.cpp' \
-  '*/test/unit/embed/batch_plan_test.cpp' \
-  '*/src/embed/onnx_embedder.cpp' \
-  '*/test/unit/parser/log_chunker_test.cpp' \
-  '*/test/unit/parser/template_mask_test.cpp' \
-  '*/test/integration/grep_integration_test.cpp' \
-  --output-file build/coverage/coverage.cleaned
-genhtml --branch-coverage --rc branch_coverage=1 --ignore-errors inconsistent,inconsistent \
-  build/coverage/coverage.cleaned \
-  --output-directory build/coverage/report >/dev/null
 
-summary=$(command lcov --rc branch_coverage=1 --ignore-errors inconsistent,mismatch,unused,corrupt \
-  --summary build/coverage/coverage.cleaned 2>&1)
-pct() { echo "$summary" | grep -E "^[[:space:]]+${1}\\.+" | awk -F: '{print $2}' | awk '{print $1}' | tr -d '%'; }
-
-fail=0
-rows=()
-check() {
-  local measured required row
-  measured=$(pct "$1")
-  measured=${measured:-0}
-  required=$2
-  row="$1: ${measured}% (required >= ${required}%)"
-  echo "$row"
-  rows+=("$row")
-  # Floor only — exact == breaks when lcov/gcov differ between local and CI.
-  awk -v m="${measured}" -v r="${required}" 'BEGIN { exit !(m + 0 >= r + 0) }' \
-    || { echo "ERROR: $1 ${measured}% < ${required}%" >&2; fail=1; }
+ensure_model() {
+  # Text commands run past the embedder only after the ONNX model loads.
+  if [[ ! -s "${ROOT}/models/model.onnx" || ! -s "${ROOT}/models/vocab.txt" ]]; then
+    "${ROOT}/scripts/fetch-model" "${ROOT}/models"
+  fi
 }
 
-check lines "$REQUIRED_LINES"
-check functions "$REQUIRED_FUNCTIONS"
-check branches "$REQUIRED_BRANCHES"
-printf '%s\n' "${rows[@]}" > build/coverage/report/summary.txt
-if [[ -n "${GITHUB_STEP_SUMMARY:-}" ]]; then
-  {
-    echo '### Coverage'
-    echo
-    echo '```'
-    printf '%s\n' "${rows[@]}"
-    echo '```'
-  } >> "${GITHUB_STEP_SUMMARY}"
-fi
-[[ $fail -eq 0 ]] || exit 2
+run_build() {
+  conan profile detect --force
+  # In CI, stick to packages baked into nesso-build-env (no ConanCenter drift).
+  # NESSO_REQUIRE_MODEL is read when CMake configures the test binaries.
+  local remote_args=()
+  if [[ "${CI:-}" == "true" ]]; then
+    remote_args+=(--no-remote)
+    export NESSO_REQUIRE_MODEL=1
+  fi
+  # Off by default. conan build regenerates the toolchain, so the flag has to be
+  # on this call. This script has no separate conan install.
+  local werror_args=()
+  if [[ "${NESSO_WERROR:-}" == "1" ]]; then
+    werror_args+=(-c "user.nesso:werror=True")
+  fi
+  conan build . -of "${out_dir}" -pr:h "${profile}" -pr:b default \
+    --lockfile=conan.lock --build=missing "${remote_args[@]}" "${werror_args[@]}"
+}
 
-echo "Coverage OK"
+run_test() {
+  ensure_model
+  ctest --test-dir "${build_dir}" --output-on-failure -j "$(nproc)" "${ctest_args[@]}"
+}
+
+run_capture() {
+  mkdir -p "$(dirname "${info_path}")"
+  # Keep libstdc++ and the Conan cache out of the merge. Those headers emit the
+  # mismatched exception tags. The --remove below stays as a safety net.
+  # A "negative taken count" from lcov is a capture race, not a floor miss.
+  # conan/profiles/code-coverage passes -fprofile-update=atomic because inferAll
+  # runs infer on one thread per int8 session and plain --coverage counters drift
+  # (seen on onnx_embedder.cpp). Never add "negative" to the ignore lists, never
+  # drop that flag, and never lower REQUIRED_*.
+  lcov --directory "${build_dir}" --capture \
+    --include "${ROOT}/src/*" --include "${ROOT}/test/*" \
+    --output-file "${info_path}"
+}
+
+remove_exclusions() {
+  local input=$1
+  local output=$2
+  mkdir -p "$(dirname "${output}")"
+  # onnx_embedder.cpp needs a downloaded model and is covered by its own
+  # harness. The removed test files are compiled with -fno-profile-arcs.
+  # Capture still reads that .gcda. int8 infer runs one thread per session, and
+  # non-atomic gcov arcs there go negative; code-coverage passes
+  # -fprofile-update=atomic so this capture does not abort before the remove.
+  lcov --remove "${input}" \
+    '/usr/*' \
+    "${conan_cache}/*" \
+    '*/test/unit/embed/onnx_embedder_test.cpp' \
+    '*/test/unit/embed/batch_plan_test.cpp' \
+    '*/src/embed/onnx_embedder.cpp' \
+    '*/test/unit/parser/log_chunker_test.cpp' \
+    '*/test/unit/parser/template_mask_test.cpp' \
+    '*/test/integration/grep_integration_test.cpp' \
+    --output-file "${output}"
+}
+
+check_floors() {
+  local summary measured required row fail=0
+  local -a rows=()
+  summary=$(command lcov --rc branch_coverage=1 --ignore-errors inconsistent,mismatch,unused,corrupt \
+    --summary "${cleaned_path}" 2>&1)
+  pct() { echo "$summary" | grep -E "^[[:space:]]+${1}\\.+" | awk -F: '{print $2}' | awk '{print $1}' | tr -d '%'; }
+
+  check() {
+    measured=$(pct "$1")
+    measured=${measured:-0}
+    required=$2
+    row="$1: ${measured}% (required >= ${required}%)"
+    echo "$row"
+    rows+=("$row")
+    # Floor only — exact == breaks when lcov/gcov differ between local and CI.
+    awk -v m="${measured}" -v r="${required}" 'BEGIN { exit !(m + 0 >= r + 0) }' \
+      || { echo "ERROR: $1 ${measured}% < ${required}%" >&2; fail=1; }
+  }
+
+  check lines "$REQUIRED_LINES"
+  check functions "$REQUIRED_FUNCTIONS"
+  check branches "$REQUIRED_BRANCHES"
+  mkdir -p "${report_dir}"
+  printf '%s\n' "${rows[@]}" >"${report_dir}/summary.txt"
+  if [[ -n "${GITHUB_STEP_SUMMARY:-}" ]]; then
+    {
+      echo '### Coverage'
+      echo
+      echo '```'
+      printf '%s\n' "${rows[@]}"
+      echo '```'
+    } >>"${GITHUB_STEP_SUMMARY}"
+  fi
+  [[ $fail -eq 0 ]] || exit 2
+}
+
+finish_report() {
+  mkdir -p "${report_dir}"
+  genhtml --branch-coverage --rc branch_coverage=1 --ignore-errors inconsistent,inconsistent \
+    "${cleaned_path}" \
+    --output-directory "${report_dir}" >/dev/null
+  check_floors
+  echo "Coverage OK"
+}
+
+run_merge() {
+  mkdir -p "$(dirname "${info_path}")"
+  local add_args=()
+  local trace
+  for trace in "${merge_traces[@]}"; do
+    add_args+=(-a "${trace}")
+  done
+  lcov "${add_args[@]}" --output-file "${info_path}"
+  remove_exclusions "${info_path}" "${cleaned_path}"
+  finish_report
+}
+
+run_full_after_capture() {
+  remove_exclusions "${info_path}" "${cleaned_path}"
+  finish_report
+}
+
+case "${mode}" in
+  build)
+    run_build
+    ;;
+  test)
+    run_test
+    ;;
+  capture)
+    run_capture
+    ;;
+  merge)
+    run_merge
+    ;;
+  full)
+    run_build
+    run_test
+    run_capture
+    run_full_after_capture
+    ;;
+esac
