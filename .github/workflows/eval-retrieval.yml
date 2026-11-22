@@ -6,7 +6,8 @@ name: Eval retrieval
 # merges them for margins. Falls back to scoring nesso too when that artifact
 # is missing. Compares against the latest successful scheduled report on main
 # and warns on relative drops over 5%. Scores never fail the job; only script
-# errors do. No gh-pages write yet.
+# errors do. Also measures nesso, BM25 and grep speed on the BGL 100k window
+# (report only, never a gate). No gh-pages write yet.
 on:
   schedule:
     # 06:47 UTC, after real-log at 05:47 UTC (fuzz-test 03:17, index-rss 04:47).
@@ -449,6 +450,33 @@ jobs:
             fi
           done < build/eval/compare.txt
 
+      # Speed and memory, report only. nesso (built from this commit), BM25 and
+      # grep run back to back on this runner after every scoring step, so the
+      # runner's speed cancels out of the ratios. One mode (auto) on the BGL
+      # 100k needle window and its 61 alert queries, 3 repeats, quality scoring
+      # skipped (--measure-only). NESSO_THREADS=1 matches the single-threaded
+      # BM25 and grep. continue-on-error: a timing problem never fails the job
+      # and nothing reads these numbers as a gate.
+      - name: Measure nesso, BM25 and grep speed (report only)
+        continue-on-error: true
+        env:
+          NESSO_THREADS: "1"
+        run: |
+          set -euo pipefail
+          started="${SECONDS}"
+          python3 nesso-bench/scripts/eval-retrieval \
+            --dataset bgl-needle-100k --measure --measure-only --repeat 3 \
+            --modes auto \
+            --engine nesso --engine bm25 --engine grep \
+            --skip-fetch --binary build/Release/src/nesso --model-dir models \
+            --workdir build/eval/measure-work \
+            --out build/eval/measure-needle.json \
+            | tee build/eval/measure-needle.txt
+          python3 scripts/eval-measure-summary --in build/eval/measure-needle.json \
+            | tee build/eval/measure-summary.md >> "${GITHUB_STEP_SUMMARY}"
+          echo >> "${GITHUB_STEP_SUMMARY}"
+          echo "Measurement took $(( SECONDS - started )) s." >> "${GITHUB_STEP_SUMMARY}"
+
       - name: Note Loghub 2k inputs are ready to cache
         id: logfiles
         if: always() && !cancelled()
@@ -529,3 +557,16 @@ jobs:
             build/eval/needle.json
           retention-days: 7
           if-no-files-found: warn
+
+      # Separate from eval-retrieval: resolve reads that artifact as the quality
+      # baseline, and timings are never compared.
+      - name: Upload speed and memory report
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: eval-retrieval-measure
+          path: |
+            build/eval/measure-needle.json
+            build/eval/measure-summary.md
+          retention-days: 7
+          if-no-files-found: ignore
