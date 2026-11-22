@@ -43,7 +43,7 @@ env:
   # resolve job warns when this commit is behind nesso-bench's main.
   # bench-real-log.yml pins the same commit for fetch-loghub; bump both together.
   NESSO_BENCH_REPOSITORY: lorenzocaprari/nesso-bench
-  NESSO_BENCH_REF: 22c797347137999886e83b0c3e66f329058ecc48
+  NESSO_BENCH_REF: 3593c3d06b853accf3060c62a8ed8aa31c7ecafd
 
 jobs:
   guard:
