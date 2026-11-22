@@ -1,0 +1,88 @@
+#!/usr/bin/env python3
+"""Wrap a nesso-only eval-retrieval report (schema_version 3) as schema 4.
+
+The Pipeline eval-retrieval job uploads schema_version 3 reports
+(eval-pipeline). The nightly Eval retrieval workflow merges those with
+grep and BM25 reports via nesso-bench's eval-retrieval-merge, which only
+accepts schema_version 4 (or needle). This tool rewrites a schema 3 report
+so nesso appears as one engine with its modes intact. Schema 4 and needle
+inputs are copied through unchanged (still rewritten with sorted keys).
+
+    scripts/eval-wrap-nesso-report --in all_2k.json --out all_2k.wrapped.json
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import sys
+from pathlib import Path
+from typing import Any
+
+
+def wrap(payload: dict[str, Any]) -> dict[str, Any]:
+    if not isinstance(payload, dict) or "datasets" not in payload:
+        raise SystemExit("error: input is not an eval-retrieval report")
+    if payload.get("kind") == "needle":
+        return payload
+    version = payload.get("schema_version")
+    if version == 4:
+        return payload
+    if version != 3:
+        raise SystemExit(f"error: unsupported schema_version {version!r}; expected 3 or 4")
+    datasets: list[dict[str, Any]] = []
+    for entry in payload["datasets"]:
+        if "modes" not in entry:
+            raise SystemExit(f"error: dataset {entry.get('dataset')!r} missing modes")
+        datasets.append(
+            {
+                "dataset": entry["dataset"],
+                "engines": [
+                    {
+                        "engine": "nesso",
+                        "modes": entry["modes"],
+                        "status": "ok",
+                    }
+                ],
+                "query_count": entry["query_count"],
+            }
+        )
+    overall = payload.get("overall") or {}
+    if "modes" not in overall:
+        raise SystemExit("error: overall missing modes")
+    return {
+        "datasets": datasets,
+        "k": payload["k"],
+        "overall": {
+            "engines": [
+                {
+                    "engine": "nesso",
+                    "modes": overall["modes"],
+                    "status": "ok",
+                }
+            ],
+            "query_count": overall["query_count"],
+        },
+        "schema_version": 4,
+    }
+
+
+def main(argv: list[str] | None = None) -> None:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--in", dest="inp", type=Path, required=True, help="Input JSON report")
+    parser.add_argument("--out", type=Path, required=True, help="Output JSON path")
+    args = parser.parse_args(argv)
+    try:
+        payload = json.loads(args.inp.read_text(encoding="utf-8"))
+    except OSError as exc:
+        raise SystemExit(f"error: cannot read {args.inp}: {exc}") from exc
+    except json.JSONDecodeError as exc:
+        raise SystemExit(f"error: malformed JSON in {args.inp}: {exc}") from exc
+    wrapped = wrap(payload)
+    encoded = json.dumps(wrapped, sort_keys=True, separators=(",", ":")) + "\n"
+    args.out.parent.mkdir(parents=True, exist_ok=True)
+    args.out.write_text(encoded, encoding="utf-8")
+
+
+if __name__ == "__main__":
+    main()
