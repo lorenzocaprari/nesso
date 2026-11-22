@@ -35,7 +35,7 @@ env:
   # warns when this commit is behind nesso-bench's main. ci.yml and
   # bench-real-log.yml pin the same commit; bump all three together.
   NESSO_BENCH_REPOSITORY: lorenzocaprari/nesso-bench
-  NESSO_BENCH_REF: 791644189534cb96db2dc5616d8864cc2595be99
+  NESSO_BENCH_REF: 140bb9e077d3070f4ddf9f907588662f98b65450
 
 jobs:
   guard:
