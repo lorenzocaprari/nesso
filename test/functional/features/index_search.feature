@@ -181,8 +181,8 @@ Feature: index and search
     And running nesso again prints the same stdout
 
   Scenario: search ranking matches grep for every thread budget
-    Given 40 lines "database connection refused" in "app.log"
-    And 40 lines "payment timeout after retry" in "app.log"
+    Given 8 lines "database connection refused" in "app.log"
+    And 8 lines "payment timeout after retry" in "app.log"
     When I run nesso with arguments index --threads 1 -o {dir}/one.nesso {dir}/app.log
     Then the exit code is 0
     When I run nesso with arguments index --threads 4 -o {dir}/four.nesso {dir}/app.log

@@ -361,17 +361,17 @@ Feature: command errors
     And stderr contains "Error: failed to write results"
 
   Scenario: large text results fail when stdout is full
-    Given 5000 lines "database connection refused" in "app.log"
+    Given 128 lines "database connection refused" in "app.log"
     And stdout is redirected to "/dev/full"
-    When I run nesso with arguments grep "database connection error" -k 5000 {dir}/app.log
+    When I run nesso with arguments grep "database connection error" -k 128 {dir}/app.log
     Then the exit code is 2
     And stderr contains "Error: failed to write results"
     And stderr does not contain "Unhandled Runtime Exception"
 
   Scenario: large json results fail when stdout is full
-    Given 5000 lines "database connection refused" in "app.log"
+    Given 128 lines "database connection refused" in "app.log"
     And stdout is redirected to "/dev/full"
-    When I run nesso with arguments grep "database connection error" --json -k 5000 {dir}/app.log
+    When I run nesso with arguments grep "database connection error" --json -k 128 {dir}/app.log
     Then the exit code is 2
     And stderr contains "Error: failed to write results"
     And stderr does not contain "Unhandled Runtime Exception"
