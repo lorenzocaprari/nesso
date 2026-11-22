@@ -1,0 +1,132 @@
+#!/usr/bin/env python3
+"""Render an eval-retrieval --measure report as a Markdown summary.
+
+The nightly Eval retrieval workflow measures nesso, grep and BM25 on one
+runner in one job, so the runner's speed cancels out of the ratios. This tool
+reads the needle report (kind "needle" with a "measure" block) and prints, per
+dataset, absolute medians with the min-max range across repeats, peak RSS, and
+the ratios nesso / BM25 and nesso / grep for each phase. Development only:
+the numbers depend on the machine and never gate anything.
+
+    scripts/eval-measure-summary --in build/eval/measure-needle.json
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import sys
+from pathlib import Path
+from typing import Any
+
+# (label, key, unit) per phase. Index has no grep column: grep builds no index.
+PHASES: tuple[tuple[str, str, str], ...] = (
+    ("Index wall time", "indexWallSeconds", "s"),
+    ("Index peak RSS", "indexPeakRssBytes", "MiB"),
+    ("Queries total wall time", "queryWallSeconds", "s"),
+    ("Query latency, median", "queryLatencyMedianSeconds", "s"),
+    ("Query peak RSS", "queryPeakRssBytes", "MiB"),
+    ("Cold time to first result", "timeToFirstResultSeconds", "s"),
+)
+ENGINES = ("nesso", "bm25", "grep")
+
+
+def flatten(engine: dict[str, Any], mode: str) -> dict[str, Any]:
+    """One engine row with the nesso mode's query fields lifted to the top."""
+    row = dict(engine)
+    row["range"] = dict(engine.get("range", {}))
+    for entry in engine.get("modes", []):
+        if entry.get("mode") == mode:
+            for key, value in entry.items():
+                if key not in ("mode", "range"):
+                    row[key] = value
+            row["range"].update(entry.get("range", {}))
+    return row
+
+
+def value_of(row: dict[str, Any] | None, key: str) -> float | None:
+    if row is None or row.get("status") != "ok":
+        return None
+    value = row.get(key)
+    return None if value is None else float(value)
+
+
+def scale(value: float, unit: str) -> float:
+    return value / (1024 * 1024) if unit == "MiB" else value
+
+
+def cell(row: dict[str, Any] | None, key: str, unit: str) -> str:
+    value = value_of(row, key)
+    if value is None:
+        return "n/a"
+    text = f"{scale(value, unit):.2f}"
+    spread = (row or {}).get("range", {}).get(key)
+    if spread and spread[0] != spread[1]:
+        text += f" ({scale(spread[0], unit):.2f}-{scale(spread[1], unit):.2f})"
+    return f"{text} {unit}"
+
+
+def ratio(top: float | None, bottom: float | None) -> str:
+    if top is None or bottom is None or bottom <= 0:
+        return "n/a"
+    return f"{top / bottom:.2f}x"
+
+
+def render(payload: dict[str, Any], mode: str) -> str:
+    measure = payload.get("measure")
+    if not isinstance(measure, dict):
+        raise SystemExit("error: report has no measure block")
+    lines = [
+        "### Speed and memory (development only, machine-dependent)",
+        "",
+        "nesso, BM25 and grep ran in this one job on this one runner, so the "
+        "ratios are comparable across engines; absolute numbers are not "
+        "comparable across runners or days. Nothing here gates the job.",
+        "",
+        f"nesso mode `{mode}`, NESSO_THREADS={measure.get('threads')}, "
+        f"{measure.get('repeat')} repeats (median, min-max in parentheses), "
+        f"{measure.get('nproc')} CPUs, {measure.get('cpuModel')}.",
+    ]
+    for dataset in measure.get("datasets", []):
+        rows = {
+            name: flatten(engine, mode)
+            for engine in dataset.get("engines", [])
+            if (name := engine.get("engine")) in ENGINES
+        }
+        lines += [
+            "",
+            f"#### {dataset.get('name')} ({dataset.get('logLines')} lines, {dataset.get('logBytes')} bytes)",
+            "",
+            "| Phase | nesso | BM25 | grep | nesso / BM25 | nesso / grep |",
+            "| --- | --- | --- | --- | --- | --- |",
+        ]
+        for label, key, unit in PHASES:
+            nesso = rows.get("nesso")
+            cells = [cell(rows.get(name), key, unit) for name in ENGINES]
+            ratios = [ratio(value_of(nesso, key), value_of(rows.get(name), key)) for name in ("bm25", "grep")]
+            lines.append("| " + " | ".join([label, *cells, *ratios]) + " |")
+        skipped = [f"{name}: {row.get('reason', 'skipped')}" for name, row in rows.items() if row.get("status") == "skipped"]
+        if skipped:
+            lines += ["", "Skipped: " + "; ".join(skipped)]
+    lines += [
+        "",
+        "n/a: the engine has no such phase (grep builds no index) or no value.",
+    ]
+    return "\n".join(lines)
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--in", dest="source", type=Path, required=True, help="eval-retrieval --measure report")
+    parser.add_argument("--mode", default="auto", help="nesso mode to show (default auto)")
+    args = parser.parse_args()
+    try:
+        payload = json.loads(args.source.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        raise SystemExit(1) from exc
+    print(render(payload, args.mode))
+
+
+if __name__ == "__main__":
+    main()
