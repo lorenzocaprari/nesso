@@ -88,6 +88,10 @@ if(NESSO_PYTHON_EXECUTABLE)
     PROPERTIES
       LABELS unit ENVIRONMENT
       "NESSO_COMPILE_COMMANDS=${CMAKE_BINARY_DIR}/compile_commands.json")
+  add_test(NAME code_coverage_test
+           COMMAND "${NESSO_PYTHON_EXECUTABLE}"
+                   "${CMAKE_CURRENT_SOURCE_DIR}/code_coverage_test.py")
+  set_tests_properties(code_coverage_test PROPERTIES LABELS unit)
   # The test archive omits compile_commands.json, so ctest skips the live check
   # there. This target runs in the build that generates the database.
   add_custom_target(
