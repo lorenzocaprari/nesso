@@ -40,6 +40,32 @@ TEST_CASE("identifier token patterns match ADR 0011", "[query][core]")
         ExpectIdentifier("/a/b/");
     }
 
+    SECTION("underscore-segmented ids")
+    {
+        ExpectIdentifier("attempt_1445144423722_0020_r_000000_0");
+        ExpectIdentifier("attempt_1445144423722_0020_m_000002_1");
+        ExpectIdentifier("container_1445144423722_0020_01_000002");
+        ExpectIdentifier("jvm_1445144423722_0020_m_000002");
+        ExpectIdentifier("job_1445144423722_0020");
+        ExpectIdentifier("application_1445144423722_0020");
+        ExpectIdentifier("ab_x_1234");
+    }
+
+    SECTION("underscore-segmented near-misses")
+    {
+        ExpectNotIdentifier("user_name_list");
+        ExpectNotIdentifier("foo_bar_2");
+        ExpectNotIdentifier("log_123_45");
+        ExpectNotIdentifier("a_1445144423722_0020");
+        ExpectNotIdentifier("attempt__1445144423722_0020");
+        ExpectNotIdentifier("attempt_1445144423722_0020_");
+        ExpectNotIdentifier("attempt_x_y");
+        ExpectNotIdentifier("attempt-1445144423722-0020");
+        ExpectNotIdentifier("attempt_1445144423722_00.20");
+        ExpectNotIdentifier("abcdefghijklmnopq_1445144423722_0020");
+        ExpectNotIdentifier("task9_1445144423722_0020");
+    }
+
     SECTION("near-misses")
     {
         ExpectNotIdentifier("timeout");
@@ -88,6 +114,7 @@ TEST_CASE("ClassifyQuery routes identifier, mixed, and natural language", "[quer
         CHECK(nesso::core::ClassifyQuery("0a000086") == QueryClass::Identifier);
         CHECK(nesso::core::ClassifyQuery("blk_-1608999687919862906") == QueryClass::Identifier);
         CHECK(nesso::core::ClassifyQuery("\"0a000086\"") == QueryClass::Identifier);
+        CHECK(nesso::core::ClassifyQuery("attempt_1445144423722_0020_m_000002_1") == QueryClass::Identifier);
     }
 
     SECTION("natural language")
@@ -100,6 +127,7 @@ TEST_CASE("ClassifyQuery routes identifier, mixed, and natural language", "[quer
     {
         CHECK(nesso::core::ClassifyQuery("connection failed with ERR-5001") == QueryClass::Mixed);
         CHECK(nesso::core::ClassifyQuery("error \"ERR-5001\" today") == QueryClass::Mixed);
+        CHECK(nesso::core::ClassifyQuery("container_1445144423722_0020_01_000002 killed") == QueryClass::Mixed);
     }
 
     SECTION("empty after tokenization is natural language")
