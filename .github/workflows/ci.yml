@@ -33,7 +33,7 @@ env:
   # nesso-bench commit for the eval-retrieval job. eval-retrieval.yml and
   # bench-real-log.yml pin the same commit; bump all three together.
   NESSO_BENCH_REPOSITORY: lorenzocaprari/nesso-bench
-  NESSO_BENCH_REF: 791644189534cb96db2dc5616d8864cc2595be99
+  NESSO_BENCH_REF: 140bb9e077d3070f4ddf9f907588662f98b65450
 
 # Read-only default. Jobs that pull nesso-build-env keep packages: read.
 # prepare-image-amd64, prepare-image-arm64, prepare-image-el9-amd64, and
@@ -1357,16 +1357,19 @@ jobs:
       - name: Extract Release build
         run: ./scripts/ci/ci-build-archive unpack release-build
 
+      # Modes match docs/benchmarks.md and nesso-bench scorecard (no hybrid).
+      # --jobs 4 runs search processes in parallel with NESSO_THREADS=1.
       - name: Score nesso
         run: |
           set -euo pipefail
           mkdir -p build/eval/current
-          common=(--engine nesso --split dev --binary build/Release/src/nesso --model-dir models)
+          common=(--engine nesso --split dev --modes auto,dense,lexical --jobs 4
+            --binary build/Release/src/nesso --model-dir models)
           python3 nesso-bench/scripts/eval-retrieval --dataset all-2k "${common[@]}" \
             --out build/eval/current/all_2k.json
           python3 nesso-bench/scripts/eval-retrieval --dataset all-formats "${common[@]}" \
             --out build/eval/current/formats.json
-          python3 nesso-bench/scripts/eval-retrieval --dataset bgl-needle-100k --modes auto,dense,lexical \
+          python3 nesso-bench/scripts/eval-retrieval --dataset bgl-needle-100k \
             --skip-fetch "${common[@]}" --out build/eval/current/needle.json
 
       # A pull request's merge base and every push run upload eval-pipeline,
