@@ -1071,6 +1071,8 @@ jobs:
           merge-multiple: true
 
       - name: Merge coverage traces and check floors
+        # Arrays and [[ ]] need bash; the image's /bin/sh is dash.
+        shell: bash
         run: |
           chmod +x scripts/code-coverage
           merge_args=()
