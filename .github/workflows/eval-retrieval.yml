@@ -1,15 +1,12 @@
 name: Eval retrieval
 
-# Not a Pipeline job and not in the CI gate. Scores nesso against grep and
-# SQLite BM25 on the pinned Loghub 2k seed sets, and on the BGL 100k needle
-# window (Loghub 2.0, administrators' alert labels). The harness, query sets,
-# and competitor reference reports come from lorenzocaprari/nesso-bench at
-# NESSO_BENCH_REF. Runs nightly on main and on workflow_dispatch. Pull
-# requests are scored by the Pipeline eval-retrieval job (ci.yml), which
-# gates on nesso against its merge base. This run compares against the latest
-# successful scheduled report on main and warns on relative drops over 5%. The
-# summary also shows nesso's margin over the best other engine per class.
-# Scores never fail the job; only script errors do. No gh-pages write yet.
+# Not a Pipeline job and not in the CI gate. Nightly and workflow_dispatch.
+# Reuses the Pipeline eval-pipeline artifact for this commit's nesso quality
+# (same NESSO_BENCH_REF and SHA) when present, scores grep and BM25 only, and
+# merges them for margins. Falls back to scoring nesso too when that artifact
+# is missing. Compares against the latest successful scheduled report on main
+# and warns on relative drops over 5%. Scores never fail the job; only script
+# errors do. No gh-pages write yet.
 on:
   schedule:
     # 06:47 UTC, after real-log at 05:47 UTC (fuzz-test 03:17, index-rss 04:47).
@@ -77,6 +74,7 @@ jobs:
     outputs:
       image: ${{ steps.select.outputs.image }}
       prev_run_id: ${{ steps.prev.outputs.prev_run_id }}
+      pipeline_run_id: ${{ steps.pipeline.outputs.pipeline_run_id }}
     steps:
       - name: Harden runner
         uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
@@ -148,6 +146,42 @@ jobs:
           )"
           echo "prev_run_id=${prev_run_id}" >> "${GITHUB_OUTPUT}"
 
+      # Prefer the Pipeline push run for this SHA so nesso is not scored twice.
+      - name: Find Pipeline eval-pipeline for this commit
+        id: pipeline
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          HEAD_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          pipeline_run_id=""
+          while IFS= read -r run_id; do
+            [[ -z "${run_id}" ]] && continue
+            if gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}/artifacts" \
+              --jq '.artifacts[] | select(.name=="eval-pipeline" and .expired==false) | .name' \
+              | grep -qx 'eval-pipeline'; then
+              pipeline_run_id="${run_id}"
+              break
+            fi
+          done < <(
+            gh run list \
+              --workflow ci.yml \
+              --branch main \
+              --event push \
+              --commit "${HEAD_SHA}" \
+              --status success \
+              --limit 10 \
+              --json databaseId \
+              --jq '.[].databaseId'
+          )
+          echo "pipeline_run_id=${pipeline_run_id}" >> "${GITHUB_OUTPUT}"
+          if [[ -n "${pipeline_run_id}" ]]; then
+            echo "Reusing eval-pipeline from Pipeline run ${pipeline_run_id}"
+          else
+            echo "No eval-pipeline for ${HEAD_SHA:0:7}; nightly will score nesso"
+          fi
+
   eval:
     needs: [guard, resolve]
     if: github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main'
@@ -190,6 +224,17 @@ jobs:
           name: eval-retrieval
           path: build/eval/previous
           run-id: ${{ needs.resolve.outputs.prev_run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Download Pipeline eval-pipeline
+        id: pipeline_artifact
+        if: needs.resolve.outputs.pipeline_run_id != ''
+        continue-on-error: true
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: eval-pipeline
+          path: build/eval/pipeline
+          run-id: ${{ needs.resolve.outputs.pipeline_run_id }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Restore MiniLM models
@@ -265,96 +310,100 @@ jobs:
       - name: Fetch BGL needle window
         run: python3 nesso-bench/scripts/fetch-loghub --dataset bgl-loghub2 --window 4100001:100000
 
-      - name: Run retrieval evaluation
+      # Prefer Pipeline nesso reports for this SHA; score grep and BM25 here.
+      # Modes match the Pipeline gate. --jobs 4 applies when nesso is scored.
+      - name: Score retrieval reports
         run: |
           set -euo pipefail
           mkdir -p build/eval
-          python3 nesso-bench/scripts/eval-retrieval \
-            --dataset all-2k \
-            --split dev \
-            --engine nesso \
-            --engine grep \
-            --engine bm25 \
-            --binary build/Release/src/nesso \
-            --model-dir models \
-            --out build/eval/all_2k.json \
-            | tee build/eval/all_2k.txt
+          reuse=false
+          if [[ -f build/eval/pipeline/all_2k.json \
+            && -f build/eval/pipeline/formats.json \
+            && -f build/eval/pipeline/needle.json ]]; then
+            reuse=true
+          fi
+          modes=(--modes auto,dense,lexical --split dev)
+          binary=(--binary build/Release/src/nesso --model-dir models)
+          if [[ "${reuse}" == "true" ]]; then
+            echo "### Scoring path" >> "${GITHUB_STEP_SUMMARY}"
+            echo >> "${GITHUB_STEP_SUMMARY}"
+            echo "Reused Pipeline eval-pipeline for nesso; scored grep and BM25." >> "${GITHUB_STEP_SUMMARY}"
+            python3 scripts/eval-wrap-nesso-report \
+              --in build/eval/pipeline/all_2k.json \
+              --out build/eval/nesso-all_2k.json
+            python3 scripts/eval-wrap-nesso-report \
+              --in build/eval/pipeline/formats.json \
+              --out build/eval/nesso-formats.json
+            # Needle reports are already engine-shaped (nesso/auto, ...).
+            cp build/eval/pipeline/needle.json build/eval/nesso-needle.json
+            python3 nesso-bench/scripts/eval-retrieval \
+              --dataset all-2k "${modes[@]}" \
+              --engine grep --engine bm25 \
+              --skip-fetch "${binary[@]}" \
+              --out build/eval/baselines-all_2k.json \
+              | tee build/eval/all_2k.txt
+            python3 nesso-bench/scripts/eval-retrieval \
+              --dataset all-formats "${modes[@]}" \
+              --engine grep --engine bm25 \
+              --skip-fetch "${binary[@]}" \
+              --out build/eval/baselines-formats.json \
+              | tee build/eval/formats.txt
+            python3 nesso-bench/scripts/eval-retrieval \
+              --dataset bgl-needle-100k "${modes[@]}" \
+              --engine grep --engine bm25 \
+              --skip-fetch "${binary[@]}" \
+              --out build/eval/baselines-needle.json \
+              | tee build/eval/needle.txt
+            python3 nesso-bench/scripts/eval-retrieval-merge \
+              --out build/eval/all_2k.json \
+              build/eval/nesso-all_2k.json build/eval/baselines-all_2k.json
+            python3 nesso-bench/scripts/eval-retrieval-merge \
+              --out build/eval/formats.json \
+              build/eval/nesso-formats.json build/eval/baselines-formats.json
+            python3 nesso-bench/scripts/eval-retrieval-merge \
+              --out build/eval/needle.json \
+              build/eval/nesso-needle.json build/eval/baselines-needle.json
+          else
+            echo "### Scoring path" >> "${GITHUB_STEP_SUMMARY}"
+            echo >> "${GITHUB_STEP_SUMMARY}"
+            echo "No Pipeline eval-pipeline for this commit; scored nesso, grep, and BM25." >> "${GITHUB_STEP_SUMMARY}"
+            python3 nesso-bench/scripts/eval-retrieval \
+              --dataset all-2k "${modes[@]}" --jobs 4 \
+              --engine nesso --engine grep --engine bm25 \
+              "${binary[@]}" \
+              --out build/eval/all_2k.json \
+              | tee build/eval/all_2k.txt
+            python3 nesso-bench/scripts/eval-retrieval \
+              --dataset all-formats "${modes[@]}" --jobs 4 \
+              --engine nesso --engine grep --engine bm25 \
+              --skip-fetch "${binary[@]}" \
+              --out build/eval/formats.json \
+              | tee build/eval/formats.txt
+            python3 nesso-bench/scripts/eval-retrieval \
+              --dataset bgl-needle-100k "${modes[@]}" --jobs 4 \
+              --engine nesso --engine grep --engine bm25 \
+              --skip-fetch "${binary[@]}" \
+              --out build/eval/needle.json \
+              | tee build/eval/needle.txt
+          fi
           {
+            echo
             echo "### Retrieval evaluation (Loghub 2k seed sets, dev queries: nesso, grep, BM25)"
             echo
-            current=""
-            while IFS= read -r line || [[ -n "${line}" ]]; do
-              if [[ "${line}" == wrote\ * ]]; then
-                continue
-              fi
-              if [[ "${line}" == ===\ *\ === ]]; then
-                name="${line#=== }"
-                name="${name% ===}"
-                if [[ -n "${current}" ]]; then
-                  echo '```'
-                  echo
-                fi
-                echo "#### ${name}"
-                echo
-                echo '```'
-                current="${name}"
-                continue
-              fi
-              if [[ -z "${current}" ]]; then
-                continue
-              fi
-              printf '%s\n' "${line}"
-            done < build/eval/all_2k.txt
-            if [[ -n "${current}" ]]; then
-              echo '```'
-            fi
-          } >> "${GITHUB_STEP_SUMMARY}"
-
-      - name: Run format evaluation
-        run: |
-          set -euo pipefail
-          python3 nesso-bench/scripts/eval-retrieval \
-            --dataset all-formats \
-            --split dev \
-            --engine nesso \
-            --engine grep \
-            --engine bm25 \
-            --skip-fetch \
-            --binary build/Release/src/nesso \
-            --model-dir models \
-            --out build/eval/formats.json \
-            | tee build/eval/formats.txt
-          {
+            echo '```'
+            grep -v '^wrote ' build/eval/all_2k.txt || true
+            echo '```'
             echo
             echo "### Format sets (Hadoop, OpenStack, HealthApp 2k, dev queries: nesso, grep, BM25)"
             echo
             echo '```'
-            grep -v '^wrote ' build/eval/formats.txt
+            grep -v '^wrote ' build/eval/formats.txt || true
             echo '```'
-          } >> "${GITHUB_STEP_SUMMARY}"
-
-      # Labels are the BGL administrators' alert tags, not ours. About 80 s.
-      - name: Run needle evaluation
-        run: |
-          set -euo pipefail
-          python3 nesso-bench/scripts/eval-retrieval \
-            --dataset bgl-needle-100k \
-            --engine nesso \
-            --engine grep \
-            --engine bm25 \
-            --modes auto,dense,lexical \
-            --split dev \
-            --skip-fetch \
-            --binary build/Release/src/nesso \
-            --model-dir models \
-            --out build/eval/needle.json \
-            | tee build/eval/needle.txt
-          {
             echo
             echo "### Needle benchmark (BGL 100k, administrators' alert labels: nesso, grep, BM25)"
             echo
             echo '```'
-            grep -v '^wrote ' build/eval/needle.txt
+            grep -v '^wrote ' build/eval/needle.txt || true
             echo '```'
           } >> "${GITHUB_STEP_SUMMARY}"
 
