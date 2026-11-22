@@ -4,7 +4,9 @@
 package functional_test
 
 import (
+	"os"
 	"runtime"
+	"strings"
 	"testing"
 
 	"github.com/cucumber/godog"
@@ -17,12 +19,20 @@ func TestFeatures(t *testing.T) {
 	if concurrency < 1 {
 		concurrency = 1
 	}
+	paths := []string{"features"}
+	if raw := strings.TrimSpace(os.Getenv("NESSO_GODOG_PATHS")); raw != "" {
+		paths = strings.Fields(raw)
+	}
+	format := "pretty"
+	if raw := strings.TrimSpace(os.Getenv("NESSO_GODOG_FORMAT")); raw != "" {
+		format = raw
+	}
 	suite := godog.TestSuite{
 		ScenarioInitializer: steps.InitializeScenario,
 		Options: &godog.Options{
-			Format:      "pretty",
+			Format:      format,
 			NoColors:    true,
-			Paths:       []string{"features"},
+			Paths:       paths,
 			Strict:      true,
 			Concurrency: concurrency,
 			TestingT:    t,

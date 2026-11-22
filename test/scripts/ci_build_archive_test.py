@@ -152,6 +152,48 @@ class CiBuildArchiveTest(unittest.TestCase):
             result = self.pack(root, env)
             self.assert_archive(root, result, "gzip")
 
+    def test_pack_coverage_keeps_gcno_and_drops_gcda(self) -> None:
+        kind = "zstd" if shutil.which("zstd") else "gzip"
+        with tempfile.TemporaryDirectory() as temp:
+            root = pathlib.Path(temp)
+            build = root / "build" / "coverage" / "build" / "Debug"
+            write_file(build / "src" / "nesso", b"elf-nesso", 0o755)
+            write_file(build / "CTestTestfile.cmake", b"subdirs\n", 0o644)
+            write_file(build / "src" / "nesso.cpp.gcno", b"notes", 0o644)
+            write_file(
+                build / "CMakeFiles" / "nesso.dir" / "nesso.cpp.gcno",
+                b"cmake-notes",
+                0o644,
+            )
+            write_file(build / "src" / "nesso.cpp.gcda", b"data", 0o644)
+            write_file(build / "src" / "nesso.cpp.o", b"object", 0o644)
+            result = subprocess.run(
+                [str(ARCHIVE), "pack-coverage", "build/coverage/build/Debug", "coverage-build"],
+                cwd=root,
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            suffix = "tar.zst" if kind == "zstd" else "tar.gz"
+            archive = root / f"coverage-build.{suffix}"
+            self.assertTrue(archive.is_file(), result.stdout)
+            if kind == "gzip":
+                with tarfile.open(archive, "r:gz") as tar:
+                    names = set(tar.getnames())
+            else:
+                listing = subprocess.run(
+                    ["tar", "-I", "zstd", "-tvf", str(archive)],
+                    check=True,
+                    capture_output=True,
+                    text=True,
+                )
+                names = archive_names(listing.stdout.splitlines())
+            self.assertIn("build/coverage/build/Debug/src/nesso", names)
+            self.assertIn("build/coverage/build/Debug/src/nesso.cpp.gcno", names)
+            self.assertIn("build/coverage/build/Debug/CMakeFiles/nesso.dir/nesso.cpp.gcno", names)
+            self.assertNotIn("build/coverage/build/Debug/src/nesso.cpp.gcda", names)
+            self.assertNotIn("build/coverage/build/Debug/src/nesso.cpp.o", names)
+
 
 if __name__ == "__main__":
     unittest.main()

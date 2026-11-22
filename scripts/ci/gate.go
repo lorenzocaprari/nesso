@@ -57,6 +57,8 @@ var (
 	needItem   = regexp.MustCompile(`^      - ([A-Za-z0-9][A-Za-z0-9_-]*)[ \t]*(?:#.*)?$`)
 	resultLine = regexp.MustCompile(`^[ \t]*([A-Za-z0-9][A-Za-z0-9_-]*)=\$\{\{[ \t]*needs\.([A-Za-z0-9][A-Za-z0-9_-]*)\.result[ \t]*\}\}[ \t]*$`)
 	testJobIf  = regexp.MustCompile(`^\$\{\{ always\(\) && !cancelled\(\) && needs\.changes\.result == 'success' && needs\.changes\.outputs\.code == 'true' && needs\.([A-Za-z0-9][A-Za-z0-9_-]*)\.result == 'success' \}\}$`)
+	// coverage merge waits on build + unit + bdd shards (matrix collapses to one need).
+	multiNeedIf = regexp.MustCompile(`^\$\{\{ always\(\) && !cancelled\(\) && needs\.changes\.result == 'success' && needs\.changes\.outputs\.code == 'true'(?: && needs\.([A-Za-z0-9][A-Za-z0-9_-]*)\.result == 'success')+ \}\}$`)
 )
 
 func ciGateNeedsMain(args []string) int {
@@ -407,6 +409,14 @@ func classifyIf(ifText string, ids map[string]bool) (int, bool) {
 		return classDocs, true
 	}
 	if m := testJobIf.FindStringSubmatch(ifText); m != nil && ids[m[1]] {
+		return classDocs, true
+	}
+	if multiNeedIf.MatchString(ifText) {
+		for _, m := range regexp.MustCompile(`needs\.([A-Za-z0-9][A-Za-z0-9_-]*)\.result`).FindAllStringSubmatch(ifText, -1) {
+			if !ids[m[1]] {
+				return classUnknown, false
+			}
+		}
 		return classDocs, true
 	}
 	return classUnknown, false

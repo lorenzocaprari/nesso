@@ -1,20 +1,23 @@
 #!/usr/bin/env bash
 # Pack or unpack the build-tree files downstream Pipeline jobs execute.
 #
-# Coverage does not download this archive. scripts/code-coverage configures
-# build/coverage in that job and lcov reads the .gcno/.gcda written there.
-# gcov needs those notes plus the sources at the paths stored in the notes
-# (the checkout). Object files are not inputs to that capture.
+# pack: runtime binaries, shared objects, CTest files, and fixtures. Used by
+# test and bench jobs. Object files, static archives, .gcno/.gcda, and CMake
+# scanner output stay out.
 #
-# Test and bench binaries NEEDED only libstdc++, libgcc, and libc. Their
+# pack-coverage: the same runtime set plus every .gcno under the build dir
+# (including CMakeFiles), so coverage shards can run tests and lcov --capture
+# without rebuilding. .gcda stay out; each shard writes its own counters.
+# gcov still needs the checkout sources at the paths stored in the notes.
+#
+# Test and bench binaries need only libstdc++, libgcc, and libc. Their
 # RUNPATH points at the Conan cache baked into nesso-build-env (/opt/conan2),
-# which the downstream jobs already use. Shared objects that do land in the
-# build tree are packed. Intermediate objects, static archives, and CMake's
-# scanner output are not.
+# which the downstream jobs already use.
 set -euo pipefail
 
 usage() {
   echo "usage: ci-build-archive pack <build-dir> <archive-prefix>" >&2
+  echo "       ci-build-archive pack-coverage <build-dir> <archive-prefix>" >&2
   echo "       ci-build-archive unpack <archive-prefix>" >&2
   exit 2
 }
@@ -77,6 +80,7 @@ write_meta() {
 pack() {
   local build_dir=$1
   local prefix=$2
+  local with_gcno=${3:-0}
   build_dir=${build_dir#./}
   build_dir=${build_dir%/}
   if [[ ! -d "${build_dir}" ]]; then
@@ -88,20 +92,26 @@ pack() {
   list="$(mktemp)"
   trap 'rm -f "${list}"' RETURN
   # CTestTestfile.cmake stores absolute paths to these executables and to
-  # test/fixtures. Keep that layout. Drop CMakeFiles (scanner temps, .o).
-  find "${build_dir}" \
-    \( -type f -o -type l \) \
-    ! -path '*/CMakeFiles/*' \
-    \( \
-      -name 'CTestTestfile.cmake' \
-      -o -name 'CTestCustom.cmake' \
-      -o -name 'DartConfiguration.tcl' \
-      -o -path '*/test/fixtures/*' \
-      -o -name '*.so' \
-      -o -name '*.so.*' \
-      -o -perm -u+x \
-    \) \
-    -print | LC_ALL=C sort > "${list}"
+  # test/fixtures. Keep that layout. Drop CMakeFiles (scanner temps, .o)
+  # unless pack-coverage also needs .gcno notes from those dirs.
+  {
+    find "${build_dir}" \
+      \( -type f -o -type l \) \
+      ! -path '*/CMakeFiles/*' \
+      \( \
+        -name 'CTestTestfile.cmake' \
+        -o -name 'CTestCustom.cmake' \
+        -o -name 'DartConfiguration.tcl' \
+        -o -path '*/test/fixtures/*' \
+        -o -name '*.so' \
+        -o -name '*.so.*' \
+        -o -perm -u+x \
+      \) \
+      -print
+    if [[ "${with_gcno}" == "1" ]]; then
+      find "${build_dir}" -type f -name '*.gcno' -print
+    fi
+  } | LC_ALL=C sort -u >"${list}"
 
   if [[ ! -s "${list}" ]]; then
     echo "no runtime files under ${build_dir}" >&2
@@ -123,7 +133,7 @@ pack() {
   while IFS= read -r path; do
     size="$(stat -c%s "${path}")"
     uncompressed_bytes=$((uncompressed_bytes + size))
-  done < "${list}"
+  done <"${list}"
   archive_bytes="$(stat -c%s "${archive}")"
   write_meta "${archive}" "${file_count}" "${uncompressed_bytes}" "${archive_bytes}"
 }
@@ -147,7 +157,11 @@ fi
 case "$1" in
   pack)
     [[ $# -eq 3 ]] || usage
-    pack "$2" "$3"
+    pack "$2" "$3" 0
+    ;;
+  pack-coverage)
+    [[ $# -eq 3 ]] || usage
+    pack "$2" "$3" 1
     ;;
   unpack)
     [[ $# -eq 2 ]] || usage
