@@ -269,7 +269,7 @@ class BenchRealLogTest(unittest.TestCase):
     def test_workflows_pin_the_same_nesso_bench_commit(self) -> None:
         workflows = ROOT / ".github" / "workflows"
         pins = {}
-        for name in ("bench-real-log.yml", "eval-retrieval.yml"):
+        for name in ("bench-real-log.yml", "eval-retrieval.yml", "ci.yml"):
             text = (workflows / name).read_text(encoding="utf-8")
             found = [line.split(":", 1)[1].strip() for line in text.splitlines() if line.strip().startswith("NESSO_BENCH_REF:")]
             self.assertEqual(len(found), 1, name)

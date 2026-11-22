@@ -32,9 +32,10 @@ env:
   NESSO_BENCH_RSS_TOLERANCE: "0.15"
   NESSO_BENCH_WALL_TOLERANCE: "0.15"
   # nesso-bench owns scripts/fetch-loghub. Keep this commit equal to
-  # NESSO_BENCH_REF in eval-retrieval.yml and bump both in the same pull request.
+  # NESSO_BENCH_REF in eval-retrieval.yml and ci.yml and bump all three in the
+  # same pull request.
   NESSO_BENCH_REPOSITORY: lorenzocaprari/nesso-bench
-  NESSO_BENCH_REF: 003dfeb748907d3aec594047b5c105e1476487e5
+  NESSO_BENCH_REF: 791644189534cb96db2dc5616d8864cc2595be99
 
 jobs:
   guard:
