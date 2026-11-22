@@ -188,10 +188,12 @@ TEST_CASE("masked keys collapse to the first raw line", "[dedup]")
     CHECK(index.Pending().front() == "block blk_10 done");
     CHECK(index.Text(0) == "block blk_10 done");
     CHECK(index.Occurrences(0) == 3);
-    CHECK(index.Add("http2 ready") == 1);
-    CHECK(index.Add("sha256 ready") == 2);
-    CHECK(index.Pending()[1] == "http2 ready");
-    CHECK(index.Pending()[2] == "sha256 ready");
+    CHECK(index.Add("node dn228 ready") == 1);
+    CHECK(index.Add("node cn541 ready") == 1);
+    CHECK(index.Add("api v2 ready") == 2);
+    CHECK(index.Pending()[1] == "node dn228 ready");
+    CHECK(index.Pending()[2] == "api v2 ready");
+    CHECK(index.Occurrences(1) == 2);
 
     const std::vector<std::string> lines{"block blk_20 done", "block blk_10 done", "sunny beach"};
     const std::vector<std::uint32_t> counts = nesso::core::OccurrenceCounts(ViewsOf(lines));

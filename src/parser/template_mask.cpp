@@ -746,6 +746,55 @@ static std::size_t PathSpan(std::string_view text, std::size_t begin, bool &has_
     return length;
 }
 
+static bool IsJoiner(char character) noexcept
+{
+    return character == '.' || character == ':' || character == '@' || character == '/' || character == '-';
+}
+
+static bool IsCompoundChar(char character) noexcept { return IsWord(character) || IsJoiner(character); }
+
+static constexpr std::size_t MIXED_MIN_LENGTH = 3;
+
+// A compound token that mixes letters and digits, such as a host or node name
+// (`dn228`, `R02-M1-N0-C:J12-U11`), a size or duration (`126MB`, `30000ms`), or
+// a short hex value (`0x01`). It starts at a word byte that does not follow a
+// compound byte, runs over word bytes and single joiners, and drops trailing
+// joiners.
+static std::size_t MatchMixed(std::string_view text, std::size_t begin) noexcept
+{
+    if (!IsWord(text[begin]) || (begin != 0 && IsCompoundChar(text[begin - 1])))
+    {
+        return 0;
+    }
+    std::size_t end = begin;
+    while (end < text.size() && IsCompoundChar(text[end]))
+    {
+        // Two joiners in a row (a dot leader such as `dcbf.........0`) end
+        // the token, so the word before them stays literal.
+        if (IsJoiner(text[end]) && end > begin && IsJoiner(text[end - 1]))
+        {
+            break;
+        }
+        ++end;
+    }
+    while (end > begin && IsJoiner(text[end - 1]))
+    {
+        --end;
+    }
+    bool letter = false;
+    bool digit = false;
+    for (std::size_t index = begin; index < end; ++index)
+    {
+        letter = letter || IsLetter(text[index]);
+        digit = digit || IsDigit(text[index]);
+    }
+    if (end - begin < MIXED_MIN_LENGTH || !letter || !digit)
+    {
+        return 0;
+    }
+    return end - begin;
+}
+
 static void AppendMasked(std::string &out) { out.append(MASKED_TOKEN); }
 
 static std::size_t VariableLength(std::string_view text, std::size_t index) noexcept
@@ -782,7 +831,11 @@ static std::size_t VariableLength(std::string_view text, std::size_t index) noex
     {
         return taken;
     }
-    return MatchDecimal(text, index);
+    if (const std::size_t taken = MatchDecimal(text, index); taken > 0)
+    {
+        return taken;
+    }
+    return MatchMixed(text, index);
 }
 
 static bool TryMaskPath(std::string_view text, std::size_t &index, std::string &out)
