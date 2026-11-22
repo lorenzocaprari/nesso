@@ -30,6 +30,10 @@ env:
   # One string. Unquoted as $CONAN_WERROR_ARGS on each conan install and conan
   # build so the shell splits it into -c and user.nesso:werror=True.
   CONAN_WERROR_ARGS: "-c user.nesso:werror=True"
+  # nesso-bench commit for the eval-retrieval job. eval-retrieval.yml and
+  # bench-real-log.yml pin the same commit; bump all three together.
+  NESSO_BENCH_REPOSITORY: lorenzocaprari/nesso-bench
+  NESSO_BENCH_REF: 791644189534cb96db2dc5616d8864cc2595be99
 
 # Read-only default. Jobs that pull nesso-build-env keep packages: read.
 # prepare-image-amd64, prepare-image-arm64, prepare-image-el9-amd64, and
@@ -1242,6 +1246,295 @@ jobs:
             echo '```'
           } >> "${GITHUB_STEP_SUMMARY}"
           exit "${status}"
+
+  # Retrieval quality gate. Scores the Release binary with nesso-bench at
+  # NESSO_BENCH_REF (nesso only, dev queries: Loghub 2k seed sets, the Hadoop,
+  # OpenStack, and HealthApp sets, and the BGL 100k needle window) and uploads
+  # the reports as eval-pipeline. A pull request compares with the reports of
+  # the push run of its merge base on main. nesso's output is byte-identical,
+  # so the comparison is exact. It fails when a nesso ranker's per-query MRR
+  # or nDCG@10 got worse beyond noise on an unchanged query set
+  # (eval-retrieval-compare --fail-on-worse). The label eval-regression-accepted
+  # turns that into a warning; it is read when the job runs, so add it and
+  # re-run the job. Without a merge-base report the job compares with the
+  # latest push run on main and only warns. A push to main compares with its
+  # parent and only warns.
+  eval-retrieval:
+    needs: [prepare-image-amd64, build-gcc-26-amd64, changes]
+    if: needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      packages: read
+      actions: read
+      pull-requests: read
+    container:
+      image: ${{ needs.prepare-image-amd64.outputs.image }} # zizmor: ignore[unpinned-images] deps-<hash> tag, not a digest
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Checkout nesso-bench
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ env.NESSO_BENCH_REPOSITORY }}
+          ref: ${{ env.NESSO_BENCH_REF }}
+          path: nesso-bench
+          persist-credentials: false
+
+      - name: Restore MiniLM models
+        id: models
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: models
+          key: minilm-${{ hashFiles('scripts/fetch-model') }}
+
+      - name: Fetch MiniLM models
+        if: steps.models.outputs.cache-hit != 'true'
+        run: ./scripts/fetch-model models
+
+      # Eval retrieval (eval-retrieval.yml) saves these caches nightly.
+      - name: Restore Loghub 2k inputs
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            nesso-bench/build/bench/HDFS_2k.log
+            nesso-bench/build/bench/HDFS_2k.log_structured.csv
+            nesso-bench/build/bench/BGL_2k.log
+            nesso-bench/build/bench/BGL_2k.log_structured.csv
+            nesso-bench/build/bench/Thunderbird_2k.log
+            nesso-bench/build/bench/Thunderbird_2k.log_structured.csv
+            nesso-bench/build/bench/OpenSSH_2k.log
+            nesso-bench/build/bench/OpenSSH_2k.log_structured.csv
+            nesso-bench/build/bench/Linux_2k.log
+            nesso-bench/build/bench/Linux_2k.log_structured.csv
+            nesso-bench/build/bench/Apache_2k.log
+            nesso-bench/build/bench/Apache_2k.log_structured.csv
+          key: loghub-all-2k-${{ hashFiles('nesso-bench/scripts/fetch-loghub') }}
+
+      - name: Restore Loghub format inputs
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            nesso-bench/build/bench/Hadoop_2k.log
+            nesso-bench/build/bench/Hadoop_2k.log_structured.csv
+            nesso-bench/build/bench/OpenStack_2k.log
+            nesso-bench/build/bench/OpenStack_2k.log_structured.csv
+            nesso-bench/build/bench/HealthApp_2k.log
+            nesso-bench/build/bench/HealthApp_2k.log_structured.csv
+          key: loghub-all-formats-${{ hashFiles('nesso-bench/scripts/fetch-loghub') }}
+
+      - name: Restore BGL needle window
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            nesso-bench/build/bench/BGL_loghub2_4100001_100000.log
+            nesso-bench/build/bench/BGL_loghub2_4100001_100000.labels
+          key: loghub2-bgl-needle-100k-${{ hashFiles('nesso-bench/scripts/fetch-loghub') }}
+
+      # Each keeps a restored input that matches its pin and downloads the rest.
+      - name: Fetch Loghub inputs
+        run: |
+          set -euo pipefail
+          python3 nesso-bench/scripts/fetch-loghub --dataset all-2k
+          python3 nesso-bench/scripts/fetch-loghub --dataset all-formats
+          python3 nesso-bench/scripts/fetch-loghub --dataset bgl-loghub2 --window 4100001:100000
+
+      - name: Download Release build
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: release-build
+
+      - name: Extract Release build
+        run: ./scripts/ci/ci-build-archive unpack release-build
+
+      - name: Score nesso
+        run: |
+          set -euo pipefail
+          mkdir -p build/eval/current
+          common=(--engine nesso --split dev --binary build/Release/src/nesso --model-dir models)
+          python3 nesso-bench/scripts/eval-retrieval --dataset all-2k "${common[@]}" \
+            --out build/eval/current/all_2k.json
+          python3 nesso-bench/scripts/eval-retrieval --dataset all-formats "${common[@]}" \
+            --out build/eval/current/formats.json
+          python3 nesso-bench/scripts/eval-retrieval --dataset bgl-needle-100k --modes auto,dense,lexical \
+            --skip-fetch "${common[@]}" --out build/eval/current/needle.json
+
+      # A pull request's merge base and every push run upload eval-pipeline,
+      # so later runs can compare with it.
+      - name: Upload eval reports
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: eval-pipeline
+          path: build/eval/current/
+          retention-days: 90
+          if-no-files-found: error
+
+      # curl and jq: the build image has no gh. kind is merge-base (pull
+      # request), parent (push), fallback (latest push run on main with the
+      # reports), or none.
+      - name: Find the baseline reports
+        id: baseline
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          EVENT_NAME: ${{ github.event_name }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PUSH_BEFORE: ${{ github.event.before }}
+        run: |
+          set -euo pipefail
+          api() {
+            curl -fsSL --retry 3 \
+              -H "Authorization: Bearer ${GH_TOKEN}" \
+              -H "Accept: application/vnd.github+json" \
+              -H "X-GitHub-Api-Version: 2022-11-28" \
+              "${GITHUB_API_URL}/repos/${GITHUB_REPOSITORY}/$1"
+          }
+          # The id of the newest push run on main for $1 that kept eval-pipeline.
+          run_with_reports() {
+            local run
+            for run in $(api "actions/workflows/ci.yml/runs?event=push&branch=main&head_sha=$1&per_page=5" | jq -r '.workflow_runs[].id'); do
+              if [[ -n "$(api "actions/runs/${run}/artifacts?name=eval-pipeline" | jq -r '.artifacts[] | select(.expired | not) | .id' | head -n 1)" ]]; then
+                echo "${run}"
+                return 0
+              fi
+            done
+            return 0
+          }
+          kind=none
+          sha=""
+          run=""
+          case "${EVENT_NAME}" in
+            pull_request)
+              sha="$(api "compare/${PR_BASE_SHA}...${PR_HEAD_SHA}" | jq -r '.merge_base_commit.sha')" || sha=""
+              kind=merge-base
+              ;;
+            push)
+              sha="${PUSH_BEFORE}"
+              kind=parent
+              ;;
+          esac
+          if [[ -n "${sha}" && "${sha}" != "0000000000000000000000000000000000000000" ]]; then
+            run="$(run_with_reports "${sha}")"
+          fi
+          if [[ -z "${run}" && "${kind}" != "none" ]]; then
+            kind=fallback
+            sha=""
+            for candidate in $(api "actions/workflows/ci.yml/runs?event=push&branch=main&per_page=20" | jq -r --arg self "${GITHUB_RUN_ID}" '.workflow_runs[] | select((.id | tostring) != $self) | "\(.id):\(.head_sha)"'); do
+              if [[ -n "$(api "actions/runs/${candidate%%:*}/artifacts?name=eval-pipeline" | jq -r '.artifacts[] | select(.expired | not) | .id' | head -n 1)" ]]; then
+                run="${candidate%%:*}"
+                sha="${candidate##*:}"
+                break
+              fi
+            done
+            [[ -n "${run}" ]] || kind=none
+          fi
+          echo "kind=${kind}" >> "${GITHUB_OUTPUT}"
+          echo "run=${run}" >> "${GITHUB_OUTPUT}"
+          echo "sha=${sha}" >> "${GITHUB_OUTPUT}"
+          echo "eval baseline: ${kind} ${sha} (run ${run:-none})"
+
+      - name: Download baseline reports
+        if: steps.baseline.outputs.run != ''
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: eval-pipeline
+          path: build/eval/base
+          run-id: ${{ steps.baseline.outputs.run }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Compare with the baseline
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          EVENT_NAME: ${{ github.event_name }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          BASELINE_KIND: ${{ steps.baseline.outputs.kind }}
+          BASELINE_SHA: ${{ steps.baseline.outputs.sha }}
+        run: |
+          set -euo pipefail
+          short="${BASELINE_SHA:0:7}"
+          case "${BASELINE_KIND}" in
+            merge-base) about="the merge base ${short}" ;;
+            parent) about="the parent commit ${short}" ;;
+            fallback) about="the latest push run on main (${short}), not the merge base: report only" ;;
+            *) about="" ;;
+          esac
+          {
+            echo "### Retrieval quality (nesso, dev queries)"
+            echo
+          } >> "${GITHUB_STEP_SUMMARY}"
+          if [[ -z "${about}" ]]; then
+            echo "No baseline reports to compare with." >> "${GITHUB_STEP_SUMMARY}"
+            exit 0
+          fi
+          echo "Compared with ${about}." >> "${GITHUB_STEP_SUMMARY}"
+          gate=false
+          if [[ "${EVENT_NAME}" == "pull_request" && "${BASELINE_KIND}" == "merge-base" ]]; then
+            gate=true
+          fi
+          worse=0
+          for report in all_2k formats needle; do
+            if [[ ! -f "build/eval/base/${report}.json" ]]; then
+              echo "::warning::the baseline has no ${report}.json"
+              continue
+            fi
+            args=(--current "build/eval/current/${report}.json" --previous "build/eval/base/${report}.json")
+            if [[ "${gate}" == "true" ]]; then
+              args+=(--fail-on-worse)
+            fi
+            status=0
+            python3 nesso-bench/scripts/eval-retrieval-compare "${args[@]}" > "build/eval/compare-${report}.txt" || status=$?
+            if [[ "${status}" -ne 0 && "${status}" -ne 3 ]]; then
+              cat "build/eval/compare-${report}.txt"
+              exit "${status}"
+            fi
+            {
+              echo
+              echo "#### ${report}"
+              echo
+              # The full table lists every metric; the per-query section and the
+              # DROP and WORSE lines are what changed.
+              sed -n '/^#### MRR change by query/,$p' "build/eval/compare-${report}.txt"
+              grep -E '^(DROP|WORSE) ' "build/eval/compare-${report}.txt" | sed 's/^/    /' || true
+            } >> "${GITHUB_STEP_SUMMARY}"
+            # Annotations only for WORSE lines: DROP lines, one per metric, stay
+            # in the summary so they do not crowd out the ones that matter.
+            while IFS= read -r line; do
+              echo "::warning::${line}"
+            done < <(grep -E '^WORSE ' "build/eval/compare-${report}.txt" || true)
+            if [[ "${status}" -eq 3 ]]; then
+              worse=1
+            fi
+          done
+          if [[ "${worse}" -eq 0 ]]; then
+            echo "No nesso ranker got worse beyond noise." >> "${GITHUB_STEP_SUMMARY}"
+            exit 0
+          fi
+          labels="$(curl -fsSL --retry 3 \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "${GITHUB_API_URL}/repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" | jq -r '.labels[].name')" || labels=""
+          if grep -qx 'eval-regression-accepted' <<< "${labels}"; then
+            echo "Retrieval quality got worse; the pull request has eval-regression-accepted, so this is a warning." >> "${GITHUB_STEP_SUMMARY}"
+            echo "::warning::retrieval quality got worse beyond noise (accepted by label)"
+            exit 0
+          fi
+          {
+            echo
+            echo "Retrieval quality got worse beyond noise (WORSE lines above). If the trade-off is intended, add the label eval-regression-accepted and re-run this job."
+          } >> "${GITHUB_STEP_SUMMARY}"
+          echo "::error::retrieval quality got worse beyond noise; see the job summary"
+          exit 1
 
   # Clang 21 compiles nesso against the gcc-built libstdc++ packages
   # already in nesso-build-env (see conan/profiles/clang-26). libc++ is
@@ -2704,6 +2997,7 @@ jobs:
       - coverage
       - bench
       - determinism
+      - eval-retrieval
       - build-clang-26-amd64
       - test-clang-26-amd64
       - prepare-image-arm64
@@ -2751,6 +3045,7 @@ jobs:
             coverage=${{ needs.coverage.result }}
             bench=${{ needs.bench.result }}
             determinism=${{ needs.determinism.result }}
+            eval-retrieval=${{ needs.eval-retrieval.result }}
             build-clang-26-amd64=${{ needs.build-clang-26-amd64.result }}
             test-clang-26-amd64=${{ needs.test-clang-26-amd64.result }}
             prepare-image-arm64=${{ needs.prepare-image-arm64.result }}

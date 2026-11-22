@@ -4,29 +4,21 @@ name: Eval retrieval
 # SQLite BM25 on the pinned Loghub 2k seed sets, and on the BGL 100k needle
 # window (Loghub 2.0, administrators' alert labels). The harness, query sets,
 # and competitor reference reports come from lorenzocaprari/nesso-bench at
-# NESSO_BENCH_REF. Runs nightly on main, on workflow_dispatch, and on pull
-# requests that touch ranking code or this workflow (which holds the pin).
-# Every run compares against the latest successful scheduled report on main
-# and warns on relative drops over 5%. The summary also shows nesso's margin
-# over the best other engine per class. Scores never fail the job; only
-# script errors do. No gh-pages write yet.
+# NESSO_BENCH_REF. Runs nightly on main and on workflow_dispatch. Pull
+# requests are scored by the Pipeline eval-retrieval job (ci.yml), which
+# gates on nesso against its merge base. This run compares against the latest
+# successful scheduled report on main and warns on relative drops over 5%. The
+# summary also shows nesso's margin over the best other engine per class.
+# Scores never fail the job; only script errors do. No gh-pages write yet.
 on:
   schedule:
     # 06:47 UTC, after real-log at 05:47 UTC (fuzz-test 03:17, index-rss 04:47).
     - cron: "47 6 * * *"
   workflow_dispatch:
-  pull_request:
-    paths:
-      - "src/**"
-      - "CMakeLists.txt"
-      - "conanfile.py"
-      - "conan.lock"
-      - "scripts/fetch-model"
-      - ".github/workflows/eval-retrieval.yml"
 
 concurrency:
   group: eval-retrieval-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  cancel-in-progress: false
 
 permissions:
   contents: read
@@ -38,12 +30,12 @@ env:
   CONAN_WERROR_ARGS: "-c user.nesso:werror=True"
   # nesso-bench commit that supplies eval-retrieval, eval-retrieval-compare,
   # fetch-loghub, the query sets, and test/eval/reference/. Bump it in its own
-  # pull request when nesso-bench changes; that pull request runs this
-  # workflow, so its summary shows any score change the bump brings. The
-  # resolve job warns when this commit is behind nesso-bench's main.
-  # bench-real-log.yml pins the same commit for fetch-loghub; bump both together.
+  # pull request when nesso-bench changes; the Pipeline eval-retrieval job on
+  # that pull request shows any score change the bump brings. The resolve job
+  # warns when this commit is behind nesso-bench's main. ci.yml and
+  # bench-real-log.yml pin the same commit; bump all three together.
   NESSO_BENCH_REPOSITORY: lorenzocaprari/nesso-bench
-  NESSO_BENCH_REF: 003dfeb748907d3aec594047b5c105e1476487e5
+  NESSO_BENCH_REF: 791644189534cb96db2dc5616d8864cc2595be99
 
 jobs:
   guard:
@@ -57,7 +49,7 @@ jobs:
         with:
           egress-policy: audit
 
-      - name: Require schedule on main, a manual dispatch, or a pull request
+      - name: Require schedule on main or a manual dispatch
         shell: bash
         env:
           EVENT_NAME: ${{ github.event_name }}
@@ -70,7 +62,7 @@ jobs:
             fi
             exit 0
           fi
-          if [[ "${EVENT_NAME}" != "workflow_dispatch" && "${EVENT_NAME}" != "pull_request" ]]; then
+          if [[ "${EVENT_NAME}" != "workflow_dispatch" ]]; then
             echo "eval-retrieval: refusing event ${EVENT_NAME}" >&2
             exit 1
           fi
@@ -158,7 +150,7 @@ jobs:
 
   eval:
     needs: [guard, resolve]
-    if: github.event_name == 'workflow_dispatch' || github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
+    if: github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 120
     permissions:
@@ -288,10 +280,6 @@ jobs:
             --out build/eval/all_2k.json \
             | tee build/eval/all_2k.txt
           {
-            if [[ "${GITHUB_EVENT_NAME}" == "pull_request" ]]; then
-              echo "Pull request run: compared below with the latest nightly report on main."
-              echo
-            fi
             echo "### Retrieval evaluation (Loghub 2k seed sets, dev queries: nesso, grep, BM25)"
             echo
             current=""
@@ -440,7 +428,7 @@ jobs:
           echo "ready=${ready}" >> "${GITHUB_OUTPUT}"
 
       - name: Save Loghub 2k inputs
-        if: always() && !cancelled() && github.event_name != 'pull_request' && steps.logs.outputs.cache-hit != 'true' && steps.logfiles.outputs.ready == 'true'
+        if: always() && !cancelled() && steps.logs.outputs.cache-hit != 'true' && steps.logfiles.outputs.ready == 'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
@@ -459,7 +447,7 @@ jobs:
           key: loghub-all-2k-${{ hashFiles('nesso-bench/scripts/fetch-loghub') }}
 
       - name: Save Loghub format inputs
-        if: always() && !cancelled() && github.event_name != 'pull_request' && steps.format_logs.outputs.cache-hit != 'true' && hashFiles('nesso-bench/build/bench/HealthApp_2k.log_structured.csv') != '' && hashFiles('nesso-bench/build/bench/OpenStack_2k.log_structured.csv') != '' && hashFiles('nesso-bench/build/bench/Hadoop_2k.log_structured.csv') != ''
+        if: always() && !cancelled() && steps.format_logs.outputs.cache-hit != 'true' && hashFiles('nesso-bench/build/bench/HealthApp_2k.log_structured.csv') != '' && hashFiles('nesso-bench/build/bench/OpenStack_2k.log_structured.csv') != '' && hashFiles('nesso-bench/build/bench/Hadoop_2k.log_structured.csv') != ''
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
@@ -472,7 +460,7 @@ jobs:
           key: loghub-all-formats-${{ hashFiles('nesso-bench/scripts/fetch-loghub') }}
 
       - name: Save BGL needle window
-        if: always() && !cancelled() && github.event_name != 'pull_request' && steps.needle_logs.outputs.cache-hit != 'true' && hashFiles('nesso-bench/build/bench/BGL_loghub2_4100001_100000.labels') != ''
+        if: always() && !cancelled() && steps.needle_logs.outputs.cache-hit != 'true' && hashFiles('nesso-bench/build/bench/BGL_loghub2_4100001_100000.labels') != ''
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
@@ -480,13 +468,12 @@ jobs:
             nesso-bench/build/bench/BGL_loghub2_4100001_100000.labels
           key: loghub2-bgl-needle-100k-${{ hashFiles('nesso-bench/scripts/fetch-loghub') }}
 
-      # Pull request reports use their own name so they can never become the
-      # nightly baseline (resolve also filters on the schedule event).
+      # resolve takes the nightly baseline from scheduled runs only.
       - name: Upload evaluation report
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: ${{ github.event_name == 'pull_request' && 'eval-retrieval-pr' || 'eval-retrieval' }}
+          name: eval-retrieval
           path: |
             build/eval/all_2k.json
             build/eval/formats.json
