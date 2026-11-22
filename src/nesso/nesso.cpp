@@ -23,6 +23,7 @@
 #include <embed/batch_plan.hpp>
 #include <embed/embedder.hpp>
 #include <embed/onnx_embedder.hpp>
+#include <parser/template_mask.hpp>
 
 #include <format>
 #include <memory>
@@ -271,7 +272,7 @@ std::expected<nesso::core::CorpusPolicy, Error> MakeCorpusPolicy(const nesso::em
         {"dedup", "masked-v1"},
         {"dimensions", std::to_string(identity->dimensions)},
         {"lexical.terms", std::string{nesso::core::LEXICAL_TERMS_VERSION}},
-        {"mask", "template-v1"},
+        {"mask", std::string{nesso::parser::MASK_RULE_VERSION}},
         {"model.id", identity->model_id},
         {"model.quantization", identity->quantized ? "int8" : "fp32"},
         {"model.sha256", identity->model_sha256},

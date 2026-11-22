@@ -10,6 +10,7 @@
 #include <embed/onnx_embedder.hpp>
 #include <nesso/model_paths.hpp>
 #include <nesso/nesso.hpp>
+#include <parser/template_mask.hpp>
 
 #include "test_embedder_identity.hpp"
 
@@ -75,7 +76,7 @@ nesso::core::CorpusPolicy TestPolicy()
             {"dedup", "masked-v1"},
             {"dimensions", std::to_string(identity.dimensions)},
             {"lexical.terms", std::string{nesso::core::LEXICAL_TERMS_VERSION}},
-            {"mask", "template-v1"},
+            {"mask", std::string{nesso::parser::MASK_RULE_VERSION}},
             {"model.id", identity.model_id},
             {"model.quantization", identity.quantized ? "int8" : "fp32"},
             {"model.sha256", identity.model_sha256},
