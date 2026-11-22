@@ -129,7 +129,9 @@ class CheckDeterminismTest(unittest.TestCase):
         self.assertIn("ranking differs", result.stderr)
 
     def test_fails_when_stress_exits_before_a_comparison(self) -> None:
-        stress = """python3 -c 'import sys; sys.stderr.write("stress-died-now\\n"); raise SystemExit(9)'"""
+        # sh -c exits before the 0.5s stress warmup. python3 -c can still be
+        # starting under a loaded ASan job, so the gate finishes with OK.
+        stress = "sh -c 'echo stress-died-now >&2; exit 9'"
         with tempfile.TemporaryDirectory() as temp:
             directory = pathlib.Path(temp)
             result = self.run_gate(self.write_binary(directory, unstable=None), directory, stress)
