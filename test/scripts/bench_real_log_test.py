@@ -277,6 +277,21 @@ class BenchRealLogTest(unittest.TestCase):
         self.assertEqual(len(set(pins.values())), 1, pins)
         self.assertRegex(pins["bench-real-log.yml"], r"^[0-9a-f]{40}$")
 
+    def test_released_nesso_input_is_manual_only_and_not_inlined(self) -> None:
+        workflows = ROOT / ".github" / "workflows"
+        for name in ("bench-real-log.yml", "eval-retrieval.yml"):
+            text = (workflows / name).read_text(encoding="utf-8")
+            self.assertIn("nesso_version:", text)
+            self.assertIn("scripts/fetch-released-nesso", text)
+            self.assertIn("inputs.nesso_version || ''", text)
+            for line in text.splitlines():
+                if "inputs.nesso_version" in line:
+                    self.assertIn("NESSO_VERSION:", line)
+                    self.assertNotRegex(line, r"\brun:")
+        ci = (workflows / "ci.yml").read_text(encoding="utf-8")
+        self.assertNotIn("nesso_version", ci)
+        self.assertNotIn("fetch-released-nesso", ci)
+
 
 if __name__ == "__main__":
     unittest.main()
