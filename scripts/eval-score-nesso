@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+# Score nesso on the dev queries the Pipeline eval-retrieval job compares.
+# The head and the baseline both call this, so the datasets and flags cannot
+# drift between the two sides.
+set -euo pipefail
+
+if [[ $# -ne 2 ]]; then
+  echo "usage: eval-score-nesso <binary> <out-dir>" >&2
+  exit 2
+fi
+
+root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "${root}"
+
+binary=$1
+out=$2
+if [[ ! -x "${binary}" ]]; then
+  echo "eval-score-nesso: binary is not executable: ${binary}" >&2
+  exit 1
+fi
+
+mkdir -p "${out}"
+common=(--engine nesso --split dev --modes auto,dense,lexical --jobs 4
+  --binary "${binary}" --model-dir models)
+python3 nesso-bench/scripts/eval-retrieval --dataset all-2k "${common[@]}" \
+  --out "${out}/all_2k.json"
+python3 nesso-bench/scripts/eval-retrieval --dataset all-formats "${common[@]}" \
+  --out "${out}/formats.json"
+python3 nesso-bench/scripts/eval-retrieval --dataset bgl-needle-100k \
+  --skip-fetch "${common[@]}" --out "${out}/needle.json"

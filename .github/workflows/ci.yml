@@ -1438,20 +1438,23 @@ jobs:
   # Retrieval quality gate. Scores the Release binary with nesso-bench at
   # NESSO_BENCH_REF (nesso only, dev queries: Loghub 2k seed sets, the Hadoop,
   # OpenStack, and HealthApp sets, and the BGL 100k needle window) and uploads
-  # the reports as eval-pipeline. A pull request compares with the reports of
-  # the push run of its merge base on main. nesso's output is byte-identical,
-  # so the comparison is exact. It fails when a nesso ranker's per-query MRR
-  # or nDCG@10 got worse beyond noise on an unchanged query set
-  # (eval-retrieval-compare --fail-on-worse). The label eval-regression-accepted
-  # turns that into a warning; it is read when the job runs, so add it and
-  # re-run the job. Without a merge-base report the job compares with the
-  # latest push run on main and only warns. A push to main compares with its
-  # parent and only warns.
+  # the reports as eval-pipeline. Dense scores follow the int8 kernel ORT
+  # picks for the runner's CPU, so the job scores the baseline Release binary
+  # on this same runner instead of reusing that run's reports. It fails when
+  # a nesso ranker's per-query MRR or nDCG@10 got worse beyond noise on an
+  # unchanged query set (eval-retrieval-compare --fail-on-worse). The label
+  # eval-regression-accepted turns that into a warning; it is read when the
+  # job runs, so add it and re-run the job. When the baseline commit cannot
+  # be resolved, the job scores the latest push run that still has a Release
+  # archive and only warns. A push to main scores its parent and only warns.
+  # The extra score is one more pass. A cold rebuild happens only when that
+  # commit's release-build archive (kept 1 day) is already gone; the timeout
+  # covers that path on a slow runner.
   eval-retrieval:
     needs: [prepare-image-amd64, build-gcc-26-amd64, changes]
     if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 60
     permissions:
       contents: read
       packages: read
@@ -1547,21 +1550,17 @@ jobs:
 
       # Modes match docs/benchmarks.md and nesso-bench scorecard (no hybrid).
       # --jobs 4 runs search processes in parallel with NESSO_THREADS=1.
-      - name: Score nesso
-        run: |
-          set -euo pipefail
-          mkdir -p build/eval/current
-          common=(--engine nesso --split dev --modes auto,dense,lexical --jobs 4
-            --binary build/Release/src/nesso --model-dir models)
-          python3 nesso-bench/scripts/eval-retrieval --dataset all-2k "${common[@]}" \
-            --out build/eval/current/all_2k.json
-          python3 nesso-bench/scripts/eval-retrieval --dataset all-formats "${common[@]}" \
-            --out build/eval/current/formats.json
-          python3 nesso-bench/scripts/eval-retrieval --dataset bgl-needle-100k \
-            --skip-fetch "${common[@]}" --out build/eval/current/needle.json
+      # host.json rides along in the artifact so a later run can see which
+      # CPU and kernels produced the reports. The comparison below does not
+      # read those reports: it rescores the baseline binary on this runner.
+      - name: Record the eval host
+        run: python3 scripts/eval-host --out build/eval/current/host.json
 
-      # A pull request's merge base and every push run upload eval-pipeline,
-      # so later runs can compare with it.
+      - name: Score nesso
+        run: ./scripts/eval-score-nesso build/Release/src/nesso build/eval/current
+
+      # A pull request's merge base and every push run upload eval-pipeline.
+      # The nightly workflow reuses the three reports. host.json is extra.
       - name: Upload eval reports
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
@@ -1572,7 +1571,7 @@ jobs:
 
       # curl and jq: the build image has no gh. kind is merge-base (pull
       # request), parent (push), fallback (latest push run on main with the
-      # reports), or none.
+      # reports), or none. The run id is the one that uploaded release-build.
       - name: Find the baseline reports
         id: baseline
         env:
@@ -1590,11 +1589,13 @@ jobs:
               -H "X-GitHub-Api-Version: 2022-11-28" \
               "${GITHUB_API_URL}/repos/${GITHUB_REPOSITORY}/$1"
           }
-          # The id of the newest push run on main for $1 that kept eval-pipeline.
-          run_with_reports() {
+          # The id of the newest push run on main for $1 whose Release
+          # archive is still downloadable. An expired archive is a miss:
+          # the caller still has the commit and builds it.
+          run_with_archive() {
             local run
             for run in $(api "actions/workflows/ci.yml/runs?event=push&branch=main&head_sha=$1&per_page=5" | jq -r '.workflow_runs[].id'); do
-              if [[ -n "$(api "actions/runs/${run}/artifacts?name=eval-pipeline" | jq -r '.artifacts[] | select(.expired | not) | .id' | head -n 1)" ]]; then
+              if [[ -n "$(api "actions/runs/${run}/artifacts?name=release-build" | jq -r '.artifacts[] | select(.expired | not) | .id' | head -n 1)" ]]; then
                 echo "${run}"
                 return 0
               fi
@@ -1614,14 +1615,13 @@ jobs:
               kind=parent
               ;;
           esac
-          if [[ -n "${sha}" && "${sha}" != "0000000000000000000000000000000000000000" ]]; then
-            run="$(run_with_reports "${sha}")"
-          fi
-          if [[ -z "${run}" && "${kind}" != "none" ]]; then
+          if [[ -n "${sha}" && "${sha}" != "0000000000000000000000000000000000000000" && "${sha}" != "null" ]]; then
+            run="$(run_with_archive "${sha}")"
+          else
             kind=fallback
             sha=""
             for candidate in $(api "actions/workflows/ci.yml/runs?event=push&branch=main&per_page=20" | jq -r --arg self "${GITHUB_RUN_ID}" '.workflow_runs[] | select((.id | tostring) != $self) | "\(.id):\(.head_sha)"'); do
-              if [[ -n "$(api "actions/runs/${candidate%%:*}/artifacts?name=eval-pipeline" | jq -r '.artifacts[] | select(.expired | not) | .id' | head -n 1)" ]]; then
+              if [[ -n "$(api "actions/runs/${candidate%%:*}/artifacts?name=release-build" | jq -r '.artifacts[] | select(.expired | not) | .id' | head -n 1)" ]]; then
                 run="${candidate%%:*}"
                 sha="${candidate##*:}"
                 break
@@ -1634,14 +1634,75 @@ jobs:
           echo "sha=${sha}" >> "${GITHUB_OUTPUT}"
           echo "eval baseline: ${kind} ${sha} (run ${run:-none})"
 
-      - name: Download baseline reports
+      # release-build is kept 1 day. A miss is not fatal: the next step
+      # builds that commit. outcome stays failure when continue-on-error
+      # swallows the miss, which is what the checkout step tests.
+      - name: Download baseline Release build
+        id: baseline_build
         if: steps.baseline.outputs.run != ''
+        continue-on-error: true
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          name: eval-pipeline
-          path: build/eval/base
+          name: release-build
+          path: build/eval/baseline-artifact
           run-id: ${{ steps.baseline.outputs.run }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Unpack the baseline Release build
+        if: steps.baseline_build.outcome == 'success'
+        run: |
+          set -euo pipefail
+          mkdir -p build/eval/baseline-tree
+          shopt -s nullglob
+          zst=(build/eval/baseline-artifact/release-build.tar.zst build/eval/baseline-artifact/*/release-build.tar.zst)
+          gz=(build/eval/baseline-artifact/release-build.tar.gz build/eval/baseline-artifact/*/release-build.tar.gz)
+          if [[ ${#zst[@]} -gt 0 ]]; then
+            tar -I zstd -xf "${zst[0]}" -C build/eval/baseline-tree
+          elif [[ ${#gz[@]} -gt 0 ]]; then
+            tar -xzf "${gz[0]}" -C build/eval/baseline-tree
+          else
+            echo "eval-retrieval: baseline archive has neither tar.zst nor tar.gz" >&2
+            ls -laR build/eval/baseline-artifact >&2
+            exit 1
+          fi
+          test -x build/eval/baseline-tree/build/Release/src/nesso
+
+      - name: Checkout the baseline commit
+        id: baseline_checkout
+        if: steps.baseline.outputs.sha != '' && steps.baseline_build.outcome != 'success'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ steps.baseline.outputs.sha }}
+          path: build/eval/baseline-src
+          persist-credentials: false
+
+      - name: Build the baseline
+        if: steps.baseline_checkout.outcome == 'success'
+        working-directory: build/eval/baseline-src
+        run: |
+          set -euo pipefail
+          conan profile detect --force
+          conan install . -pr:h ./conan/profiles/gcc-26 -pr:b default --lockfile=conan.lock --build=missing --no-remote -o tests=False $CONAN_WERROR_ARGS
+          conan build . -pr:h ./conan/profiles/gcc-26 -pr:b default --lockfile=conan.lock --build=missing --no-remote -o tests=False $CONAN_WERROR_ARGS
+
+      - name: Score the baseline on this runner
+        id: baseline_score
+        if: steps.baseline.outputs.sha != ''
+        run: |
+          set -euo pipefail
+          if [[ -x build/eval/baseline-tree/build/Release/src/nesso ]]; then
+            binary=build/eval/baseline-tree/build/Release/src/nesso
+            source=archive
+          elif [[ -x build/eval/baseline-src/build/Release/src/nesso ]]; then
+            binary=build/eval/baseline-src/build/Release/src/nesso
+            source=rebuild
+          else
+            echo "eval-retrieval: no baseline binary to score" >&2
+            exit 1
+          fi
+          echo "source=${source}" >> "${GITHUB_OUTPUT}"
+          echo "eval baseline binary: ${source} ${binary}"
+          ./scripts/eval-score-nesso "${binary}" build/eval/base
 
       - name: Compare with the baseline
         env:
@@ -1650,17 +1711,35 @@ jobs:
           PR_NUMBER: ${{ github.event.pull_request.number }}
           BASELINE_KIND: ${{ steps.baseline.outputs.kind }}
           BASELINE_SHA: ${{ steps.baseline.outputs.sha }}
+          BASELINE_SOURCE: ${{ steps.baseline_score.outputs.source }}
         run: |
           set -euo pipefail
           short="${BASELINE_SHA:0:7}"
+          case "${BASELINE_SOURCE}" in
+            archive) scored="scored on this runner from its Release archive" ;;
+            rebuild) scored="scored on this runner from a build of that commit" ;;
+            *) scored="scored on this runner" ;;
+          esac
           case "${BASELINE_KIND}" in
-            merge-base) about="the merge base ${short}" ;;
-            parent) about="the parent commit ${short}" ;;
-            fallback) about="the latest push run on main (${short}), not the merge base: report only" ;;
+            merge-base) about="the merge base ${short}, ${scored}" ;;
+            parent) about="the parent commit ${short}, ${scored}" ;;
+            fallback) about="the latest push run on main (${short}), not the merge base: report only, ${scored}" ;;
             *) about="" ;;
           esac
+          host_line="$(python3 scripts/eval-host --summary --host build/eval/current/host.json)"
+          echo "${host_line}"
           {
             echo "### Retrieval quality (nesso, dev queries)"
+            echo
+            if [[ -n "${about}" ]]; then
+              echo "${host_line} Head and baseline were both scored on this runner."
+            else
+              echo "${host_line}"
+            fi
+            echo
+            echo '```json'
+            cat build/eval/current/host.json
+            echo '```'
             echo
           } >> "${GITHUB_STEP_SUMMARY}"
           if [[ -z "${about}" ]]; then
@@ -1674,9 +1753,9 @@ jobs:
           fi
           worse=0
           for report in all_2k formats needle; do
-            if [[ ! -f "build/eval/base/${report}.json" ]]; then
-              echo "::warning::the baseline has no ${report}.json"
-              continue
+            if [[ ! -f "build/eval/base/${report}.json" || ! -f "build/eval/current/${report}.json" ]]; then
+              echo "::error::missing ${report}.json on one side of the comparison"
+              exit 1
             fi
             args=(--current "build/eval/current/${report}.json" --previous "build/eval/base/${report}.json")
             if [[ "${gate}" == "true" ]]; then
