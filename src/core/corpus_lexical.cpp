@@ -393,7 +393,7 @@ static std::optional<std::size_t> SmallestActiveRun(std::span<const LexicalRunCu
 }
 
 static std::expected<std::vector<std::string>, EngineError>
-MergeSortedRuns(const std::vector<std::filesystem::path> &runs)
+MergeSortedRuns(const std::vector<std::filesystem::path> &runs, std::uint64_t max_terms)
 {
     if (runs.empty())
     {
@@ -428,9 +428,9 @@ MergeSortedRuns(const std::vector<std::filesystem::path> &runs)
         LexicalRunCursor &cursor = cursors[*best];
         if (previous.empty() || previous != cursor.term)
         {
-            if (dictionary.size() >= MAX_LEXICAL_TERMS)
+            if (dictionary.size() >= max_terms)
             {
-                return std::unexpected(EngineError::CorruptDatabase);
+                return std::unexpected(EngineError::LimitsExceeded);
             }
             previous = cursor.term;
             dictionary.push_back(cursor.term);
@@ -480,11 +480,11 @@ enum class PostingWriteStatus : std::uint8_t
 
 static PostingWriteStatus WriteLinePostings(std::ostream &output, std::span<const std::string> terms,
                                             const std::unordered_map<std::string, std::uint32_t> &ids,
-                                            std::uint64_t &written)
+                                            std::uint64_t max_bytes, std::uint64_t &written)
 {
     std::vector<std::byte> row;
     AppendLexicalLinePostings(row, terms, ids);
-    if (written > MAX_LEXICAL_BYTES || MAX_LEXICAL_BYTES - written < row.size())
+    if (written > max_bytes || max_bytes - written < row.size())
     {
         return PostingWriteStatus::TooLarge;
     }
@@ -498,7 +498,8 @@ static PostingWriteStatus WriteLinePostings(std::ostream &output, std::span<cons
 
 static std::expected<LexicalSpillFile, EngineError> WriteLexicalSpill(std::istream &terms, std::uint64_t line_count,
                                                                       std::span<const std::string> dictionary,
-                                                                      const std::filesystem::path &spill_prefix)
+                                                                      const std::filesystem::path &spill_prefix,
+                                                                      std::uint64_t max_bytes)
 {
     auto lexical_path = CreateLexicalTemp(spill_prefix, "lexical");
     if (!lexical_path)
@@ -530,14 +531,14 @@ static std::expected<LexicalSpillFile, EngineError> WriteLexicalSpill(std::istre
             RemovePath(*lexical_path);
             return std::unexpected(EngineError::FileOpenFailure);
         }
-        switch (WriteLinePostings(lexical, row, ids, written))
+        switch (WriteLinePostings(lexical, row, ids, max_bytes, written))
         {
         case PostingWriteStatus::Ok:
             break;
         case PostingWriteStatus::TooLarge:
             lexical.close();
             RemovePath(*lexical_path);
-            return std::unexpected(EngineError::CorruptDatabase);
+            return std::unexpected(EngineError::LimitsExceeded);
         case PostingWriteStatus::IoError:
             lexical.close();
             RemovePath(*lexical_path);
@@ -551,11 +552,10 @@ static std::expected<LexicalSpillFile, EngineError> WriteLexicalSpill(std::istre
         return std::unexpected(EngineError::CorruptDatabase);
     }
     lexical.close();
-    if (!lexical || written > MAX_LEXICAL_BYTES)
+    if (!lexical || written > max_bytes)
     {
         RemovePath(*lexical_path);
-        return std::unexpected(written > MAX_LEXICAL_BYTES ? EngineError::CorruptDatabase
-                                                           : EngineError::FileOpenFailure);
+        return std::unexpected(written > max_bytes ? EngineError::LimitsExceeded : EngineError::FileOpenFailure);
     }
     return LexicalSpillFile{.path = std::move(*lexical_path), .bytes = written};
 }
@@ -563,7 +563,8 @@ static std::expected<LexicalSpillFile, EngineError> WriteLexicalSpill(std::istre
 std::expected<LexicalSpillFile, EngineError> EncodeLexicalSectionSpilled(const std::filesystem::path &terms_path,
                                                                          std::uint64_t line_count,
                                                                          const std::filesystem::path &spill_prefix,
-                                                                         std::uint64_t memory_budget)
+                                                                         std::uint64_t memory_budget,
+                                                                         const CorpusLimits &limits)
 {
     if (memory_budget == 0)
     {
@@ -582,7 +583,7 @@ std::expected<LexicalSpillFile, EngineError> EncodeLexicalSectionSpilled(const s
     {
         return std::unexpected(runs.error());
     }
-    auto dictionary = MergeSortedRuns(*runs);
+    auto dictionary = MergeSortedRuns(*runs, limits.lexical_terms);
     RemovePaths(*runs);
     if (!dictionary)
     {
@@ -595,7 +596,7 @@ std::expected<LexicalSpillFile, EngineError> EncodeLexicalSectionSpilled(const s
     {
         return std::unexpected(EngineError::FileOpenFailure);
     }
-    return WriteLexicalSpill(terms, line_count, *dictionary, spill_prefix);
+    return WriteLexicalSpill(terms, line_count, *dictionary, spill_prefix, limits.lexical_bytes);
 }
 
 static std::expected<void, EngineError> DecodeLexicalDictionary(std::span<const std::byte> bytes, std::uint64_t &cursor,
@@ -688,9 +689,13 @@ std::expected<void, EngineError> DecodeLexicalSection(std::span<const std::byte>
     std::uint64_t term_count = 0;
     std::uint64_t posting_lines = 0;
     if (!ReadU64At(bytes, cursor, term_count) || !ReadU64At(bytes, cursor, posting_lines) ||
-        term_count > MAX_LEXICAL_TERMS || posting_lines != line_count)
+        posting_lines != line_count)
     {
         return std::unexpected(EngineError::CorruptDatabase);
+    }
+    if (term_count > MAX_LEXICAL_TERMS)
+    {
+        return std::unexpected(EngineError::LimitsExceeded);
     }
     owned_terms.clear();
     dictionary.clear();

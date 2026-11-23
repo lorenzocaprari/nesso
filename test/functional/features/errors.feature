@@ -300,14 +300,31 @@ Feature: command errors
   Scenario: a corpus with the wrong dimensions cannot be searched
     When I run nesso with arguments search "database connection error" -i {fixture}/mismatch.nesso
     Then the exit code is 2
+    And stdout is empty
     And stderr contains "failed to read the corpus"
-    And stderr contains "the corpus was built with a different model; re-run nesso index"
+    And stderr contains "the corpus was built with a different model (dimensions: stored 2, loaded 384); re-run nesso index"
 
   Scenario: a corpus built with another model cannot be searched
     When I run nesso with arguments search "database connection error" -i {fixture}/other-model.nesso
     Then the exit code is 2
+    And stdout is empty
     And stderr contains "failed to read the corpus"
-    And stderr contains "the corpus was built with a different model; re-run nesso index"
+    And stderr contains "the corpus was built with a different model (model.sha256: stored 0000000000000000000000000000000000000000000000000000000000000000, loaded afdb6f1a0e45b715d0bb9b11772f032c399babd23bfc31fed1c170afc848bdb1); re-run nesso index"
+
+  Scenario: a corpus built with another prompt-prefix rule cannot be searched
+    When I run nesso with arguments search "database connection error" -i {fixture}/other-prefix.nesso
+    Then the exit code is 2
+    And stdout is empty
+    And stderr contains "failed to read the corpus"
+    And stderr contains "the corpus was built with a different model (embed.prefix: stored query-passage-v1, loaded none); re-run nesso index"
+
+  Scenario: a corpus over this nesso's limits is not called corrupt
+    When I run nesso with arguments search "database connection error" -i {fixture}/over-limits.nesso
+    Then the exit code is 2
+    And stdout is empty
+    And stderr contains "failed to read the corpus"
+    And stderr contains "the corpus exceeds this nesso's limits"
+    And stderr does not contain "the file is corrupt"
 
   Scenario: a corpus in a newer format cannot be searched
     When I run nesso with arguments search "database connection error" -i {fixture}/future-version.nesso

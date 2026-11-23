@@ -33,6 +33,24 @@ TEST_CASE("terminal text escapes C1 controls and invalid UTF-8", "[text][termina
     CHECK(nesso::cli::EscapeTerminalControls(input) == "c1:\\u009B,valid:\xC3\xA9,invalid:\\x9B\\xC0\\x80");
 }
 
+TEST_CASE("a model mismatch message escapes the stored and loaded values", "[text][terminal]")
+{
+    nesso::Error error{.kind = nesso::ErrorKind::CorpusRead,
+                       .cause = nesso::ErrorCause::ModelMismatch,
+                       .path = "old.nesso",
+                       .note = {},
+                       .stale_sources = {},
+                       .bundle_skips = {},
+                       .policy_mismatch = false,
+                       .corpus_version = {},
+                       .model_mismatch = {}};
+    CHECK(nesso::cli::FormatErrorMessage(error) == nesso::Message(error));
+    error.model_mismatch = nesso::ModelMismatchDetail{.key = "model.id", .stored = "evil\x1B[2J", .loaded = "mini\x07"};
+    CHECK(nesso::cli::FormatErrorMessage(error) ==
+          "Error: failed to read the corpus 'old.nesso': the corpus was built with a different model (model.id: "
+          "stored evil\\x1B[2J, loaded mini\\x07); re-run nesso index");
+}
+
 TEST_CASE("text rows keep the four final formats byte for byte", "[text][row]")
 {
     nesso::TextResults results;

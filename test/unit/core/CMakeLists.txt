@@ -5,6 +5,8 @@ target_link_libraries(distance_test PRIVATE nesso_options nesso_core
 
 add_executable(corpus_index_test corpus_index_test.cpp)
 add_test(NAME corpus_index_test COMMAND corpus_index_test)
+target_include_directories(corpus_index_test
+                           PRIVATE "${CMAKE_SOURCE_DIR}/src/core")
 target_link_libraries(corpus_index_test PRIVATE nesso_options nesso_core
                                                 Catch2::Catch2WithMain)
 

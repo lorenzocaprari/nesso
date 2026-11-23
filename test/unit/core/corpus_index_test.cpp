@@ -1,6 +1,8 @@
 // Copyright (c) 2026 Lorenzo Caprari
 // SPDX-License-Identifier: Apache-2.0
 
+#include "corpus_detail.hpp"
+
 #include <catch2/catch_all.hpp>
 #include <core/bm25.hpp>
 #include <core/corpus_index.hpp>
@@ -30,6 +32,8 @@ using nesso::core::CorpusWriter;
 using nesso::core::EngineError;
 using nesso::core::LexicalLinePostings;
 using nesso::core::NO_DISTINCT;
+using nesso::core::detail::CorpusLimits;
+using nesso::core::detail::CorpusWriterAccess;
 
 class TempDir
 {
@@ -552,9 +556,8 @@ TEST_CASE("v3 rejects unsupported versions and malformed files", "[corpus][core]
     SECTION("truncated matrix") { bytes.pop_back(); }
     SECTION("trailing bytes") { bytes.push_back('x'); }
     SECTION("misaligned matrix") { PutU64(bytes, 48, matrix_offset + 1); }
-    SECTION("too many sources") { PutU64(bytes, 16, 1'000'001); }
-    SECTION("too many lines") { PutU64(bytes, 24, 10'000'001); }
-    SECTION("too many texts") { PutU64(bytes, 56, 1'000'001); }
+    SECTION("policy over its cap") { PutU32(bytes, 8, 64U * 1024U + 1U); }
+    SECTION("dimensions over their cap") { PutU32(bytes, 12, 65537); }
     SECTION("zero dimensions") { PutU32(bytes, 12, 0); }
     SECTION("bad source section offset") { PutU64(bytes, 32, source_offset + 8); }
     SECTION("bad line section size") { PutU64(bytes, 40, line_offset + 1); }
@@ -627,6 +630,200 @@ TEST_CASE("v3 rejects unsupported versions and malformed files", "[corpus][core]
         REQUIRE(result.error().version.has_value());
         CHECK(*result.error().version != nesso::core::CORPUS_VERSION);
     }
+}
+
+TEST_CASE("v3 reports a count over this build's caps as a limit, not corruption", "[corpus][core]")
+{
+    const TempDir dir;
+    const auto path = dir.Path() / "corpus.nesso";
+    WriteExample(path, dir.Path() / "app.log");
+    std::string bytes = ReadBytes(path);
+    const auto lexical_offset = GetU64(bytes, 88);
+
+    SECTION("sources") { PutU64(bytes, 16, 1'000'001); }
+    SECTION("lines") { PutU64(bytes, 24, 10'000'001); }
+    SECTION("distinct texts") { PutU64(bytes, 56, 1'000'001); }
+    SECTION("lexical bytes") { PutU64(bytes, 96, 512ULL * 1024ULL * 1024ULL + 1ULL); }
+    SECTION("lexical terms") { PutU64(bytes, lexical_offset, 4'000'001); }
+
+    Reseal(bytes);
+    WriteBytes(path, bytes);
+    const auto mapped = nesso::core::MapCorpusFile(path);
+    REQUIRE_FALSE(mapped);
+    CHECK(mapped.error().code == EngineError::LimitsExceeded);
+    REQUIRE(mapped.error().version.has_value());
+    CHECK(*mapped.error().version == nesso::core::CORPUS_VERSION);
+}
+
+TEST_CASE("v3 writer refuses records after it finished", "[corpus][core]")
+{
+    const TempDir dir;
+    auto writer = CorpusWriter::Create(dir.Path() / "corpus.nesso", Policy(0));
+    REQUIRE(writer);
+    REQUIRE(writer->Finish());
+    const auto source = writer->AddSource({.path = "-", .stored_only = true});
+    REQUIRE_FALSE(source);
+    CHECK(source.error() == EngineError::CorruptDatabase);
+    const auto distinct = writer->ReserveDistinct("alpha");
+    REQUIRE_FALSE(distinct);
+    CHECK(distinct.error() == EngineError::CorruptDatabase);
+    const auto lines = writer->AddLines({}, {});
+    REQUIRE_FALSE(lines);
+    CHECK(lines.error() == EngineError::CorruptDatabase);
+}
+
+TEST_CASE("v3 writer caps default to the format limits", "[corpus][core]")
+{
+    const nesso::core::detail::CorpusLimits limits;
+    CHECK(limits.sources == nesso::core::detail::MAX_SOURCES);
+    CHECK(limits.lines == nesso::core::detail::MAX_LINES);
+    CHECK(limits.distinct == nesso::core::detail::MAX_DISTINCT);
+    CHECK(limits.lexical_terms == nesso::core::detail::MAX_LEXICAL_TERMS);
+    CHECK(limits.lexical_bytes == nesso::core::detail::MAX_LEXICAL_BYTES);
+
+    const TempDir dir;
+    auto writer = CorpusWriterAccess::Create(dir.Path() / "access.nesso", Policy(), limits);
+    REQUIRE(writer);
+    REQUIRE(writer->AddSource({.path = "-", .stored_only = true}) == 0);
+    REQUIRE(writer->Finish());
+    auto plain = CorpusWriter::Create(dir.Path() / "plain.nesso", Policy());
+    REQUIRE(plain);
+    REQUIRE(plain->AddSource({.path = "-", .stored_only = true}) == 0);
+    REQUIRE(plain->Finish());
+    CHECK(ReadBytes(dir.Path() / "access.nesso") == ReadBytes(dir.Path() / "plain.nesso"));
+}
+
+TEST_CASE("v3 writer reports each count past its cap as a limit", "[corpus][core]")
+{
+    const TempDir dir;
+    const auto path = dir.Path() / "corpus.nesso";
+    WriteBytes(path, "old corpus");
+    const std::array<CorpusLine, 1> alpha{CorpusLine{.line_number = 1, .distinct_id = 0, .stored_text = "alpha beta"}};
+    const std::array<std::vector<std::string>, 1> alpha_terms{TermsOf("alpha beta")};
+    const auto writer_with = [&path](std::uint64_t CorpusLimits::*cap, std::uint64_t value)
+    {
+        CorpusLimits limits;
+        limits.*cap = value;
+        auto writer = CorpusWriterAccess::Create(path, Policy(), limits);
+        REQUIRE(writer);
+        return std::move(*writer);
+    };
+
+    SECTION("sources")
+    {
+        auto writer = writer_with(&CorpusLimits::sources, 2);
+        REQUIRE(writer.AddSource({.path = "-", .stored_only = true}) == 0);
+        REQUIRE(writer.AddSource({.path = "-", .stored_only = true}) == 1);
+        const auto rejected = writer.AddSource({.path = "-", .stored_only = true});
+        REQUIRE_FALSE(rejected);
+        CHECK(rejected.error() == EngineError::LimitsExceeded);
+    }
+    SECTION("distinct texts")
+    {
+        auto writer = writer_with(&CorpusLimits::distinct, 2);
+        REQUIRE(writer.ReserveDistinct("alpha") == 0);
+        REQUIRE(writer.ReserveDistinct("bravo") == 1);
+        const auto rejected = writer.ReserveDistinct("charlie");
+        REQUIRE_FALSE(rejected);
+        CHECK(rejected.error() == EngineError::LimitsExceeded);
+    }
+    SECTION("lines")
+    {
+        auto writer = writer_with(&CorpusLimits::lines, 3);
+        REQUIRE(writer.AddSource({.path = "-", .stored_only = true}) == 0);
+        const std::array<CorpusLine, 2> two{
+            CorpusLine{.line_number = 1, .distinct_id = NO_DISTINCT, .stored_text = ""},
+            CorpusLine{.line_number = 2, .distinct_id = NO_DISTINCT, .stored_text = ""}};
+        const std::array<std::vector<std::string>, 2> no_terms{};
+        REQUIRE(writer.AddLines(two, no_terms));
+        const std::array<CorpusLine, 2> next{
+            CorpusLine{.line_number = 3, .distinct_id = NO_DISTINCT, .stored_text = ""},
+            CorpusLine{.line_number = 4, .distinct_id = NO_DISTINCT, .stored_text = ""}};
+        const auto rejected = writer.AddLines(next, no_terms);
+        REQUIRE_FALSE(rejected);
+        CHECK(rejected.error() == EngineError::LimitsExceeded);
+        const auto mismatched = writer.AddLines(std::span{next}.first(1), {});
+        REQUIRE_FALSE(mismatched);
+        CHECK(mismatched.error() == EngineError::CorruptDatabase);
+    }
+    SECTION("lexical terms")
+    {
+        auto writer = writer_with(&CorpusLimits::lexical_terms, 1);
+        REQUIRE(writer.AddSource({.path = "-", .stored_only = true}) == 0);
+        REQUIRE(writer.AddDistinct("alpha beta", std::array<float, 2>{1.F, 0.F}) == 0);
+        REQUIRE(writer.AddLines(alpha, alpha_terms));
+        const auto rejected = writer.Finish();
+        REQUIRE_FALSE(rejected);
+        CHECK(rejected.error() == EngineError::LimitsExceeded);
+    }
+    SECTION("lexical bytes in a posting row")
+    {
+        auto writer = writer_with(&CorpusLimits::lexical_bytes, 32);
+        REQUIRE(writer.AddSource({.path = "-", .stored_only = true}) == 0);
+        REQUIRE(writer.AddDistinct("alpha beta", std::array<float, 2>{1.F, 0.F}) == 0);
+        REQUIRE(writer.AddLines(alpha, alpha_terms));
+        const auto rejected = writer.Finish();
+        REQUIRE_FALSE(rejected);
+        CHECK(rejected.error() == EngineError::LimitsExceeded);
+    }
+    SECTION("lexical bytes in the dictionary header")
+    {
+        auto writer = writer_with(&CorpusLimits::lexical_bytes, 8);
+        const auto rejected = writer.Finish();
+        REQUIRE_FALSE(rejected);
+        CHECK(rejected.error() == EngineError::LimitsExceeded);
+    }
+    CHECK(ReadBytes(path) == "old corpus");
+    CHECK_FALSE(HasSpill(dir.Path()));
+}
+
+TEST_CASE("v3 policy keeps embed.prefix optional and reads a missing key as none", "[corpus][core]")
+{
+    const TempDir dir;
+    CHECK(nesso::core::EMBED_PREFIX_KEY == "embed.prefix");
+    CHECK(nesso::core::EmbedPrefixOf(Policy()) == "none");
+    CorpusPolicy recorded = Policy();
+    recorded.emplace("embed.prefix", "none");
+    CHECK(nesso::core::EmbedPrefixOf(recorded) == "none");
+    CorpusPolicy other = Policy();
+    other.emplace("embed.prefix", "query-passage-v1");
+    CHECK(nesso::core::EmbedPrefixOf(other) == "query-passage-v1");
+
+    const auto write = [&dir](const std::string &name, const CorpusPolicy &policy)
+    {
+        const auto path = dir.Path() / name;
+        auto writer = CorpusWriter::Create(path, policy);
+        REQUIRE(writer);
+        REQUIRE(writer->AddSource({.path = "-", .stored_only = true}) == 0);
+        REQUIRE(writer->AddDistinct("alpha", std::array<float, 2>{1.F, 0.F}) == 0);
+        const CorpusLine line{.line_number = 1, .distinct_id = 0, .stored_text = "alpha"};
+        const std::vector<std::string> terms = TermsOf("alpha");
+        REQUIRE(writer->AddLines(std::span{&line, 1}, std::span{&terms, 1}));
+        REQUIRE(writer->Finish());
+        return path;
+    };
+
+    const auto legacy = nesso::core::MapCorpusFile(write("legacy.nesso", Policy()));
+    REQUIRE(legacy);
+    CHECK_FALSE(legacy->corpus.Policy().contains("embed.prefix"));
+    CHECK(nesso::core::EmbedPrefixOf(legacy->corpus.Policy()) == "none");
+
+    const auto with_key = write("recorded.nesso", recorded);
+    CHECK(ReadBytes(with_key).find("\nembed.prefix=none\nlexical.terms=") != std::string::npos);
+    const auto mapped = nesso::core::MapCorpusFile(with_key);
+    REQUIRE(mapped);
+    CHECK(mapped->corpus.Policy() == recorded);
+    CHECK(nesso::core::EmbedPrefixOf(mapped->corpus.Policy()) == "none");
+
+    const auto other_mapped = nesso::core::MapCorpusFile(write("other.nesso", other));
+    REQUIRE(other_mapped);
+    CHECK(nesso::core::EmbedPrefixOf(other_mapped->corpus.Policy()) == "query-passage-v1");
+
+    CorpusPolicy empty = Policy();
+    empty.emplace("embed.prefix", "");
+    const auto rejected = CorpusWriter::Create(dir.Path() / "empty-prefix.nesso", empty);
+    REQUIRE_FALSE(rejected);
+    CHECK(rejected.error() == EngineError::CorruptDatabase);
 }
 
 TEST_CASE("v3 lexical postings round-trip for empty and one-line corpora", "[corpus][core]")

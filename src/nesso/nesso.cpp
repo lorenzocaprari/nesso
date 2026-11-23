@@ -207,7 +207,8 @@ std::expected<const nesso::embed::Embedder *, Error> Nesso::Embedder() const
                         .stale_sources = {},
                         .bundle_skips = {},
                         .policy_mismatch = false,
-                        .corpus_version = {}};
+                        .corpus_version = {},
+                        .model_mismatch = {}};
             error.note = ModelLoadNote(tried);
             return std::unexpected(std::move(error));
         }
@@ -271,6 +272,7 @@ std::expected<nesso::core::CorpusPolicy, Error> MakeCorpusPolicy(const nesso::em
         {"bm25", std::string{nesso::core::BM25_POLICY}},
         {"dedup", "masked-v1"},
         {"dimensions", std::to_string(identity->dimensions)},
+        {std::string{nesso::core::EMBED_PREFIX_KEY}, std::string{nesso::embed::MINILM_EMBED_PREFIX}},
         {"lexical.terms", std::string{nesso::core::LEXICAL_TERMS_VERSION}},
         {"mask", std::string{nesso::parser::MASK_RULE_VERSION}},
         {"model.id", identity->model_id},

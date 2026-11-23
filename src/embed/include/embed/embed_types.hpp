@@ -25,6 +25,8 @@ enum class EmbedError : uint8_t
 inline constexpr size_t DEFAULT_MAX_SEQUENCE_LENGTH = 256;
 inline constexpr size_t MINILM_EMBEDDING_DIMENSIONS = 384;
 inline constexpr std::string_view MINILM_MODEL_ID = "sentence-transformers/all-MiniLM-L6-v2";
+/// Prompt-prefix rule for MiniLM: no prefix on a query or a passage.
+inline constexpr std::string_view MINILM_EMBED_PREFIX = "none";
 
 /// Last-hidden MiniLM tensor: [batch, sequence, MINILM_EMBEDDING_DIMENSIONS].
 [[nodiscard]] inline bool MatchesMiniLmHiddenStatesShape(std::span<const int64_t> shape, size_t batch_size,
