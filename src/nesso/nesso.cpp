@@ -255,6 +255,14 @@ EmbedDistinct(std::span<const std::string> texts, const nesso::embed::Embedder &
     return std::move(*embeddings);
 }
 
+// The planned runs and how each one reaches ONNX Runtime (ADR 0004, ADR 0016).
+static std::string BatchPolicy()
+{
+    namespace embed = nesso::embed;
+    return std::format("window:{},max:{},tokens:{},order:length-then-input,run:{}", embed::BATCH_WINDOW,
+                       embed::BATCH_MAX_TEXTS, embed::BATCH_TOKEN_BUDGET, embed::BATCH_RUN);
+}
+
 std::expected<nesso::core::CorpusPolicy, Error> MakeCorpusPolicy(const nesso::embed::Embedder &embedder,
                                                                  const LineCounts &counts)
 {
@@ -267,9 +275,7 @@ std::expected<nesso::core::CorpusPolicy, Error> MakeCorpusPolicy(const nesso::em
         return std::unexpected(std::move(error));
     }
     return nesso::core::CorpusPolicy{
-        {"batch",
-         std::format("window:{},max:{},tokens:{},order:length-then-input,run:{}", nesso::embed::BATCH_WINDOW,
-                     nesso::embed::BATCH_MAX_TEXTS, nesso::embed::BATCH_TOKEN_BUDGET, nesso::embed::BATCH_RUN)},
+        {"batch", BatchPolicy()},
         {"bm25", std::string{nesso::core::BM25_POLICY}},
         {"dedup", "masked-v1"},
         {"dimensions", std::to_string(identity->dimensions)},
