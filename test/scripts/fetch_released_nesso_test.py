@@ -1,7 +1,9 @@
 import hashlib
+import io
 import os
 import pathlib
 import subprocess
+import tarfile
 import tempfile
 import textwrap
 import unittest
@@ -51,33 +53,56 @@ def run_script(args: list[str], env: dict[str, str]) -> subprocess.CompletedProc
     )
 
 
+def _tar_gz(files: list[tuple[str, bytes, int]]) -> bytes:
+    buffer = io.BytesIO()
+    with tarfile.open(fileobj=buffer, mode="w:gz") as archive:
+        for name, payload, mode in files:
+            info = tarfile.TarInfo(name)
+            info.size = len(payload)
+            info.mode = mode
+            info.mtime = 0
+            archive.addfile(info, io.BytesIO(payload))
+    return buffer.getvalue()
+
+
+def _ar_member(name: str, payload: bytes) -> bytes:
+    # GNU ar header, matching the layout dpkg-deb writes. Names here are short
+    # enough to sit in the 16-byte field, so no "//" long-name table is needed.
+    header = (
+        f"{name:<16}".encode("ascii")
+        + f"{0:<12}".encode("ascii")
+        + b"0     "
+        + b"0     "
+        + b"100644  "
+        + f"{len(payload):<10}".encode("ascii")
+        + b"`\n"
+    )
+    if len(header) != 60:
+        raise AssertionError(f"ar header for {name} is {len(header)} bytes")
+    padding = b"\n" if len(payload) % 2 else b""
+    return header + payload + padding
+
+
 def build_deb(directory: pathlib.Path, version: str, *, report: str | None = None, with_model: bool = True) -> None:
+    # EL9 unit tests have no dpkg-deb. A .deb is an ar archive; the script
+    # unpacks it with dpkg-deb when that exists and with ar plus tar otherwise.
     report = version if report is None else report
-    root = directory / f"pkg-{version}"
-    binary = root / "usr" / "bin" / "nesso"
-    binary.parent.mkdir(parents=True)
-    binary.write_text(f"#!/bin/sh\nprintf '%s\\n' '{report}'\n", encoding="utf-8")
-    binary.chmod(0o755)
-    control = root / "DEBIAN" / "control"
-    control.parent.mkdir(parents=True)
-    control.write_text(
-        "Package: nesso\nVersion: 0.3.1\nArchitecture: amd64\n"
-        "Maintainer: test <test@example.com>\nDescription: test\n",
-        encoding="utf-8",
-    )
-    model = root / "usr" / "share" / "nesso"
-    model.mkdir(parents=True)
+    files: list[tuple[str, bytes, int]] = [
+        ("usr/bin/nesso", f"#!/bin/sh\nprintf '%s\\n' '{report}'\n".encode(), 0o755),
+    ]
     if with_model:
-        (model / "model.onnx").write_bytes(b"model")
-        (model / "vocab.txt").write_bytes(b"vocab")
+        files.append(("usr/share/nesso/model.onnx", b"model", 0o644))
+        files.append(("usr/share/nesso/vocab.txt", b"vocab", 0o644))
+    control = (
+        "Package: nesso\nVersion: 0.3.1\nArchitecture: amd64\n"
+        "Maintainer: test <test@example.com>\nDescription: test\n"
+    ).encode()
+    payload = b"!<arch>\n" + _ar_member("debian-binary", b"2.0\n")
+    payload += _ar_member("control.tar.gz", _tar_gz([("control", control, 0o644)]))
+    payload += _ar_member("data.tar.gz", _tar_gz(files))
     deb = directory / f"nesso_{version}_amd64.deb"
-    subprocess.run(
-        ["dpkg-deb", "--root-owner-group", "--build", str(root), str(deb)],
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-    digest = hashlib.sha256(deb.read_bytes()).hexdigest()
+    deb.write_bytes(payload)
+    digest = hashlib.sha256(payload).hexdigest()
     sums = directory / "SHA256SUMS"
     line = f"{digest}  nesso_{version}_amd64.deb\n"
     existing = sums.read_text(encoding="utf-8") if sums.is_file() else ""
