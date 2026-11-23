@@ -42,8 +42,8 @@ struct HiddenShape
 
 static void AssertEncodedInput(const TokenizedInput &item)
 {
-    NESSO_ASSERT(item.input_ids.size() == item.attention_mask.size() &&
-                 item.input_ids.size() == item.token_type_ids.size());
+    NESSO_ASSERT(item.input_ids.size() == item.attention_mask.size());
+    NESSO_ASSERT(item.input_ids.size() == item.token_type_ids.size());
 }
 
 static std::vector<float> MeanPoolAndNormalize(std::span<const float> hidden_states,
