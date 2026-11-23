@@ -70,14 +70,30 @@ def positive(value: str) -> int:
     return parsed
 
 
+# The last pattern starts with a timestamp header, so the gate also covers the
+# header splitter: index and grep embed only its message (ADR 0017).
+HEADER_LEVELS = ("INFO", "WARN", "ERROR")
+
+
 def determinism_lines(count: int = DEFAULT_INPUT_LINES) -> list[str]:
     patterns = (
         "PAY-E1042 connection refused",
         "database connection error after {n} retries",
         "payment timeout after {n}s",
         "INFO accepted connection from 10.1.0.{octet} user={n}",
+        "2026-11-23T10:{minute:02}:{second:02}Z node{host} payments[{n}]: {level} gateway declined payment {n}",
     )
-    return [patterns[n % len(patterns)].format(n=n, octet=n % 256) for n in range(count)]
+    return [
+        patterns[n % len(patterns)].format(
+            n=n,
+            octet=n % 256,
+            minute=(n // 60) % 60,
+            second=n % 60,
+            host=n % 4,
+            level=HEADER_LEVELS[n % len(HEADER_LEVELS)],
+        )
+        for n in range(count)
+    ]
 
 
 def arguments() -> argparse.Namespace:

@@ -826,6 +826,36 @@ TEST_CASE("v3 policy keeps embed.prefix optional and reads a missing key as none
     CHECK(rejected.error() == EngineError::CorruptDatabase);
 }
 
+TEST_CASE("v3 policy keeps embed.text optional and reads a missing key as line", "[corpus][core]")
+{
+    const TempDir dir;
+    CHECK(nesso::core::EMBED_TEXT_KEY == "embed.text");
+    CHECK(nesso::core::EmbedTextOf(Policy()) == "line");
+    CorpusPolicy recorded = Policy();
+    recorded.emplace("embed.text", "message-v1");
+    CHECK(nesso::core::EmbedTextOf(recorded) == "message-v1");
+
+    const auto path = dir.Path() / "recorded.nesso";
+    auto writer = CorpusWriter::Create(path, recorded);
+    REQUIRE(writer);
+    REQUIRE(writer->AddSource({.path = "-", .stored_only = true}) == 0);
+    REQUIRE(writer->AddDistinct("alpha", std::array<float, 2>{1.F, 0.F}) == 0);
+    const CorpusLine line{.line_number = 1, .distinct_id = 0, .stored_text = "alpha"};
+    const std::vector<std::string> terms = TermsOf("alpha");
+    REQUIRE(writer->AddLines(std::span{&line, 1}, std::span{&terms, 1}));
+    REQUIRE(writer->Finish());
+    CHECK(ReadBytes(path).find("\nembed.text=message-v1\n") != std::string::npos);
+    const auto mapped = nesso::core::MapCorpusFile(path);
+    REQUIRE(mapped);
+    CHECK(nesso::core::EmbedTextOf(mapped->corpus.Policy()) == "message-v1");
+
+    CorpusPolicy empty = Policy();
+    empty.emplace("embed.text", "");
+    const auto rejected = CorpusWriter::Create(dir.Path() / "empty-text.nesso", empty);
+    REQUIRE_FALSE(rejected);
+    CHECK(rejected.error() == EngineError::CorruptDatabase);
+}
+
 TEST_CASE("v3 lexical postings round-trip for empty and one-line corpora", "[corpus][core]")
 {
     const TempDir dir;
