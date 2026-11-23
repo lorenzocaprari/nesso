@@ -112,7 +112,7 @@ For a short sosreport or tarball triage path, see [Quick start](quick-start.md).
 - `search` memory grows with the line count. It maps the corpus file and builds about 64 bytes of line metadata per line, about 640 MB at the 10,000,000-line cap, plus per-line lexical postings. The 64-byte and 640 MB figures are approximate, from the line-metadata layout on x86-64.
 - `index` bounds its Finish working set (unique-term runs, the merge, and posting encode) to an internal 1.5 GiB budget. It still keeps every distinct text in memory.
 - `grep` builds no corpus, so these caps do not apply. In hybrid and lexical mode its memory grows with the input ([Files](#files)).
-- The nightly real-log benchmark fails when a command's peak RSS exceeds 1.5 GiB plus tolerance (that workflow sets `NESSO_BENCH_RSS_TOLERANCE` to 0.15). It runs on the first 1,000,000 HDFS lines and the first 100,000 Thunderbird lines. That is a CI gate on those inputs, not a guarantee for every input ([Benchmarks](benchmarks.md)).
+- The nightly real-log benchmark fails when a command's peak RSS exceeds 1.5 GiB plus tolerance (that workflow sets `NESSO_BENCH_RSS_TOLERANCE` to 0.15). It runs on the first 1,000,000 HDFS lines and the first 1,000,000 Thunderbird lines. That is a CI gate on those inputs, not a guarantee for every input ([Benchmarks](benchmarks.md)).
 - Split a very large input into several corpora, for example per host or per day, or run `grep` with `--mode dense` on a subset.
 
 ## What this is not

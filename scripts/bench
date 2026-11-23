@@ -35,15 +35,14 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_SIZES = (1000, 10_000, 100_000)
-# nesso-bench's fetch-loghub writes (and pins) a 1M-line prefix of each corpus. Varied logs
-# index far slower than HDFS, whose lines repeat: BGL 1M took about 22 minutes
-# per command on a GitHub runner, and Thunderbird 1M did not finish in an hour.
-# The bench times a shorter prefix of those so a nightly run fits the job.
+# nesso-bench's fetch-loghub writes (and pins) a 1M-line prefix of each corpus.
+# Masked dedup embeds one line per distinct masked text, so BGL and Thunderbird
+# use that full prefix too. --lines still overrides every corpus.
 REAL_LOG_FETCH_LINES = 1_000_000
 REAL_LOG_DEFAULT_LINES = {
     "hdfs-v1": 1_000_000,
-    "bgl": 100_000,
-    "thunderbird": 100_000,
+    "bgl": 1_000_000,
+    "thunderbird": 1_000_000,
 }
 REAL_LOG_THREAD_COUNTS = (1, 8)
 # Nightly default: HDFS is a cheap smoke; Thunderbird is the peak-RSS / wall

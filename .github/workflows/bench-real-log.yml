@@ -233,9 +233,9 @@ jobs:
       - name: Build
         run: conan build . -pr:h ./conan/profiles/gcc-26 -pr:b default --lockfile=conan.lock --build=missing --no-remote -o tests=False $CONAN_WERROR_ARGS
 
-      # --timeout is a per-command hang guard, not a speed budget. scripts/bench
-      # sizes each corpus (REAL_LOG_DEFAULT_LINES) so a normal run stays far
-      # below it, and 1200 s keeps a stuck run inside timeout-minutes.
+      # --timeout is a per-command hang guard, not a speed budget. Each corpus
+      # is the 1000000-line prefix (REAL_LOG_DEFAULT_LINES). 1200 s keeps a
+      # stuck command inside timeout-minutes.
       - name: Run real-log benchmark
         env:
           CORPORA: ${{ steps.corpora.outputs.corpora }}
