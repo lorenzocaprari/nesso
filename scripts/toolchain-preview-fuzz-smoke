@@ -4,6 +4,12 @@
 # (built unless NESSO_LIBFUZZER) runs each seed once under the profile's
 # ASan/UBSan flags.
 #
+# conan install writes NESSO_WERROR and CMAKE_EXPORT_COMPILE_COMMANDS into
+# CMakePresets.json, not into conan_toolchain.cmake. conan build forwards
+# those cache variables on the cmake command line. This script has to do
+# the same, or the harnesses are not built with -Werror and CMake writes
+# no compile_commands.json.
+#
 #   NESSO_WERROR=1 NESSO_PREVIEW_PROFILE=conan/profiles/gcc-16-fuzz \
 #     ./scripts/toolchain-preview-fuzz-smoke
 set -euo pipefail
@@ -14,6 +20,7 @@ profile="${NESSO_PREVIEW_PROFILE:?set NESSO_PREVIEW_PROFILE to a conan profile p
 out_dir="${NESSO_FUZZ_OUT:-build/fuzz-smoke}"
 cmake_b="${out_dir}/build/Release"
 toolchain="${cmake_b}/generators/conan_toolchain.cmake"
+preset="${cmake_b}/generators/CMakePresets.json"
 bin_dir="${cmake_b}/test/fuzz"
 
 targets=(nesso_fuzz_parser nesso_fuzz_tokenizer nesso_fuzz_archive_source nesso_fuzz_corpus)
@@ -34,25 +41,151 @@ conan install . -of "${out_dir}" \
   --no-remote \
   "${werror_args[@]}"
 
+if [[ ! -f "${toolchain}" ]]; then
+  echo "error: conan install did not write ${toolchain}" >&2
+  exit 1
+fi
+if [[ ! -f "${preset}" ]]; then
+  echo "error: conan install did not write ${preset}" >&2
+  exit 1
+fi
+
+preset_list="$(mktemp)"
+if ! python3 - "${preset}" > "${preset_list}" << 'PY'
+import json
+import sys
+
+path = sys.argv[1]
+try:
+    data = json.load(open(path))
+except OSError as exc:
+    print(f"error: cannot read {path}: {exc}", file=sys.stderr)
+    sys.exit(1)
+presets = data.get("configurePresets") or []
+chosen = None
+for preset in presets:
+    name = str(preset.get("name", ""))
+    if name.startswith("conan-"):
+        chosen = preset
+        break
+if chosen is None and presets:
+    chosen = presets[0]
+if chosen is None:
+    print(f"error: {path} has no configure preset", file=sys.stderr)
+    sys.exit(1)
+for key, value in (chosen.get("cacheVariables") or {}).items():
+    if isinstance(value, bool):
+        value = "ON" if value else "OFF"
+    print(f"-D{key}={value}")
+PY
+then
+  echo "error: failed to read cache variables from ${preset}" >&2
+  rm -f "${preset_list}"
+  exit 1
+fi
+preset_defs=()
+while IFS= read -r def; do
+  [[ -n "${def}" ]] || continue
+  preset_defs+=("${def}")
+done < "${preset_list}"
+rm -f "${preset_list}"
+
+# The preset is what conan build passes. Repeat it here so a direct cmake
+# still exports compile_commands.json and honors NESSO_WERROR.
+if [[ "${NESSO_WERROR:-}" == "1" ]]; then
+  have_werror=0
+  for def in "${preset_defs[@]}"; do
+    if [[ "${def}" == "-DNESSO_WERROR="* ]]; then
+      have_werror=1
+      break
+    fi
+  done
+  if [[ "${have_werror}" -eq 0 ]]; then
+    preset_defs+=("-DNESSO_WERROR=ON")
+  fi
+fi
+have_export=0
+for def in "${preset_defs[@]}"; do
+  if [[ "${def}" == "-DCMAKE_EXPORT_COMPILE_COMMANDS="* ]]; then
+    have_export=1
+    break
+  fi
+done
+if [[ "${have_export}" -eq 0 ]]; then
+  preset_defs+=("-DCMAKE_EXPORT_COMPILE_COMMANDS=ON")
+fi
+
 cmake --fresh -S . -B "${cmake_b}" -G Ninja \
-  -DCMAKE_BUILD_TYPE=Release \
-  -DCMAKE_TOOLCHAIN_FILE="${toolchain}"
+  -DCMAKE_TOOLCHAIN_FILE="${toolchain}" \
+  "${preset_defs[@]}"
 
 cmake --build "${cmake_b}" --target "${targets[@]}"
 
 commands="${cmake_b}/compile_commands.json"
-test -f "${commands}"
+
+require_file() {
+  if [[ ! -f "$1" ]]; then
+    echo "error: missing $1" >&2
+    exit 1
+  fi
+}
+
+show_first_command() {
+  python3 - "$1" << 'PY' >&2
+import json
+import sys
+
+path = sys.argv[1]
+try:
+    data = json.load(open(path))
+except (OSError, json.JSONDecodeError) as exc:
+    print(f"error: cannot read {path}: {exc}")
+    sys.exit(0)
+if not data:
+    print("error: compile_commands.json has no entries")
+    sys.exit(0)
+entry = data[0]
+command = entry.get("command")
+if not command:
+    command = " ".join(entry.get("arguments") or [])
+print("error: first compile command:")
+print(command[:1200])
+PY
+}
+
+require_fixed() {
+  local label="$1"
+  local pattern="$2"
+  if ! grep -F -q -- "${pattern}" "${commands}"; then
+    echo "error: ${label}: ${commands} does not contain ${pattern}" >&2
+    show_first_command "${commands}"
+    exit 1
+  fi
+}
+
+require_ere() {
+  local label="$1"
+  local pattern="$2"
+  if ! grep -E -q -- "${pattern}" "${commands}"; then
+    echo "error: ${label}: ${commands} does not match ${pattern}" >&2
+    show_first_command "${commands}"
+    exit 1
+  fi
+}
+
+require_file "${commands}"
 if [[ -n "${NESSO_PREVIEW_COMPILER_NEEDLE:-}" ]]; then
-  grep -q -- "${NESSO_PREVIEW_COMPILER_NEEDLE}" "${commands}"
+  require_fixed "preview compiler" "${NESSO_PREVIEW_COMPILER_NEEDLE}"
 fi
 if [[ -n "${NESSO_PREVIEW_SANITIZE_NEEDLE:-}" ]]; then
-  grep -q -- "${NESSO_PREVIEW_SANITIZE_NEEDLE}" "${commands}"
+  require_fixed "sanitizer flags" "${NESSO_PREVIEW_SANITIZE_NEEDLE}"
 fi
 if [[ "${NESSO_WERROR:-}" == "1" ]]; then
-  grep -Eq -- '(^|[[:space:]])-Werror([[:space:]]|$)' "${commands}"
+  require_ere "-Werror" '(^|[[:space:]])-Werror([[:space:]]|$)'
 fi
-if grep -Eq -- '(^|[[:space:]])-stdlib=libc\+\+([[:space:]]|$)' "${commands}"; then
+if grep -E -q -- '(^|[[:space:]])-stdlib=libc\+\+([[:space:]]|$)' "${commands}"; then
   echo "error: compile commands select libc++" >&2
+  show_first_command "${commands}"
   exit 1
 fi
 
@@ -65,7 +198,10 @@ run_seeds() {
   local bin="${bin_dir}/nesso_fuzz_${name}"
   local seed
   local found=0
-  test -x "${bin}"
+  if [[ ! -x "${bin}" ]]; then
+    echo "error: missing harness ${bin}" >&2
+    exit 1
+  fi
   for seed in "${seeds}"/*; do
     [[ -f "${seed}" ]] || continue
     found=1
@@ -74,7 +210,7 @@ run_seeds() {
   done
   if [[ "${found}" -eq 0 ]]; then
     echo "error: no seeds in ${seeds}" >&2
-    return 1
+    exit 1
   fi
 }
 
