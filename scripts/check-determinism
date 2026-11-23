@@ -39,7 +39,11 @@ RANKING_MODES = ("auto", "lexical")
 # loop is a one-core integer spin; timeout 0 runs until the gate stops it;
 # the cache cap avoids that startup mmap.
 DEFAULT_STRESS_COMMAND = "stress-ng --cpu 1 --cpu-method loop --timeout 0 --cache-size 2M"
-STRESS_WARMUP_SECONDS = 0.5
+# A stress command that exits within the warmup fails the gate after
+# STRESS_START_ATTEMPTS tries; one that outlives it is restarted when it dies.
+# Tests raise the warmup so an exiting command is caught however loaded the
+# runner is.
+STRESS_WARMUP_SECONDS = float(os.environ.get("NESSO_STRESS_WARMUP_SECONDS", "0.5"))
 STRESS_START_ATTEMPTS = 3
 
 

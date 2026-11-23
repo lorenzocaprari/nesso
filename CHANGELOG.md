@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The `bench` job's 4-thread / 1-thread speedup minimum (1.25×) applies only on the CPU it was calibrated on, `Intel(R) Xeon(R) 6975P-C` (AWS-hosted runners). On Azure-hosted runners (AMD EPYC 7763 and 9V45) the same binary reaches 1.21× to 1.34×, and each grep takes about 1.1s longer, so there the job reports the speedup and warns instead of failing. A 1-thread and 4-thread pair from two different CPUs fails, and the job summary names the CPU.
 - Two bdd scenarios use smaller fixtures (128-line stdout-full greps; 16-line thread-budget index) so coverage shards spend less wall time without dropping checks.
 - `NESSO_MEASURE_FEATURES=1` times each godog feature file under `test/functional` and writes `feature-times.tsv` (or `NESSO_FEATURE_TIMES`) for coverage shard balancing.
 - Pipeline coverage builds once, runs unit/integration and four godog feature shards in parallel, then merges lcov traces for the same floors, exclusions, Codecov upload, and patch gate. `scripts/code-coverage` supports `--mode build|test|capture|merge`. `ci-build-archive pack-coverage` ships gcov note files with the binaries. Local without-bdd coverage sat on the branch floor (44.3%); bdd stays in the merge.

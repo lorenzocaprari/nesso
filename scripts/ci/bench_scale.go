@@ -24,11 +24,18 @@ const (
 	// to 2.13× (median 1.88×). 1.25× stays under the slowest sample. At 1000
 	// lines the slowest runner was below 1×: loading four sessions cost more
 	// than the shorter embed saved.
+	//
+	// Those samples came from AWS-hosted runners, whose bench results all
+	// record threadScaleCPU. Azure-hosted runners (AMD EPYC 7763 and 9V45)
+	// reach 1.21× to 1.34× on the same binary, so the minimum is enforced on
+	// threadScaleCPU only; elsewhere bench-scale reports the speedup and warns.
 	threadScaleMinRatio = 1.25
 	threadScaleLines    = 4000
+	threadScaleCPU      = "Intel(R) Xeon(R) 6975P-C"
 )
 
 type scaleSample struct {
+	cpu             string
 	lines           int
 	wall1           float64
 	wall4           float64
@@ -53,6 +60,7 @@ func benchScaleMain(args []string) int {
 	fourPath := fs.String("four", "", "bench JSON from NESSO_THREADS=4")
 	lines := fs.Int("lines", threadScaleLines, "line count both runs must use")
 	minRatio := fs.Float64("min-ratio", threadScaleMinRatio, "minimum wall speedup of 4 threads over 1")
+	cpu := fs.String("cpu", threadScaleCPU, "cpuModel the minimum is enforced on; empty enforces it on every CPU")
 	fs.Usage = func() {
 		fmt.Fprintln(os.Stderr, "usage: ci bench-scale --one FILE --four FILE")
 		fs.PrintDefaults()
@@ -70,6 +78,13 @@ func benchScaleMain(args []string) int {
 		return 1
 	}
 	fmt.Printf("bench-scale: %s\n", sample.line(*minRatio))
+	if !enforcedOn(*cpu, sample.cpu) {
+		fmt.Printf(
+			"::warning title=bench-scale::speedup %.2f× on %s is not gated: the %.2f× minimum is calibrated on %s\n",
+			sample.ratio, cpuName(sample.cpu), *minRatio, *cpu,
+		)
+		return 0
+	}
 	if !sample.meets(*minRatio) {
 		fmt.Fprintf(os.Stderr, "bench-scale: speedup %.2f× is below minimum %.2f×\n", sample.ratio, *minRatio)
 		return 1
@@ -85,6 +100,7 @@ func benchSummaryMain(args []string) int {
 	fourPath := fs.String("four", "", "bench JSON from NESSO_THREADS=4")
 	lines := fs.Int("lines", threadScaleLines, "line count the thread pair must use")
 	minRatio := fs.Float64("min-ratio", threadScaleMinRatio, "minimum wall speedup printed in the summary")
+	cpu := fs.String("cpu", threadScaleCPU, "cpuModel the minimum is enforced on; empty enforces it on every CPU")
 	summary := fs.String("summary", "", "markdown file to append (default: GITHUB_STEP_SUMMARY)")
 	fs.Usage = func() {
 		fmt.Fprintln(os.Stderr, "usage: ci bench-summary --result FILE --one FILE --four FILE")
@@ -117,7 +133,7 @@ func benchSummaryMain(args []string) int {
 		one = &loadedOne
 		four = &loadedFour
 	}
-	text := formatBenchSummary(result, one, four, *minRatio)
+	text := formatBenchSummary(result, one, four, *minRatio, *cpu)
 	fmt.Print(text)
 	if err := appendSummary(summaryDestination(*summary), text); err != nil {
 		fmt.Fprintf(os.Stderr, "bench-summary: %v\n", err)
@@ -161,7 +177,11 @@ func scaleSpeedup(one, four benchFile, lines int) (scaleSample, error) {
 	if err != nil {
 		return scaleSample{}, fmt.Errorf("4-thread run: %w", err)
 	}
+	if one.CPU != four.CPU {
+		return scaleSample{}, fmt.Errorf("1-thread run on %s, 4-thread run on %s", cpuName(one.CPU), cpuName(four.CPU))
+	}
 	return scaleSample{
+		cpu:             one.CPU,
 		lines:           lines,
 		wall1:           wall1,
 		wall4:           wall4,
@@ -213,14 +233,27 @@ func completedMeasure(item benchCase) (float64, float64, error) {
 	return wall, rss, nil
 }
 
+// enforcedOn reports whether the minimum applies to a sample from cpu.
+// An empty want enforces it everywhere.
+func enforcedOn(want, cpu string) bool {
+	return want == "" || want == cpu
+}
+
+func cpuName(cpu string) string {
+	if cpu == "" {
+		return "an unrecorded CPU"
+	}
+	return cpu
+}
+
 func (s scaleSample) line(min float64) string {
 	return fmt.Sprintf(
-		"%d lines, 1 thread %.3fs (%.1f lines/s), 4 threads %.3fs (%.1f lines/s), speedup %.2f×, minimum %.2f×",
-		s.lines, s.wall1, s.linesPerSecond1, s.wall4, s.linesPerSecond4, s.ratio, min,
+		"%d lines, 1 thread %.3fs (%.1f lines/s), 4 threads %.3fs (%.1f lines/s), speedup %.2f×, minimum %.2f×, cpu %s",
+		s.lines, s.wall1, s.linesPerSecond1, s.wall4, s.linesPerSecond4, s.ratio, min, cpuName(s.cpu),
 	)
 }
 
-func formatBenchSummary(result benchFile, one, four *benchFile, minRatio float64) string {
+func formatBenchSummary(result benchFile, one, four *benchFile, minRatio float64, cpu string) string {
 	var b strings.Builder
 	b.WriteString("### Benchmark\n\n")
 	b.WriteString("| lines | threads | wall (s) | lines/s | peak RSS | 4 vs 1 |\n")
@@ -251,8 +284,14 @@ func formatBenchSummary(result benchFile, one, four *benchFile, minRatio float64
 		b.WriteString("Thread sample was not recorded.\n")
 	case scaleErr != nil:
 		fmt.Fprintf(&b, "Thread sample: %s.\n", scaleErr)
+	case enforcedOn(cpu, sample.cpu):
+		fmt.Fprintf(&b, "4-thread / 1-thread wall speedup %.2f× (minimum %.2f×) on %s.\n", sample.ratio, minRatio, cpuName(sample.cpu))
 	default:
-		fmt.Fprintf(&b, "4-thread / 1-thread wall speedup %.2f× (minimum %.2f×).\n", sample.ratio, minRatio)
+		fmt.Fprintf(
+			&b,
+			"4-thread / 1-thread wall speedup %.2f× on %s, not gated: the %.2f× minimum is calibrated on %s.\n",
+			sample.ratio, cpuName(sample.cpu), minRatio, cpu,
+		)
 	}
 	return b.String()
 }

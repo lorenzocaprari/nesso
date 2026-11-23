@@ -129,12 +129,17 @@ class CheckDeterminismTest(unittest.TestCase):
         self.assertIn("ranking differs", result.stderr)
 
     def test_fails_when_stress_exits_before_a_comparison(self) -> None:
-        # sh -c exits before the 0.5s stress warmup. python3 -c can still be
-        # starting under a loaded ASan job, so the gate finishes with OK.
+        # The default 0.5s warmup races process exit on a loaded ASan runner:
+        # a command that outlives it is accepted and restarted, and the gate
+        # finishes with OK. A long warmup returns as soon as the command exits,
+        # so every start attempt is seen to die.
         stress = "sh -c 'echo stress-died-now >&2; exit 9'"
+        env = dict(os.environ, NESSO_STRESS_WARMUP_SECONDS="60")
         with tempfile.TemporaryDirectory() as temp:
             directory = pathlib.Path(temp)
-            result = self.run_gate(self.write_binary(directory, unstable=None), directory, stress)
+            result = self.run_gate(
+                self.write_binary(directory, unstable=None), directory, stress, env=env
+            )
 
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("stress command exited before the gate completed", result.stderr)

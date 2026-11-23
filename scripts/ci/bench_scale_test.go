@@ -65,16 +65,23 @@ func TestScaleSpeedupRejectsABadSample(t *testing.T) {
 	}
 }
 
-func TestBenchScaleCommand(t *testing.T) {
-	dir := t.TempDir()
+func writeScalePair(t *testing.T, dir, cpuOne, cpuFour string) (string, string) {
+	t.Helper()
 	one := writeBench(t, dir, "one.json", `{
 	  "threads": "1",
+	  "cpuModel": "`+cpuOne+`",
 	  "cases": [{"lines": 1000, "ok": true, "wallSeconds": 4, "peakRssBytes": 100}]
 	}`)
 	four := writeBench(t, dir, "four.json", `{
 	  "threads": "4",
+	  "cpuModel": "`+cpuFour+`",
 	  "cases": [{"lines": 1000, "ok": true, "wallSeconds": 2, "peakRssBytes": 120}]
 	}`)
+	return one, four
+}
+
+func TestBenchScaleCommand(t *testing.T) {
+	one, four := writeScalePair(t, t.TempDir(), threadScaleCPU, threadScaleCPU)
 	if code := benchScaleMain([]string{"--one", one, "--four", four, "--lines", "1000", "--min-ratio", "1.5"}); code != 0 {
 		t.Fatalf("pass exit %d", code)
 	}
@@ -83,14 +90,35 @@ func TestBenchScaleCommand(t *testing.T) {
 	}
 }
 
+func TestBenchScaleWarnsOnlyOffTheCalibratedCPU(t *testing.T) {
+	one, four := writeScalePair(t, t.TempDir(), "AMD EPYC 9V45 96-Core Processor", "AMD EPYC 9V45 96-Core Processor")
+	if code := benchScaleMain([]string{"--one", one, "--four", four, "--lines", "1000", "--min-ratio", "2.1"}); code != 0 {
+		t.Fatalf("uncalibrated CPU failed the gate: exit %d", code)
+	}
+	if code := benchScaleMain([]string{"--one", one, "--four", four, "--lines", "1000", "--min-ratio", "2.1", "--cpu", ""}); code == 0 {
+		t.Fatal("--cpu '' did not enforce the minimum on every CPU")
+	}
+	unrecorded, unrecordedFour := writeScalePair(t, t.TempDir(), "", "")
+	if code := benchScaleMain([]string{"--one", unrecorded, "--four", unrecordedFour, "--lines", "1000", "--min-ratio", "2.1"}); code != 0 {
+		t.Fatalf("unrecorded CPU failed the gate: exit %d", code)
+	}
+}
+
+func TestBenchScaleRejectsRunsOnDifferentCPUs(t *testing.T) {
+	one, four := writeScalePair(t, t.TempDir(), threadScaleCPU, "AMD EPYC 7763 64-Core Processor")
+	if code := benchScaleMain([]string{"--one", one, "--four", four, "--lines", "1000", "--min-ratio", "1.5"}); code == 0 {
+		t.Fatal("pair from two CPUs passed")
+	}
+}
+
 func TestBenchSummaryTable(t *testing.T) {
 	result := benchFile{Cases: []benchCase{
 		okCase(10000, 10, 200),
 		okCase(1000, 2.5, 150),
 	}}
-	one := benchFile{Threads: strPtr("1"), Cases: []benchCase{okCase(1000, 4, 100)}}
-	four := benchFile{Threads: strPtr("4"), Cases: []benchCase{okCase(1000, 2, 120)}}
-	text := formatBenchSummary(result, &one, &four, 1.5)
+	one := benchFile{Threads: strPtr("1"), CPU: threadScaleCPU, Cases: []benchCase{okCase(1000, 4, 100)}}
+	four := benchFile{Threads: strPtr("4"), CPU: threadScaleCPU, Cases: []benchCase{okCase(1000, 2, 120)}}
+	text := formatBenchSummary(result, &one, &four, 1.5, threadScaleCPU)
 	if !strings.Contains(text, "| lines | threads | wall (s) | lines/s | peak RSS | 4 vs 1 |") {
 		t.Fatalf("header missing\n%s", text)
 	}
@@ -106,8 +134,13 @@ func TestBenchSummaryTable(t *testing.T) {
 	if !strings.Contains(text, "| 1000 | 4 | 2.000 | 500.0 | 120 | 2.00× |") {
 		t.Fatalf("4-thread row missing\n%s", text)
 	}
-	if !strings.Contains(text, "minimum 1.50×") {
+	if !strings.Contains(text, "(minimum 1.50×) on "+threadScaleCPU+".") {
 		t.Fatalf("minimum missing\n%s", text)
+	}
+	one.CPU, four.CPU = "AMD EPYC 7763 64-Core Processor", "AMD EPYC 7763 64-Core Processor"
+	ungated := formatBenchSummary(result, &one, &four, 1.5, threadScaleCPU)
+	if !strings.Contains(ungated, "2.00× on AMD EPYC 7763 64-Core Processor, not gated: the 1.50× minimum is calibrated on "+threadScaleCPU) {
+		t.Fatalf("ungated note missing\n%s", ungated)
 	}
 	dir := t.TempDir()
 	summary := filepath.Join(dir, "summary.md")
