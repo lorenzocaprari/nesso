@@ -1,0 +1,660 @@
+name: Clang and optimized ASan
+
+# Not a Pipeline job and not in the CI gate. build-clang-26-amd64,
+# test-clang-26-amd64, clang-26-asan-amd64, and gcc-26-asan-release-amd64
+# run here on the nightly schedule and on workflow_dispatch. Pull requests
+# and pushes to main do not run them. Steps, profiles, and ctest labels
+# match the jobs these replaced in ci.yml. The image is the deps-<hash>
+# tag Pipeline has already published; this workflow does not rebuild it.
+on:
+  schedule:
+    # 02:17 UTC, off the 03:17 Pipeline and fuzz-test pile-up.
+    - cron: "17 2 * * *"
+  workflow_dispatch:
+
+# Schedule and manual runs are left running. This workflow has no pull_request.
+concurrency:
+  group: clang-asan-nightly-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  REGISTRY: ghcr.io
+  CONAN_HOME: /opt/conan2
+  # One string. Unquoted as $CONAN_WERROR_ARGS on each conan install and conan
+  # build so the shell splits it into -c and user.nesso:werror=True.
+  CONAN_WERROR_ARGS: "-c user.nesso:werror=True"
+
+jobs:
+  guard:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
+        with:
+          egress-policy: audit
+
+      - name: Require schedule on main or a manual dispatch
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          set -euo pipefail
+          if [[ "${EVENT_NAME}" == "schedule" ]]; then
+            if [[ "${GITHUB_REF}" != "refs/heads/main" ]]; then
+              echo "clang-asan-nightly: schedule refuses ${GITHUB_REF}" >&2
+              exit 1
+            fi
+            exit 0
+          fi
+          if [[ "${EVENT_NAME}" != "workflow_dispatch" ]]; then
+            echo "clang-asan-nightly: refusing event ${EVENT_NAME}" >&2
+            exit 1
+          fi
+
+  resolve:
+    needs: [guard]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    outputs:
+      image: ${{ steps.select.outputs.image }}
+    steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
+        with:
+          egress-policy: audit
+
+      - name: Checkout Repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Resolve image reference
+        id: select
+        shell: bash
+        env:
+          REGISTRY_NAME: ${{ env.REGISTRY }}
+        run: |
+          set -euo pipefail
+          owner_lc="$(printf '%s' "${GITHUB_REPOSITORY_OWNER}" | tr '[:upper:]' '[:lower:]')"
+          deps_hash="$(./scripts/ci/build-env-hash amd64)"
+          echo "image=${REGISTRY_NAME}/${owner_lc}/nesso-build-env:deps-${deps_hash}" >> "${GITHUB_OUTPUT}"
+
+  # Clang 21 compiles nesso against the gcc-built libstdc++ packages
+  # already in nesso-build-env (see conan/profiles/clang-26). libc++ is
+  # not used: it is a different ABI from those static archives.
+  build-clang-26-amd64:
+    needs: [guard, resolve]
+    if: github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      packages: read
+      actions: write
+    env:
+      CCACHE_DIR: ${{ github.workspace }}/.ccache
+      CCACHE_BASEDIR: ${{ github.workspace }}
+      CCACHE_MAXSIZE: 150M
+      CCACHE_COMPRESS: "true"
+      CMAKE_C_COMPILER_LAUNCHER: ccache
+      CMAKE_CXX_COMPILER_LAUNCHER: ccache
+    container:
+      image: ${{ needs.resolve.outputs.image }} # zizmor: ignore[unpinned-images] deps-<hash> tag, not a digest
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Restore ccache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ github.workspace }}/.ccache
+          key: ccache-${{ runner.arch }}-clang-21-Release-${{ github.sha }}
+          restore-keys: |
+            ccache-${{ runner.arch }}-clang-21-Release-
+
+      - name: Zero ccache statistics
+        run: ccache --zero-stats
+
+      - name: Show Clang
+        run: clang++-21 --version
+
+      - name: Install Dependencies (Conan)
+        run: |
+          conan profile detect --force
+          conan install . -pr:h ./conan/profiles/clang-26 -pr:b default --lockfile=conan.lock --build=missing --no-remote $CONAN_WERROR_ARGS
+
+      - name: Build
+        env:
+          NESSO_REQUIRE_MODEL: "1"
+          NESSO_REQUIRE_BDD: "1"
+        run: conan build . -pr:h ./conan/profiles/clang-26 -pr:b default --lockfile=conan.lock --build=missing --no-remote $CONAN_WERROR_ARGS
+
+      - name: Require Clang and libstdc++
+        run: |
+          set -euo pipefail
+          toolchain="build/Release/generators/conan_toolchain.cmake"
+          commands="build/Release/compile_commands.json"
+          grep -q 'clang++-21' "${toolchain}"
+          grep -q 'clang++-21' "${commands}"
+          if grep -q -- '-stdlib=libc++' "${commands}"; then
+            echo "error: compile commands select libc++" >&2
+            exit 1
+          fi
+          ldd build/Release/src/nesso > /tmp/nesso-ldd.txt
+          cat /tmp/nesso-ldd.txt
+          grep -q 'libstdc++' /tmp/nesso-ldd.txt
+          if grep -q 'libc++' /tmp/nesso-ldd.txt; then
+            echo "error: nesso is linked to libc++" >&2
+            exit 1
+          fi
+
+      - name: ccache statistics
+        if: always() && !cancelled()
+        shell: bash
+        run: |
+          set -euo pipefail
+          ccache --version
+          ccache -s | tee /tmp/ccache-stats.txt
+          ccache -sv
+          cacheable=$(awk '/^Cacheable calls:/ {print $3; found=1} END {if (!found) print 0}' /tmp/ccache-stats.txt)
+          uncacheable=$(awk '/^Uncacheable calls:/ {print $3; found=1} END {if (!found) print 0}' /tmp/ccache-stats.txt)
+          echo "ccache cacheable calls: ${cacheable}"
+          echo "ccache uncacheable calls: ${uncacheable}"
+          if [[ "${cacheable}" -eq 0 || "${uncacheable}" -gt 0 ]]; then
+            echo "error: ccache recorded ${cacheable} cacheable and ${uncacheable} uncacheable compilations" >&2
+            exit 1
+          fi
+          if [[ -n "${GITHUB_STEP_SUMMARY:-}" ]]; then
+            {
+              echo '### ccache'
+              echo '```'
+              cat /tmp/ccache-stats.txt
+              echo '```'
+            } >> "${GITHUB_STEP_SUMMARY}"
+          fi
+
+      - name: Save ccache
+        if: success() && github.ref == 'refs/heads/main' && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ github.workspace }}/.ccache
+          key: ccache-${{ runner.arch }}-clang-21-Release-${{ github.sha }}
+
+      - name: Archive Release build
+        id: archive
+        run: ./scripts/ci/ci-build-archive pack build/Release release-build-clang
+
+      - name: Upload Release build
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-build-clang
+          path: ${{ steps.archive.outputs.archive }}
+          retention-days: 1
+          if-no-files-found: error
+          compression-level: 0
+
+  test-clang-26-amd64:
+    needs: [guard, resolve, build-clang-26-amd64]
+    if: >-
+      ${{ always() && !cancelled() &&
+      needs.build-clang-26-amd64.result == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: read
+      actions: write
+    container:
+      image: ${{ needs.resolve.outputs.image }} # zizmor: ignore[unpinned-images] deps-<hash> tag, not a digest
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Restore MiniLM models
+        id: models
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: models
+          key: minilm-${{ hashFiles('scripts/fetch-model') }}
+
+      - name: Fetch MiniLM models
+        if: steps.models.outputs.cache-hit != 'true'
+        run: ./scripts/fetch-model models
+
+      - name: Download Release build
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: release-build-clang
+
+      - name: Extract Release build
+        id: extract
+        run: ./scripts/ci/ci-build-archive unpack release-build-clang
+
+      - name: Run unit tests
+        id: unit
+        run: |
+          mkdir -p "${GITHUB_WORKSPACE}/build/junit"
+          ctest --test-dir build/Release --output-on-failure -j "$(nproc)" -L unit -V \
+            --output-junit "${GITHUB_WORKSPACE}/build/junit/unit.xml"
+
+      - name: Run integration tests
+        id: integration
+        if: always() && !cancelled() && steps.extract.outcome == 'success'
+        run: |
+          mkdir -p "${GITHUB_WORKSPACE}/build/junit"
+          ctest --test-dir build/Release --output-on-failure -j "$(nproc)" -L integration -V \
+            --output-junit "${GITHUB_WORKSPACE}/build/junit/integration.xml"
+
+      - name: Run functional tests
+        id: functional
+        if: always() && !cancelled() && steps.extract.outcome == 'success'
+        run: |
+          mkdir -p "${GITHUB_WORKSPACE}/build/junit"
+          ctest --test-dir build/Release --output-on-failure -j "$(nproc)" -L functional -V \
+            --output-junit "${GITHUB_WORKSPACE}/build/junit/functional.xml"
+
+      - name: Summarize test suites
+        if: always() && !cancelled()
+        env:
+          GOPROXY: "off"
+          GOTOOLCHAIN: local
+          GOFLAGS: "-mod=readonly -buildvcs=false"
+        run: |
+          {
+            echo '### test-clang-26-amd64'
+            echo '| suite | result |'
+            echo '| --- | --- |'
+            echo "| unit | ${{ steps.unit.outcome }} |"
+            echo "| integration | ${{ steps.integration.outcome }} |"
+            echo "| functional | ${{ steps.functional.outcome }} |"
+          } >> "${GITHUB_STEP_SUMMARY}"
+          go build -C scripts/ci -o /tmp/nesso-ci .
+          /tmp/nesso-ci junit-summary \
+            --summary "${GITHUB_STEP_SUMMARY}" \
+            unit="${GITHUB_WORKSPACE}/build/junit/unit.xml" \
+            integration="${GITHUB_WORKSPACE}/build/junit/integration.xml" \
+            functional="${GITHUB_WORKSPACE}/build/junit/functional.xml"
+
+      - name: Upload JUnit reports
+        if: always() && !cancelled()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: junit-test-clang-26-amd64
+          path: build/junit
+          if-no-files-found: warn
+          retention-days: 14
+
+  # Each job builds and tests in one container. --no-remote reuses the
+  # packages baked for gcc-26 (Release) or gcc-26-debug (Debug). These
+  # profiles are not build-env hash inputs. The ccache key is per lane.
+  # A schedule or workflow_dispatch on main saves; any other ref only restores.
+  # gcc-26-asan-release-amd64 is RelWithDebInfo -O2 ASan/UBSan and runs unit,
+  # integration, and functional. clang-26-asan-amd64 runs the same three
+  # labels; the <format> implicit-integer-sign-change ignorelist is in the
+  # profile.
+  gcc-26-asan-release-amd64:
+    needs: [guard, resolve]
+    if: github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      packages: read
+      actions: write
+    env:
+      CCACHE_DIR: ${{ github.workspace }}/.ccache
+      CCACHE_BASEDIR: ${{ github.workspace }}
+      CCACHE_MAXSIZE: 150M
+      CCACHE_COMPRESS: "true"
+      CMAKE_C_COMPILER_LAUNCHER: ccache
+      CMAKE_CXX_COMPILER_LAUNCHER: ccache
+      ASAN_OPTIONS: halt_on_error=1:detect_leaks=1:abort_on_error=1
+      UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
+    container:
+      image: ${{ needs.resolve.outputs.image }} # zizmor: ignore[unpinned-images] deps-<hash> tag, not a digest
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Restore ccache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ github.workspace }}/.ccache
+          key: ccache-${{ runner.arch }}-gcc-15-RelWithDebInfo-asan-${{ github.sha }}
+          restore-keys: |
+            ccache-${{ runner.arch }}-gcc-15-RelWithDebInfo-asan-
+
+      - name: Zero ccache statistics
+        run: ccache --zero-stats
+
+      - name: Show GCC
+        run: g++ --version
+
+      - name: Install Dependencies (Conan)
+        run: |
+          conan profile detect --force
+          conan install . -pr:h ./conan/profiles/gcc-26-asan-release -pr:b default --lockfile=conan.lock --build=missing --no-remote $CONAN_WERROR_ARGS
+
+      - name: Build
+        id: build
+        env:
+          NESSO_REQUIRE_MODEL: "1"
+          NESSO_REQUIRE_BDD: "1"
+        run: conan build . -pr:h ./conan/profiles/gcc-26-asan-release -pr:b default --lockfile=conan.lock --build=missing --no-remote $CONAN_WERROR_ARGS
+
+      - name: Require the optimised sanitizer build
+        id: require
+        shell: bash
+        run: |
+          set -euo pipefail
+          commands=build/RelWithDebInfo/compile_commands.json
+          grep -q -- '-fsanitize=address,undefined' "${commands}"
+          if grep -q 'clang++' "${commands}"; then
+            echo "error: gcc-26-asan-release compiled with clang" >&2
+            exit 1
+          fi
+          test -x build/RelWithDebInfo/src/nesso
+
+      - name: Restore MiniLM models
+        id: models
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: models
+          key: minilm-${{ hashFiles('scripts/fetch-model') }}
+
+      - name: Fetch MiniLM models
+        if: success() && steps.models.outputs.cache-hit != 'true'
+        run: ./scripts/fetch-model models
+
+      - name: Run unit tests
+        id: unit
+        run: |
+          mkdir -p "${GITHUB_WORKSPACE}/build/junit"
+          ctest --test-dir build/RelWithDebInfo --output-on-failure -j "$(nproc)" -L unit -V \
+            --output-junit "${GITHUB_WORKSPACE}/build/junit/unit.xml"
+
+      - name: Run integration tests
+        id: integration
+        if: always() && !cancelled() && steps.require.outcome == 'success'
+        run: |
+          mkdir -p "${GITHUB_WORKSPACE}/build/junit"
+          ctest --test-dir build/RelWithDebInfo --output-on-failure -j "$(nproc)" -L integration -V \
+            --output-junit "${GITHUB_WORKSPACE}/build/junit/integration.xml"
+
+      - name: Run functional tests
+        id: functional
+        if: always() && !cancelled() && steps.require.outcome == 'success'
+        run: |
+          mkdir -p "${GITHUB_WORKSPACE}/build/junit"
+          ctest --test-dir build/RelWithDebInfo --output-on-failure -j "$(nproc)" -L functional -V \
+            --output-junit "${GITHUB_WORKSPACE}/build/junit/functional.xml"
+
+      - name: Summarize test suites
+        if: always() && !cancelled() && steps.require.outcome == 'success'
+        env:
+          GOPROXY: "off"
+          GOTOOLCHAIN: local
+          GOFLAGS: "-mod=readonly -buildvcs=false"
+        run: |
+          {
+            echo '### gcc-26-asan-release-amd64'
+            echo '| suite | result |'
+            echo '| --- | --- |'
+            echo "| unit | ${{ steps.unit.outcome }} |"
+            echo "| integration | ${{ steps.integration.outcome }} |"
+            echo "| functional | ${{ steps.functional.outcome }} |"
+          } >> "${GITHUB_STEP_SUMMARY}"
+          go build -C scripts/ci -o /tmp/nesso-ci .
+          /tmp/nesso-ci junit-summary \
+            --summary "${GITHUB_STEP_SUMMARY}" \
+            unit="${GITHUB_WORKSPACE}/build/junit/unit.xml" \
+            integration="${GITHUB_WORKSPACE}/build/junit/integration.xml" \
+            functional="${GITHUB_WORKSPACE}/build/junit/functional.xml"
+
+      - name: Upload JUnit reports
+        if: always() && !cancelled() && steps.require.outcome == 'success'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: junit-gcc-26-asan-release-amd64
+          path: build/junit
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: ccache statistics
+        if: always() && !cancelled() && steps.build.outcome != 'skipped'
+        shell: bash
+        run: |
+          set -euo pipefail
+          ccache --version
+          ccache -s | tee /tmp/ccache-stats.txt
+          ccache -sv
+          cacheable=$(awk '/^Cacheable calls:/ {print $3; found=1} END {if (!found) print 0}' /tmp/ccache-stats.txt)
+          uncacheable=$(awk '/^Uncacheable calls:/ {print $3; found=1} END {if (!found) print 0}' /tmp/ccache-stats.txt)
+          echo "ccache cacheable calls: ${cacheable}"
+          echo "ccache uncacheable calls: ${uncacheable}"
+          if [[ "${cacheable}" -eq 0 || "${uncacheable}" -gt 0 ]]; then
+            echo "error: ccache recorded ${cacheable} cacheable and ${uncacheable} uncacheable compilations" >&2
+            exit 1
+          fi
+          if [[ -n "${GITHUB_STEP_SUMMARY:-}" ]]; then
+            {
+              echo '### ccache'
+              echo '```'
+              cat /tmp/ccache-stats.txt
+              echo '```'
+            } >> "${GITHUB_STEP_SUMMARY}"
+          fi
+
+      - name: Save ccache
+        if: success() && github.ref == 'refs/heads/main' && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ github.workspace }}/.ccache
+          key: ccache-${{ runner.arch }}-gcc-15-RelWithDebInfo-asan-${{ github.sha }}
+
+  clang-26-asan-amd64:
+    needs: [guard, resolve]
+    if: github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      packages: read
+      actions: write
+    env:
+      CCACHE_DIR: ${{ github.workspace }}/.ccache
+      CCACHE_BASEDIR: ${{ github.workspace }}
+      CCACHE_MAXSIZE: 150M
+      CCACHE_COMPRESS: "true"
+      CCACHE_EXTRAFILES: ${{ github.workspace }}/conan/sanitizer/libstdcxx-format.ignorelist
+      CMAKE_C_COMPILER_LAUNCHER: ccache
+      CMAKE_CXX_COMPILER_LAUNCHER: ccache
+      ASAN_OPTIONS: halt_on_error=1:detect_leaks=1:abort_on_error=1
+      UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
+    container:
+      image: ${{ needs.resolve.outputs.image }} # zizmor: ignore[unpinned-images] deps-<hash> tag, not a digest
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Restore ccache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ github.workspace }}/.ccache
+          key: ccache-${{ runner.arch }}-clang-21-asan-${{ github.sha }}
+          restore-keys: |
+            ccache-${{ runner.arch }}-clang-21-asan-
+
+      - name: Zero ccache statistics
+        run: ccache --zero-stats
+
+      - name: Show Clang
+        run: clang++-21 --version
+
+      - name: Install Dependencies (Conan)
+        run: |
+          conan profile detect --force
+          conan install . -pr:h ./conan/profiles/clang-26-asan -pr:b default --lockfile=conan.lock --build=missing --no-remote $CONAN_WERROR_ARGS
+
+      - name: Build
+        id: build
+        env:
+          NESSO_REQUIRE_MODEL: "1"
+          NESSO_REQUIRE_BDD: "1"
+        run: conan build . -pr:h ./conan/profiles/clang-26-asan -pr:b default --lockfile=conan.lock --build=missing --no-remote $CONAN_WERROR_ARGS
+
+      - name: Require Clang, libstdc++, and the format ignorelist
+        id: require
+        shell: bash
+        run: |
+          set -euo pipefail
+          commands=build/Debug/compile_commands.json
+          grep -q 'clang++-21' "${commands}"
+          grep -q 'libstdcxx-format.ignorelist' "${commands}"
+          if grep -q -- '-stdlib=libc++' "${commands}"; then
+            echo "error: compile commands select libc++" >&2
+            exit 1
+          fi
+          flag=$(grep -o -- '-fsanitize-ignorelist=[^ "]*' "${commands}" | head -1)
+          path=${flag#-fsanitize-ignorelist=}
+          if [[ "${path}" != /* ]]; then
+            path="build/Debug/${path}"
+          fi
+          if [[ ! -f "${path}" ]]; then
+            echo "error: ignorelist not found at ${path}" >&2
+            exit 1
+          fi
+          echo "ignorelist: ${path}"
+          ldd build/Debug/src/nesso > /tmp/nesso-ldd.txt
+          cat /tmp/nesso-ldd.txt
+          grep -q 'libstdc++' /tmp/nesso-ldd.txt
+          if grep -q 'libc++' /tmp/nesso-ldd.txt; then
+            echo "error: nesso is linked to libc++" >&2
+            exit 1
+          fi
+
+      - name: Restore MiniLM models
+        id: models
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: models
+          key: minilm-${{ hashFiles('scripts/fetch-model') }}
+
+      - name: Fetch MiniLM models
+        if: success() && steps.models.outputs.cache-hit != 'true'
+        run: ./scripts/fetch-model models
+
+      - name: Run unit tests
+        id: unit
+        run: |
+          mkdir -p "${GITHUB_WORKSPACE}/build/junit"
+          ctest --test-dir build/Debug --output-on-failure -j "$(nproc)" -L unit -V \
+            --output-junit "${GITHUB_WORKSPACE}/build/junit/unit.xml"
+
+      - name: Run integration tests
+        id: integration
+        if: always() && !cancelled() && steps.require.outcome == 'success'
+        run: |
+          mkdir -p "${GITHUB_WORKSPACE}/build/junit"
+          ctest --test-dir build/Debug --output-on-failure -j "$(nproc)" -L integration -V \
+            --output-junit "${GITHUB_WORKSPACE}/build/junit/integration.xml"
+
+      - name: Run functional tests
+        id: functional
+        if: always() && !cancelled() && steps.require.outcome == 'success'
+        run: |
+          mkdir -p "${GITHUB_WORKSPACE}/build/junit"
+          ctest --test-dir build/Debug --output-on-failure -j "$(nproc)" -L functional -V \
+            --output-junit "${GITHUB_WORKSPACE}/build/junit/functional.xml"
+
+      - name: Summarize test suites
+        if: always() && !cancelled() && steps.require.outcome == 'success'
+        env:
+          GOPROXY: "off"
+          GOTOOLCHAIN: local
+          GOFLAGS: "-mod=readonly -buildvcs=false"
+        run: |
+          {
+            echo '### clang-26-asan-amd64'
+            echo '| suite | result |'
+            echo '| --- | --- |'
+            echo "| unit | ${{ steps.unit.outcome }} |"
+            echo "| integration | ${{ steps.integration.outcome }} |"
+            echo "| functional | ${{ steps.functional.outcome }} |"
+          } >> "${GITHUB_STEP_SUMMARY}"
+          go build -C scripts/ci -o /tmp/nesso-ci .
+          /tmp/nesso-ci junit-summary \
+            --summary "${GITHUB_STEP_SUMMARY}" \
+            unit="${GITHUB_WORKSPACE}/build/junit/unit.xml" \
+            integration="${GITHUB_WORKSPACE}/build/junit/integration.xml" \
+            functional="${GITHUB_WORKSPACE}/build/junit/functional.xml"
+
+      - name: Upload JUnit reports
+        if: always() && !cancelled() && steps.require.outcome == 'success'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: junit-clang-26-asan-amd64
+          path: build/junit
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: ccache statistics
+        if: always() && !cancelled() && steps.build.outcome != 'skipped'
+        shell: bash
+        run: |
+          set -euo pipefail
+          ccache --version
+          ccache -s | tee /tmp/ccache-stats.txt
+          ccache -sv
+          cacheable=$(awk '/^Cacheable calls:/ {print $3; found=1} END {if (!found) print 0}' /tmp/ccache-stats.txt)
+          uncacheable=$(awk '/^Uncacheable calls:/ {print $3; found=1} END {if (!found) print 0}' /tmp/ccache-stats.txt)
+          echo "ccache cacheable calls: ${cacheable}"
+          echo "ccache uncacheable calls: ${uncacheable}"
+          if [[ "${cacheable}" -eq 0 || "${uncacheable}" -gt 0 ]]; then
+            echo "error: ccache recorded ${cacheable} cacheable and ${uncacheable} uncacheable compilations" >&2
+            exit 1
+          fi
+          if [[ -n "${GITHUB_STEP_SUMMARY:-}" ]]; then
+            {
+              echo '### ccache'
+              echo '```'
+              cat /tmp/ccache-stats.txt
+              echo '```'
+            } >> "${GITHUB_STEP_SUMMARY}"
+          fi
+
+      - name: Save ccache
+        if: success() && github.ref == 'refs/heads/main' && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ github.workspace }}/.ccache
+          key: ccache-${{ runner.arch }}-clang-21-asan-${{ github.sha }}
