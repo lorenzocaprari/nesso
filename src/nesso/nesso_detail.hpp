@@ -16,6 +16,7 @@
 #include <parser/log_chunker.hpp>
 
 #include <chrono>
+#include <cstddef>
 #include <cstdio>
 #include <expected>
 #include <filesystem>
@@ -97,6 +98,7 @@ struct Scan
     size_t chunks = 0;
     LineCounts counts{};
     // Stdin cannot be rewound. The count pass keeps it for the embedding pass.
+    // The sink overload of `ScanFiles` leaves it empty.
     std::vector<nesso::parser::ParsedChunk> stdin_chunks;
     std::vector<nesso::core::SourceInfo> sources;
     std::vector<BundleSkipSummary> bundle_skips;
@@ -128,6 +130,31 @@ void RecordBundleSkips(Scan &scan, const std::filesystem::path &path, const ness
 [[nodiscard]] std::expected<Scan, Error> ScanFiles(std::span<const std::filesystem::path> files,
                                                    std::string_view json_field,
                                                    const nesso::parser::ArchiveLimits &limits, bool for_index = false);
+
+/// Receives the read pass of the sink overload of `ScanFiles`, in input order.
+class ScanSink
+{
+  public:
+    ScanSink() = default;
+    ScanSink(const ScanSink &) = delete;
+    ScanSink &operator=(const ScanSink &) = delete;
+    ScanSink(ScanSink &&) = delete;
+    ScanSink &operator=(ScanSink &&) = delete;
+    virtual ~ScanSink() = default;
+
+    /// Called for each path in `files`, a repeated `-` included, before its
+    /// chunks. `index` is the path's position in `files`.
+    virtual void BeginFile(std::size_t index, const std::filesystem::path &path) = 0;
+
+    /// Called for each kept chunk of the path last begun.
+    virtual void Chunk(nesso::parser::ParsedChunk chunk) = 0;
+};
+
+/// Same statistics, skips, and errors as the overload above without
+/// `for_index`, in one pass: each chunk goes to `sink`, and stdin is not kept.
+[[nodiscard]] std::expected<Scan, Error> ScanFiles(std::span<const std::filesystem::path> files,
+                                                   std::string_view json_field,
+                                                   const nesso::parser::ArchiveLimits &limits, ScanSink &sink);
 
 [[nodiscard]] std::expected<std::vector<std::filesystem::path>, Error>
 ExpandRequestFiles(std::span<const std::filesystem::path> files);

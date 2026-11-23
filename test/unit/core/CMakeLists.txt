@@ -69,12 +69,18 @@ set_property(
   PROPERTY CXX_COMPILER_LAUNCHER
            "${CMAKE_SOURCE_DIR}/test/unit/nesso/strip-coverage-flags")
 
+add_executable(embed_order_test embed_order_test.cpp)
+add_test(NAME embed_order_test COMMAND embed_order_test)
+target_link_libraries(embed_order_test PRIVATE nesso_options nesso_core
+                                               Catch2::Catch2WithMain)
+
 set_tests_properties(
   distance_test
   corpus_index_test
   top_k_test
   search_oracle_test
   dedup_test
+  embed_order_test
   event_types_test
   sha256_test
   lexical_terms_test

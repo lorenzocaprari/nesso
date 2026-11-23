@@ -362,6 +362,29 @@ Feature: grep
     And stdout does not contain "\"final\""
     And every stdout line is a JSON match
 
+  Scenario: the window that holds the needle is embedded first
+    Given 2100 distinct lines "database connection refused on host" in "big.log"
+    And 1 lines "kernel panic on node" in "big.log"
+    When I run nesso with arguments grep "kernel panic" --json --provisional {dir}/big.log
+    Then the exit code is 0
+    And provisional refresh 1 contains "\"text\":\"kernel panic on node 1\""
+    And stdout without provisional records is the stdout of nesso with arguments grep "kernel panic" --json {dir}/big.log
+
+  Scenario: lexical grep over three windows prints the input-order bytes
+    Given 2100 distinct lines "database connection refused on host" in "big.log"
+    And 1 lines "kernel panic on node" in "big.log"
+    When I run nesso with arguments grep "kernel panic on host" --mode lexical --json {dir}/big.log
+    Then the exit code is 0
+    And stdout is:
+      """
+      {"schema_version":2,"rank":1,"source":"{dir}/big.log","kind":"line","line":2101,"score":15.665007,"text":"kernel panic on node 1","occurrences":1,"mode":"lexical","dense":null,"lexical":15.665007}
+      {"schema_version":2,"rank":2,"source":"{dir}/big.log","kind":"line","line":353,"score":0.0010536795,"text":"database connection refused on host on","occurrences":1,"mode":"lexical","dense":null,"lexical":0.0010536795}
+      {"schema_version":2,"rank":3,"source":"{dir}/big.log","kind":"line","line":1,"score":0.00095172384,"text":"database connection refused on host a","occurrences":1,"mode":"lexical","dense":null,"lexical":0.00095172384}
+      {"schema_version":2,"rank":4,"source":"{dir}/big.log","kind":"line","line":2,"score":0.00095172384,"text":"database connection refused on host b","occurrences":1,"mode":"lexical","dense":null,"lexical":0.00095172384}
+      {"schema_version":2,"rank":5,"source":"{dir}/big.log","kind":"line","line":3,"score":0.00095172384,"text":"database connection refused on host c","occurrences":1,"mode":"lexical","dense":null,"lexical":0.00095172384}
+      """
+    And running nesso with arguments grep "kernel panic on host" --mode lexical --json --threads 2 {dir}/big.log prints the same stdout
+
   Scenario: an explicit thread count and quiet mode are accepted
     Given a file "edges.jsonl" with:
       """

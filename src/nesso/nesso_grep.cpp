@@ -12,6 +12,7 @@
 #include <core/bm25.hpp>
 #include <core/dedup.hpp>
 #include <core/distance.hpp>
+#include <core/embed_order.hpp>
 #include <core/lexical_terms.hpp>
 #include <core/query_class.hpp>
 #include <core/score_fusion.hpp>
@@ -41,9 +42,7 @@ using detail::EmbedDistinct;
 using detail::ExpandRequestFiles;
 using detail::LineCounts;
 using detail::MakeError;
-using detail::MAX_LINE_LENGTH;
 using detail::NoKeptLines;
-using detail::ParseFailure;
 using detail::ProgressReporter;
 using detail::QueryTermViews;
 using detail::ResolveEffectiveMode;
@@ -52,28 +51,6 @@ using detail::ScanFiles;
 using detail::StreamBatch;
 using detail::TextFailure;
 
-// Files are parsed again so embeddings stay batched. Stdin is replayed from the
-// count pass.
-template <typename Consume>
-static std::expected<void, nesso::parser::ParseError>
-VisitChunks(const std::filesystem::path &path, Scan &scan, bool &stdin_used, std::string_view json_field,
-            const nesso::parser::ArchiveLimits &limits, const Consume &consume)
-{
-    if (path == "-")
-    {
-        if (!stdin_used)
-        {
-            stdin_used = true;
-            for (nesso::parser::ParsedChunk &chunk : scan.stdin_chunks)
-            {
-                consume(std::move(chunk));
-            }
-        }
-        return {};
-    }
-    return nesso::parser::Chunker::ForEach(path, MAX_LINE_LENGTH, nullptr, json_field, consume, limits);
-}
-
 struct GrepWaiting
 {
     uint64_t ordinal = 0;
@@ -81,6 +58,9 @@ struct GrepWaiting
     std::uint32_t source = 0;
     uint64_t line = 0;
     bool array_element = false;
+    // False when the line is its id's first occurrence and `text` is left empty:
+    // `DistinctIndex::Text` holds the same bytes.
+    bool own_text = true;
     std::string text;
 };
 
@@ -123,9 +103,20 @@ struct GrepEmbedState
     const nesso::embed::Embedder *model = nullptr;
     bool need_lexical = false;
     nesso::core::DistinctIndex distinct;
+    std::uint32_t distinct_count = 0;
     std::vector<float> scores;
-    std::vector<GrepWaiting> waiting;
+    // Hybrid and lexical keep every line. Dense keeps a line only while its id
+    // has occurred at most `top_k` times (once with --group): a later line ties
+    // an earlier one on score and loses on ordinal.
     std::vector<GrepWaiting> all_lines;
+    std::vector<GrepWaiting> dense_lines;
+    // Per window of `batch` distinct ids: its promise, its input lines, and,
+    // with an observer, the kept lines (indexes into `Kept()`) whose id it holds.
+    std::vector<nesso::core::WindowPromise> promise;
+    std::vector<size_t> window_lines;
+    std::vector<std::vector<size_t>> window_kept;
+    std::string stripped_query;
+    nesso::core::PromiseTerms query_terms;
     std::vector<char> group_seen;
     std::vector<std::string> sources;
     std::vector<GrepCandidate> best;
@@ -134,8 +125,8 @@ struct GrepEmbedState
     GrepObserver *observer = nullptr;
     std::vector<std::pair<uint64_t, std::uint32_t>> reported;
     ProgressReporter *progress = nullptr;
-    size_t lines_seen = 0;
-    size_t lines_reported = 0;
+    // Input lines whose id is embedded.
+    size_t lines_done = 0;
     uint64_t ordinal = 0;
     bool several_sources = false;
     std::string first_source;
@@ -149,6 +140,16 @@ struct GrepBm25
     EffectiveMode effective = EffectiveMode::Dense;
     bool lexical_fallback = false;
 };
+
+static const std::vector<GrepWaiting> &Kept(const GrepEmbedState &state)
+{
+    return state.need_lexical ? state.all_lines : state.dense_lines;
+}
+
+static std::string_view LineText(const GrepEmbedState &state, const GrepWaiting &item)
+{
+    return item.own_text ? std::string_view{item.text} : state.distinct.Text(item.distinct_id);
+}
 
 static bool BetterGrepCandidate(const GrepCandidate &left, const GrepCandidate &right)
 {
@@ -192,7 +193,7 @@ static void ConsiderDenseGrep(GrepEmbedState &state, const GrepWaiting &item)
     TextMatch match{.source = state.sources[item.source],
                     .line = item.line,
                     .score = state.scores[item.distinct_id],
-                    .text = item.text,
+                    .text = std::string{LineText(state, item)},
                     .array_element = item.array_element,
                     .occurrences = 1,
                     .mode = "dense",
@@ -238,50 +239,24 @@ static void ReportProvisional(GrepEmbedState &state)
         candidate.match.dense = candidate.score;
         results.matches.push_back(std::move(candidate.match));
     }
-    state.observer->OnProvisional(results, state.lines_reported, state.scanned->chunks);
+    state.observer->OnProvisional(results, state.lines_done, state.scanned->chunks);
     state.progress->Redraw();
 }
 
-static std::expected<void, Error> FlushGrepEmbeddings(GrepEmbedState &state)
+static void UpdatePromise(GrepEmbedState &state, nesso::core::WindowPromise &promise, std::string_view text)
 {
-    const size_t lines_in_flush = state.lines_seen - state.lines_reported;
-    const LineCounts &counts = state.scanned->counts;
-    if (state.distinct.Pending().empty())
+    if (!promise.any_substr && !state.stripped_query.empty() && text.find(state.stripped_query) != std::string::npos)
     {
-        state.lines_reported = state.lines_seen;
-        state.progress->Update(state.lines_reported, state.scanned->chunks);
-        return {};
+        promise.any_substr = true;
     }
-    const auto embeddings = EmbedDistinct(
-        state.distinct.Pending(), *state.model, *state.progress,
-        {.lines_before = state.lines_reported, .lines_in_flush = lines_in_flush, .total = state.scanned->chunks},
-        counts);
-    if (!embeddings)
+    if (promise.max_hits < state.query_terms.Size())
     {
-        return std::unexpected(embeddings.error());
+        const std::vector<std::string> terms = nesso::core::LexicalTerms(text);
+        promise.max_hits = std::max(promise.max_hits, state.query_terms.Hits(terms));
     }
-    for (const std::vector<float> &embedding : *embeddings)
-    {
-        const auto score = nesso::core::math::DistanceMetrics::DotProduct<float>(*state.query_embedding, embedding);
-        if (!score)
-        {
-            return TextFailure(ErrorKind::Search, score.error(), counts);
-        }
-        state.scores.push_back(*score);
-    }
-    state.distinct.ClearPending();
-    state.lines_reported = state.lines_seen;
-    for (const GrepWaiting &item : state.waiting)
-    {
-        ConsiderDenseGrep(state, item);
-    }
-    state.waiting.clear();
-    ReportProvisional(state);
-    return {};
 }
 
-static std::optional<Error> IngestGrepChunk(GrepEmbedState &state, GrepSourceCursor &cursor,
-                                            nesso::parser::ParsedChunk chunk)
+static void IngestGrepChunk(GrepEmbedState &state, GrepSourceCursor &cursor, nesso::parser::ParsedChunk chunk)
 {
     if (cursor.archive && (cursor.source.empty() || chunk.entry_start || chunk.source != cursor.source))
     {
@@ -298,76 +273,149 @@ static std::optional<Error> IngestGrepChunk(GrepEmbedState &state, GrepSourceCur
         state.several_sources = true;
     }
     const std::uint32_t entry_id = state.distinct.Add(chunk.text);
-    ++state.lines_seen;
-    const GrepWaiting item{.ordinal = state.ordinal,
-                           .distinct_id = entry_id,
-                           .source = cursor.source_id,
-                           .line = chunk.line_number,
-                           .array_element = chunk.array_element,
-                           .text = std::move(chunk.text)};
-    if (state.need_lexical)
+    if (state.distinct.Pending().size() == state.batch)
     {
-        state.all_lines.push_back(item);
+        state.distinct.ClearPending();
     }
-    if (entry_id < state.scores.size())
+    state.distinct_count = std::max(state.distinct_count, entry_id + 1);
+    const size_t window = entry_id / state.batch;
+    if (state.promise.size() <= window)
     {
-        ConsiderDenseGrep(state, item);
+        state.promise.resize(window + 1);
+        state.window_lines.resize(window + 1);
+        if (state.observer != nullptr)
+        {
+            state.window_kept.resize(window + 1);
+        }
+    }
+    ++state.window_lines[window];
+    UpdatePromise(state, state.promise[window], chunk.text);
+
+    const std::uint32_t occurrence = state.distinct.Occurrences(entry_id);
+    const bool dense_candidate = state.request->group ? occurrence == 1 : occurrence <= state.request->top_k;
+    GrepWaiting item{.ordinal = state.ordinal++,
+                     .distinct_id = entry_id,
+                     .source = cursor.source_id,
+                     .line = chunk.line_number,
+                     .array_element = chunk.array_element,
+                     .own_text = true,
+                     .text = {}};
+    if (!state.need_lexical && !dense_candidate)
+    {
+        return;
+    }
+    if (state.need_lexical || occurrence > 1)
+    {
+        item.text = std::move(chunk.text);
     }
     else
     {
-        state.waiting.push_back(item);
+        item.own_text = false;
     }
-    ++state.ordinal;
-    if (state.distinct.Pending().size() == state.batch)
+    std::vector<GrepWaiting> &kept = state.need_lexical ? state.all_lines : state.dense_lines;
+    if (state.observer != nullptr && dense_candidate)
     {
-        if (const auto flushed = FlushGrepEmbeddings(state); !flushed)
-        {
-            return flushed.error();
-        }
+        state.window_kept[window].push_back(kept.size());
     }
-    return std::nullopt;
+    kept.push_back(std::move(item));
 }
 
-static std::expected<void, Error> EmbedGrepFiles(GrepEmbedState &state)
+// Receives the read pass. Each path gets its source cursor, as the second parse
+// used to.
+class GrepIngest final : public detail::ScanSink
 {
-    const ScopedStage stage{"embed"};
-    bool stdin_used = false;
-    for (const std::filesystem::path &path : state.request->files)
+  public:
+    explicit GrepIngest(GrepEmbedState &state) noexcept : state_(&state) {}
+
+    void BeginFile(size_t /*index*/, const std::filesystem::path &path) override
     {
-        GrepSourceCursor cursor{.archive = nesso::parser::IsArchivePath(path), .source_id = 0, .source = {}};
-        if (!cursor.archive)
+        cursor_ = GrepSourceCursor{.archive = nesso::parser::IsArchivePath(path), .source_id = 0, .source = {}};
+        if (!cursor_.archive)
         {
-            state.sources.push_back(path.string());
-            cursor.source_id = static_cast<std::uint32_t>(state.sources.size() - 1);
-            cursor.source = state.sources.back();
-        }
-        std::optional<Error> failed;
-        const auto streamed =
-            VisitChunks(path, *state.scanned, stdin_used, state.request->json_field, state.request->archive_limits,
-                        [&](nesso::parser::ParsedChunk chunk)
-                        {
-                            if (failed)
-                            {
-                                return;
-                            }
-                            if (std::optional<Error> error = IngestGrepChunk(state, cursor, std::move(chunk)))
-                            {
-                                failed = std::move(error);
-                            }
-                        });
-        if (!streamed)
-        {
-            return std::unexpected(
-                ParseFailure(streamed.error(), path, state.scanned->counts, state.request->archive_limits));
-        }
-        if (failed)
-        {
-            return std::unexpected(*failed);
+            state_->sources.push_back(path.string());
+            cursor_.source_id = static_cast<std::uint32_t>(state_->sources.size() - 1);
+            cursor_.source = state_->sources.back();
         }
     }
-    if (const auto flushed = FlushGrepEmbeddings(state); !flushed)
+
+    void Chunk(nesso::parser::ParsedChunk chunk) override
     {
-        return std::unexpected(flushed.error());
+        if (!chunk.skipped)
+        {
+            IngestGrepChunk(*state_, cursor_, std::move(chunk));
+        }
+    }
+
+  private:
+    GrepEmbedState *state_;
+    GrepSourceCursor cursor_;
+};
+
+static void CountSingletons(GrepEmbedState &state)
+{
+    for (std::uint32_t entry_id = 0; entry_id < state.distinct_count; ++entry_id)
+    {
+        if (state.distinct.Occurrences(entry_id) == 1)
+        {
+            ++state.promise[entry_id / state.batch].singletons;
+        }
+    }
+}
+
+// Embeds whole windows, most promising first. A window keeps its members and
+// their order (ADR 0004), so each score is the one input order gives.
+static std::expected<void, Error> EmbedGrepWindows(GrepEmbedState &state)
+{
+    const ScopedStage stage{"embed"};
+    const LineCounts &counts = state.scanned->counts;
+    CountSingletons(state);
+    state.scores.assign(state.distinct_count, 0.0F);
+    std::vector<std::string> texts;
+    for (const size_t window : nesso::core::EmbedOrder(state.promise))
+    {
+        const size_t begin = window * state.batch;
+        const size_t end = std::min(begin + state.batch, static_cast<size_t>(state.distinct_count));
+        texts.clear();
+        for (size_t entry_id = begin; entry_id < end; ++entry_id)
+        {
+            texts.emplace_back(state.distinct.Text(static_cast<std::uint32_t>(entry_id)));
+        }
+        const auto embeddings = EmbedDistinct(texts, *state.model, *state.progress,
+                                              {.lines_before = state.lines_done,
+                                               .lines_in_flush = state.window_lines[window],
+                                               .total = state.scanned->chunks},
+                                              counts);
+        if (!embeddings)
+        {
+            return std::unexpected(embeddings.error());
+        }
+        for (size_t offset = 0; offset < embeddings->size(); ++offset)
+        {
+            const auto score =
+                nesso::core::math::DistanceMetrics::DotProduct<float>(*state.query_embedding, (*embeddings)[offset]);
+            if (!score)
+            {
+                return TextFailure(ErrorKind::Search, score.error(), counts);
+            }
+            state.scores[begin + offset] = *score;
+        }
+        state.lines_done += state.window_lines[window];
+        if (state.observer != nullptr)
+        {
+            const std::vector<GrepWaiting> &kept = Kept(state);
+            for (const size_t line : state.window_kept[window])
+            {
+                ConsiderDenseGrep(state, kept[line]);
+            }
+            ReportProvisional(state);
+        }
+    }
+    if (state.observer == nullptr && !state.need_lexical)
+    {
+        for (const GrepWaiting &item : state.dense_lines)
+        {
+            ConsiderDenseGrep(state, item);
+        }
     }
     return {};
 }
@@ -663,7 +711,21 @@ std::expected<TextResults, Error> Nesso::Grep(const GrepRequest &input) const
         return std::unexpected(model.error());
     }
 
-    auto scanned = ScanFiles(request.files, request.json_field, request.archive_limits);
+    const nesso::core::QueryTokens query_tokens = nesso::core::TokenizeQuery(request.query);
+    const EffectiveMode effective = ResolveEffectiveMode(request.mode, nesso::core::ClassifyQuery(request.query));
+    const bool need_lexical = effective != EffectiveMode::Dense;
+    GrepEmbedState state;
+    state.request = &request;
+    state.model = *model;
+    state.need_lexical = need_lexical;
+    state.observer = request.observer;
+    state.batch = StreamBatch();
+    state.stripped_query = query_tokens.stripped;
+    state.query_terms = nesso::core::PromiseTerms{nesso::core::LexicalTerms(query_tokens.stripped)};
+    state.sources.reserve(request.files.size());
+
+    GrepIngest ingest{state};
+    auto scanned = ScanFiles(request.files, request.json_field, request.archive_limits, ingest);
     if (!scanned)
     {
         return std::unexpected(scanned.error());
@@ -685,26 +747,11 @@ std::expected<TextResults, Error> Nesso::Grep(const GrepRequest &input) const
         return TextFailure(ErrorKind::QueryEmbed, query_embedding.error(), scanned->counts);
     }
 
-    const nesso::core::QueryTokens query_tokens = nesso::core::TokenizeQuery(request.query);
-    const EffectiveMode effective = ResolveEffectiveMode(request.mode, nesso::core::ClassifyQuery(request.query));
-    const bool need_lexical = effective != EffectiveMode::Dense;
     progress.emplace(request.progress);
-    GrepEmbedState state;
-    state.request = &request;
     state.scanned = &*scanned;
     state.query_embedding = &*query_embedding;
-    state.model = *model;
-    state.need_lexical = need_lexical;
-    state.observer = request.observer;
     state.progress = &*progress;
-    state.batch = StreamBatch();
-    state.distinct.Reserve(scanned->chunks);
-    state.sources.reserve(request.files.size());
-    if (need_lexical)
-    {
-        state.all_lines.reserve(scanned->chunks);
-    }
-    if (const auto embedded = EmbedGrepFiles(state); !embedded)
+    if (const auto embedded = EmbedGrepWindows(state); !embedded)
     {
         return std::unexpected(embedded.error());
     }

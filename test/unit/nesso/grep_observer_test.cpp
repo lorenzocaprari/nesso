@@ -2,21 +2,25 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include <catch2/catch_all.hpp>
+#include <core/dedup.hpp>
 #include <embed/batch_plan.hpp>
 #include <embed/embedder.hpp>
 #include <nesso/nesso.hpp>
 
 #include "test_embedder_identity.hpp"
 
+#include <algorithm>
 #include <bit>
 #include <cstddef>
 #include <cstdint>
 #include <expected>
 #include <filesystem>
 #include <fstream>
+#include <iostream>
 #include <memory>
 #include <optional>
 #include <span>
+#include <sstream>
 #include <string>
 #include <string_view>
 #include <unistd.h>
@@ -342,4 +346,428 @@ TEST_CASE("scan done is reported once when grep fails before embedding", "[nesso
     REQUIRE_FALSE(result.has_value());
     CHECK(observer.calls.empty());
     CHECK(observer.scan_done == 1);
+}
+
+namespace
+{
+
+class CinGuard
+{
+  public:
+    explicit CinGuard(std::istream &input) : previous_(std::cin.rdbuf(input.rdbuf())) { std::cin.clear(); }
+
+    CinGuard(const CinGuard &) = delete;
+    CinGuard &operator=(const CinGuard &) = delete;
+    CinGuard(CinGuard &&) = delete;
+    CinGuard &operator=(CinGuard &&) = delete;
+
+    ~CinGuard()
+    {
+        std::cin.rdbuf(previous_);
+        std::cin.clear();
+    }
+
+  private:
+    std::streambuf *previous_;
+};
+
+std::uint64_t Fnv(std::string_view text, std::uint64_t hash = 1469598103934665603ULL)
+{
+    for (const char byte : text)
+    {
+        hash ^= static_cast<unsigned char>(byte);
+        hash *= 1099511628211ULL;
+    }
+    return hash;
+}
+
+// The score of a text depends on the other texts of its batch, the way an int8
+// vector depends on its padded run. A window with other members or another
+// member order gives other scores.
+float WindowScore(std::string_view text, std::span<const std::string> batch)
+{
+    std::uint64_t tag = 0;
+    for (std::size_t index = 0; index < batch.size(); ++index)
+    {
+        tag = Fnv(batch[index], tag + index);
+    }
+    const float base = text.starts_with("kernel panic") ? 2.F : static_cast<float>(Fnv(text) % 1000) / 1000.F;
+    return base + (static_cast<float>(tag % 97) / 100000.F);
+}
+
+class WindowEmbedder final : public nesso::embed::Embedder
+{
+  public:
+    [[nodiscard]] size_t sessions() const noexcept override { return 1; }
+
+    [[nodiscard]] std::expected<nesso::embed::EmbedderIdentity, nesso::embed::EmbedError> identity() const override
+    {
+        return TestEmbedderIdentity();
+    }
+
+    [[nodiscard]] std::expected<std::vector<float>, nesso::embed::EmbedError> embed(std::string_view) const override
+    {
+        return std::vector<float>{1.F, 0.F, 0.F, 0.F};
+    }
+
+    [[nodiscard]] std::expected<std::vector<std::vector<float>>, nesso::embed::EmbedError>
+    EmbedBatch(std::span<const std::string> texts, ProgressCallback progress) const override
+    {
+        batches_->emplace_back(texts.begin(), texts.end());
+        std::vector<std::vector<float>> rows;
+        rows.reserve(texts.size());
+        for (const std::string &text : texts)
+        {
+            rows.push_back({WindowScore(text, texts), 0.F, 0.F, 0.F});
+        }
+        if (progress)
+        {
+            progress(texts.size(), texts.size());
+        }
+        return rows;
+    }
+
+    explicit WindowEmbedder(std::vector<std::vector<std::string>> &batches) : batches_(&batches) {}
+
+  private:
+    std::vector<std::vector<std::string>> *batches_;
+};
+
+// Three windows. Window 0 ends with a line repeated past -k, window 1 holds
+// lines that share one masked key with different raw text, and the needle is
+// the last line of window 2.
+std::vector<std::string> WindowedLines()
+{
+    std::vector<std::string> lines;
+    for (std::size_t index = 0; index < WINDOW; ++index)
+    {
+        lines.push_back(LineText(index));
+    }
+    for (int repeat = 0; repeat < 6; ++repeat)
+    {
+        lines.push_back(LineText(1));
+    }
+    for (int job = 1; job <= 7; ++job)
+    {
+        lines.push_back("job " + std::to_string(job) + " done");
+    }
+    for (std::size_t index = WINDOW; index < (2 * WINDOW) + 40; ++index)
+    {
+        lines.push_back(LineText(index));
+    }
+    lines.emplace_back("kernel panic on node");
+    return lines;
+}
+
+std::string Joined(const std::vector<std::string> &lines)
+{
+    std::string text;
+    for (const std::string &line : lines)
+    {
+        text += line;
+        text += '\n';
+    }
+    return text;
+}
+
+void WriteText(const std::filesystem::path &path, const std::string &text)
+{
+    std::ofstream output(path);
+    REQUIRE(output);
+    output << text;
+    REQUIRE(output);
+}
+
+// Input order, the way main embeds: ids in first-occurrence order, one batch
+// per window of WINDOW ids.
+struct Reference
+{
+    std::vector<std::uint32_t> ids;
+    std::vector<std::vector<std::string>> windows;
+    std::vector<float> scores;
+};
+
+Reference InputOrderReference(const std::vector<std::string> &lines)
+{
+    Reference reference;
+    nesso::core::DistinctIndex distinct;
+    std::vector<std::string> texts;
+    for (const std::string &line : lines)
+    {
+        const std::uint32_t entry_id = distinct.Add(line);
+        reference.ids.push_back(entry_id);
+        if (entry_id == texts.size())
+        {
+            texts.push_back(line);
+        }
+    }
+    for (std::size_t begin = 0; begin < texts.size(); begin += WINDOW)
+    {
+        const std::size_t end = std::min(begin + WINDOW, texts.size());
+        std::vector<std::string> window(texts.begin() + static_cast<std::ptrdiff_t>(begin),
+                                        texts.begin() + static_cast<std::ptrdiff_t>(end));
+        for (const std::string &text : window)
+        {
+            reference.scores.push_back(WindowScore(text, window));
+        }
+        reference.windows.push_back(std::move(window));
+    }
+    return reference;
+}
+
+// Dense top-k over input lines: score descending, then line; --group keeps the
+// first line of each id.
+std::vector<Row> DenseReference(const std::vector<std::string> &lines, const Reference &reference,
+                                const std::string &source, std::size_t top_k, bool group)
+{
+    std::vector<std::uint32_t> occurrences(reference.scores.size(), 0);
+    for (const std::uint32_t entry_id : reference.ids)
+    {
+        ++occurrences[entry_id];
+    }
+    std::vector<std::size_t> order;
+    std::vector<char> seen(reference.scores.size(), 0);
+    for (std::size_t line = 0; line < lines.size(); ++line)
+    {
+        const std::uint32_t entry_id = reference.ids[line];
+        if (group && seen[entry_id] != 0)
+        {
+            continue;
+        }
+        seen[entry_id] = 1;
+        order.push_back(line);
+    }
+    std::ranges::stable_sort(
+        order, [&reference](std::size_t left, std::size_t right)
+        { return reference.scores[reference.ids[left]] > reference.scores[reference.ids[right]]; });
+    order.resize(std::min(order.size(), top_k));
+    std::vector<Row> rows;
+    for (const std::size_t line : order)
+    {
+        const float score = reference.scores[reference.ids[line]];
+        rows.push_back(Row{.source = source,
+                           .line = line + 1,
+                           .bits = std::bit_cast<std::uint32_t>(score),
+                           .text = lines[line],
+                           .occurrences = occurrences[reference.ids[line]],
+                           .mode = "dense",
+                           .dense = std::bit_cast<std::uint32_t>(score),
+                           .lexical = std::nullopt});
+    }
+    return rows;
+}
+
+struct WindowRun
+{
+    std::expected<nesso::TextResults, nesso::Error> result;
+    std::vector<std::vector<std::string>> batches;
+};
+
+WindowRun RunWindowed(const nesso::GrepRequest &request, const std::string &stdin_text)
+{
+    WindowRun run{.result = std::unexpected(nesso::Error{}), .batches = {}};
+    const nesso::Nesso app{nesso::Config{}, std::make_unique<WindowEmbedder>(run.batches)};
+    if (request.files.front() == "-")
+    {
+        std::stringstream input{stdin_text};
+        const CinGuard guard{input};
+        run.result = app.Grep(request);
+    }
+    else
+    {
+        run.result = app.Grep(request);
+    }
+    return run;
+}
+
+} // namespace
+
+TEST_CASE("a needle in the last window is the first provisional row", "[nesso][grep][observer]")
+{
+    const TempDir dir{"nesso_grep_observer_needle"};
+    const auto log = dir.Path() / "app.log";
+    std::vector<std::string> lines;
+    for (std::size_t index = 0; index + 1 < LINES; ++index)
+    {
+        lines.push_back(LineText(index));
+    }
+    lines.emplace_back("kernel panic on node");
+    WriteText(log, Joined(lines));
+    std::unordered_map<std::string, float> scores = EarlyBestScores();
+    scores["kernel panic on node"] = 0.95F;
+
+    RecordingObserver observer;
+    const auto result = App(scores).Grep(
+        {.query = "kernel panic", .files = {log}, .top_k = 3, .mode = nesso::SearchMode::Dense, .observer = &observer});
+    REQUIRE(result.has_value());
+    REQUIRE_FALSE(observer.calls.empty());
+    const Call &first = observer.calls.front();
+    REQUIRE_FALSE(first.rows.empty());
+    CHECK(first.rows.front().text == "kernel panic on node");
+    CHECK(first.rows.front().line == LINES);
+    CHECK(first.lines_done == LINES - (2 * WINDOW));
+    CHECK(observer.calls.back().rows == Freeze(*result));
+    REQUIRE_FALSE(result->matches.empty());
+    CHECK(result->matches.front().text == "kernel panic on node");
+}
+
+TEST_CASE("final results match input-order embedding in every mode", "[nesso][grep][observer]")
+{
+    const TempDir dir{"nesso_grep_observer_reference"};
+    const auto log = dir.Path() / "app.log";
+    const std::vector<std::string> lines = WindowedLines();
+    const std::string text = Joined(lines);
+    WriteText(log, text);
+    const Reference reference = InputOrderReference(lines);
+    REQUIRE(reference.windows.size() == 3);
+
+    // "disk event" is in every window, so the order is the identity. The other
+    // two queries move window 2 or window 1 first.
+    const auto query = GENERATE(as<std::string>{}, "disk event", "kernel panic", "job done");
+    const auto mode = GENERATE(nesso::SearchMode::Dense, nesso::SearchMode::Hybrid, nesso::SearchMode::Lexical,
+                               nesso::SearchMode::Auto);
+    const bool group = GENERATE(false, true);
+    // Each case runs both input kinds, observed and plain; which kind is
+    // observed alternates.
+    const bool from_stdin = group != (mode == nesso::SearchMode::Hybrid || mode == nesso::SearchMode::Auto);
+    const std::size_t top_k = 4;
+    RecordingObserver observer;
+    nesso::GrepRequest request{.query = query,
+                               .files = {from_stdin ? std::filesystem::path{"-"} : log},
+                               .top_k = top_k,
+                               .mode = mode,
+                               .group = group,
+                               .observer = &observer};
+    const WindowRun run = RunWindowed(request, text);
+    REQUIRE(run.result.has_value());
+
+    // Each window is embedded once, with its input-order members.
+    REQUIRE(run.batches.size() == reference.windows.size());
+    std::vector<std::vector<std::string>> sorted_batches = run.batches;
+    std::ranges::sort(sorted_batches);
+    std::vector<std::vector<std::string>> sorted_windows = reference.windows;
+    std::ranges::sort(sorted_windows);
+    CHECK(sorted_batches == sorted_windows);
+    if (query == "disk event")
+    {
+        CHECK(run.batches == reference.windows);
+    }
+    else
+    {
+        CHECK(run.batches != reference.windows);
+    }
+
+    const std::string source = from_stdin ? "-" : log.string();
+    const std::vector<Row> rows = Freeze(*run.result);
+    if (mode == nesso::SearchMode::Dense)
+    {
+        CHECK(rows == DenseReference(lines, reference, source, top_k, group));
+    }
+    for (const Row &row : rows)
+    {
+        CHECK(row.source == source);
+        REQUIRE(row.line >= 1);
+        REQUIRE(row.line <= lines.size());
+        CHECK(row.text == lines[row.line - 1]);
+        if (row.dense)
+        {
+            CHECK(*row.dense == std::bit_cast<std::uint32_t>(reference.scores[reference.ids[row.line - 1]]));
+        }
+    }
+
+    // The same request on the other input kind and without the observer.
+    nesso::GrepRequest other = request;
+    other.files = {from_stdin ? log : std::filesystem::path{"-"}};
+    other.observer = nullptr;
+    const WindowRun again = RunWindowed(other, text);
+    REQUIRE(again.result.has_value());
+    std::vector<Row> other_rows = Freeze(*again.result);
+    for (Row &row : other_rows)
+    {
+        row.source = source;
+    }
+    CHECK(other_rows == rows);
+    CHECK(again.batches == run.batches);
+    REQUIRE_FALSE(observer.calls.empty());
+    CHECK(observer.calls.size() <= reference.windows.size());
+    CHECK(observer.scan_done == 1);
+}
+
+TEST_CASE("dense keeps the first top-k lines of a repeated key", "[nesso][grep][observer]")
+{
+    const TempDir dir{"nesso_grep_observer_keep"};
+    const auto log = dir.Path() / "jobs.log";
+    std::vector<std::string> lines;
+    for (int job = 1; job <= 9; ++job)
+    {
+        lines.push_back("job " + std::to_string(job) + " done");
+    }
+    lines.emplace_back("other line");
+    lines.emplace_back("job 10 done");
+    WriteText(log, Joined(lines));
+    const std::unordered_map<std::string, float> scores{{"job 1 done", 0.8F}, {"other line", 0.1F}};
+    const bool observed = GENERATE(false, true);
+    RecordingObserver observer;
+    nesso::GrepRequest request{.query = "job done",
+                               .files = {log},
+                               .top_k = 3,
+                               .mode = nesso::SearchMode::Dense,
+                               .observer = observed ? &observer : nullptr};
+
+    const auto top = App(scores).Grep(request);
+    REQUIRE(top.has_value());
+    REQUIRE(top->matches.size() == 3);
+    for (std::size_t index = 0; index < 3; ++index)
+    {
+        CHECK(top->matches[index].line == index + 1);
+        CHECK(top->matches[index].text == lines[index]);
+        CHECK(top->matches[index].occurrences == 10);
+        CHECK(top->matches[index].score == 0.8F);
+    }
+
+    request.group = true;
+    const auto grouped = App(scores).Grep(request);
+    REQUIRE(grouped.has_value());
+    REQUIRE(grouped->matches.size() == 2);
+    CHECK(grouped->matches[0].text == "job 1 done");
+    CHECK(grouped->matches[0].occurrences == 10);
+    CHECK(grouped->matches[1].text == "other line");
+
+    // More rows asked than lines: every line comes back once, in rank order.
+    request.group = false;
+    request.top_k = 50;
+    const auto all = App(scores).Grep(request);
+    REQUIRE(all.has_value());
+    REQUIRE(all->matches.size() == lines.size());
+    for (std::size_t index = 0; index < 10; ++index)
+    {
+        const std::size_t line = index < 9 ? index + 1 : 11;
+        CHECK(all->matches[index].line == line);
+        CHECK(all->matches[index].text == lines[line - 1]);
+    }
+    CHECK(all->matches.back().text == "other line");
+}
+
+TEST_CASE("lines done rise to the line total", "[nesso][grep][observer]")
+{
+    const TempDir dir{"nesso_grep_observer_lines_done"};
+    const auto log = dir.Path() / "app.log";
+    const std::vector<std::string> lines = WindowedLines();
+    WriteText(log, Joined(lines));
+    RecordingObserver observer;
+    std::vector<std::vector<std::string>> batches;
+    const nesso::Nesso app{nesso::Config{}, std::make_unique<WindowEmbedder>(batches)};
+    const auto query = GENERATE(as<std::string>{}, "disk event", "kernel panic", "job done");
+    const auto result = app.Grep({.query = query, .files = {log}, .top_k = 20, .observer = &observer});
+    REQUIRE(result.has_value());
+    // Every window changes the top 20 here, so each one reports.
+    REQUIRE(observer.calls.size() == 3);
+    std::size_t previous = 0;
+    for (const Call &call : observer.calls)
+    {
+        CHECK(call.lines_done > previous);
+        CHECK(call.lines_total == lines.size());
+        previous = call.lines_done;
+    }
+    CHECK(previous == lines.size());
 }
