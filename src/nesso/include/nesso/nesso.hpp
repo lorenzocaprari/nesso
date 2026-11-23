@@ -61,7 +61,8 @@ enum class ErrorCause : uint8_t
     EmptyCorpus,
     OutputIsInput,
     NoLexicalPostings,
-    LexicalTermsMismatch
+    LexicalTermsMismatch,
+    CorpusLimitsExceeded
 };
 
 /// Ranking mode requested on `grep` / `search` (`--mode`).
@@ -101,6 +102,15 @@ struct BundleSkipSummary
 /// `BundleSkipTotal(summary)` is 0.
 [[nodiscard]] std::string FormatBundleSkipSummary(const BundleSkipSummary &summary);
 
+/// First identity key that differs between a corpus and the loaded model.
+/// `stored` is the corpus value, `loaded` the value of the loaded model.
+struct ModelMismatchDetail
+{
+    std::string key;
+    std::string stored;
+    std::string loaded;
+};
+
 /// Failure of a Nesso operation.
 ///
 /// `cause` names the layer failure. `path`, the skip counters, and
@@ -124,6 +134,9 @@ struct Error
     std::vector<BundleSkipSummary> bundle_skips;
     bool policy_mismatch = false;
     std::optional<std::uint32_t> corpus_version;
+    /// Set on `ModelMismatch`. The values are raw corpus and model text;
+    /// escape them before they reach a terminal.
+    std::optional<ModelMismatchDetail> model_mismatch;
 };
 
 /// Phrase for `cause`, used after the operation sentence.

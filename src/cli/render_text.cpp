@@ -8,6 +8,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <format>
+#include <optional>
 #include <string>
 #include <string_view>
 
@@ -118,6 +119,21 @@ std::string EscapeTerminalControls(std::string_view text)
         index += length;
     }
     return output;
+}
+
+std::string FormatErrorMessage(const Error &error)
+{
+    if (!error.model_mismatch)
+    {
+        return Message(error);
+    }
+    Error escaped = error;
+    if (std::optional<ModelMismatchDetail> &detail = escaped.model_mismatch; detail)
+    {
+        detail->stored = EscapeTerminalControls(detail->stored);
+        detail->loaded = EscapeTerminalControls(detail->loaded);
+    }
+    return Message(escaped);
 }
 
 std::string FormatTextRow(const TextResults &results, const TextMatch &match)

@@ -20,6 +20,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
+#include <format>
 #include <fstream>
 #include <iterator>
 #include <optional>
@@ -299,6 +300,89 @@ TEST_CASE("text operations report model and corpus failures", "[nesso][text]")
     REQUIRE_FALSE(newer.has_value());
     REQUIRE(newer.error().kind == nesso::ErrorKind::CorpusRead);
     REQUIRE(newer.error().cause == nesso::ErrorCause::UnsupportedCorpusVersion);
+}
+
+TEST_CASE("search names the first identity key that differs from the loaded model", "[nesso][text]")
+{
+    const TempDir dir{"nesso_facade_identity"};
+    const nesso::Nesso app{nesso::Config{}, std::make_unique<RecordingEmbedder>()};
+    const auto write = [&dir](const std::string &name, const nesso::core::CorpusPolicy &policy)
+    {
+        const auto path = dir.Path() / name;
+        auto writer = nesso::core::CorpusWriter::Create(path, policy);
+        REQUIRE(writer);
+        REQUIRE(writer->AddSource({.path = "a.log", .stored_only = true}) == 0);
+        const std::vector<float> vector(std::stoul(policy.at("dimensions")), 0.5F);
+        REQUIRE(writer->AddDistinct("alpha", vector) == 0);
+        const nesso::core::CorpusLine line{.line_number = 1, .distinct_id = 0, .stored_text = "alpha"};
+        const std::vector<std::string> terms = nesso::core::LexicalTerms("alpha");
+        REQUIRE(writer->AddLines(std::span{&line, 1}, std::span{&terms, 1}));
+        REQUIRE(writer->Finish());
+        return path;
+    };
+    const auto refused = [&app](const std::filesystem::path &path)
+    {
+        const auto searched = app.Search({.query = "alpha", .index = path});
+        REQUIRE_FALSE(searched.has_value());
+        CHECK(searched.error().kind == nesso::ErrorKind::CorpusRead);
+        CHECK(searched.error().cause == nesso::ErrorCause::ModelMismatch);
+        CHECK(searched.error().path == path);
+        REQUIRE(searched.error().model_mismatch.has_value());
+        return *searched.error().model_mismatch;
+    };
+
+    struct Case
+    {
+        std::string key;
+        std::string stored;
+        std::string loaded;
+    };
+    const std::array<Case, 6> cases{
+        Case{.key = "model.id", .stored = "other/model", .loaded = "test/model"},
+        Case{.key = "model.sha256", .stored = std::string(64, 'c'), .loaded = std::string(64, 'a')},
+        Case{.key = "vocab.sha256", .stored = std::string(64, 'd'), .loaded = std::string(64, 'b')},
+        Case{.key = "model.quantization", .stored = "fp32", .loaded = "int8"},
+        Case{.key = "dimensions", .stored = "2", .loaded = "4"},
+        Case{.key = "embed.prefix", .stored = "query-passage-v1", .loaded = "none"}};
+    for (const Case &expected : cases)
+    {
+        CAPTURE(expected.key);
+        auto policy = TestPolicy();
+        policy[expected.key] = expected.stored;
+        const auto path = write(expected.key + ".nesso", policy);
+        const nesso::ModelMismatchDetail detail = refused(path);
+        CHECK(detail.key == expected.key);
+        CHECK(detail.stored == expected.stored);
+        CHECK(detail.loaded == expected.loaded);
+        CHECK(nesso::Message(app.Search({.query = "alpha", .index = path}).error()) ==
+              std::format("Error: failed to read the corpus '{}': the corpus was built with a different model ({}: "
+                          "stored {}, loaded {}); re-run nesso index",
+                          path.string(), expected.key, expected.stored, expected.loaded));
+    }
+
+    auto both = TestPolicy();
+    both["model.id"] = "other/model";
+    both["embed.prefix"] = "query-passage-v1";
+    CHECK(refused(write("both.nesso", both)).key == "model.id");
+
+    const auto unrecorded = write("unrecorded.nesso", TestPolicy());
+    REQUIRE(nesso::core::MapCorpusFile(unrecorded));
+    CHECK_FALSE(nesso::core::MapCorpusFile(unrecorded)->corpus.Policy().contains("embed.prefix"));
+    CHECK(app.Search({.query = "alpha", .index = unrecorded}).has_value());
+    auto recorded = TestPolicy();
+    recorded["embed.prefix"] = "none";
+    CHECK(app.Search({.query = "alpha", .index = write("recorded.nesso", recorded)}).has_value());
+
+    const auto log = dir.Path() / "app.log";
+    const char text[] = {'a', 'l', 'p', 'h', 'a', '\n'};
+    WriteBytes(log, text, sizeof(text));
+    const auto indexed = dir.Path() / "indexed.nesso";
+    REQUIRE(app.Index({.files = {log}, .output = indexed}).has_value());
+    const auto mapped = nesso::core::MapCorpusFile(indexed);
+    REQUIRE(mapped);
+    REQUIRE(mapped->corpus.Policy().contains("embed.prefix"));
+    CHECK(mapped->corpus.Policy().at("embed.prefix") == "none");
+    CHECK(ReadFile(indexed).find("\nembed.prefix=none\n") != std::string::npos);
 }
 
 TEST_CASE("grep, index, and search run the text stages", "[nesso][text]")

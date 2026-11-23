@@ -609,6 +609,15 @@ static std::expected<nesso::core::MappedCorpus, Error> MapSearchCorpus(const std
     return std::move(corpus->corpus);
 }
 
+static Error ModelMismatchError(const std::filesystem::path &path, ModelMismatchDetail detail)
+{
+    Error error = MakeError(ErrorKind::CorpusRead, ErrorCause::ModelMismatch, path, {});
+    error.model_mismatch = std::move(detail);
+    return error;
+}
+
+// Checks the identity keys in order and names the first one that differs.
+// A corpus without `embed.prefix` reads as `none`.
 static std::expected<void, Error> RefuseModelMismatch(const nesso::core::CorpusPolicy &stored,
                                                       const nesso::core::CorpusPolicy &current,
                                                       const std::filesystem::path &path)
@@ -617,10 +626,21 @@ static std::expected<void, Error> RefuseModelMismatch(const nesso::core::CorpusP
                                                             "model.quantization", "dimensions"};
     for (const std::string_view key : identity_keys)
     {
-        if (stored.find(key)->second != current.find(key)->second)
+        const std::string &stored_value = stored.find(key)->second;
+        const std::string &loaded_value = current.find(key)->second;
+        if (stored_value != loaded_value)
         {
-            return std::unexpected(MakeError(ErrorKind::CorpusRead, ErrorCause::ModelMismatch, path, {}));
+            return std::unexpected(
+                ModelMismatchError(path, {.key = std::string{key}, .stored = stored_value, .loaded = loaded_value}));
         }
+    }
+    const std::string_view stored_prefix = nesso::core::EmbedPrefixOf(stored);
+    const std::string_view loaded_prefix = nesso::core::EmbedPrefixOf(current);
+    if (stored_prefix != loaded_prefix)
+    {
+        return std::unexpected(ModelMismatchError(path, {.key = std::string{nesso::core::EMBED_PREFIX_KEY},
+                                                         .stored = std::string{stored_prefix},
+                                                         .loaded = std::string{loaded_prefix}}));
     }
     return {};
 }

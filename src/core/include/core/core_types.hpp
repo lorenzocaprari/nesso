@@ -19,7 +19,10 @@ enum class EngineError : uint8_t
     MismatchedDimensions,
     DatabaseNotInitialized,
     CorruptDatabase,
-    UnsupportedVersion
+    UnsupportedVersion,
+    /// A count is past this build's caps (`MAX_SOURCES`, `MAX_LINES`,
+    /// `MAX_DISTINCT`, `MAX_LEXICAL_TERMS`, `MAX_LEXICAL_BYTES`).
+    LimitsExceeded
 };
 
 } // namespace nesso::core

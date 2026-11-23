@@ -14,6 +14,7 @@
 #include <filesystem>
 #include <iostream>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace
@@ -78,6 +79,30 @@ bool WriteLine(const std::filesystem::path &path)
     return true;
 }
 
+// Same records as line.nesso, with the optional embed.prefix policy key.
+bool WritePrefixed(const std::filesystem::path &path)
+{
+    CorpusPolicy policy = Policy(2);
+    policy.emplace(std::string{nesso::core::EMBED_PREFIX_KEY}, "none");
+    auto writer = CorpusWriter::Create(path, std::move(policy));
+    if (!writer)
+    {
+        return Report(path);
+    }
+    const SourceInfo source{
+        .path = "app.log", .size = 16, .modified_time = 1'700'000'000, .tracked = true, .json_field = "message"};
+    const std::array<float, 2> embedding{0.25F, -0.5F};
+    const std::array<CorpusLine, 1> lines{
+        CorpusLine{.line_number = 1, .byte_offset = 0, .byte_length = 16, .source_index = 0, .distinct_id = 0}};
+    const std::array<std::vector<std::string>, 1> terms{nesso::core::LexicalTerms("payment timeout")};
+    if (writer->AddSource(source) != 0 || writer->AddDistinct("payment timeout", embedding) != 0 ||
+        !writer->AddLines(lines, terms) || !writer->Finish())
+    {
+        return Report(path);
+    }
+    return true;
+}
+
 bool WriteStored(const std::filesystem::path &path)
 {
     auto writer = CorpusWriter::Create(path, Policy(2));
@@ -118,7 +143,7 @@ int main(int argc, char *argv[])
     std::error_code error;
     std::filesystem::create_directories(dest, error);
     if (error || !WriteEmpty(dest / "empty.nesso") || !WriteLine(dest / "line.nesso") ||
-        !WriteStored(dest / "stored.nesso"))
+        !WriteStored(dest / "stored.nesso") || !WritePrefixed(dest / "prefix.nesso"))
     {
         return 1;
     }

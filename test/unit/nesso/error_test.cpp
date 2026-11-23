@@ -34,6 +34,7 @@ TEST_CASE("layer errors map onto a cause", "[nesso][error]")
     REQUIRE(nesso::CauseOf(nesso::core::EngineError::CorruptDatabase) == nesso::ErrorCause::CorruptFile);
     REQUIRE(nesso::CauseOf(nesso::core::EngineError::UnsupportedVersion) ==
             nesso::ErrorCause::UnsupportedCorpusVersion);
+    REQUIRE(nesso::CauseOf(nesso::core::EngineError::LimitsExceeded) == nesso::ErrorCause::CorpusLimitsExceeded);
 }
 
 TEST_CASE("each cause has a readable phrase", "[nesso][error]")
@@ -62,6 +63,7 @@ TEST_CASE("each cause has a readable phrase", "[nesso][error]")
     REQUIRE(nesso::Describe(nesso::ErrorCause::NothingIndexable) == "no indexable lines");
     REQUIRE(nesso::Describe(nesso::ErrorCause::EmptyCorpus) == "the corpus is empty");
     REQUIRE(nesso::Describe(nesso::ErrorCause::OutputIsInput) == "the output is one of the inputs");
+    REQUIRE(nesso::Describe(nesso::ErrorCause::CorpusLimitsExceeded) == "the corpus exceeds this nesso's limits");
 }
 
 TEST_CASE("each failure kind names itself", "[nesso][error]")
@@ -76,7 +78,8 @@ TEST_CASE("each failure kind names itself", "[nesso][error]")
                                  .stale_sources = {},
                                  .bundle_skips = {},
                                  .policy_mismatch = false,
-                                 .corpus_version = {}};
+                                 .corpus_version = {},
+                                 .model_mismatch = {}};
         return nesso::Message(error);
     };
 
@@ -95,7 +98,8 @@ TEST_CASE("each failure kind names itself", "[nesso][error]")
                          .stale_sources = {},
                          .bundle_skips = {},
                          .policy_mismatch = false,
-                         .corpus_version = {}};
+                         .corpus_version = {},
+                         .model_mismatch = {}};
     REQUIRE(nesso::Message(limited).find("the archive entry count exceeds 2") != std::string::npos);
     REQUIRE(nesso::Message(limited).find("--archive-max-entries") != std::string::npos);
     nesso::Error encrypted{.kind = nesso::ErrorKind::Parse,
@@ -105,7 +109,8 @@ TEST_CASE("each failure kind names itself", "[nesso][error]")
                            .stale_sources = {},
                            .bundle_skips = {},
                            .policy_mismatch = false,
-                           .corpus_version = {}};
+                           .corpus_version = {},
+                           .model_mismatch = {}};
     REQUIRE(nesso::Message(encrypted).find("entry 'secret.log' is encrypted") != std::string::npos);
     REQUIRE(nesso::FormatBundleSkipSummary({.path = "mix.tar", .directories = 2, .binary = 1}) ==
             "Skipped 3 entries in 'mix.tar' (2 directories and 1 binary file).");
@@ -142,7 +147,8 @@ TEST_CASE("a zero-chunk index names the path and what to check", "[nesso][error]
                                  .stale_sources = {},
                                  .bundle_skips = {},
                                  .policy_mismatch = false,
-                                 .corpus_version = {}};
+                                 .corpus_version = {},
+                                 .model_mismatch = {}};
         return nesso::Message(error);
     };
 
@@ -171,7 +177,8 @@ TEST_CASE("message text is byte-stable per kind and optional parts", "[nesso][er
                             .stale_sources = {},
                             .bundle_skips = {},
                             .policy_mismatch = false,
-                            .corpus_version = corpus_version};
+                            .corpus_version = corpus_version,
+                            .model_mismatch = {}};
     };
 
     REQUIRE(nesso::Message(make(nesso::ErrorKind::EmbedderLoad, nesso::ErrorCause::ModelLoad)) ==
@@ -220,6 +227,18 @@ TEST_CASE("message text is byte-stable per kind and optional parts", "[nesso][er
                                            "not supported; re-run nesso index");
     REQUIRE(nesso::Message(make(nesso::ErrorKind::CorpusRead, nesso::ErrorCause::CorruptFile, "bad.nesso")) ==
             "Error: failed to read the corpus 'bad.nesso': the file is corrupt");
+    REQUIRE(nesso::Message(make(nesso::ErrorKind::CorpusRead, nesso::ErrorCause::CorpusLimitsExceeded, "big.nesso")) ==
+            "Error: failed to read the corpus 'big.nesso': the corpus exceeds this nesso's limits");
+    REQUIRE(nesso::Message(make(nesso::ErrorKind::CorpusWrite, nesso::ErrorCause::CorpusLimitsExceeded, "big.nesso")) ==
+            "Error: failed to write the corpus 'big.nesso': the corpus exceeds this nesso's limits");
+    REQUIRE(nesso::Message(make(nesso::ErrorKind::CorpusRead, nesso::ErrorCause::ModelMismatch, "old.nesso")) ==
+            "Error: failed to read the corpus 'old.nesso': the corpus was built with a different model; re-run "
+            "nesso index");
+    nesso::Error mismatch = make(nesso::ErrorKind::CorpusRead, nesso::ErrorCause::ModelMismatch, "old.nesso");
+    mismatch.model_mismatch = nesso::ModelMismatchDetail{.key = "model.id", .stored = "other/model", .loaded = "mini"};
+    REQUIRE(nesso::Message(mismatch) == "Error: failed to read the corpus 'old.nesso': the corpus was built with a "
+                                        "different model (model.id: stored other/model, loaded mini); re-run nesso "
+                                        "index");
 
     REQUIRE(nesso::Message(make(nesso::ErrorKind::EmptyInput, nesso::ErrorCause::EmptyFile)) ==
             "nothing to search in 'in.log': the file is empty");

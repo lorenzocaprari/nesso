@@ -33,6 +33,15 @@ using CorpusChecksum = std::array<std::byte, CORPUS_CHECKSUM_BYTES>;
 
 using CorpusPolicy = std::map<std::string, std::string, std::less<>>;
 
+/// Optional policy key naming the prompt-prefix rule and its version.
+inline constexpr std::string_view EMBED_PREFIX_KEY = "embed.prefix";
+/// Value of `EMBED_PREFIX_KEY` for a corpus written before the key existed.
+inline constexpr std::string_view EMBED_PREFIX_UNRECORDED = "none";
+
+/// `embed.prefix` of `policy`, or `EMBED_PREFIX_UNRECORDED` when the key is
+/// absent.
+[[nodiscard]] std::string_view EmbedPrefixOf(const CorpusPolicy &policy);
+
 struct LogChunk
 {
     std::string text;
@@ -101,6 +110,11 @@ struct CorpusMapFailure
 
 struct MappedCorpusFile;
 
+namespace detail
+{
+struct CorpusWriterAccess;
+} // namespace detail
+
 /// Text and matrix views remain valid while the mapped corpus is alive.
 class MappedCorpus
 {
@@ -163,6 +177,7 @@ class CorpusWriter
     [[nodiscard]] std::expected<void, EngineError> Finish();
 
   private:
+    friend struct detail::CorpusWriterAccess;
     struct Impl;
     explicit CorpusWriter(std::unique_ptr<Impl> impl);
     static void DiscardSpills(Impl *impl) noexcept;
