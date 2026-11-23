@@ -145,6 +145,7 @@ The binary is `build/Release/src/nesso`. A Debug build writes `build/Debug/src/n
 
 - [Quick start](docs/quick-start.md)
 - [Usage](docs/usage.md)
+- [Limits and memory](docs/usage.md#limits-and-memory)
 - [Building](docs/building.md)
 - [Releases](docs/releases.md)
 - [Verifying a release](docs/verifying.md) (from v0.2.0)
