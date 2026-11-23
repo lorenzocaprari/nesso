@@ -10,6 +10,7 @@ type benchFile struct {
 	SHA     string      `json:"sha,omitempty"`
 	Query   string      `json:"query,omitempty"`
 	Threads *string     `json:"threads"`
+	CPU     string      `json:"cpuModel,omitempty"`
 	Cases   []benchCase `json:"cases"`
 }
 
