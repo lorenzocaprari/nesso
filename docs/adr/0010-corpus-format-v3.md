@@ -64,6 +64,10 @@ Chosen option: "v3 with distinct vectors, per-line references, and a policy bloc
 
 A source that is an archive member cannot be re-read by byte offset. `index` stores each of that member's lines, as it does for stdin. The stored source string may be `archive:entry`, with `archive` the path that was indexed and `entry` the member name. The corpus version stays 3.
 
+## Amendment 2026-11-23
+
+[ADR 0015](0015-index-migration-and-the-model-header.md) adds an `embed.prefix` policy key inside version 3, names the differing key in the model mismatch error, reports a corpus over the caps as over this build's limits instead of corrupt, and plans an explicit `nesso migrate` for the next version. The corpus version stays 3.
+
 ### Confirmation
 
 `scripts/check-determinism` compares v3 corpus bytes and rankings across fresh processes under load. The int8 run with `NESSO_THREADS=$(nproc)` must match the default run, and that comparison must be a blocking check. Unit tests round-trip every section, reject v2, truncated, and misaligned files, and read context from stored texts. BDD covers the v2 error, the model mismatch, and the policy warning.

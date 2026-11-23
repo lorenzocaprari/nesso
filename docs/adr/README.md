@@ -48,3 +48,4 @@ record.
 | 0010 | Corpus format v3: one vector per distinct text and a recorded embedding policy | accepted | 2026-10-26 |
 | 0011 | Hybrid dense and BM25 search with query-class routing | proposed | 2026-11-09 |
 | 0014 | int8 session and thread policy | proposed | 2026-10-28 |
+| 0015 | Index migration and the model header | accepted | 2026-11-23 |
