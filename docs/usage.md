@@ -106,6 +106,15 @@ For a short sosreport or tarball triage path, see [Quick start](quick-start.md).
 - `search` re-reads each matching line from its source file. When a source changed, is missing, or cannot be read, `search` warns on stderr and prints the indexed text instead. Stdin, gzip, and archive members are stored in the corpus and are not re-read.
 - `search` refuses a corpus written by an older format (v2) or a different model, vocabulary, quantization, vector size, or prompt-prefix rule (`embed.prefix`; a corpus without that key reads as `none`); re-run `nesso index`. The error names the first key that differs and both values, for example `(model.id: stored X, loaded Y)`. A corpus over this build's source, line, distinct-text, or lexical caps fails with `the corpus exceeds this nesso's limits`, and `index` stops with the same message when its input reaches any of them. When only the batch, truncation, dedup, or mask policy differs, it warns once on stderr and continues.
 
+## Limits and memory
+
+- A corpus holds at most 1,000,000 sources, 10,000,000 lines, 1,000,000 distinct texts (one per masked dedup key), 4,000,000 lexical terms, and 512 MiB of lexical data. `index` stops when the input reaches any of them, and `search` refuses a corpus past them. Both exit 2. The error reports that a limit was exceeded.
+- `search` memory grows with the line count. It maps the corpus file and builds about 64 bytes of line metadata per line, about 640 MB at the 10,000,000-line cap, plus per-line lexical postings. The 64-byte and 640 MB figures are approximate, from the line-metadata layout on x86-64.
+- `index` bounds its Finish working set (unique-term runs, the merge, and posting encode) to an internal 1.5 GiB budget. It still keeps every distinct text in memory.
+- `grep` builds no corpus, so these caps do not apply. In hybrid and lexical mode its memory grows with the input ([Files](#files)).
+- The nightly real-log benchmark fails when a command's peak RSS exceeds 1.5 GiB plus tolerance (that workflow sets `NESSO_BENCH_RSS_TOLERANCE` to 0.15). It runs on the first 1,000,000 HDFS lines and the first 100,000 Thunderbird lines. That is a CI gate on those inputs, not a guarantee for every input ([Benchmarks](benchmarks.md)).
+- Split a very large input into several corpora, for example per host or per day, or run `grep` with `--mode dense` on a subset.
+
 ## What this is not
 
 - Not a hosted service. Text stays on the machine. There is no server, no cloud call, and no API key.
