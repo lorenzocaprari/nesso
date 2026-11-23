@@ -2,6 +2,8 @@ name: Real-log bench
 
 # Not a Pipeline job. Schedule and workflow_dispatch on main only.
 # Pull requests keep the synthetic bench in .github/workflows/ci.yml.
+# workflow_dispatch input nesso_version, when set, skips the HEAD build and
+# scores that GitHub release. The schedule and an empty input build HEAD.
 on:
   schedule:
     # 05:47 UTC, after the Pipeline nightly at 03:17 UTC.
@@ -16,6 +18,11 @@ on:
         description: Real-log corpora (comma-separated, or all). Nightly default is hdfs-v1,thunderbird
         type: string
         default: "hdfs-v1,thunderbird"
+      nesso_version:
+        description: Optional released version (e.g. 0.3.1) to score instead of building HEAD
+        type: string
+        required: false
+        default: ""
 
 concurrency:
   group: real-log-bench-${{ github.ref }}
@@ -35,7 +42,7 @@ env:
   # NESSO_BENCH_REF in eval-retrieval.yml and ci.yml and bump all three in the
   # same pull request.
   NESSO_BENCH_REPOSITORY: lorenzocaprari/nesso-bench
-  NESSO_BENCH_REF: 140bb9e077d3070f4ddf9f907588662f98b65450
+  NESSO_BENCH_REF: dc2f9b341cc00e8954e963957bfd20ff43710e80
 
 jobs:
   guard:
@@ -130,6 +137,8 @@ jobs:
       contents: read
       packages: read
       actions: write
+    env:
+      NESSO_VERSION: ${{ inputs.nesso_version || '' }}
     container:
       image: ${{ needs.resolve.outputs.image }} # zizmor: ignore[unpinned-images] deps-<hash> tag, not a digest
       credentials:
@@ -149,15 +158,33 @@ jobs:
           path: nesso-bench
           persist-credentials: false
 
+      # Empty nesso_version (the schedule, or a manual run that left it blank)
+      # keeps the HEAD build. A release version is unpacked here and the Conan
+      # build below is skipped. The version reaches this script only through
+      # the job env.
+      - name: Resolve nesso binary
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -z "${NESSO_VERSION}" ]]; then
+            {
+              echo "NESSO_BINARY=build/Release/src/nesso"
+              echo "NESSO_MODEL_DIR=models"
+            } >> "${GITHUB_ENV}"
+            exit 0
+          fi
+          ./scripts/fetch-released-nesso --dest build/nesso-release --github-env "${GITHUB_ENV}" -- "${NESSO_VERSION}"
+
       - name: Restore MiniLM models
         id: models
+        if: env.NESSO_VERSION == ''
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: models
           key: minilm-${{ hashFiles('scripts/fetch-model') }}
 
       - name: Fetch MiniLM models
-        if: steps.models.outputs.cache-hit != 'true'
+        if: env.NESSO_VERSION == '' && steps.models.outputs.cache-hit != 'true'
         run: ./scripts/fetch-model models
 
       - name: Select real-log corpora
@@ -226,11 +253,13 @@ jobs:
           done
 
       - name: Install Dependencies (Conan)
+        if: env.NESSO_VERSION == ''
         run: |
           conan profile detect --force
           conan install . -pr:h ./conan/profiles/gcc-26 -pr:b default --lockfile=conan.lock --build=missing --no-remote -o tests=False $CONAN_WERROR_ARGS
 
       - name: Build
+        if: env.NESSO_VERSION == ''
         run: conan build . -pr:h ./conan/profiles/gcc-26 -pr:b default --lockfile=conan.lock --build=missing --no-remote -o tests=False $CONAN_WERROR_ARGS
 
       # --timeout is a per-command hang guard, not a speed budget. Each corpus
@@ -243,8 +272,20 @@ jobs:
           set -euo pipefail
           mem_kb=$(awk '/^MemTotal:/ {print $2}' /proc/meminfo)
           export NESSO_BENCH_AS_LIMIT_KB=$((mem_kb * 3 / 4))
-          python3 scripts/bench --dataset real-log --corpora "${CORPORA}" --loghub-dir build/bench --binary build/Release/src/nesso --timeout 1200 \
-            --output bench/results/real-log.json
+          if [[ -z "${NESSO_VERSION}" ]]; then
+            python3 scripts/bench --dataset real-log --corpora "${CORPORA}" --loghub-dir build/bench --binary build/Release/src/nesso --timeout 1200 \
+              --output bench/results/real-log.json
+          else
+            {
+              echo "### nesso binary"
+              echo
+              echo "Scored released nesso ${NESSO_VERSION} (${NESSO_BINARY}, model ${NESSO_MODEL_DIR})."
+              echo
+            } >> "${GITHUB_STEP_SUMMARY}"
+            python3 scripts/bench --dataset real-log --corpora "${CORPORA}" --loghub-dir build/bench \
+              --binary "${NESSO_BINARY}" --model-dir "${NESSO_MODEL_DIR}" --timeout 1200 \
+              --output bench/results/real-log.json
+          fi
 
       - name: Download previous nightly result
         if: always() && !cancelled() && needs.resolve.outputs.prev_run_id != ''

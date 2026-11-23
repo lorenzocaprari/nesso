@@ -1,0 +1,149 @@
+#!/usr/bin/env bash
+# Unpack a released nesso so a benchmark scores the binary users install.
+#
+#   scripts/fetch-released-nesso [--dest DIR] [--github-env FILE] VERSION
+#
+# VERSION is a semver (for example 0.3.1), without a leading v. The script
+# downloads nesso_<VERSION>_amd64.deb and SHA256SUMS from the v<VERSION>
+# GitHub release, checks that one file, and unpacks under DEST (default
+# build/nesso-release). Nothing is installed system-wide. The package has no
+# RPATH: it needs only libc and libstdc++, which the Ubuntu build image has,
+# and its MiniLM files are usr/share/nesso/model.onnx and vocab.txt.
+#
+# --github-env appends NESSO_BINARY and NESSO_MODEL_DIR in the GITHUB_ENV
+# format. stdout is one progress line.
+set -euo pipefail
+
+usage() {
+  echo "usage: fetch-released-nesso [--dest DIR] [--github-env FILE] VERSION" >&2
+  exit 2
+}
+
+dest="build/nesso-release"
+github_env=""
+version=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --dest)
+      dest="${2:-}"
+      [[ -n "${dest}" ]] || usage
+      shift 2
+      ;;
+    --github-env)
+      github_env="${2:-}"
+      [[ -n "${github_env}" ]] || usage
+      shift 2
+      ;;
+    --)
+      shift
+      break
+      ;;
+    -*)
+      echo "error: unknown option ${1}" >&2
+      usage
+      ;;
+    *)
+      if [[ -n "${version}" ]]; then
+        echo "error: one VERSION only" >&2
+        exit 2
+      fi
+      version="$1"
+      shift
+      ;;
+  esac
+done
+if [[ $# -gt 0 ]]; then
+  if [[ -n "${version}" || $# -ne 1 ]]; then
+    echo "error: one VERSION only" >&2
+    exit 2
+  fi
+  version="$1"
+fi
+if [[ -z "${version}" ]]; then
+  usage
+fi
+case "${dest}" in
+  / | . | ..)
+    echo "error: refusing dest ${dest}" >&2
+    exit 2
+    ;;
+esac
+
+# Tag is v<semver>. '+' is build metadata and must be percent-encoded in the URL.
+if [[ ! "${version}" =~ ^[0-9]+\.[0-9]+\.[0-9]+([+-][0-9A-Za-z.-]+)?$ ]]; then
+  echo "error: nesso_version is not a release version: ${version}" >&2
+  exit 1
+fi
+
+for tool in curl sha256sum awk; do
+  if ! command -v "${tool}" >/dev/null 2>&1; then
+    echo "error: ${tool} is required" >&2
+    exit 1
+  fi
+done
+
+url_version="${version//+/%2B}"
+deb="nesso_${version}_amd64.deb"
+base="https://github.com/lorenzocaprari/nesso/releases/download/v${url_version}"
+work="$(mktemp -d)"
+trap 'rm -rf -- "${work}"' EXIT
+
+curl_get() {
+  curl --proto '=https' --proto-redir '=https' --tlsv1.2 -fsSL --retry 3 --retry-delay 2 \
+    -o "$1" "$2"
+}
+
+curl_get "${work}/SHA256SUMS" "${base}/SHA256SUMS"
+curl_get "${work}/${deb}" "${base}/nesso_${url_version}_amd64.deb"
+
+expected="$(awk -v name="${deb}" '$2 == name { print $1; exit }' "${work}/SHA256SUMS")"
+if [[ ! "${expected}" =~ ^[0-9a-f]{64}$ ]]; then
+  echo "error: SHA256SUMS has no sha256 for ${deb}" >&2
+  exit 1
+fi
+if ! printf '%s  %s\n' "${expected}" "${deb}" | (cd "${work}" && sha256sum --check --status); then
+  echo "error: sha256 mismatch for ${deb}" >&2
+  exit 1
+fi
+
+rm -rf -- "${dest}"
+mkdir -p -- "${dest}"
+if command -v dpkg-deb >/dev/null 2>&1; then
+  dpkg-deb -x "${work}/${deb}" "${dest}"
+else
+  (cd "${work}" && ar x "${deb}")
+  data="$(find "${work}" -maxdepth 1 -name 'data.tar.*' -print -quit)"
+  if [[ -z "${data}" ]]; then
+    echo "error: ${deb} has no data.tar member; install dpkg-deb" >&2
+    exit 1
+  fi
+  tar -xaf "${data}" -C "${dest}"
+fi
+
+binary="${dest}/usr/bin/nesso"
+model_dir="${dest}/usr/share/nesso"
+if [[ ! -x "${binary}" || ! -f "${model_dir}/model.onnx" || ! -f "${model_dir}/vocab.txt" ]]; then
+  echo "error: ${deb} is missing usr/bin/nesso or usr/share/nesso/model.onnx and vocab.txt" >&2
+  exit 1
+fi
+
+reported="$("${binary}" -V | tr -d '[:space:]')"
+if [[ "${reported}" != "${version}" ]]; then
+  echo "error: ${binary} -V reports '${reported}', expected ${version}" >&2
+  exit 1
+fi
+
+echo "fetch-released-nesso: ${version} ${binary}"
+if [[ -n "${github_env}" ]]; then
+  {
+    printf 'NESSO_BINARY=%s\n' "${binary}"
+    printf 'NESSO_MODEL_DIR=%s\n' "${model_dir}"
+  } >> "${github_env}"
+fi
+if [[ -n "${GITHUB_STEP_SUMMARY:-}" ]]; then
+  {
+    echo "### nesso binary"
+    echo
+    echo "Released nesso ${version}: \`${binary}\`, model \`${model_dir}\`."
+  } >> "${GITHUB_STEP_SUMMARY}"
+fi
