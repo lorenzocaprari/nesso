@@ -21,6 +21,17 @@
 #include <system_error>
 #include <utility>
 
+namespace nesso::core
+{
+
+std::string_view EmbedPrefixOf(const CorpusPolicy &policy)
+{
+    const auto found = policy.find(EMBED_PREFIX_KEY);
+    return found == policy.end() ? EMBED_PREFIX_UNRECORDED : std::string_view{found->second};
+}
+
+} // namespace nesso::core
+
 namespace nesso::core::detail
 {
 

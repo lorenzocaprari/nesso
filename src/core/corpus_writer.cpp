@@ -48,10 +48,6 @@ using detail::LINE_RECORD_BYTES;
 using detail::LINE_SKIPPED;
 using detail::LINE_STORED_TEXT;
 using detail::MAGIC;
-using detail::MAX_DISTINCT;
-using detail::MAX_LEXICAL_BYTES;
-using detail::MAX_LINES;
-using detail::MAX_SOURCES;
 using detail::MAX_TEXT_BYTES;
 using detail::RangeInside;
 using detail::ReadExact;
@@ -62,7 +58,6 @@ using detail::SOURCE_RECORD_BYTES;
 using detail::SOURCE_STORED_ONLY;
 using detail::SOURCE_TRACKED;
 using detail::TEXT_RECORD_BYTES;
-using detail::ValidatePolicy;
 using detail::ValidateVector;
 using detail::WritePadding;
 using detail::WriteRaw;
@@ -211,6 +206,7 @@ struct CorpusWriter::Impl
     std::filesystem::path destination;
     std::filesystem::path temporary;
     CorpusPolicy policy;
+    detail::CorpusLimits limits;
     std::uint32_t dimensions = 0;
     SpillFile lines;
     SpillFile texts;
@@ -264,6 +260,12 @@ CorpusWriter &CorpusWriter::operator=(CorpusWriter &&other) noexcept
 
 std::expected<CorpusWriter, EngineError> CorpusWriter::Create(const std::filesystem::path &path, CorpusPolicy policy)
 {
+    return detail::CorpusWriterAccess::Create(path, std::move(policy), {});
+}
+
+std::expected<CorpusWriter, EngineError>
+detail::CorpusWriterAccess::Create(const std::filesystem::path &path, CorpusPolicy policy, const CorpusLimits &limits)
+{
     const auto dimensions = ValidatePolicy(policy);
     if (!dimensions)
     {
@@ -274,9 +276,10 @@ std::expected<CorpusWriter, EngineError> CorpusWriter::Create(const std::filesys
     {
         return std::unexpected(EngineError::FileOpenFailure);
     }
-    auto impl = std::make_unique<Impl>();
+    auto impl = std::make_unique<CorpusWriter::Impl>();
     impl->destination = path;
     impl->policy = std::move(policy);
+    impl->limits = limits;
     impl->dimensions = *dimensions;
     auto lines = CreateSpill(path, "lines");
     if (!lines)
@@ -307,8 +310,15 @@ std::expected<CorpusWriter, EngineError> CorpusWriter::Create(const std::filesys
 
 std::expected<std::uint32_t, EngineError> CorpusWriter::AddSource(SourceInfo source)
 {
-    if (impl_->failed || impl_->finished || impl_->sources.size() >= MAX_SOURCES || source.path.empty() ||
-        source.path.size() > MAX_TEXT_BYTES || source.json_field.size() > MAX_TEXT_BYTES ||
+    if (impl_->failed || impl_->finished)
+    {
+        return std::unexpected(EngineError::CorruptDatabase);
+    }
+    if (impl_->sources.size() >= impl_->limits.sources)
+    {
+        return std::unexpected(EngineError::LimitsExceeded);
+    }
+    if (source.path.empty() || source.path.size() > MAX_TEXT_BYTES || source.json_field.size() > MAX_TEXT_BYTES ||
         source.path.find('\0') != std::string::npos || source.json_field.find('\0') != std::string::npos)
     {
         return std::unexpected(EngineError::CorruptDatabase);
@@ -320,8 +330,15 @@ std::expected<std::uint32_t, EngineError> CorpusWriter::AddSource(SourceInfo sou
 
 std::expected<std::uint32_t, EngineError> CorpusWriter::ReserveDistinct(std::string_view text)
 {
-    if (impl_->failed || impl_->finished || impl_->uses.size() >= MAX_DISTINCT || text.size() > MAX_TEXT_BYTES ||
-        impl_->distinct_texts.contains(std::string{text}))
+    if (impl_->failed || impl_->finished)
+    {
+        return std::unexpected(EngineError::CorruptDatabase);
+    }
+    if (impl_->uses.size() >= impl_->limits.distinct)
+    {
+        return std::unexpected(EngineError::LimitsExceeded);
+    }
+    if (text.size() > MAX_TEXT_BYTES || impl_->distinct_texts.contains(std::string{text}))
     {
         return std::unexpected(EngineError::CorruptDatabase);
     }
@@ -484,8 +501,15 @@ static std::expected<void, EngineError> SpillAddLines(std::ostream &lines_out, s
 std::expected<void, EngineError> CorpusWriter::AddLines(std::span<const CorpusLine> lines,
                                                         std::span<const std::vector<std::string>> line_terms)
 {
-    if (impl_->failed || impl_->finished || lines.size() != line_terms.size() ||
-        lines.size() > MAX_LINES - impl_->line_count)
+    if (impl_->failed || impl_->finished)
+    {
+        return std::unexpected(EngineError::CorruptDatabase);
+    }
+    if (lines.size() > impl_->limits.lines - impl_->line_count)
+    {
+        return std::unexpected(EngineError::LimitsExceeded);
+    }
+    if (lines.size() != line_terms.size())
     {
         return std::unexpected(EngineError::CorruptDatabase);
     }
@@ -768,17 +792,18 @@ std::expected<void, EngineError> CorpusWriter::Finish()
         impl_->failed = true;
         return std::unexpected(EngineError::FileOpenFailure);
     }
-    auto lexical = EncodeLexicalSectionSpilled(impl_->terms.path, impl_->line_count, impl_->destination);
+    auto lexical = EncodeLexicalSectionSpilled(impl_->terms.path, impl_->line_count, impl_->destination,
+                                               detail::CORPUS_WRITER_MEMORY_BUDGET_BYTES, impl_->limits);
     if (!lexical)
     {
         impl_->failed = true;
         return std::unexpected(lexical.error());
     }
     impl_->lexical_spill = lexical->path;
-    if (lexical->bytes > MAX_LEXICAL_BYTES)
+    if (lexical->bytes > impl_->limits.lexical_bytes)
     {
         impl_->failed = true;
-        return std::unexpected(EngineError::CorruptDatabase);
+        return std::unexpected(EngineError::LimitsExceeded);
     }
     std::ifstream lexical_input(lexical->path, std::ios::binary);
     if (!lexical_input)

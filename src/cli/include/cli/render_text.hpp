@@ -15,6 +15,10 @@ namespace nesso::cli
 /// Escapes control characters and invalid UTF-8 bytes for safe terminal output.
 [[nodiscard]] std::string EscapeTerminalControls(std::string_view text);
 
+/// `Message(error)` with the stored and loaded values of a model mismatch
+/// escaped by `EscapeTerminalControls`.
+[[nodiscard]] std::string FormatErrorMessage(const Error &error);
+
 /// One text row for `match`, without the newline: `[SOURCE:]line N[ (COUNT)]:
 /// SCORE: TEXT`. The source prefix is printed for several sources, stdin, and
 /// archive members. `--group` results add the count. Source and text are

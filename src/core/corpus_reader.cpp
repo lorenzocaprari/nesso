@@ -186,11 +186,16 @@ static std::expected<ParsedHeader, CorpusMapFailure> MapCorpusHeader(std::span<c
     return ParsedHeader{.layout = layout, .version = version};
 }
 
-static bool CorpusLimitsExceeded(const Layout &layout)
+static bool CorpusShapeBroken(const Layout &layout)
 {
     return layout.policy_bytes > MAX_POLICY_BYTES || layout.dimensions > MAX_DIMENSIONS ||
-           layout.source_count > MAX_SOURCES || layout.line_count > MAX_LINES || layout.distinct_count > MAX_DISTINCT ||
-           (layout.distinct_count > 0 && layout.dimensions == 0) || layout.lexical_bytes > MAX_LEXICAL_BYTES;
+           (layout.distinct_count > 0 && layout.dimensions == 0);
+}
+
+static bool CorpusLimitsExceeded(const Layout &layout)
+{
+    return layout.source_count > MAX_SOURCES || layout.line_count > MAX_LINES || layout.distinct_count > MAX_DISTINCT ||
+           layout.lexical_bytes > MAX_LEXICAL_BYTES;
 }
 
 static bool CorpusOffsetsBroken(const Layout &layout, std::uint64_t file_size)
@@ -231,9 +236,16 @@ static bool CorpusMatrixBroken(const Layout &layout, std::uint64_t file_size)
 static std::expected<void, EngineError> ValidateCorpusLayout(const Layout &layout, std::span<const std::byte> bytes,
                                                              bool has_lexical)
 {
-    if (CorpusLimitsExceeded(layout) || CorpusOffsetsBroken(layout, bytes.size()) ||
-        CorpusSectionsBroken(layout, bytes) || CorpusLexicalBroken(layout, bytes, has_lexical) ||
-        CorpusMatrixBroken(layout, bytes.size()))
+    if (CorpusShapeBroken(layout))
+    {
+        return std::unexpected(EngineError::CorruptDatabase);
+    }
+    if (CorpusLimitsExceeded(layout))
+    {
+        return std::unexpected(EngineError::LimitsExceeded);
+    }
+    if (CorpusOffsetsBroken(layout, bytes.size()) || CorpusSectionsBroken(layout, bytes) ||
+        CorpusLexicalBroken(layout, bytes, has_lexical) || CorpusMatrixBroken(layout, bytes.size()))
     {
         return std::unexpected(EngineError::CorruptDatabase);
     }

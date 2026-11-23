@@ -211,7 +211,7 @@ static int Render(const IndexSummary &summary, const IndexRequest &request)
 
 static int RenderError(const Error &error, int status)
 {
-    const std::string text = Message(error);
+    const std::string text = FormatErrorMessage(error);
     if (!text.empty())
     {
         std::println(std::cerr, "{}", text);

@@ -80,6 +80,8 @@ ErrorCause CauseOf(nesso::core::EngineError error)
         return ErrorCause::CorruptFile;
     case nesso::core::EngineError::UnsupportedVersion:
         return ErrorCause::UnsupportedCorpusVersion;
+    case nesso::core::EngineError::LimitsExceeded:
+        return ErrorCause::CorpusLimitsExceeded;
     }
     std::unreachable();
 }
@@ -139,6 +141,8 @@ std::string_view Describe(ErrorCause cause)
         return "corpus has no lexical postings; re-run `nesso index`";
     case ErrorCause::LexicalTermsMismatch:
         return "corpus lexical terms version mismatch; re-run `nesso index`";
+    case ErrorCause::CorpusLimitsExceeded:
+        return "the corpus exceeds this nesso's limits";
     }
     std::unreachable();
 }
@@ -171,6 +175,13 @@ static std::string MessageCorpusRead(const Error &error, std::string_view reason
                            "v{} is not supported; "
                            "re-run nesso index",
                            path, *error.corpus_version);
+    }
+    if (error.cause == ErrorCause::ModelMismatch && error.model_mismatch)
+    {
+        const ModelMismatchDetail &detail = *error.model_mismatch;
+        return std::format("Error: failed to read the corpus '{}': the corpus was built with a different model "
+                           "({}: stored {}, loaded {}); re-run nesso index",
+                           path, detail.key, detail.stored, detail.loaded);
     }
     return std::format("Error: failed to read the corpus '{}': {}", path, reason);
 }
@@ -360,7 +371,8 @@ Error MakeError(ErrorKind kind, ErrorCause cause, std::filesystem::path path, Li
                  .stale_sources = {},
                  .bundle_skips = std::move(bundle_skips),
                  .policy_mismatch = false,
-                 .corpus_version = {}};
+                 .corpus_version = {},
+                 .model_mismatch = {}};
 }
 
 Error ParseFailure(nesso::parser::ParseError code, std::filesystem::path path, const LineCounts &counts,
