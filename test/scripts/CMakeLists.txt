@@ -48,6 +48,10 @@ if(NESSO_PYTHON_EXECUTABLE)
            COMMAND "${NESSO_PYTHON_EXECUTABLE}"
                    "${CMAKE_CURRENT_SOURCE_DIR}/eval_measure_summary_test.py")
   set_tests_properties(eval_measure_summary_test PROPERTIES LABELS unit)
+  add_test(NAME eval_host_test
+           COMMAND "${NESSO_PYTHON_EXECUTABLE}"
+                   "${CMAKE_CURRENT_SOURCE_DIR}/eval_host_test.py")
+  set_tests_properties(eval_host_test PROPERTIES LABELS unit)
   add_test(NAME bench_real_log_compare_test
            COMMAND "${NESSO_PYTHON_EXECUTABLE}"
                    "${CMAKE_CURRENT_SOURCE_DIR}/bench_real_log_compare_test.py")

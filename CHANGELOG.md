@@ -25,6 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- The Pipeline `eval-retrieval` job compared a pull request scored on one hosted runner with a merge-base report scored on another. Dense MRR follows the int8 kernel ONNX Runtime picks for that CPU, so two pull requests with no ranking change both scored dense exact_id MRR 0.068761 and failed against a baseline of 0.077249. The job now scores the merge-base Release binary on the same runner as the head and compares those reports. The job summary and `build/eval/current/host.json` in the `eval-pipeline` artifact record the CPU model, the float distance kernel, and the int8 kernel.
 - Under `--mode auto`, a Hadoop or YARN id such as `attempt_1445144423722_0020_m_000002_1` or `container_1445144423722_0020_01_000002` is an identifier and ranks lexically, so its lines come first. Ids with more than one `_` segment after the first number used to be treated as natural language.
 - The `bdd` functional test sets `NESSO_THREADS=1`, so its concurrent scenarios no longer start one ONNX session per CPU each. That oversubscription made it the slowest part of the `coverage` job. A scenario that sets `NESSO_THREADS` or `--threads` keeps its own value.
 - The nightly real-log benchmark failed before it ran when more than one corpus was selected, because its cache key contained a comma. The key now joins corpus names with `-`.
