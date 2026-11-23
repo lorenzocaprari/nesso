@@ -12,6 +12,7 @@
 #include <parser/input_walk.hpp>
 #include <parser/log_chunker.hpp>
 
+#include <cstddef>
 #include <expected>
 #include <filesystem>
 #include <span>
@@ -67,14 +68,20 @@ void RecordBundleSkips(Scan &scan, const std::filesystem::path &path, const ness
 } // namespace detail
 
 static std::expected<void, Error> ScanStdin(Scan &scan, nesso::parser::ParseStats &stats, std::string_view json_field,
-                                            const nesso::parser::ArchiveLimits &limits, bool for_index)
+                                            const nesso::parser::ArchiveLimits &limits, bool for_index,
+                                            detail::ScanSink *sink)
 {
     const std::filesystem::path path{"-"};
-    const auto keep = [&scan](nesso::parser::ParsedChunk chunk)
+    const auto keep = [&scan, sink](nesso::parser::ParsedChunk chunk)
     {
         if (!chunk.skipped)
         {
             ++scan.chunks;
+        }
+        if (sink != nullptr)
+        {
+            sink->Chunk(std::move(chunk));
+            return;
         }
         scan.stdin_chunks.push_back(std::move(chunk));
     };
@@ -98,23 +105,19 @@ static std::expected<void, Error> ScanStdin(Scan &scan, nesso::parser::ParseStat
     return {};
 }
 
-namespace detail
-{
-
-bool SameSource(const nesso::core::SourceInfo &left, const nesso::core::SourceInfo &right)
-{
-    return left.tracked == right.tracked && left.size == right.size && left.modified_time == right.modified_time;
-}
-
-std::expected<Scan, Error> ScanFiles(std::span<const std::filesystem::path> files, std::string_view json_field,
-                                     const nesso::parser::ArchiveLimits &limits, bool for_index)
+// One read pass. With a sink, every path is announced and every chunk goes to
+// the sink; stdin is not kept.
+static std::expected<Scan, Error> ScanEach(std::span<const std::filesystem::path> files, std::string_view json_field,
+                                           const nesso::parser::ArchiveLimits &limits, bool for_index,
+                                           detail::ScanSink *sink)
 {
     const ScopedStage stage{"parse"};
     nesso::parser::ParseStats stats{};
     Scan scan{};
     bool captured_stdin = false;
-    for (const std::filesystem::path &path : files)
+    for (std::size_t index = 0; index < files.size(); ++index)
     {
+        const std::filesystem::path &path = files[index];
         if (for_index)
         {
             auto source = nesso::core::SourceInfoFor(path, json_field);
@@ -125,6 +128,10 @@ std::expected<Scan, Error> ScanFiles(std::span<const std::filesystem::path> file
             }
             scan.sources.push_back(std::move(*source));
         }
+        if (sink != nullptr)
+        {
+            sink->BeginFile(index, path);
+        }
         if (path == "-")
         {
             if (captured_stdin)
@@ -132,7 +139,7 @@ std::expected<Scan, Error> ScanFiles(std::span<const std::filesystem::path> file
                 continue;
             }
             captured_stdin = true;
-            if (const auto scanned = ScanStdin(scan, stats, json_field, limits, for_index); !scanned)
+            if (const auto scanned = ScanStdin(scan, stats, json_field, limits, for_index, sink); !scanned)
             {
                 return std::unexpected(scanned.error());
             }
@@ -141,7 +148,15 @@ std::expected<Scan, Error> ScanFiles(std::span<const std::filesystem::path> file
 
         const nesso::parser::ParseStats before = stats;
         const auto streamed = nesso::parser::Chunker::ForEach(
-            path, MAX_LINE_LENGTH, &stats, json_field, [&scan](const nesso::parser::ParsedChunk &) { ++scan.chunks; },
+            path, MAX_LINE_LENGTH, &stats, json_field,
+            [&scan, sink](nesso::parser::ParsedChunk chunk)
+            {
+                ++scan.chunks;
+                if (sink != nullptr)
+                {
+                    sink->Chunk(std::move(chunk));
+                }
+            },
             limits);
         if (!streamed)
         {
@@ -153,6 +168,26 @@ std::expected<Scan, Error> ScanFiles(std::span<const std::filesystem::path> file
     }
     scan.counts = MakeLineCounts(stats, std::string{json_field});
     return scan;
+}
+
+namespace detail
+{
+
+bool SameSource(const nesso::core::SourceInfo &left, const nesso::core::SourceInfo &right)
+{
+    return left.tracked == right.tracked && left.size == right.size && left.modified_time == right.modified_time;
+}
+
+std::expected<Scan, Error> ScanFiles(std::span<const std::filesystem::path> files, std::string_view json_field,
+                                     const nesso::parser::ArchiveLimits &limits, bool for_index)
+{
+    return ScanEach(files, json_field, limits, for_index, nullptr);
+}
+
+std::expected<Scan, Error> ScanFiles(std::span<const std::filesystem::path> files, std::string_view json_field,
+                                     const nesso::parser::ArchiveLimits &limits, ScanSink &sink)
+{
+    return ScanEach(files, json_field, limits, false, &sink);
 }
 
 std::expected<std::vector<std::filesystem::path>, Error>

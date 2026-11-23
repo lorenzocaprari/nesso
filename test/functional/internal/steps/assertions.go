@@ -398,3 +398,28 @@ func (b *bindings) stdoutIs(content *godog.DocString) error {
 	}
 	return nil
 }
+
+// provisionalRefreshContains checks the `--json --provisional` records of one
+// update for a fragment.
+func (b *bindings) provisionalRefreshContains(refresh, fragment string) error {
+	text, err := b.stream("stdout")
+	if err != nil {
+		return err
+	}
+	marker := fmt.Sprintf(`,"final":false,"refresh":%s}`, refresh)
+	fragment = phrase(fragment)
+	records := 0
+	for _, line := range strings.Split(text, "\n") {
+		if !strings.HasSuffix(line, marker) {
+			continue
+		}
+		records++
+		if strings.Contains(line, fragment) {
+			return nil
+		}
+	}
+	if records == 0 {
+		return fmt.Errorf("stdout has no records for refresh %s:\n%s", refresh, text)
+	}
+	return fmt.Errorf("refresh %s does not contain %q:\n%s", refresh, fragment, text)
+}

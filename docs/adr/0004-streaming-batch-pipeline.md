@@ -63,3 +63,24 @@ merged as [PR #88](https://github.com/lorenzocaprari/nesso/pull/88) on 2026-10-1
 A threaded pipeline is not discussed in those pull requests or in 064f888.
 
 `docs/usage.md` describes `grep` as embedding in batches and keeping the top matches.
+
+## Amendment: grep embeds whole windows best first
+
+`grep` now reads its input once. The second parse is gone, and stdin is
+no longer replayed from a kept copy. Each line is added to the distinct index
+as it is read, and the pending list is cleared at every 1024 texts. Window
+`w` is still ids `[1024w, 1024w + 1024)` in first-occurrence order, and the
+text of each id comes from `DistinctIndex::Text`. Only the order in which
+whole windows are embedded changes. `EmbedOrder` in
+`src/core/embed_order.cpp` sorts windows by three integer keys, each
+descending: a line contains the stripped query (the substring test of
+lexical mode), the most of the query's first 64 distinct lexical terms one
+line contains, and the number of ids that occur once. Ties go by ascending
+window index. A window's members and their order are those of input order,
+so the int8 rule above holds, every score is unchanged, and the final
+output stays byte-identical. The provisional sequence of
+`GrepObserver` changes: the most promising window is reported first. Dense
+mode keeps, for each id, only the first `topK` lines (the first line with
+`--group`), because a later line ties an earlier one on score and loses on
+ordinal. Hybrid and lexical keep every line, as before. `index` still uses
+the two-pass scan.
