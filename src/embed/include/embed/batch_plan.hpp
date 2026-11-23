@@ -6,6 +6,7 @@
 
 #include <cstddef>
 #include <span>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -15,12 +16,17 @@ namespace nesso::embed
 /// Texts in one flush. Not derived from core count, session count, or RAM.
 inline constexpr size_t BATCH_WINDOW = 1024;
 
-/// Maximum texts in one padded ONNX run.
+/// Maximum texts in one planned run. A run is a scheduling group for one
+/// session: each of its texts is a separate, unpadded ONNX run.
 inline constexpr size_t BATCH_MAX_TEXTS = 32;
 
-/// Padded-token budget of one ONNX run. The newest text in ascending order sets
-/// the length.
+/// Token budget of one planned run. The newest text in ascending order counts
+/// as the length of every text in the run.
 inline constexpr size_t BATCH_TOKEN_BUDGET = 1024;
+
+/// How a planned run reaches ONNX Runtime: every text alone, so a text's vector
+/// does not depend on the other texts in its run (#362).
+inline constexpr std::string_view BATCH_RUN = "single";
 
 /// Indices into the caller's span, in packed order.
 struct PlannedBatch

@@ -445,6 +445,59 @@ Feature: grep
     And stdout contains "\"occurrences\":2"
     And stdout contains "\"schema_version\":2"
 
+  Scenario: a line's dense score does not depend on the lines embedded with it
+    Given stdin is:
+      """
+      database connection refused
+      node 1 reported upstream replica timeout
+      node 2 reported upstream replica timeout upstream replica timeout
+      node 3 reported upstream replica timeout upstream replica timeout upstream replica timeout
+      node 4 reported upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout
+      node 5 reported upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout
+      node 6 reported upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout
+      node 7 reported upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout
+      node 8 reported upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout
+      node 9 reported upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout
+      node 10 reported upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout
+      node 11 reported upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout
+      node 12 reported upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout
+      node 13 reported upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout
+      node 14 reported upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout
+      node 15 reported upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout
+      node 16 reported upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout
+      node 17 reported upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout
+      node 18 reported upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout
+      node 19 reported upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout
+      node 20 reported
+      node 21 reported upstream replica timeout
+      node 22 reported upstream replica timeout upstream replica timeout
+      node 23 reported upstream replica timeout upstream replica timeout upstream replica timeout
+      node 24 reported upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout
+      node 25 reported upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout
+      node 26 reported upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout
+      node 27 reported upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout
+      node 28 reported upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout
+      node 29 reported upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout
+      node 30 reported upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout
+      node 31 reported upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout
+      node 32 reported upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout
+      node 33 reported upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout
+      node 34 reported upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout
+      node 35 reported upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout
+      node 36 reported upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout
+      node 37 reported upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout
+      node 38 reported upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout
+      node 39 reported upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout upstream replica timeout
+      """
+    When I run nesso with arguments grep "database connection refused" --mode dense --json -k 1 -
+    Then the exit code is 0
+    And stdout contains "\"line\":1,"
+    Given stdin is:
+      """
+      database connection refused
+      """
+    Then running nesso with arguments grep "database connection refused" --mode dense --json -k 1 - prints the same stdout
+
   Scenario: lines that differ only by an id share a score
     Given a file "blocks.log" with:
       """

@@ -267,8 +267,9 @@ std::expected<nesso::core::CorpusPolicy, Error> MakeCorpusPolicy(const nesso::em
         return std::unexpected(std::move(error));
     }
     return nesso::core::CorpusPolicy{
-        {"batch", std::format("window:{},max:{},tokens:{},order:length-then-input", nesso::embed::BATCH_WINDOW,
-                              nesso::embed::BATCH_MAX_TEXTS, nesso::embed::BATCH_TOKEN_BUDGET)},
+        {"batch",
+         std::format("window:{},max:{},tokens:{},order:length-then-input,run:{}", nesso::embed::BATCH_WINDOW,
+                     nesso::embed::BATCH_MAX_TEXTS, nesso::embed::BATCH_TOKEN_BUDGET, nesso::embed::BATCH_RUN)},
         {"bm25", std::string{nesso::core::BM25_POLICY}},
         {"dedup", "masked-v1"},
         {"dimensions", std::to_string(identity->dimensions)},

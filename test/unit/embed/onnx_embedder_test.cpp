@@ -3,7 +3,9 @@
 
 #include <cerrno>
 #include <cmath>
+#include <cstddef>
 #include <filesystem>
+#include <initializer_list>
 #include <string>
 #include <utility>
 #include <vector>
@@ -95,26 +97,9 @@ TEST_CASE("OnnxEmbedder EmbedBatch matches per-string embed", "[OnnxEmbedder][em
     {
         const auto single = (*embedder)->Embed(texts[i]);
         REQUIRE(single.has_value());
-        REQUIRE((*batch)[i].size() == single->size());
-        float cosine = 0.0F;
-        for (size_t dim = 0; dim < single->size(); ++dim)
-        {
-            cosine += (*batch)[i][dim] * (*single)[dim];
-        }
-        // Dynamic quantization scales across the padded batch, so a batched
-        // embed and a single embed of the same text differ by about 0.0125.
-        REQUIRE(cosine > 0.98F);
+        // Each text runs alone, so a batched embed is the single embed.
+        REQUIRE((*batch)[i] == *single);
     }
-}
-
-static float CosineSimilarity(const std::vector<float> &left, const std::vector<float> &right)
-{
-    float score = 0.0F;
-    for (size_t dim = 0; dim < left.size(); ++dim)
-    {
-        score += left[dim] * right[dim];
-    }
-    return score;
 }
 
 TEST_CASE("OnnxEmbedder mixed-length batch matches a single embed", "[OnnxEmbedder][embed][integration]")
@@ -147,8 +132,8 @@ TEST_CASE("OnnxEmbedder mixed-length batch matches a single embed", "[OnnxEmbedd
     const auto long_alone = (*embedder)->Embed(long_text);
     REQUIRE(short_alone.has_value());
     REQUIRE(long_alone.has_value());
-    REQUIRE(CosineSimilarity((*batch)[0], *short_alone) > 0.98F);
-    REQUIRE(CosineSimilarity((*batch)[1], *long_alone) > 0.98F);
+    REQUIRE((*batch)[0] == *short_alone);
+    REQUIRE((*batch)[1] == *long_alone);
 }
 
 TEST_CASE("OnnxEmbedder reports completed batches", "[OnnxEmbedder][embed][integration]")
@@ -231,25 +216,42 @@ TEST_CASE("OnnxEmbedder int8 pool repeats a two-batch embed byte for byte", "[On
     }
 }
 
-TEST_CASE("int8 bytes change when texts share a padded batch", "[OnnxEmbedder][embed][integration]")
+TEST_CASE("a text's vector does not depend on the texts embedded with it", "[OnnxEmbedder][embed][integration]")
 {
     const std::filesystem::path model_dir = ModelDirOrSkip();
 
-    const auto embedder = nesso::embed::OnnxEmbedder::Create(model_dir, 1);
-    REQUIRE(embedder.has_value());
-    REQUIRE((*embedder)->Policy().quantized);
-
-    const std::string anchor = "database connection refused";
-    std::string partner;
-    for (int repeat = 0; repeat < 40; ++repeat)
+    // Neighbours of many lengths, so a padded run would pad the anchor and
+    // share the int8 activation scale with them (#362).
+    std::vector<std::string> neighbours;
+    neighbours.reserve(40);
+    for (int index = 0; index < 40; ++index)
     {
-        partner += "upstream database connection timeout while waiting for the replica ";
+        std::string neighbour = "node " + std::to_string(index) + " reported";
+        for (int word = 0; word < index; ++word)
+        {
+            neighbour += " upstream replica timeout";
+        }
+        neighbours.push_back(std::move(neighbour));
     }
-    const std::vector<std::string> together{anchor, partner};
-    const auto batched = (*embedder)->EmbedBatch(together);
-    const auto alone = (*embedder)->Embed(anchor);
-    REQUIRE(batched.has_value());
-    REQUIRE(alone.has_value());
-    REQUIRE(batched->size() == together.size());
-    REQUIRE(batched->front() != *alone);
+    const std::string anchor = "database connection refused";
+
+    for (const size_t threads : {size_t{1}, size_t{2}})
+    {
+        CAPTURE(threads);
+        const auto embedder = nesso::embed::OnnxEmbedder::Create(model_dir, threads);
+        REQUIRE(embedder.has_value());
+        const auto alone = (*embedder)->Embed(anchor);
+        REQUIRE(alone.has_value());
+
+        for (const size_t position : {size_t{0}, neighbours.size() / 2, neighbours.size()})
+        {
+            CAPTURE(position);
+            std::vector<std::string> texts = neighbours;
+            texts.insert(texts.begin() + static_cast<std::ptrdiff_t>(position), anchor);
+            const auto together = (*embedder)->EmbedBatch(texts);
+            REQUIRE(together.has_value());
+            REQUIRE(together->size() == texts.size());
+            REQUIRE((*together)[position] == *alone);
+        }
+    }
 }
