@@ -77,3 +77,7 @@ A source that is an archive member cannot be re-read by byte offset. `index` sto
 * v3, refuse v2: good, a mismatch is caught from the header; bad, the policy block is a second format to validate.
 * v3 plus a v2 reader: good, old corpora keep working; bad, two readers to test, for vectors built under other rules.
 * v2 plus the unused header field: good, no layout change; bad, that field cannot hold a model hash, and vectors stay per line.
+
+## Amendment: run:single in the batch policy
+
+[ADR 0016](0016-embed-each-text-alone.md) runs each text alone and unpadded, so which texts share a planned run no longer changes int8 vectors. The `batch` value becomes `window:1024,max:32,tokens:1024,order:length-then-input,run:single`. A corpus with the earlier value still opens: `search` prints the batch policy warning, and `nesso index` again gives batch-independent vectors. The corpus version stays 3.

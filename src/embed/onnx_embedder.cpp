@@ -40,21 +40,10 @@ struct HiddenShape
     size_t hidden_size = 0;
 };
 
-static void AssertEncodedBatch(std::span<const TokenizedInput> encoded, std::span<const size_t> indices,
-                               size_t padded_length)
+static void AssertEncodedInput(const TokenizedInput &item)
 {
-    NESSO_ASSERT(std::ranges::all_of(indices,
-                                     [&](const size_t index)
-                                     {
-                                         if (index >= encoded.size())
-                                         {
-                                             return false;
-                                         }
-                                         const TokenizedInput &item = encoded[index];
-                                         return item.input_ids.size() == item.attention_mask.size() &&
-                                                item.input_ids.size() == item.token_type_ids.size() &&
-                                                item.input_ids.size() <= padded_length;
-                                     }));
+    NESSO_ASSERT(item.input_ids.size() == item.attention_mask.size());
+    NESSO_ASSERT(item.input_ids.size() == item.token_type_ids.size());
 }
 
 static std::vector<float> MeanPoolAndNormalize(std::span<const float> hidden_states,
@@ -234,6 +223,9 @@ class OnnxEmbedder::SessionImpl
     [[nodiscard]] std::expected<std::vector<std::vector<float>>, EmbedError>
     Infer(Ort::Session &session, std::span<const TokenizedInput> encoded, std::span<const size_t> indices) const;
 
+    [[nodiscard]] std::expected<std::vector<float>, EmbedError> InferOne(Ort::Session &session,
+                                                                         const TokenizedInput &item) const;
+
     Ort::Env env_ = MakeEnv();
     std::vector<std::unique_ptr<Ort::Session>> sessions_;
     ModelIo io_;
@@ -259,6 +251,10 @@ OnnxEmbedder::SessionImpl::SessionImpl(const std::filesystem::path &model_path, 
     io_ = ReadModelIo(*sessions_.front());
 }
 
+// A planned run is a scheduling group, not one padded tensor. The int8 model
+// quantizes activations with one scale per tensor, so other rows and padded
+// positions would move a text's vector (#362). Each text runs alone and
+// unpadded, so its vector depends only on its own tokens.
 std::expected<std::vector<std::vector<float>>, EmbedError>
 OnnxEmbedder::SessionImpl::Infer(Ort::Session &session, std::span<const TokenizedInput> encoded,
                                  std::span<const size_t> indices) const
@@ -267,45 +263,46 @@ OnnxEmbedder::SessionImpl::Infer(Ort::Session &session, std::span<const Tokenize
     {
         return std::unexpected(EmbedError::InvalidInput);
     }
+    NESSO_ASSERT(std::ranges::all_of(indices, [&](const size_t index) { return index < encoded.size(); }));
 
-    size_t padded_length = 0;
+    std::vector<std::vector<float>> embeddings;
+    embeddings.reserve(indices.size());
     for (const size_t index : indices)
     {
-        padded_length = std::max(padded_length, encoded[index].input_ids.size());
+        auto embedding = InferOne(session, encoded[index]);
+        if (!embedding)
+        {
+            return std::unexpected(embedding.error());
+        }
+        embeddings.push_back(std::move(*embedding));
     }
-    if (padded_length == 0)
+    return embeddings;
+}
+
+std::expected<std::vector<float>, EmbedError> OnnxEmbedder::SessionImpl::InferOne(Ort::Session &session,
+                                                                                  const TokenizedInput &item) const
+{
+    AssertEncodedInput(item);
+    const size_t sequence_length = item.input_ids.size();
+    if (sequence_length == 0)
     {
         return std::unexpected(EmbedError::InferenceFailure);
     }
-    AssertEncodedBatch(encoded, indices, padded_length);
-    const size_t batch_size = indices.size();
-    std::vector<int64_t> flat_input_ids(batch_size * padded_length, 0);
-    std::vector<int64_t> flat_attention_mask(batch_size * padded_length, 0);
-    std::vector<int64_t> flat_token_type_ids(batch_size * padded_length, 0);
-    for (size_t batch_index = 0; batch_index < batch_size; ++batch_index)
-    {
-        const TokenizedInput &item = encoded[indices[batch_index]];
-        for (size_t token = 0; token < item.input_ids.size(); ++token)
-        {
-            const size_t offset = (batch_index * padded_length) + token;
-            flat_input_ids[offset] = item.input_ids[token];
-            flat_attention_mask[offset] = item.attention_mask[token];
-            flat_token_type_ids[offset] = item.token_type_ids[token];
-        }
-    }
+    // The run takes mutable buffers; these copies keep `item` const.
+    std::vector<int64_t> input_ids = item.input_ids;
+    std::vector<int64_t> attention_mask = item.attention_mask;
+    std::vector<int64_t> token_type_ids = item.token_type_ids;
 
     try
     {
         const Ort::MemoryInfo memory_info = Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault);
-        const std::array<int64_t, 2> input_shape{static_cast<int64_t>(batch_size), static_cast<int64_t>(padded_length)};
-        auto input_ids_tensor = Ort::Value::CreateTensor<int64_t>(
-            memory_info, flat_input_ids.data(), flat_input_ids.size(), input_shape.data(), input_shape.size());
-        auto attention_mask_tensor =
-            Ort::Value::CreateTensor<int64_t>(memory_info, flat_attention_mask.data(), flat_attention_mask.size(),
-                                              input_shape.data(), input_shape.size());
-        auto token_type_ids_tensor =
-            Ort::Value::CreateTensor<int64_t>(memory_info, flat_token_type_ids.data(), flat_token_type_ids.size(),
-                                              input_shape.data(), input_shape.size());
+        const std::array<int64_t, 2> input_shape{1, static_cast<int64_t>(sequence_length)};
+        auto input_ids_tensor = Ort::Value::CreateTensor<int64_t>(memory_info, input_ids.data(), input_ids.size(),
+                                                                  input_shape.data(), input_shape.size());
+        auto attention_mask_tensor = Ort::Value::CreateTensor<int64_t>(
+            memory_info, attention_mask.data(), attention_mask.size(), input_shape.data(), input_shape.size());
+        auto token_type_ids_tensor = Ort::Value::CreateTensor<int64_t>(
+            memory_info, token_type_ids.data(), token_type_ids.size(), input_shape.data(), input_shape.size());
 
         const std::array<const char *, 3> input_names{io_.input_ids.c_str(), io_.attention_mask.c_str(),
                                                       io_.token_type_ids.c_str()};
@@ -339,24 +336,13 @@ OnnxEmbedder::SessionImpl::Infer(Ort::Session &session, std::span<const Tokenize
         const auto &output = outputs.front();
         const auto *hidden_states = output.GetTensorData<float>();
         const auto output_shape = output.GetTensorTypeAndShapeInfo().GetShape();
-        if (!MatchesMiniLmHiddenStatesShape(output_shape, batch_size, padded_length))
+        if (!MatchesMiniLmHiddenStatesShape(output_shape, 1, sequence_length))
         {
             return std::unexpected(EmbedError::InferenceFailure);
         }
-        const std::size_t row_width = padded_length * MINILM_EMBEDDING_DIMENSIONS;
-        const std::span<const float> hidden{hidden_states, batch_size * row_width};
-        const std::span<const int64_t> attention{flat_attention_mask};
-
-        std::vector<std::vector<float>> embeddings;
-        embeddings.reserve(batch_size);
-        for (size_t batch_index = 0; batch_index < batch_size; ++batch_index)
-        {
-            embeddings.push_back(
-                MeanPoolAndNormalize(hidden.subspan(batch_index * row_width, row_width),
-                                     attention.subspan(batch_index * padded_length, padded_length),
-                                     {.sequence_length = padded_length, .hidden_size = MINILM_EMBEDDING_DIMENSIONS}));
-        }
-        return embeddings;
+        const std::span<const float> hidden{hidden_states, sequence_length * MINILM_EMBEDDING_DIMENSIONS};
+        return MeanPoolAndNormalize(hidden, attention_mask,
+                                    {.sequence_length = sequence_length, .hidden_size = MINILM_EMBEDDING_DIMENSIONS});
     }
     catch (...)
     {

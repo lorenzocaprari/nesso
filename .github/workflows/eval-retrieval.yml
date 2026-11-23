@@ -4,10 +4,11 @@ name: Eval retrieval
 # Reuses the Pipeline eval-pipeline artifact for this commit's nesso quality
 # (same NESSO_BENCH_REF and SHA) when present, scores grep and BM25 only, and
 # merges them for margins. Falls back to scoring nesso too when that artifact
-# is missing. Compares against the latest successful scheduled report on main
+# is missing. thunderbird-needle-1m is not in that artifact, so nesso is scored
+# on it every run. Compares against the latest successful scheduled report on main
 # and warns on relative drops over 5%. Scores never fail the job; only script
 # errors do. Also measures nesso, BM25 and grep speed on the BGL 100k window
-# (report only, never a gate). No gh-pages write yet.
+# and on thunderbird-needle-1m (report only, never a gate). No gh-pages write yet.
 on:
   schedule:
     # 06:47 UTC, after real-log at 05:47 UTC (fuzz-test 03:17, index-rss 04:47).
@@ -292,6 +293,17 @@ jobs:
             nesso-bench/build/bench/BGL_loghub2_4100001_100000.labels
           key: loghub2-bgl-needle-100k-${{ hashFiles('nesso-bench/scripts/fetch-loghub') }}
 
+      # nesso-bench names this thunderbird-needle-1m. There is no Thunderbird
+      # 100k needle dataset at NESSO_BENCH_REF.
+      - name: Restore Thunderbird needle window
+        id: thunderbird_needle_logs
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            nesso-bench/build/bench/Thunderbird_loghub2_8550001_1000000.log
+            nesso-bench/build/bench/Thunderbird_loghub2_8550001_1000000.labels
+          key: loghub2-thunderbird-needle-1m-${{ hashFiles('nesso-bench/scripts/fetch-loghub') }}
+
       - name: Install Dependencies (Conan)
         run: |
           conan profile detect --force
@@ -311,6 +323,12 @@ jobs:
       - name: Fetch BGL needle window
         run: python3 nesso-bench/scripts/fetch-loghub --dataset bgl-loghub2 --window 4100001:100000
 
+      # Same for Thunderbird. The pinned window is 1,000,000 lines from
+      # 8550001 (thunderbird-needle-1m). A miss downloads the 293 MB Loghub 2.0
+      # Thunderbird archive, checks it, cuts the window, and deletes the archive.
+      - name: Fetch Thunderbird needle window
+        run: python3 nesso-bench/scripts/fetch-loghub --dataset thunderbird-loghub2 --window 8550001:1000000
+
       # Prefer Pipeline nesso reports for this SHA; score grep and BM25 here.
       # Modes match the Pipeline gate. --jobs 4 applies when nesso is scored.
       - name: Score retrieval reports
@@ -328,7 +346,7 @@ jobs:
           if [[ "${reuse}" == "true" ]]; then
             echo "### Scoring path" >> "${GITHUB_STEP_SUMMARY}"
             echo >> "${GITHUB_STEP_SUMMARY}"
-            echo "Reused Pipeline eval-pipeline for nesso; scored grep and BM25." >> "${GITHUB_STEP_SUMMARY}"
+            echo "Reused Pipeline eval-pipeline for nesso on the 2k, format, and BGL needle reports; scored grep and BM25 there. Scored nesso, grep, and BM25 on thunderbird-needle-1m." >> "${GITHUB_STEP_SUMMARY}"
             python3 scripts/eval-wrap-nesso-report \
               --in build/eval/pipeline/all_2k.json \
               --out build/eval/nesso-all_2k.json
@@ -387,6 +405,14 @@ jobs:
               --out build/eval/needle.json \
               | tee build/eval/needle.txt
           fi
+          # Not in eval-pipeline: Pipeline scores bgl-needle-100k only, so nesso
+          # is scored here on every run, with grep and BM25.
+          python3 nesso-bench/scripts/eval-retrieval \
+            --dataset thunderbird-needle-1m "${modes[@]}" --jobs 4 \
+            --engine nesso --engine grep --engine bm25 \
+            --skip-fetch "${binary[@]}" \
+            --out build/eval/needle_thunderbird.json \
+            | tee build/eval/needle_thunderbird.txt
           {
             echo
             echo "### Retrieval evaluation (Loghub 2k seed sets, dev queries: nesso, grep, BM25)"
@@ -406,6 +432,12 @@ jobs:
             echo '```'
             grep -v '^wrote ' build/eval/needle.txt || true
             echo '```'
+            echo
+            echo "### Needle benchmark (Thunderbird 1M, thunderbird-needle-1m, administrators' alert labels: nesso, grep, BM25)"
+            echo
+            echo '```'
+            grep -v '^wrote ' build/eval/needle_thunderbird.txt || true
+            echo '```'
           } >> "${GITHUB_STEP_SUMMARY}"
 
       # nesso against the best other engine per class, among the engines scored
@@ -415,7 +447,7 @@ jobs:
       - name: Nesso margin against other engines
         run: |
           set -euo pipefail
-          for report in all_2k formats needle; do
+          for report in all_2k formats needle needle_thunderbird; do
             {
               echo
               python3 nesso-bench/scripts/eval-retrieval-compare \
@@ -428,7 +460,7 @@ jobs:
         run: |
           set -euo pipefail
           : > build/eval/compare.txt
-          for report in all_2k formats needle; do
+          for report in all_2k formats needle needle_thunderbird; do
             previous="build/eval/previous/${report}.json"
             {
               echo
@@ -476,6 +508,30 @@ jobs:
             | tee build/eval/measure-summary.md >> "${GITHUB_STEP_SUMMARY}"
           echo >> "${GITHUB_STEP_SUMMARY}"
           echo "Measurement took $(( SECONDS - started )) s." >> "${GITHUB_STEP_SUMMARY}"
+
+      # thunderbird-needle-1m is 1,000,000 lines and 10 queries, ten times the
+      # BGL line count. The BGL measure above is a few minutes and this job's
+      # timeout is 120 minutes, so this window fits. continue-on-error, report
+      # only, same as that step.
+      - name: Measure nesso, BM25 and grep speed on Thunderbird (report only)
+        continue-on-error: true
+        env:
+          NESSO_THREADS: "1"
+        run: |
+          set -euo pipefail
+          started="${SECONDS}"
+          python3 nesso-bench/scripts/eval-retrieval \
+            --dataset thunderbird-needle-1m --measure --measure-only --repeat 3 \
+            --modes auto \
+            --engine nesso --engine bm25 --engine grep \
+            --skip-fetch --binary build/Release/src/nesso --model-dir models \
+            --workdir build/eval/measure-work-thunderbird \
+            --out build/eval/measure-needle-thunderbird.json \
+            | tee build/eval/measure-needle-thunderbird.txt
+          python3 scripts/eval-measure-summary --in build/eval/measure-needle-thunderbird.json \
+            | tee -a build/eval/measure-summary.md >> "${GITHUB_STEP_SUMMARY}"
+          echo >> "${GITHUB_STEP_SUMMARY}"
+          echo "Thunderbird measurement took $(( SECONDS - started )) s." >> "${GITHUB_STEP_SUMMARY}"
 
       - name: Note Loghub 2k inputs are ready to cache
         id: logfiles
@@ -545,6 +601,15 @@ jobs:
             nesso-bench/build/bench/BGL_loghub2_4100001_100000.labels
           key: loghub2-bgl-needle-100k-${{ hashFiles('nesso-bench/scripts/fetch-loghub') }}
 
+      - name: Save Thunderbird needle window
+        if: always() && !cancelled() && steps.thunderbird_needle_logs.outputs.cache-hit != 'true' && hashFiles('nesso-bench/build/bench/Thunderbird_loghub2_8550001_1000000.labels') != ''
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            nesso-bench/build/bench/Thunderbird_loghub2_8550001_1000000.log
+            nesso-bench/build/bench/Thunderbird_loghub2_8550001_1000000.labels
+          key: loghub2-thunderbird-needle-1m-${{ hashFiles('nesso-bench/scripts/fetch-loghub') }}
+
       # resolve takes the nightly baseline from scheduled runs only.
       - name: Upload evaluation report
         if: always()
@@ -555,6 +620,7 @@ jobs:
             build/eval/all_2k.json
             build/eval/formats.json
             build/eval/needle.json
+            build/eval/needle_thunderbird.json
           retention-days: 7
           if-no-files-found: warn
 
@@ -567,6 +633,7 @@ jobs:
           name: eval-retrieval-measure
           path: |
             build/eval/measure-needle.json
+            build/eval/measure-needle-thunderbird.json
             build/eval/measure-summary.md
           retention-days: 7
           if-no-files-found: ignore

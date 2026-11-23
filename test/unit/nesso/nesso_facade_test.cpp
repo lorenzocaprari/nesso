@@ -72,7 +72,7 @@ void WriteBytes(const std::filesystem::path &path, const void *data, size_t size
 nesso::core::CorpusPolicy TestPolicy()
 {
     const auto identity = TestEmbedderIdentity();
-    return {{"batch", "window:1024,max:32,tokens:1024,order:length-then-input"},
+    return {{"batch", "window:1024,max:32,tokens:1024,order:length-then-input,run:single"},
             {"bm25", std::string{nesso::core::BM25_POLICY}},
             {"dedup", "masked-v1"},
             {"dimensions", std::to_string(identity.dimensions)},
@@ -383,6 +383,28 @@ TEST_CASE("search names the first identity key that differs from the loaded mode
     REQUIRE(mapped->corpus.Policy().contains("embed.prefix"));
     CHECK(mapped->corpus.Policy().at("embed.prefix") == "none");
     CHECK(ReadFile(indexed).find("\nembed.prefix=none\n") != std::string::npos);
+}
+
+TEST_CASE("search warns on a corpus embedded in padded runs", "[nesso][text]")
+{
+    const TempDir dir{"nesso_facade_padded_runs"};
+    const nesso::Nesso app{nesso::Config{}, std::make_unique<RecordingEmbedder>()};
+
+    const auto current = dir.Path() / "current.nesso";
+    WriteFixtureCorpus(current, TestPolicy());
+    const auto current_search = app.Search({.query = "alpha", .index = current});
+    REQUIRE(current_search.has_value());
+    CHECK_FALSE(current_search->policy_mismatch);
+
+    // The batch value index wrote before each text ran alone (#362).
+    auto padded_policy = TestPolicy();
+    padded_policy["batch"] = "window:1024,max:32,tokens:1024,order:length-then-input";
+    const auto padded = dir.Path() / "padded.nesso";
+    WriteFixtureCorpus(padded, std::move(padded_policy));
+    const auto padded_search = app.Search({.query = "alpha", .index = padded});
+    REQUIRE(padded_search.has_value());
+    CHECK(padded_search->policy_mismatch);
+    CHECK_FALSE(padded_search->matches.empty());
 }
 
 TEST_CASE("grep, index, and search run the text stages", "[nesso][text]")
