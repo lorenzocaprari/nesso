@@ -50,9 +50,9 @@ Chosen option: "Run each text alone and unpadded". It is the only option that is
 * Good, because appending or removing other lines cannot change a line's vector. A line's `index` score equals its `grep` score on a one-line file, on the same CPU.
 * Good, because the model file, its sha256 and `fetch-model` are unchanged.
 * Good, because a one-text call, such as a query, produces the same bytes as before.
-* Bad, because each text pays the per-run overhead. On the synthetic MiniLM-sized model, single-thread throughput fell 7.0% for int8 (177.3 to 164.9 lines/s) and 11.5% for fp32 (157.2 to 139.1 lines/s). That run used 2048 lines with a median of 27 tokens and nesso's plan rules, timed from Python. The CI `bench` job measures the real cost.
+* Bad, because each text pays the per-run overhead. Measured on `write_profile_log(10000)` from `scripts/bench`, on the default int8 model (9,013 unique templates, Intel Xeon, AVX2, median of 3 runs; PR `cf778bf` against merge base `dfa47b1`). At 1 thread, wall time went from 6.75 s (1,481 lines/s, 102,112 kB peak RSS) to 10.59 s (944 lines/s, 87,644 kB peak RSS): 1.57× wall time and about 14% lower peak RSS. At 4 threads, wall time went from 2.40 s (4,167 lines/s, 265,176 kB peak RSS) to 3.00 s (3,333 lines/s, 203,148 kB peak RSS): 1.25× wall time and about 23% lower peak RSS. On repetitive production logs, `template-v2` deduplication keeps unique key counts low, so the absolute wall-time overhead is small while peak RSS drops. High-cardinality logs with many unique messages pay the 1.25× to 1.57× cost.
 * Bad, because every int8 vector in an existing corpus differs from what `index` now writes. The model identity is unchanged, so `search` does not refuse the corpus. The `batch` value differs, so it prints the existing policy warning, and re-running `nesso index` gives batch-independent vectors.
-* Neutral, because dense retrieval metrics shift once.
+* Neutral, because dense retrieval metrics shift once. Across the 388 dev queries in all-2k plus formats, single-text int8 is slightly closer to fp32 than batched int8: dense overlap@10 0.7977 to 0.8129, auto 0.7219 to 0.7247. The Thunderbird auto MRR loss is mostly one query, `para_12`, whose new top 10 matches fp32.
 * Neutral, because vectors still depend on the CPU. Different int8 and fp32 kernels (AVX-512 VNNI or AVX2, and aarch64) round the floating-point parts differently. Making vectors CPU-independent would mean pinning ONNX Runtime's kernel dispatch to one instruction set. That is not part of this decision.
 
 ### Confirmation
@@ -91,4 +91,4 @@ Chosen option: "Run each text alone and unpadded". It is the only option that is
 
 ## More Information
 
-This record amends the int8 consequence in [ADR 0004](0004-streaming-batch-pipeline.md) and the batch bullet in [ADR 0010](0010-corpus-format-v3.md). If the measured cost on CI is too high, per-token activation scales are the next option to measure.
+This record amends the int8 consequence in [ADR 0004](0004-streaming-batch-pipeline.md) and the batch bullet in [ADR 0010](0010-corpus-format-v3.md). A model-level fix, per-token dynamic quantization or static quantization, remains a future revisit if high-cardinality indexing speed becomes a bottleneck. Keeping the published model file avoids a custom hosted model artifact today.
