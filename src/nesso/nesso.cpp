@@ -274,8 +274,7 @@ std::expected<nesso::core::CorpusPolicy, Error> MakeCorpusPolicy(const nesso::em
                      "they changed; reload them and retry.";
         return std::unexpected(std::move(error));
     }
-    return nesso::core::CorpusPolicy{
-        {"batch", BatchPolicy()},
+    nesso::core::CorpusPolicy policy{
         {"bm25", std::string{nesso::core::BM25_POLICY}},
         {"dedup", "masked-v1"},
         {"dimensions", std::to_string(identity->dimensions)},
@@ -288,6 +287,8 @@ std::expected<nesso::core::CorpusPolicy, Error> MakeCorpusPolicy(const nesso::em
         {"tokens.max", std::to_string(nesso::embed::DEFAULT_MAX_SEQUENCE_LENGTH)},
         {"truncate", std::format("{}-codepoints", MAX_LINE_LENGTH)},
         {"vocab.sha256", identity->vocab_sha256}};
+    policy.emplace("batch", BatchPolicy());
+    return policy;
 }
 
 std::string_view EffectiveModeName(EffectiveMode mode) noexcept
