@@ -73,6 +73,12 @@ target_link_libraries(
   nesso_group_test PRIVATE nesso_options nesso_lib nesso_embed nesso_core
                            Catch2::Catch2WithMain)
 
+add_executable(identifier_grep_test identifier_grep_test.cpp)
+add_test(NAME identifier_grep_test COMMAND identifier_grep_test)
+target_link_libraries(
+  identifier_grep_test PRIVATE nesso_options nesso_lib nesso_embed nesso_core
+                               Catch2::Catch2WithMain)
+
 add_executable(nesso_overview_test nesso_overview_test.cpp)
 add_test(NAME nesso_overview_test COMMAND nesso_overview_test)
 target_link_libraries(nesso_overview_test PRIVATE nesso_options nesso_lib
@@ -107,6 +113,7 @@ set_tests_properties(
   trace_test
   nesso_flush_test
   nesso_group_test
+  identifier_grep_test
   nesso_overview_test
   overview_render_test
   render_json_test
