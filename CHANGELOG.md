@@ -31,7 +31,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Under `--mode auto`, a Hadoop or YARN id such as `attempt_1445144423722_0020_m_000002_1` or `container_1445144423722_0020_01_000002` is an identifier and ranks lexically, so its lines come first. Ids with more than one `_` segment after the first number used to be treated as natural language.
 - The `bdd` functional test sets `NESSO_THREADS=1`, so its concurrent scenarios no longer start one ONNX session per CPU each. That oversubscription made it the slowest part of the `coverage` job. A scenario that sets `NESSO_THREADS` or `--threads` keeps its own value.
 - The nightly real-log benchmark failed before it ran when more than one corpus was selected, because its cache key contained a comma. The key now joins corpus names with `-`.
-- The nightly real-log benchmark could not finish Thunderbird: `index` and `grep` on 1M Thunderbird lines each ran past the one-hour per-command timeout, so the peak-RSS gate had no Thunderbird result. `scripts/bench --dataset real-log` now times 1M HDFS lines and 100k BGL and Thunderbird lines by default (`--lines` still sets all of them), records the line count in each case, and the workflow's per-command timeout is 1200 seconds.
+- The nightly real-log benchmark times the first 1,000,000 lines of HDFS, BGL, and Thunderbird again (`REAL_LOG_DEFAULT_LINES`). Masked dedup embeds one line per distinct masked text. The per-command timeout stays 1200 seconds, a hang guard, and the peak-RSS gate is unchanged. `--lines` still sets every corpus. The scheduled corpora stay `hdfs-v1` and `thunderbird`.
 
 ### Added
 
