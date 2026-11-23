@@ -47,7 +47,6 @@ on:
       - conan/profiles/clang-23-tsan
       - conan/profiles/clang-23-fuzz
       - scripts/toolchain-preview-fuzz-smoke
-      - .github/actions/toolchain-preview-lane/action.yml
 
 concurrency:
   group: toolchain-preview-${{ github.ref }}
@@ -382,18 +381,204 @@ jobs:
         password: ${{ secrets.GITHUB_TOKEN }}
       options: ${{ matrix.container_options }}
     steps:
-      - name: Run lane
-        uses: ./.github/actions/toolchain-preview-lane # zizmor: ignore[self-repository] same-commit local action; actionlint 1.7.12 rejects the self-repository form
+      - name: Checkout Repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          lane_id: ${{ matrix.id }}
-          profile: ${{ matrix.profile }}
-          config: ${{ matrix.config }}
-          suite: ${{ matrix.suite }}
-          ctest_label: ${{ matrix.ctest_label }}
-          ctest_exclude: ${{ matrix.ctest_exclude }}
-          compiler_needle: ${{ matrix.compiler_needle }}
-          sanitize_needle: ${{ matrix.sanitize_needle }}
-          ccache: ${{ matrix.ccache }}
+          persist-credentials: false
+
+      - name: Export sanitizer library path
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -n "${PREVIEW_LD_LIBRARY_PATH}" ]]; then
+            printf 'LD_LIBRARY_PATH=%s\n' "${PREVIEW_LD_LIBRARY_PATH}" >> "${GITHUB_ENV}"
+          fi
+
+      - name: Restore ccache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ github.workspace }}/.ccache
+          key: ccache-${{ runner.arch }}-${{ matrix.ccache }}-${{ github.sha }}
+          restore-keys: |
+            ccache-${{ runner.arch }}-${{ matrix.ccache }}-
+
+      - name: Zero ccache statistics
+        shell: bash
+        run: ccache --zero-stats
+
+      - name: Install Dependencies (Conan)
+        if: matrix.suite != 'fuzz'
+        shell: bash
+        env:
+          PROFILE: ${{ matrix.profile }}
+        run: |
+          set -euo pipefail
+          if [[ ! -f "${CONAN_HOME}/profiles/default" ]]; then
+            conan profile detect --force
+          fi
+          conan install . -pr:h "${PROFILE}" -pr:b default --lockfile=conan.lock --build=missing --no-remote $CONAN_WERROR_ARGS
+
+      - name: Build
+        id: build
+        if: matrix.suite != 'fuzz'
+        shell: bash
+        env:
+          PROFILE: ${{ matrix.profile }}
+          NESSO_REQUIRE_MODEL: "1"
+        run: |
+          set -euo pipefail
+          conan build . -pr:h "${PROFILE}" -pr:b default --lockfile=conan.lock --build=missing --no-remote $CONAN_WERROR_ARGS
+
+      - name: Require the preview compiler
+        id: require
+        if: matrix.suite != 'fuzz'
+        shell: bash
+        env:
+          BUILD_CONFIG: ${{ matrix.config }}
+          COMPILER_NEEDLE: ${{ matrix.compiler_needle }}
+          SANITIZE_NEEDLE: ${{ matrix.sanitize_needle }}
+        run: |
+          set -euo pipefail
+          commands="build/${BUILD_CONFIG}/compile_commands.json"
+          test -f "${commands}"
+          grep -q -- "${COMPILER_NEEDLE}" "${commands}"
+          if [[ -n "${SANITIZE_NEEDLE}" ]]; then
+            grep -q -- "${SANITIZE_NEEDLE}" "${commands}"
+          fi
+          grep -Eq -- '(^|[[:space:]])-Werror([[:space:]]|$)' "${commands}"
+          if grep -Eq -- '(^|[[:space:]])-stdlib=libc\+\+([[:space:]]|$)' "${commands}"; then
+            echo "error: compile commands select libc++" >&2
+            exit 1
+          fi
+          test -x "build/${BUILD_CONFIG}/src/nesso"
+          ldd "build/${BUILD_CONFIG}/src/nesso" > /tmp/nesso-ldd.txt
+          cat /tmp/nesso-ldd.txt
+          grep -q 'libstdc++' /tmp/nesso-ldd.txt
+          if grep -q 'libc++' /tmp/nesso-ldd.txt; then
+            echo "error: nesso is linked to libc++" >&2
+            exit 1
+          fi
+
+      - name: Restore MiniLM models
+        id: models
+        if: matrix.suite == 'unit' && steps.require.outcome == 'success'
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: models
+          key: minilm-${{ hashFiles('scripts/fetch-model') }}
+
+      - name: Fetch MiniLM models
+        if: matrix.suite == 'unit' && steps.require.outcome == 'success' && steps.models.outputs.cache-hit != 'true'
+        shell: bash
+        run: ./scripts/fetch-model models
+
+      - name: Run tests
+        id: tests
+        if: matrix.suite != 'fuzz' && steps.require.outcome == 'success'
+        shell: bash
+        env:
+          BUILD_CONFIG: ${{ matrix.config }}
+          CTEST_LABEL: ${{ matrix.ctest_label }}
+          CTEST_EXCLUDE: ${{ matrix.ctest_exclude }}
+          SUITE: ${{ matrix.suite }}
+        run: |
+          set -euo pipefail
+          mkdir -p "${GITHUB_WORKSPACE}/build/junit"
+          extra=()
+          if [[ -n "${CTEST_EXCLUDE}" ]]; then
+            extra+=(-E "${CTEST_EXCLUDE}")
+          fi
+          ctest --test-dir "build/${BUILD_CONFIG}" --output-on-failure -j "$(nproc)" -L "${CTEST_LABEL}" -V \
+            "${extra[@]}" \
+            --output-junit "${GITHUB_WORKSPACE}/build/junit/${SUITE}.xml"
+
+      - name: Fuzz smoke
+        id: fuzz
+        if: matrix.suite == 'fuzz'
+        shell: bash
+        env:
+          NESSO_WERROR: "1"
+          NESSO_PREVIEW_PROFILE: ${{ matrix.profile }}
+          NESSO_PREVIEW_COMPILER_NEEDLE: ${{ matrix.compiler_needle }}
+          NESSO_PREVIEW_SANITIZE_NEEDLE: ${{ matrix.sanitize_needle }}
+        run: |
+          set -euo pipefail
+          chmod +x scripts/toolchain-preview-fuzz-smoke
+          ./scripts/toolchain-preview-fuzz-smoke
+
+      - name: Summarize
+        if: always() && !cancelled()
+        shell: bash
+        env:
+          GOPROXY: "off"
+          GOTOOLCHAIN: local
+          GOFLAGS: "-mod=readonly -buildvcs=false"
+          SUITE: ${{ matrix.suite }}
+          LANE: ${{ matrix.id }}
+        run: |
+          set -euo pipefail
+          {
+            echo "### ${LANE}"
+            echo '| step | result |'
+            echo '| --- | --- |'
+            if [[ "${SUITE}" == "fuzz" ]]; then
+              echo "| fuzz | ${{ steps.fuzz.outcome }} |"
+            else
+              echo "| ${SUITE} | ${{ steps.tests.outcome }} |"
+            fi
+          } >> "${GITHUB_STEP_SUMMARY}"
+          if [[ "${SUITE}" != "fuzz" && -f "${GITHUB_WORKSPACE}/build/junit/${SUITE}.xml" ]]; then
+            go build -C scripts/ci -o /tmp/nesso-ci .
+            /tmp/nesso-ci junit-summary \
+              --summary "${GITHUB_STEP_SUMMARY}" \
+              "${SUITE}=${GITHUB_WORKSPACE}/build/junit/${SUITE}.xml"
+          fi
+
+      - name: Upload JUnit reports
+        if: always() && !cancelled() && matrix.suite != 'fuzz'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: junit-${{ matrix.id }}
+          path: build/junit
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: ccache statistics
+        if: always() && !cancelled()
+        shell: bash
+        run: |
+          set -euo pipefail
+          ccache --version
+          ccache -s | tee /tmp/ccache-stats.txt
+          ccache -sv
+          if grep -q 'Cacheable calls:' /tmp/ccache-stats.txt; then
+            cacheable=$(awk '/^Cacheable calls:/ {print $3; found=1} END {if (!found) print 0}' /tmp/ccache-stats.txt)
+            uncacheable=$(awk '/^Uncacheable calls:/ {print $3; found=1} END {if (!found) print 0}' /tmp/ccache-stats.txt)
+          else
+            cacheable=$(awk '$1 == "Hits:" {print $4; found=1} END {if (!found) print 0}' /tmp/ccache-stats.txt)
+            uncacheable=$(awk '$1 == "Uncacheable:" {getline; if ($1 == "Calls:") print $2; found=1} END {if (!found) print 0}' /tmp/ccache-stats.txt)
+          fi
+          echo "ccache cacheable calls: ${cacheable}"
+          echo "ccache uncacheable calls: ${uncacheable}"
+          if [[ "${cacheable}" -eq 0 || "${uncacheable}" -gt 0 ]]; then
+            echo "error: ccache recorded ${cacheable} cacheable and ${uncacheable} uncacheable compilations" >&2
+            exit 1
+          fi
+          if [[ -n "${GITHUB_STEP_SUMMARY:-}" ]]; then
+            {
+              echo '### ccache'
+              echo '```'
+              cat /tmp/ccache-stats.txt
+              echo '```'
+            } >> "${GITHUB_STEP_SUMMARY}"
+          fi
+
+      - name: Save ccache
+        if: success() && github.ref == 'refs/heads/main' && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ github.workspace }}/.ccache
+          key: ccache-${{ runner.arch }}-${{ matrix.ccache }}-${{ github.sha }}
 
   clang:
     name: ${{ matrix.id }}
@@ -472,15 +657,201 @@ jobs:
         password: ${{ secrets.GITHUB_TOKEN }}
       options: ${{ matrix.container_options }}
     steps:
-      - name: Run lane
-        uses: ./.github/actions/toolchain-preview-lane # zizmor: ignore[self-repository] same-commit local action; actionlint 1.7.12 rejects the self-repository form
+      - name: Checkout Repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          lane_id: ${{ matrix.id }}
-          profile: ${{ matrix.profile }}
-          config: ${{ matrix.config }}
-          suite: ${{ matrix.suite }}
-          ctest_label: ${{ matrix.ctest_label }}
-          ctest_exclude: ${{ matrix.ctest_exclude }}
-          compiler_needle: ${{ matrix.compiler_needle }}
-          sanitize_needle: ${{ matrix.sanitize_needle }}
-          ccache: ${{ matrix.ccache }}
+          persist-credentials: false
+
+      - name: Export sanitizer library path
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -n "${PREVIEW_LD_LIBRARY_PATH}" ]]; then
+            printf 'LD_LIBRARY_PATH=%s\n' "${PREVIEW_LD_LIBRARY_PATH}" >> "${GITHUB_ENV}"
+          fi
+
+      - name: Restore ccache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ github.workspace }}/.ccache
+          key: ccache-${{ runner.arch }}-${{ matrix.ccache }}-${{ github.sha }}
+          restore-keys: |
+            ccache-${{ runner.arch }}-${{ matrix.ccache }}-
+
+      - name: Zero ccache statistics
+        shell: bash
+        run: ccache --zero-stats
+
+      - name: Install Dependencies (Conan)
+        if: matrix.suite != 'fuzz'
+        shell: bash
+        env:
+          PROFILE: ${{ matrix.profile }}
+        run: |
+          set -euo pipefail
+          if [[ ! -f "${CONAN_HOME}/profiles/default" ]]; then
+            conan profile detect --force
+          fi
+          conan install . -pr:h "${PROFILE}" -pr:b default --lockfile=conan.lock --build=missing --no-remote $CONAN_WERROR_ARGS
+
+      - name: Build
+        id: build
+        if: matrix.suite != 'fuzz'
+        shell: bash
+        env:
+          PROFILE: ${{ matrix.profile }}
+          NESSO_REQUIRE_MODEL: "1"
+        run: |
+          set -euo pipefail
+          conan build . -pr:h "${PROFILE}" -pr:b default --lockfile=conan.lock --build=missing --no-remote $CONAN_WERROR_ARGS
+
+      - name: Require the preview compiler
+        id: require
+        if: matrix.suite != 'fuzz'
+        shell: bash
+        env:
+          BUILD_CONFIG: ${{ matrix.config }}
+          COMPILER_NEEDLE: ${{ matrix.compiler_needle }}
+          SANITIZE_NEEDLE: ${{ matrix.sanitize_needle }}
+        run: |
+          set -euo pipefail
+          commands="build/${BUILD_CONFIG}/compile_commands.json"
+          test -f "${commands}"
+          grep -q -- "${COMPILER_NEEDLE}" "${commands}"
+          if [[ -n "${SANITIZE_NEEDLE}" ]]; then
+            grep -q -- "${SANITIZE_NEEDLE}" "${commands}"
+          fi
+          grep -Eq -- '(^|[[:space:]])-Werror([[:space:]]|$)' "${commands}"
+          if grep -Eq -- '(^|[[:space:]])-stdlib=libc\+\+([[:space:]]|$)' "${commands}"; then
+            echo "error: compile commands select libc++" >&2
+            exit 1
+          fi
+          test -x "build/${BUILD_CONFIG}/src/nesso"
+          ldd "build/${BUILD_CONFIG}/src/nesso" > /tmp/nesso-ldd.txt
+          cat /tmp/nesso-ldd.txt
+          grep -q 'libstdc++' /tmp/nesso-ldd.txt
+          if grep -q 'libc++' /tmp/nesso-ldd.txt; then
+            echo "error: nesso is linked to libc++" >&2
+            exit 1
+          fi
+
+      - name: Restore MiniLM models
+        id: models
+        if: matrix.suite == 'unit' && steps.require.outcome == 'success'
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: models
+          key: minilm-${{ hashFiles('scripts/fetch-model') }}
+
+      - name: Fetch MiniLM models
+        if: matrix.suite == 'unit' && steps.require.outcome == 'success' && steps.models.outputs.cache-hit != 'true'
+        shell: bash
+        run: ./scripts/fetch-model models
+
+      - name: Run tests
+        id: tests
+        if: matrix.suite != 'fuzz' && steps.require.outcome == 'success'
+        shell: bash
+        env:
+          BUILD_CONFIG: ${{ matrix.config }}
+          CTEST_LABEL: ${{ matrix.ctest_label }}
+          CTEST_EXCLUDE: ${{ matrix.ctest_exclude }}
+          SUITE: ${{ matrix.suite }}
+        run: |
+          set -euo pipefail
+          mkdir -p "${GITHUB_WORKSPACE}/build/junit"
+          extra=()
+          if [[ -n "${CTEST_EXCLUDE}" ]]; then
+            extra+=(-E "${CTEST_EXCLUDE}")
+          fi
+          ctest --test-dir "build/${BUILD_CONFIG}" --output-on-failure -j "$(nproc)" -L "${CTEST_LABEL}" -V \
+            "${extra[@]}" \
+            --output-junit "${GITHUB_WORKSPACE}/build/junit/${SUITE}.xml"
+
+      - name: Fuzz smoke
+        id: fuzz
+        if: matrix.suite == 'fuzz'
+        shell: bash
+        env:
+          NESSO_WERROR: "1"
+          NESSO_PREVIEW_PROFILE: ${{ matrix.profile }}
+          NESSO_PREVIEW_COMPILER_NEEDLE: ${{ matrix.compiler_needle }}
+          NESSO_PREVIEW_SANITIZE_NEEDLE: ${{ matrix.sanitize_needle }}
+        run: |
+          set -euo pipefail
+          chmod +x scripts/toolchain-preview-fuzz-smoke
+          ./scripts/toolchain-preview-fuzz-smoke
+
+      - name: Summarize
+        if: always() && !cancelled()
+        shell: bash
+        env:
+          GOPROXY: "off"
+          GOTOOLCHAIN: local
+          GOFLAGS: "-mod=readonly -buildvcs=false"
+          SUITE: ${{ matrix.suite }}
+          LANE: ${{ matrix.id }}
+        run: |
+          set -euo pipefail
+          {
+            echo "### ${LANE}"
+            echo '| step | result |'
+            echo '| --- | --- |'
+            if [[ "${SUITE}" == "fuzz" ]]; then
+              echo "| fuzz | ${{ steps.fuzz.outcome }} |"
+            else
+              echo "| ${SUITE} | ${{ steps.tests.outcome }} |"
+            fi
+          } >> "${GITHUB_STEP_SUMMARY}"
+          if [[ "${SUITE}" != "fuzz" && -f "${GITHUB_WORKSPACE}/build/junit/${SUITE}.xml" ]]; then
+            go build -C scripts/ci -o /tmp/nesso-ci .
+            /tmp/nesso-ci junit-summary \
+              --summary "${GITHUB_STEP_SUMMARY}" \
+              "${SUITE}=${GITHUB_WORKSPACE}/build/junit/${SUITE}.xml"
+          fi
+
+      - name: Upload JUnit reports
+        if: always() && !cancelled() && matrix.suite != 'fuzz'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: junit-${{ matrix.id }}
+          path: build/junit
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: ccache statistics
+        if: always() && !cancelled()
+        shell: bash
+        run: |
+          set -euo pipefail
+          ccache --version
+          ccache -s | tee /tmp/ccache-stats.txt
+          ccache -sv
+          if grep -q 'Cacheable calls:' /tmp/ccache-stats.txt; then
+            cacheable=$(awk '/^Cacheable calls:/ {print $3; found=1} END {if (!found) print 0}' /tmp/ccache-stats.txt)
+            uncacheable=$(awk '/^Uncacheable calls:/ {print $3; found=1} END {if (!found) print 0}' /tmp/ccache-stats.txt)
+          else
+            cacheable=$(awk '$1 == "Hits:" {print $4; found=1} END {if (!found) print 0}' /tmp/ccache-stats.txt)
+            uncacheable=$(awk '$1 == "Uncacheable:" {getline; if ($1 == "Calls:") print $2; found=1} END {if (!found) print 0}' /tmp/ccache-stats.txt)
+          fi
+          echo "ccache cacheable calls: ${cacheable}"
+          echo "ccache uncacheable calls: ${uncacheable}"
+          if [[ "${cacheable}" -eq 0 || "${uncacheable}" -gt 0 ]]; then
+            echo "error: ccache recorded ${cacheable} cacheable and ${uncacheable} uncacheable compilations" >&2
+            exit 1
+          fi
+          if [[ -n "${GITHUB_STEP_SUMMARY:-}" ]]; then
+            {
+              echo '### ccache'
+              echo '```'
+              cat /tmp/ccache-stats.txt
+              echo '```'
+            } >> "${GITHUB_STEP_SUMMARY}"
+          fi
+
+      - name: Save ccache
+        if: success() && github.ref == 'refs/heads/main' && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ github.workspace }}/.ccache
+          key: ccache-${{ runner.arch }}-${{ matrix.ccache }}-${{ github.sha }}
