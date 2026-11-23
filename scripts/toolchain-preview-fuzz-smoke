@@ -1,0 +1,86 @@
+#!/usr/bin/env bash
+# Seed replay for the toolchain preview. Not AFL++: afl-clang-lto++ is LLVM 21,
+# and the EL9 GCC 16 image does not ship AFL++. The harness file-input main
+# (built unless NESSO_LIBFUZZER) runs each seed once under the profile's
+# ASan/UBSan flags.
+#
+#   NESSO_WERROR=1 NESSO_PREVIEW_PROFILE=conan/profiles/gcc-16-fuzz \
+#     ./scripts/toolchain-preview-fuzz-smoke
+set -euo pipefail
+
+cd "$(dirname "${BASH_SOURCE[0]}")/.."
+
+profile="${NESSO_PREVIEW_PROFILE:?set NESSO_PREVIEW_PROFILE to a conan profile path}"
+out_dir="${NESSO_FUZZ_OUT:-build/fuzz-smoke}"
+cmake_b="${out_dir}/build/Release"
+toolchain="${cmake_b}/generators/conan_toolchain.cmake"
+bin_dir="${cmake_b}/test/fuzz"
+
+targets=(nesso_fuzz_parser nesso_fuzz_tokenizer nesso_fuzz_archive_source nesso_fuzz_corpus)
+
+werror_args=()
+if [[ "${NESSO_WERROR:-}" == "1" ]]; then
+  werror_args+=(-c "user.nesso:werror=True")
+fi
+
+if [[ ! -f "${CONAN_HOME:-${HOME}/.conan2}/profiles/default" ]]; then
+  conan profile detect --force
+fi
+
+conan install . -of "${out_dir}" \
+  -pr:h "${profile}" -pr:b default \
+  --lockfile=conan.lock \
+  --build=missing \
+  --no-remote \
+  "${werror_args[@]}"
+
+cmake --fresh -S . -B "${cmake_b}" -G Ninja \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_TOOLCHAIN_FILE="${toolchain}"
+
+cmake --build "${cmake_b}" --target "${targets[@]}"
+
+commands="${cmake_b}/compile_commands.json"
+test -f "${commands}"
+if [[ -n "${NESSO_PREVIEW_COMPILER_NEEDLE:-}" ]]; then
+  grep -q -- "${NESSO_PREVIEW_COMPILER_NEEDLE}" "${commands}"
+fi
+if [[ -n "${NESSO_PREVIEW_SANITIZE_NEEDLE:-}" ]]; then
+  grep -q -- "${NESSO_PREVIEW_SANITIZE_NEEDLE}" "${commands}"
+fi
+if [[ "${NESSO_WERROR:-}" == "1" ]]; then
+  grep -Eq -- '(^|[[:space:]])-Werror([[:space:]]|$)' "${commands}"
+fi
+if grep -Eq -- '(^|[[:space:]])-stdlib=libc\+\+([[:space:]]|$)' "${commands}"; then
+  echo "error: compile commands select libc++" >&2
+  exit 1
+fi
+
+export ASAN_OPTIONS="${ASAN_OPTIONS:-halt_on_error=1:detect_leaks=0:abort_on_error=1}"
+export UBSAN_OPTIONS="${UBSAN_OPTIONS:-halt_on_error=1:print_stacktrace=1}"
+
+run_seeds() {
+  local name="$1"
+  local seeds="$2"
+  local bin="${bin_dir}/nesso_fuzz_${name}"
+  local seed
+  local found=0
+  test -x "${bin}"
+  for seed in "${seeds}"/*; do
+    [[ -f "${seed}" ]] || continue
+    found=1
+    echo "fuzz-smoke: ${name} ${seed}"
+    "${bin}" "${seed}"
+  done
+  if [[ "${found}" -eq 0 ]]; then
+    echo "error: no seeds in ${seeds}" >&2
+    return 1
+  fi
+}
+
+run_seeds parser test/fuzz/seeds/parser
+run_seeds tokenizer test/fuzz/seeds/tokenizer
+run_seeds archive_source test/fuzz/seeds/archive
+run_seeds corpus test/fuzz/seeds/corpus
+
+echo "fuzz-smoke OK"

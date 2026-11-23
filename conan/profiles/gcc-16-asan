@@ -1,0 +1,28 @@
+# GCC Toolset 16 ASan + UBSan preview. Same compiler tuple as gcc-16.
+# Dependencies, including ONNX Runtime, stay Release so their package ids
+# match the preview image. Nesso is RelWithDebInfo: that config is -O2 -g
+# -DNDEBUG. A Release config would append -O3 after these flags and undo -O2.
+# No -flto (it does not mix with the sanitizers). -Werror is not set here;
+# the preview workflow passes user.nesso:werror on the conan commands.
+
+[settings]
+os=Linux
+arch=x86_64
+compiler=gcc
+compiler.version=16
+compiler.libcxx=libstdc++11
+compiler.cppstd=26
+build_type=Release
+&:build_type=RelWithDebInfo
+onnxruntime/*:build_type=Release
+
+[conf]
+tools.build:compiler_executables={"c": "/opt/rh/gcc-toolset-16/root/usr/bin/gcc", "cpp": "/opt/rh/gcc-toolset-16/root/usr/bin/g++"}
+user.nesso:cxxflags=["-O2", "-g", "-DNDEBUG", "-D_GLIBCXX_ASSERTIONS", "-fno-omit-frame-pointer", "-fsanitize=address,undefined", "-fno-sanitize-recover=all"]
+user.nesso:cflags=["-O2", "-g", "-DNDEBUG", "-fno-omit-frame-pointer", "-fsanitize=address,undefined", "-fno-sanitize-recover=all"]
+user.nesso:sharedlinkflags=["-fsanitize=address,undefined"]
+user.nesso:exelinkflags=["-fsanitize=address,undefined"]
+
+[buildenv]
+CC=/opt/rh/gcc-toolset-16/root/usr/bin/gcc
+CXX=/opt/rh/gcc-toolset-16/root/usr/bin/g++
