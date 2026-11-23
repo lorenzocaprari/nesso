@@ -5,6 +5,7 @@
 #define NESSO_CLI_HPP
 
 #include <nesso/nesso.hpp>
+#include <nesso/overview.hpp>
 
 #include <optional>
 
@@ -19,11 +20,20 @@ struct GrepCommand
     std::optional<bool> provisional;
 };
 
+/// An `overview` request and the CLI choice of JSON Lines output.
+struct OverviewCommand
+{
+    OverviewRequest request;
+    bool json = false;
+};
+
 /// Runs one request through the facade and renders the outcome. Returns the
 /// process exit code.
 [[nodiscard]] int Execute(const Nesso &nesso, const GrepCommand &command);
 [[nodiscard]] int Execute(const Nesso &nesso, const IndexRequest &request);
 [[nodiscard]] int Execute(const Nesso &nesso, const SearchRequest &request);
+/// Does not use `nesso`, so no model is loaded.
+[[nodiscard]] int Execute(const Nesso &nesso, const OverviewCommand &command);
 
 } // namespace nesso::cli
 

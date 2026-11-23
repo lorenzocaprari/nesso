@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include "nesso/nesso.hpp"
+#include "nesso/overview.hpp"
 #include <cli/render_json.hpp>
 
 #include <cstddef>
@@ -83,6 +84,38 @@ std::string RenderProvisionalMatchJson(const TextMatch &match, std::size_t rank,
     out.pop_back();
     out.append(R"(,"final":false,"refresh":)");
     out.append(std::format("{}", refresh));
+    out.push_back('}');
+    return out;
+}
+
+std::string RenderEventTypeJson(const OverviewResults &results, const EventTypeRow &row, std::size_t rank)
+{
+    std::string out;
+    out.reserve(row.source.size() + row.text.size() + row.key.size() + 192);
+    out.append("{\"schema_version\":");
+    out.append(std::format("{}", SCHEMA_VERSION));
+    out.append(R"(,"record":"event_type","rank":)");
+    out.append(std::format("{}", rank));
+    out.append(",\"count\":");
+    out.append(std::format("{}", row.count));
+    out.append(",\"source\":");
+    out.append(DumpString(row.source));
+    out.append(",\"kind\":");
+    out.append(DumpString(row.array_element ? "element" : "line"));
+    out.append(",\"line\":");
+    out.append(std::format("{}", row.line));
+    out.append(",\"text\":");
+    out.append(DumpString(row.text));
+    out.append(",\"key\":");
+    out.append(DumpString(row.key));
+    out.append(",\"first_seen\":");
+    out.append(std::format("{}", row.first_seen));
+    out.append(",\"last_seen\":");
+    out.append(std::format("{}", row.last_seen));
+    out.append(",\"lines\":");
+    out.append(std::format("{}", results.lines));
+    out.append(",\"types\":");
+    out.append(std::format("{}", results.types));
     out.push_back('}');
     return out;
 }

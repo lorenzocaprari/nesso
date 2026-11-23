@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include "nesso/nesso.hpp"
+#include "nesso/overview.hpp"
 #include <cli/check_stdout.hpp>
 #include <cli/cli.hpp>
 #include <cli/live_view.hpp>
@@ -141,6 +142,16 @@ static LineReport MakeLineReport(const IndexSummary &summary)
             .bundle_skips = summary.bundle_skips};
 }
 
+static LineReport MakeLineReport(const OverviewResults &results)
+{
+    return {.empty_lines = results.empty_lines,
+            .malformed_lines = results.malformed_lines,
+            .missing_field_lines = results.missing_field_lines,
+            .truncated_lines = results.truncated_lines,
+            .json_field = results.json_field,
+            .bundle_skips = results.bundle_skips};
+}
+
 static LineReport MakeLineReport(const Error &error)
 {
     return {.empty_lines = error.empty_lines,
@@ -188,6 +199,32 @@ static int Render(const TextResults &results, bool json)
         else
         {
             RenderText(results);
+        }
+    }
+    catch (const std::system_error &)
+    {
+        write_threw = true;
+    }
+    if (write_threw || StdoutWriteFailed(stdout))
+    {
+        std::println(std::cerr, "Error: failed to write results");
+        return 2;
+    }
+    return 0;
+}
+
+static int Render(const OverviewResults &results, bool json)
+{
+    RenderLineCounts(MakeLineReport(results));
+    std::println(std::cerr, "Listed {} of {} in {}.", results.rows.size(),
+                 CountPhrase(results.types, "event type", "event types"), CountPhrase(results.lines, "line", "lines"));
+    bool write_threw = false;
+    try
+    {
+        for (size_t index = 0; index < results.rows.size(); ++index)
+        {
+            const EventTypeRow &row = results.rows[index];
+            std::println("{}", json ? RenderEventTypeJson(results, row, index + 1) : FormatEventTypeRow(row));
         }
     }
     catch (const std::system_error &)
@@ -296,6 +333,12 @@ int Execute(const Nesso &nesso, const SearchRequest &request)
 {
     const auto outcome = nesso.Search(request);
     return outcome ? Render(*outcome, request.json) : RenderError(outcome.error(), FailureStatus(outcome.error()));
+}
+
+int Execute(const Nesso & /*nesso*/, const OverviewCommand &command)
+{
+    const auto outcome = Overview(command.request);
+    return outcome ? Render(*outcome, command.json) : RenderError(outcome.error(), FailureStatus(outcome.error()));
 }
 
 } // namespace nesso::cli

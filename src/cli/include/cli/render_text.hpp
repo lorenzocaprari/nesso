@@ -5,6 +5,7 @@
 #define NESSO_RENDER_TEXT_HPP
 
 #include <nesso/nesso.hpp>
+#include <nesso/overview.hpp>
 
 #include <string>
 #include <string_view>
@@ -20,6 +21,11 @@ namespace nesso::cli
 /// archive members. `--group` results add the count. Source and text are
 /// escaped.
 [[nodiscard]] std::string FormatTextRow(const TextResults &results, const TextMatch &match);
+
+/// One `overview` row, without the newline: `SOURCE:line N (COUNT): TEXT`, or
+/// `element N` for a JSON array slot. The source is always printed, so the row
+/// cites its first line. Source and text are escaped. There is no score.
+[[nodiscard]] std::string FormatEventTypeRow(const EventTypeRow &row);
 
 } // namespace nesso::cli
 

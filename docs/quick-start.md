@@ -51,6 +51,8 @@ nesso grep "auth failure" sosreport-host.tar.xz --group -k 5
 nesso grep "payment timeout" sosreport-host.tar.xz --json
 ```
 
+Before you have a query, `nesso overview sosreport-host.tar.xz` lists the rarest event types in the bundle, each with its first line and line count, and loads no model ([Usage](usage.md#overview)).
+
 ## Index, then search
 
 Index once when you will run several queries on the same bundle:

@@ -3,6 +3,7 @@
 
 #include "embed/session_policy.hpp"
 #include "nesso/nesso.hpp"
+#include "nesso/overview.hpp"
 #include <cli/cli.hpp>
 #include <cli/cli_parser.hpp>
 
@@ -144,9 +145,10 @@ static constexpr const char *HELP_FOOTER = "Examples:\n"
                                            "  nesso grep \"payment timeout\" app.log events.jsonl -k 5\n"
                                            "  nesso index -o corpus.nesso app.log\n"
                                            "  nesso search \"payment timeout\" -i corpus.nesso\n"
+                                           "  nesso overview app.log --by new\n"
                                            "\n"
-                                           "Exit codes: 0 matches printed or corpus written;\n"
-                                           "1 nothing to search or index; 2 error.";
+                                           "Exit codes: 0 matches or event types printed, or corpus written;\n"
+                                           "1 nothing to search, index, or list; 2 error.";
 
 struct TextOptions
 {
@@ -166,6 +168,9 @@ struct TextOptions
     std::string mode = "auto";
     nesso::parser::ArchiveLimits grep_archive_limits{};
     nesso::parser::ArchiveLimits index_archive_limits{};
+    size_t overview_top_k = DEFAULT_OVERVIEW_TOP_K;
+    std::string order = "rare";
+    nesso::parser::ArchiveLimits overview_archive_limits{};
 };
 
 static SearchMode ParseSearchMode(std::string_view mode)
@@ -305,6 +310,37 @@ static TextSubcommand AddSearchSubcommand(CLI::App &app, TextOptions &text)
         .model_dir_opt = cmd->add_option("--model-dir", text.model_dir, MODEL_DIR_HELP)};
 }
 
+// No model is loaded, so there is no --model-dir or --threads.
+static CLI::App *AddOverviewSubcommand(CLI::App &app, TextOptions &text)
+{
+    auto *cmd = app.add_subcommand("overview", "List rare or new event types of text files. No model is loaded.");
+    cmd->add_option("files", text.files, TEXT_FILES_HELP)->required()->expected(1, -1)->check(InputFile());
+    cmd->add_option("--json-field", text.json_field, "JSON object field to read")->default_val("message");
+    cmd->add_option("-k,--top-k", text.overview_top_k, "Maximum number of event types to list")
+        ->default_val(DEFAULT_OVERVIEW_TOP_K)
+        ->check(PositiveCount());
+    cmd->add_flag("--json", text.json, "Print one JSON object per event type");
+    cmd->add_option("--by", text.order, "Order: rare (fewest lines first) or new (latest first appearance first)")
+        ->default_val("rare")
+        ->check(CLI::IsMember({"rare", "new"}));
+    AddArchiveLimits(cmd, text.overview_archive_limits);
+    return cmd;
+}
+
+static ParsedCommand MakeOverviewCommand(const TextOptions &text)
+{
+    return ParsedCommand{.config = Config{},
+                         .request =
+                             OverviewCommand{.request = OverviewRequest{.files = ToPaths(text.files),
+                                                                        .top_k = text.overview_top_k,
+                                                                        .json_field = text.json_field,
+                                                                        .order = text.order == "new" ? EventOrder::New
+                                                                                                     : EventOrder::Rare,
+                                                                        .archive_limits = text.overview_archive_limits,
+                                                                        .max_types = DEFAULT_MAX_EVENT_TYPES},
+                                             .json = text.json}};
+}
+
 static std::expected<size_t, int> ResolveThreads(const CLI::Option &threads_opt, size_t flagged)
 {
     if (!threads_opt.empty())
@@ -382,6 +418,7 @@ std::expected<ParsedCommand, int> ParseCommandLine(int argc, char **argv)
     const TextSubcommand grep = AddGrepSubcommand(app, text);
     const TextSubcommand index = AddIndexSubcommand(app, text);
     const TextSubcommand search = AddSearchSubcommand(app, text);
+    const CLI::App *overview = AddOverviewSubcommand(app, text);
 
     try
     {
@@ -391,6 +428,10 @@ std::expected<ParsedCommand, int> ParseCommandLine(int argc, char **argv)
     {
         const int code = app.exit(error);
         return std::unexpected(code == 0 ? 0 : 2);
+    }
+    if (overview->parsed())
+    {
+        return MakeOverviewCommand(text);
     }
 
     const CLI::Option *threads_opt = grep.threads_opt;

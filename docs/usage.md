@@ -1,8 +1,8 @@
 # Usage
 
-`nesso grep` searches files in one shot. `nesso index` writes a corpus, and `nesso search` queries that file. The embedder is a local ONNX MiniLM model. Ranking uses dense embeddings, BM25, or hybrid fusion depending on `--mode`.
+`nesso grep` searches files in one shot. `nesso index` writes a corpus, and `nesso search` queries that file. `nesso overview` lists the rare or new event types of files without a model. The embedder is a local ONNX MiniLM model. Ranking uses dense embeddings, BM25, or hybrid fusion depending on `--mode`.
 
-Matches go to stdout. Skipped lines, the index summary, and errors go to stderr. Every command exits 0 when matches are printed or a corpus is written, 1 when there is nothing to search or index, and 2 on error. Argument errors, including `-k 0`, also exit 2. `--help` lists these codes. A missing model names the directories that were tried and suggests `scripts/fetch-model` or `--model-dir`.
+Matches go to stdout. Skipped lines, the index summary, and errors go to stderr. Every command exits 0 when matches or event types are printed or a corpus is written, 1 when there is nothing to search, index, or list, and 2 on error. Argument errors, including `-k 0`, also exit 2. `--help` lists these codes. A missing model names the directories that were tried and suggests `scripts/fetch-model` or `--model-dir`.
 
 ## Model
 
@@ -38,6 +38,28 @@ nesso search "payment timeout" -i corpus.nesso --group
 `index` exits 2 without writing when `-o` names one of the input files, including through a hard link or symlink. Directories are expanded before that check, so an output file inside an input directory is rejected once that file exists.
 
 From a source tree the binary is `build/Debug/src/nesso` or `build/Release/src/nesso`.
+
+## Overview
+
+`overview` takes inputs like `grep` (files, directories, bundles, or `-`) and lists event types instead of matches. It loads no model and has no `--model-dir` or `--threads`, so it runs where the MiniLM files are missing.
+
+```bash
+nesso overview app.log
+nesso overview logs/ sosreport-host.tar.xz -k 50
+nesso overview app.log.2 app.log.1 app.log --by new --json
+```
+
+An event type is the masked dedup key of a kept line, the same key `--group` uses: the same `--json-field`, after the 4096-code-point cut. Skipped lines are not counted. The inputs are parsed once.
+
+- `--by rare` (default) lists the types with the fewest lines first. Equal counts list the type that appeared later first.
+- `--by new` lists the type whose first line appeared latest first. "Latest" is input order: arguments as given, the files of a directory in byte order, archive members in archive order. There are no timestamps, so pass files oldest first (`app.log.2 app.log.1 app.log`).
+- `-k`/`--top-k` caps the rows (default 20). `--json-field` and the `--archive-max-*` caps work as on `grep`. `--mode`, `--group`, `--provisional`, `--quiet`, `-o`, `--threads`, and `--model-dir` are not options of `overview` and exit 2.
+
+A text row cites the type's first line and its line count: `SOURCE:line N (COUNT): TEXT`, or `element N` for a JSON array slot. The source is always printed; an archive member is `bundle.tar:entry`. The source and text are escaped like `grep` rows. There is no score. Stderr gets the skip and truncation counts and one summary line, `Listed 20 of 146 event types in 2000 lines.`
+
+`--json` prints one object per type. Keys, in order: `schema_version` (2), `record` (`event_type`), `rank`, `count`, `source`, `kind`, `line`, `text`, `key` (the masked key), `first_seen` and `last_seen` (1-based ordinals over all kept lines, in input order), `lines` (kept lines), and `types` (distinct types). Invalid UTF-8 becomes U+FFFD. Match records of `grep` and `search` are unchanged and have no `record` key.
+
+`overview` exits 0 when it prints rows, 1 when no line is kept, and 2 on a usage, parse, or archive error, or past 1,000,000 distinct event types. The same inputs print the same bytes on every run.
 
 ## Provisional results
 

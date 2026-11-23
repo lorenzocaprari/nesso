@@ -109,6 +109,13 @@ enum class EffectiveMode : uint8_t
     Lexical
 };
 
+[[nodiscard]] LineCounts MakeLineCounts(const nesso::parser::ParseStats &stats, std::string json_field);
+
+/// Appends the archive member skips `path` added between `before` and `after`
+/// to `scan.bundle_skips`. Plain files and bundles with no skip add nothing.
+void RecordBundleSkips(Scan &scan, const std::filesystem::path &path, const nesso::parser::ParseStats &before,
+                       const nesso::parser::ParseStats &after);
+
 [[nodiscard]] Error MakeError(ErrorKind kind, ErrorCause cause, std::filesystem::path path, LineCounts counts,
                               std::vector<BundleSkipSummary> bundle_skips = {});
 

@@ -62,6 +62,7 @@ TEST_CASE("each cause has a readable phrase", "[nesso][error]")
     REQUIRE(nesso::Describe(nesso::ErrorCause::NothingIndexable) == "no indexable lines");
     REQUIRE(nesso::Describe(nesso::ErrorCause::EmptyCorpus) == "the corpus is empty");
     REQUIRE(nesso::Describe(nesso::ErrorCause::OutputIsInput) == "the output is one of the inputs");
+    REQUIRE(nesso::Describe(nesso::ErrorCause::TooManyEventTypes) == "too many distinct event types");
 }
 
 TEST_CASE("each failure kind names itself", "[nesso][error]")
@@ -187,6 +188,11 @@ TEST_CASE("message text is byte-stable per kind and optional parts", "[nesso][er
     REQUIRE(nesso::Message(make(nesso::ErrorKind::Parse, nesso::ErrorCause::ArchiveLimit, "bundle.tar",
                                 "the archive entry count exceeds 2")) ==
             "Error: failed to parse 'bundle.tar': the archive entry count exceeds 2");
+    REQUIRE(nesso::Message(make(nesso::ErrorKind::Parse, nesso::ErrorCause::TooManyEventTypes)) ==
+            "Error: failed to list the event types of 'in.log': too many distinct event types");
+    REQUIRE(nesso::Message(make(nesso::ErrorKind::Parse, nesso::ErrorCause::TooManyEventTypes, "in.log",
+                                "more than 2 distinct event types")) ==
+            "Error: failed to list the event types of 'in.log': more than 2 distinct event types");
 
     REQUIRE(nesso::Message(make(nesso::ErrorKind::Embed, nesso::ErrorCause::Inference)) ==
             "Error: failed to embed the input: inference failed");

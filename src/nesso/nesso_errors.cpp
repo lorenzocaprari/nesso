@@ -139,6 +139,8 @@ std::string_view Describe(ErrorCause cause)
         return "corpus has no lexical postings; re-run `nesso index`";
     case ErrorCause::LexicalTermsMismatch:
         return "corpus lexical terms version mismatch; re-run `nesso index`";
+    case ErrorCause::TooManyEventTypes:
+        return "too many distinct event types";
     }
     std::unreachable();
 }
@@ -210,6 +212,11 @@ std::string Message(const Error &error)
         return text;
     }
     case ErrorKind::Parse:
+        if (error.cause == ErrorCause::TooManyEventTypes)
+        {
+            return std::format("Error: failed to list the event types of '{}': {}", path,
+                               error.note.empty() ? reason : std::string_view{error.note});
+        }
         if (!error.note.empty())
         {
             return std::format("Error: failed to parse '{}': {}", path, error.note);

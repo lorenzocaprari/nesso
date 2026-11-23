@@ -61,7 +61,8 @@ enum class ErrorCause : uint8_t
     EmptyCorpus,
     OutputIsInput,
     NoLexicalPostings,
-    LexicalTermsMismatch
+    LexicalTermsMismatch,
+    TooManyEventTypes
 };
 
 /// Ranking mode requested on `grep` / `search` (`--mode`).

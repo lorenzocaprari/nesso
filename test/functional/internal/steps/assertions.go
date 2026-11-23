@@ -11,6 +11,8 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+
+	"github.com/cucumber/godog"
 )
 
 func (b *bindings) requireRun() error {
@@ -379,6 +381,20 @@ func (b *bindings) streamIsEmpty(name string) error {
 	}
 	if text != "" {
 		return fmt.Errorf("%s is not empty:\n%s", name, text)
+	}
+	return nil
+}
+
+// stdoutIs compares stdout byte for byte with the doc string and a final
+// newline. The scenario directory reads as {dir}.
+func (b *bindings) stdoutIs(content *godog.DocString) error {
+	text, err := b.stream("stdout")
+	if err != nil {
+		return err
+	}
+	want := content.Content + "\n"
+	if text != want {
+		return fmt.Errorf("stdout differs\nwant:\n%s\ngot:\n%s", want, text)
 	}
 	return nil
 }

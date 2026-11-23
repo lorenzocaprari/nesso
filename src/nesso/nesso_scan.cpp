@@ -25,12 +25,16 @@ namespace nesso
 
 using detail::LineCounts;
 using detail::MakeError;
+using detail::MakeLineCounts;
 using detail::MAX_LINE_LENGTH;
 using detail::ParseFailure;
 using detail::SameSource;
 using detail::Scan;
 
-static LineCounts MakeLineCounts(const nesso::parser::ParseStats &stats, std::string json_field)
+namespace detail
+{
+
+LineCounts MakeLineCounts(const nesso::parser::ParseStats &stats, std::string json_field)
 {
     return {.skipped = stats.skipped_lines,
             .empty_lines = stats.empty_lines,
@@ -41,8 +45,8 @@ static LineCounts MakeLineCounts(const nesso::parser::ParseStats &stats, std::st
             .json_field = std::move(json_field)};
 }
 
-static void RecordBundleSkips(Scan &scan, const std::filesystem::path &path, const nesso::parser::ParseStats &before,
-                              const nesso::parser::ParseStats &after)
+void RecordBundleSkips(Scan &scan, const std::filesystem::path &path, const nesso::parser::ParseStats &before,
+                       const nesso::parser::ParseStats &after)
 {
     if (!nesso::parser::IsArchivePath(path))
     {
@@ -59,6 +63,8 @@ static void RecordBundleSkips(Scan &scan, const std::filesystem::path &path, con
         scan.bundle_skips.push_back(std::move(summary));
     }
 }
+
+} // namespace detail
 
 static std::expected<void, Error> ScanStdin(Scan &scan, nesso::parser::ParseStats &stats, std::string_view json_field,
                                             const nesso::parser::ArchiveLimits &limits, bool for_index)

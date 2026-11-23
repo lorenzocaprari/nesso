@@ -73,6 +73,22 @@ target_link_libraries(
   nesso_group_test PRIVATE nesso_options nesso_lib nesso_embed nesso_core
                            Catch2::Catch2WithMain)
 
+add_executable(nesso_overview_test nesso_overview_test.cpp)
+add_test(NAME nesso_overview_test COMMAND nesso_overview_test)
+target_link_libraries(nesso_overview_test PRIVATE nesso_options nesso_lib
+                                                  Catch2::Catch2WithMain)
+
+add_executable(overview_render_test overview_render_test.cpp)
+add_test(NAME overview_render_test COMMAND overview_render_test)
+target_link_libraries(overview_render_test PRIVATE nesso_cli
+                                                   Catch2::Catch2WithMain)
+# Catch2 checks add uncoverable branches. The library code these call stays in
+# the floor.
+set_property(
+  TARGET nesso_overview_test overview_render_test
+  PROPERTY CXX_COMPILER_LAUNCHER
+           "${CMAKE_CURRENT_SOURCE_DIR}/strip-coverage-flags")
+
 add_executable(scan_threads_test scan_threads_test.cpp)
 add_test(NAME scan_threads_test COMMAND scan_threads_test)
 target_link_libraries(
@@ -91,6 +107,8 @@ set_tests_properties(
   trace_test
   nesso_flush_test
   nesso_group_test
+  nesso_overview_test
+  overview_render_test
   render_json_test
   render_text_test
   check_stdout_test
