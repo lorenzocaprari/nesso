@@ -48,7 +48,7 @@ RUN rpm -q --qf '%{VERSION}-%{RELEASE}\n' gcc-toolset-16-gcc | grep -qx '16.2.1-
     && g++ -dumpfullversion | grep -qx 16.2.1 \
     && python3 -c 'import sys; assert sys.version_info[:2] >= (3, 10), sys.version'
 
-RUN curl -fsSL -o /tmp/cmake.tgz \
+RUN curl --proto '=https' --tlsv1.2 -fsSL -o /tmp/cmake.tgz \
       https://github.com/Kitware/CMake/releases/download/v4.4.5/cmake-4.4.5-linux-x86_64.tar.gz \
     && echo 'ed85135c5a5135b45e50423cb406dea04ca3338da0b8ef3c9ede963559680be0  /tmp/cmake.tgz' | sha256sum -c - \
     && tar -C /usr/local --strip-components=1 -xzf /tmp/cmake.tgz \
@@ -97,6 +97,11 @@ RUN dnf -y install epel-release \
       ccache \
       golang \
     && dnf clean all \
-    && rm -rf /var/cache/dnf
+    && rm -rf /var/cache/dnf \
+    && useradd --create-home --uid 1000 --user-group nesso
+
+# Preview jobs pass --user root. The Conan cache is root-owned, and the
+# Actions workspace is written as root. The image default is not root.
+USER nesso
 
 LABEL org.opencontainers.image.source=https://github.com/lorenzocaprari/nesso

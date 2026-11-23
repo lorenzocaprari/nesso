@@ -13,14 +13,14 @@ ENV DEBIAN_FRONTEND=noninteractive
 # 6084 F3CF 814B 57C1 CF12 EFD5 15CF 4D18 AF4F 7421
 RUN apt-get update && apt-get install -y --no-install-recommends gnupg ca-certificates \
     && rm -rf /var/lib/apt/lists/* \
-    && curl -fsSL https://apt.llvm.org/llvm-snapshot.gpg.key -o /tmp/llvm-snapshot.gpg.key \
+    && curl --proto '=https' --tlsv1.2 -fsSL https://apt.llvm.org/llvm-snapshot.gpg.key -o /tmp/llvm-snapshot.gpg.key \
     && gpg --show-keys --with-colons /tmp/llvm-snapshot.gpg.key \
       | grep -Eq '^fpr:.*6084F3CF814B57C1CF12EFD515CF4D18AF4F7421:' \
     && install -d /usr/share/keyrings \
     && gpg --dearmor -o /usr/share/keyrings/apt.llvm.org.gpg /tmp/llvm-snapshot.gpg.key \
     && rm -f /tmp/llvm-snapshot.gpg.key \
     && printf '%s\n' \
-      'deb [signed-by=/usr/share/keyrings/apt.llvm.org.gpg] http://apt.llvm.org/resolute/ llvm-toolchain-resolute-23 main' \
+      'deb [signed-by=/usr/share/keyrings/apt.llvm.org.gpg] https://apt.llvm.org/resolute/ llvm-toolchain-resolute-23 main' \
       > /etc/apt/sources.list.d/llvm-toolchain-resolute-23.list \
     && apt-get update \
     && apt-get install -y --no-install-recommends -t llvm-toolchain-resolute-23 \
