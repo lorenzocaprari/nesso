@@ -1,0 +1,25 @@
+# GCC Toolset 16 fuzz smoke. Release package ids match gcc-16.
+# The EL9 preview image has no AFL++. scripts/toolchain-preview-fuzz-smoke
+# builds the file-input harnesses (not afl-clang-lto) and replays seeds.
+# ASan and UBSan are in the profile because that script does not set
+# AFL_USE_ASAN. No -flto. -Werror is not set here.
+
+[settings]
+os=Linux
+arch=x86_64
+compiler=gcc
+compiler.version=16
+compiler.libcxx=libstdc++11
+compiler.cppstd=26
+build_type=Release
+
+[conf]
+tools.build:compiler_executables={"c": "/opt/rh/gcc-toolset-16/root/usr/bin/gcc", "cpp": "/opt/rh/gcc-toolset-16/root/usr/bin/g++"}
+user.nesso:cxxflags=["-O1", "-g", "-fno-omit-frame-pointer", "-march=x86-64-v2", "-D_GLIBCXX_ASSERTIONS", "-fsanitize=address,undefined", "-fno-sanitize-recover=all"]
+user.nesso:cflags=["-O1", "-g", "-fno-omit-frame-pointer", "-march=x86-64-v2", "-fsanitize=address,undefined", "-fno-sanitize-recover=all"]
+user.nesso:sharedlinkflags=["-fsanitize=address,undefined"]
+user.nesso:exelinkflags=["-fsanitize=address,undefined"]
+
+[buildenv]
+CC=/opt/rh/gcc-toolset-16/root/usr/bin/gcc
+CXX=/opt/rh/gcc-toolset-16/root/usr/bin/g++

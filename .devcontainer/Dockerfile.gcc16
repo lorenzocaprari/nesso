@@ -1,0 +1,102 @@
+# EL9 amd64 toolchain preview. Rocky Linux 9, GCC Toolset 16.2.1.
+# Not a scripts/ci/build-env-hash input. Publishing this image must not
+# move nesso-build-env or nesso-build-env-el9. The host profile is
+# conan/profiles/gcc-16. The build profile stays compiler.version=15 so
+# tool_requires can use Conan Center binaries; the host profile is what
+# compiles onnxruntime.
+#
+# gcc-toolset-16-gcc-16.2.1-1.4.el9_9 requires libc.so.6(GLIBC_2.35).
+# glibc-2.34-290.el9_9 provides that symbol version. dnf upgrades glibc
+# when the pinned base is older. This image is not the release baseline.
+
+FROM rockylinux:9@sha256:d7be1c094cc5845ee815d4632fe377514ee6ebcf8efaed6892889657e5ddaaa6
+
+RUN dnf -y install dnf-plugins-core \
+    && dnf config-manager --set-enabled crb \
+    && dnf -y install \
+      ca-certificates \
+      git \
+      make \
+      perl \
+      python3.12 \
+      python3.12-pip \
+      ninja-build \
+      gcc-toolset-16-gcc-16.2.1-1.4.el9_9 \
+      gcc-toolset-16-gcc-c++-16.2.1-1.4.el9_9 \
+      gcc-toolset-16-libasan-devel-16.2.1-1.4.el9_9 \
+      gcc-toolset-16-libubsan-devel-16.2.1-1.4.el9_9 \
+      gcc-toolset-16-libtsan-devel-16.2.1-1.4.el9_9 \
+    && dnf clean all \
+    && rm -rf /var/cache/dnf \
+    && ln -sfn /usr/bin/python3.12 /usr/local/bin/python3
+
+# Non-login shells do not source /opt/rh/gcc-toolset-16/enable. PATH is
+# enough for the compiler. That script also sets LD_LIBRARY_PATH, which
+# would shadow system libraries for later dnf runs. Sanitizer jobs set
+# the toolset lib directory themselves.
+ENV PATH=/opt/rh/gcc-toolset-16/root/usr/bin:${PATH}
+ENV PKG_CONFIG_PATH=/opt/rh/gcc-toolset-16/root/usr/lib64/pkgconfig
+ENV CC=/opt/rh/gcc-toolset-16/root/usr/bin/gcc
+ENV CXX=/opt/rh/gcc-toolset-16/root/usr/bin/g++
+
+RUN rpm -q --qf '%{VERSION}-%{RELEASE}\n' gcc-toolset-16-gcc | grep -qx '16.2.1-1.4.el9_9' \
+    && rpm -q --qf '%{VERSION}-%{RELEASE}\n' gcc-toolset-16-gcc-c++ | grep -qx '16.2.1-1.4.el9_9' \
+    && rpm -q --qf '%{VERSION}-%{RELEASE}\n' gcc-toolset-16-libasan-devel | grep -qx '16.2.1-1.4.el9_9' \
+    && rpm -q --qf '%{VERSION}-%{RELEASE}\n' gcc-toolset-16-libubsan-devel | grep -qx '16.2.1-1.4.el9_9' \
+    && rpm -q --qf '%{VERSION}-%{RELEASE}\n' gcc-toolset-16-libtsan-devel | grep -qx '16.2.1-1.4.el9_9' \
+    && g++ -dumpversion | grep -qx 16 \
+    && g++ -dumpfullversion | grep -qx 16.2.1 \
+    && python3 -c 'import sys; assert sys.version_info[:2] >= (3, 10), sys.version'
+
+RUN curl -fsSL -o /tmp/cmake.tgz \
+      https://github.com/Kitware/CMake/releases/download/v4.4.5/cmake-4.4.5-linux-x86_64.tar.gz \
+    && echo 'ed85135c5a5135b45e50423cb406dea04ca3338da0b8ef3c9ede963559680be0  /tmp/cmake.tgz' | sha256sum -c - \
+    && tar -C /usr/local --strip-components=1 -xzf /tmp/cmake.tgz \
+    && rm -f /tmp/cmake.tgz \
+    && cmake --version | head -n 1 | grep -q '4.4.5'
+
+COPY .devcontainer/requirements.txt /tmp/nesso-pip-requirements.txt
+RUN python3.12 -m pip install --require-hashes --break-system-packages \
+      -r /tmp/nesso-pip-requirements.txt \
+    && rm -rf /root/.cache/pip /tmp/nesso-pip-requirements.txt \
+    && command -v conan
+
+ENV CONAN_HOME=/opt/conan2
+
+# compiler.version=15 on the build profile only. Host packages are gcc 16.
+# g++ -dumpfullversion is 16.2.1, which is not a settings.yml key; 16 is.
+RUN mkdir -p "${CONAN_HOME}/profiles" \
+    && printf '%s\n' \
+      '[settings]' \
+      'os=Linux' \
+      'arch=x86_64' \
+      'compiler=gcc' \
+      'compiler.version=15' \
+      'compiler.libcxx=libstdc++11' \
+      'compiler.cppstd=17' \
+      'build_type=Release' \
+      > "${CONAN_HOME}/profiles/default"
+
+WORKDIR /tmp/nesso
+COPY conanfile.py /tmp/nesso/conanfile.py
+COPY conan.lock /tmp/nesso/conan.lock
+COPY conan/profiles/gcc-16 /tmp/nesso/conan/profiles/gcc-16
+COPY conan/global.conf /tmp/nesso/conan/global.conf
+# This is the onnxruntime 1.18.1 GCC 16 build. The locked recipe disables
+# upstream COMPILE_WARNING_AS_ERROR (--compile-no-warning-as-error). No
+# extra recipe patch is applied. A failure here is the preview result.
+RUN cat conan/global.conf >> "${CONAN_HOME}/global.conf" \
+    && conan remote add conancenter https://center2.conan.io --force \
+    && conan install . -pr:h=conan/profiles/gcc-16 -pr:b=default --lockfile=conan.lock --build=missing \
+    && conan cache clean "*" --build --source --download --temp \
+    && rm -rf /tmp/nesso /tmp/* /var/tmp/*
+WORKDIR /
+
+RUN dnf -y install epel-release \
+    && dnf -y install \
+      ccache \
+      golang \
+    && dnf clean all \
+    && rm -rf /var/cache/dnf
+
+LABEL org.opencontainers.image.source=https://github.com/lorenzocaprari/nesso
