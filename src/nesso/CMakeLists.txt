@@ -7,6 +7,7 @@ add_library(
   nesso_scan.cpp
   nesso_grep.cpp
   nesso_index.cpp
+  nesso_overview.cpp
   nesso_search.cpp
   model_paths.cpp
   trace.cpp)

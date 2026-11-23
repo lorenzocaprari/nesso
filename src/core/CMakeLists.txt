@@ -7,6 +7,7 @@ add_library(
   corpus_writer.cpp
   corpus_reader.cpp
   dedup.cpp
+  event_types.cpp
   bm25.cpp
   lexical_terms.cpp
   query_class.cpp

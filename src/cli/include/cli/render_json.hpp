@@ -5,6 +5,7 @@
 #define NESSO_RENDER_JSON_HPP
 
 #include <nesso/nesso.hpp>
+#include <nesso/overview.hpp>
 
 #include <cstddef>
 #include <string>
@@ -23,6 +24,14 @@ namespace nesso::cli
 /// brace. `refresh` counts provisional updates from 1. Final records have no
 /// `final` key.
 [[nodiscard]] std::string RenderProvisionalMatchJson(const TextMatch &match, std::size_t rank, std::size_t refresh);
+
+/// One `overview` JSON Lines object. Keys, in order: schema_version, record,
+/// rank, count, source, kind, line, text, key, first_seen, last_seen, lines,
+/// types. `schema_version` is 2, shared with match records, and `record` is
+/// `event_type`. `lines` and `types` are the totals of `results`. Invalid UTF-8
+/// in `source`, `text`, and `key` becomes U+FFFD.
+[[nodiscard]] std::string RenderEventTypeJson(const OverviewResults &results, const EventTypeRow &row,
+                                              std::size_t rank);
 
 } // namespace nesso::cli
 

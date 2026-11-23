@@ -62,7 +62,8 @@ enum class ErrorCause : uint8_t
     OutputIsInput,
     NoLexicalPostings,
     LexicalTermsMismatch,
-    CorpusLimitsExceeded
+    CorpusLimitsExceeded,
+    TooManyEventTypes
 };
 
 /// Ranking mode requested on `grep` / `search` (`--mode`).

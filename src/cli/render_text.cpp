@@ -4,6 +4,7 @@
 #include <cli/render_text.hpp>
 
 #include <nesso/nesso.hpp>
+#include <nesso/overview.hpp>
 
 #include <cstddef>
 #include <cstdint>
@@ -159,6 +160,12 @@ std::string FormatTextRow(const TextResults &results, const TextMatch &match)
     }
     return std::format("{} {} ({}): {:.4f}: {}", place, match.line, match.occurrences, match.score,
                        EscapeTerminalControls(match.text));
+}
+
+std::string FormatEventTypeRow(const EventTypeRow &row)
+{
+    return std::format("{}:{} {} ({}): {}", EscapeTerminalControls(row.source), row.array_element ? "element" : "line",
+                       row.line, row.count, EscapeTerminalControls(row.text));
 }
 
 } // namespace nesso::cli

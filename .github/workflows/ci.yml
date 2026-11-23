@@ -982,7 +982,7 @@ jobs:
           - id: archives-index
             paths: features/archives.feature features/index_search.feature
           - id: rest
-            paths: features/group.feature features/hybrid_mode.feature features/harness.feature features/inputs.feature
+            paths: features/group.feature features/hybrid_mode.feature features/harness.feature features/inputs.feature features/overview.feature
     container:
       image: ${{ needs.prepare-image-amd64.outputs.image }} # zizmor: ignore[unpinned-images] deps-<hash> tag, not a digest
       credentials:
