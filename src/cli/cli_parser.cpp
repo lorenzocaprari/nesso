@@ -147,8 +147,9 @@ static constexpr const char *HELP_FOOTER = "Examples:\n"
                                            "  nesso search \"payment timeout\" -i corpus.nesso\n"
                                            "  nesso overview app.log --by new\n"
                                            "\n"
-                                           "Exit codes: 0 matches or event types printed, or corpus written;\n"
-                                           "1 nothing to search, index, or list; 2 error.";
+                                           "Exit codes: 0 matches printed or corpus written;\n"
+                                           "1 nothing to search or index; 2 error.\n"
+                                           "overview: 0 event types printed; 1 nothing to list; 2 error.";
 
 struct TextOptions
 {

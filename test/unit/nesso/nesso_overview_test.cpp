@@ -79,7 +79,10 @@ struct TarMember
 
 void PutOctal(std::string &header, std::size_t offset, std::size_t width, std::uint64_t value)
 {
-    const std::string digits = std::format("{:0{}o}", value, width - 1);
+    // A tar field is width - 1 octal digits and a NUL. Pad by hand: a dynamic
+    // width in the format string does not compile under Clang.
+    std::string digits = std::format("{:o}", value);
+    digits.insert(0, width - 1 - digits.size(), '0');
     header.replace(offset, digits.size(), digits);
 }
 
