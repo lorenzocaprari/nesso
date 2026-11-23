@@ -103,6 +103,63 @@ Feature: hybrid search modes
     Then the exit code is 2
     And stderr contains "Error: corpus has no lexical postings; re-run `nesso index`"
 
+  Scenario: an identifier query under auto matches lexical output without a model
+    Given a file "ids.log" with:
+      """
+      unrelated prose about networking
+      request failed for blk_-1608999687919862906 on node
+      another line without the token
+      """
+    And a directory "nomodel"
+    When I run nesso with arguments grep "blk_-1608999687919862906" {dir}/ids.log --mode lexical --json -k 3
+    Then the exit code is 0
+    And stdout contains "\"mode\":\"lexical\""
+    And stdout contains "\"dense\":null"
+    And running nesso with arguments grep "blk_-1608999687919862906" {dir}/ids.log --mode auto --json -k 3 prints the same stdout
+    When I run nesso with arguments grep "blk_-1608999687919862906" {dir}/ids.log --mode lexical -k 3
+    Then the exit code is 0
+    And running nesso with arguments grep "blk_-1608999687919862906" {dir}/ids.log --mode auto -k 3 prints the same stdout
+    When I run nesso with arguments grep "blk_-1608999687919862906" --model-dir {dir}/nomodel {dir}/ids.log
+    Then the exit code is 0
+    And stdout contains "blk_-1608999687919862906"
+    And stdout contains "line 2:"
+    When I run nesso with arguments grep "auth failure" --model-dir {dir}/nomodel {dir}/ids.log
+    Then the exit code is 2
+    And stderr contains "failed to load the embedder"
+
+  Scenario: an identifier with no BM25 hit still falls back to hybrid
+    Given a file "app.log" with:
+      """
+      completely unrelated content here
+      another prose line without tokens
+      """
+    And a directory "nomodel"
+    When I run nesso with arguments grep "blk_-1608999687919862906" {dir}/app.log --mode lexical -k 2
+    Then the exit code is 0
+    And stderr contains "Warning: no lexical match for the query; using hybrid"
+    And running nesso with arguments grep "blk_-1608999687919862906" {dir}/app.log --mode auto -k 2 prints the same stdout
+    When I run nesso with arguments grep "blk_-1608999687919862906" --model-dir {dir}/nomodel {dir}/app.log
+    Then the exit code is 2
+    And stderr contains "failed to load the embedder"
+
+  Scenario: an identifier query under auto draws no provisional view
+    Given a file "ids.log" with:
+      """
+      request failed for blk_-1608999687919862906 on node
+      """
+    And stderr is a terminal
+    And the environment variable "TERM" is "xterm"
+    When I run nesso with arguments grep "blk_-1608999687919862906" {dir}/ids.log
+    Then the exit code is 0
+    And stdout contains "blk_-1608999687919862906"
+    And stderr does not contain "Embedded"
+    And stderr does not contain "Provisional"
+    When I run nesso with arguments grep "blk_-1608999687919862906" --json --provisional {dir}/ids.log
+    Then the exit code is 0
+    And stdout does not contain "\"final\""
+    And stdout contains "\"mode\":\"lexical\""
+    And stdout contains "\"dense\":null"
+
   Scenario: term-version mismatch exit 2 for lexical modes but dense works
     When I run nesso with arguments search "database connection error" -i {fixture}/lexical-terms-mismatch.nesso --mode dense -k 1
     Then the exit code is 0

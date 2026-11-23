@@ -542,10 +542,10 @@ static std::vector<GrepHit> HybridGrepHits(const std::vector<GrepWaiting> &all_l
 }
 
 static std::vector<GrepHit> GroupGrepHits(const std::vector<GrepHit> &hits, const std::vector<GrepWaiting> &all_lines,
-                                          const std::vector<float> &scores, EffectiveMode effective, size_t top_k)
+                                          std::uint32_t distinct_count, EffectiveMode effective, size_t top_k)
 {
-    std::vector<char> origin_seen(scores.size(), 0);
-    std::vector<GrepWaiting> origin(scores.size());
+    std::vector<char> origin_seen(distinct_count, 0);
+    std::vector<GrepWaiting> origin(distinct_count);
     for (const GrepWaiting &item : all_lines)
     {
         if (origin_seen[item.distinct_id] != 0)
@@ -555,7 +555,7 @@ static std::vector<GrepHit> GroupGrepHits(const std::vector<GrepHit> &hits, cons
         origin_seen[item.distinct_id] = 1;
         origin[item.distinct_id] = item;
     }
-    std::vector<char> taken(scores.size(), 0);
+    std::vector<char> taken(distinct_count, 0);
     std::vector<GrepHit> groups;
     groups.reserve(hits.size());
     for (const GrepHit &hit : hits)
@@ -638,23 +638,29 @@ static TextResults MaterializeGrepHits(const GrepEmbedState &state, std::span<co
     return results;
 }
 
-static TextResults RankLexicalGrep(GrepEmbedState &state, const nesso::core::QueryTokens &query_tokens,
-                                   EffectiveMode effective)
+static TextResults RankFromBm25(GrepEmbedState &state, const nesso::core::QueryTokens &query_tokens,
+                                const GrepBm25 &lexical)
 {
-    const GrepBm25 lexical =
-        BuildGrepBm25Scores(state.all_lines, query_tokens, effective, nesso::core::ClassifyQuery(state.request->query));
     std::vector<GrepHit> hits = lexical.effective == EffectiveMode::Lexical
                                     ? LexicalGrepHits(state.all_lines, lexical.scores, query_tokens)
                                     : HybridGrepHits(state.all_lines, state.scores, lexical);
     if (state.request->group)
     {
-        hits = GroupGrepHits(hits, state.all_lines, state.scores, lexical.effective, state.request->top_k);
+        hits = GroupGrepHits(hits, state.all_lines, state.distinct_count, lexical.effective, state.request->top_k);
     }
     else if (hits.size() > state.request->top_k)
     {
         hits.resize(state.request->top_k);
     }
     return MaterializeGrepHits(state, hits, lexical.effective, lexical.lexical_fallback);
+}
+
+static TextResults RankLexicalGrep(GrepEmbedState &state, const nesso::core::QueryTokens &query_tokens,
+                                   EffectiveMode effective)
+{
+    const GrepBm25 lexical =
+        BuildGrepBm25Scores(state.all_lines, query_tokens, effective, nesso::core::ClassifyQuery(state.request->query));
+    return RankFromBm25(state, query_tokens, lexical);
 }
 
 // Calls `GrepObserver::OnScanDone` once, from `Fire` or on scope exit, then
@@ -705,24 +711,38 @@ std::expected<TextResults, Error> Nesso::Grep(const GrepRequest &input) const
     }
     GrepRequest request = input;
     request.files = std::move(*expanded);
-    const auto model = Embedder();
-    if (!model)
-    {
-        return std::unexpected(model.error());
-    }
-
     const nesso::core::QueryTokens query_tokens = nesso::core::TokenizeQuery(request.query);
-    const EffectiveMode effective = ResolveEffectiveMode(request.mode, nesso::core::ClassifyQuery(request.query));
+    const nesso::core::QueryClass query_class = nesso::core::ClassifyQuery(request.query);
+    const EffectiveMode effective = ResolveEffectiveMode(request.mode, query_class);
+    // Identifier auto is BM25 unless nothing matches. Dense scores are unused
+    // on that path, so the model stays unloaded until a hybrid fallback needs it.
+    const bool identifier_auto = request.mode == SearchMode::Auto && query_class == nesso::core::QueryClass::Identifier;
     const bool need_lexical = effective != EffectiveMode::Dense;
     GrepEmbedState state;
     state.request = &request;
-    state.model = *model;
     state.need_lexical = need_lexical;
     state.observer = request.observer;
     state.batch = StreamBatch();
     state.stripped_query = query_tokens.stripped;
     state.query_terms = nesso::core::PromiseTerms{nesso::core::LexicalTerms(query_tokens.stripped)};
     state.sources.reserve(request.files.size());
+    const auto load_model = [&]() -> std::expected<void, Error>
+    {
+        const auto model = Embedder();
+        if (!model)
+        {
+            return std::unexpected(model.error());
+        }
+        state.model = *model;
+        return {};
+    };
+    if (!identifier_auto)
+    {
+        if (const auto loaded = load_model(); !loaded)
+        {
+            return std::unexpected(loaded.error());
+        }
+    }
 
     GrepIngest ingest{state};
     auto scanned = ScanFiles(request.files, request.json_field, request.archive_limits, ingest);
@@ -736,11 +756,25 @@ std::expected<TextResults, Error> Nesso::Grep(const GrepRequest &input) const
         const std::filesystem::path path = request.files.size() == 1 ? request.files.front() : std::filesystem::path{};
         return std::unexpected(MakeError(ErrorKind::EmptyInput, cause, path, scanned->counts, scanned->bundle_skips));
     }
+    state.scanned = &*scanned;
+    if (identifier_auto)
+    {
+        const GrepBm25 lexical = BuildGrepBm25Scores(state.all_lines, query_tokens, effective, query_class);
+        if (lexical.effective == EffectiveMode::Lexical)
+        {
+            scan_done.Fire();
+            return RankFromBm25(state, query_tokens, lexical);
+        }
+        if (const auto loaded = load_model(); !loaded)
+        {
+            return std::unexpected(loaded.error());
+        }
+    }
 
-    const auto query_embedding = [&request, &model]
+    const auto query_embedding = [&state, &request]
     {
         const ScopedStage stage{"query-embed"};
-        return (*model)->embed(request.query);
+        return state.model->embed(request.query);
     }();
     if (!query_embedding)
     {
@@ -748,7 +782,6 @@ std::expected<TextResults, Error> Nesso::Grep(const GrepRequest &input) const
     }
 
     progress.emplace(request.progress);
-    state.scanned = &*scanned;
     state.query_embedding = &*query_embedding;
     state.progress = &*progress;
     if (const auto embedded = EmbedGrepWindows(state); !embedded)
