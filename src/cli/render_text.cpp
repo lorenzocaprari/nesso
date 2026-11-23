@@ -3,8 +3,11 @@
 
 #include <cli/render_text.hpp>
 
+#include <nesso/nesso.hpp>
+
 #include <cstddef>
 #include <cstdint>
+#include <format>
 #include <string>
 #include <string_view>
 
@@ -115,6 +118,31 @@ std::string EscapeTerminalControls(std::string_view text)
         index += length;
     }
     return output;
+}
+
+std::string FormatTextRow(const TextResults &results, const TextMatch &match)
+{
+    const char *place = match.array_element ? "element" : "line";
+    // Archive labels are `bundle:entry`. A single member still prints that
+    // label.
+    const bool prefixed =
+        results.multiple_sources || match.source == "-" || match.source.find(':') != std::string::npos;
+    if (!results.grouped)
+    {
+        if (prefixed)
+        {
+            return std::format("{}:{} {}: {:.4f}: {}", EscapeTerminalControls(match.source), place, match.line,
+                               match.score, EscapeTerminalControls(match.text));
+        }
+        return std::format("{} {}: {:.4f}: {}", place, match.line, match.score, EscapeTerminalControls(match.text));
+    }
+    if (prefixed)
+    {
+        return std::format("{}:{} {} ({}): {:.4f}: {}", EscapeTerminalControls(match.source), place, match.line,
+                           match.occurrences, match.score, EscapeTerminalControls(match.text));
+    }
+    return std::format("{} {} ({}): {:.4f}: {}", place, match.line, match.occurrences, match.score,
+                       EscapeTerminalControls(match.text));
 }
 
 } // namespace nesso::cli

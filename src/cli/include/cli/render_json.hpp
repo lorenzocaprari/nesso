@@ -19,6 +19,11 @@ namespace nesso::cli
 /// and `text` becomes U+FFFD.
 [[nodiscard]] std::string RenderMatchJson(const TextMatch &match, std::size_t rank);
 
+/// `RenderMatchJson` with `,"final":false,"refresh":N` before the closing
+/// brace. `refresh` counts provisional updates from 1. Final records have no
+/// `final` key.
+[[nodiscard]] std::string RenderProvisionalMatchJson(const TextMatch &match, std::size_t rank, std::size_t refresh);
+
 } // namespace nesso::cli
 
 #endif // NESSO_RENDER_JSON_HPP

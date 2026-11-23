@@ -4,17 +4,22 @@
 #include "nesso/nesso.hpp"
 #include <cli/check_stdout.hpp>
 #include <cli/cli.hpp>
+#include <cli/live_view.hpp>
 #include <cli/render_json.hpp>
 #include <cli/render_text.hpp>
 
+#include <cstddef>
 #include <cstdio>
+#include <cstdlib>
 #include <expected>
 #include <format>
 #include <iostream>
+#include <memory>
 #include <print>
 #include <string>
 #include <string_view>
 #include <system_error>
+#include <unistd.h>
 #include <vector>
 
 namespace nesso::cli
@@ -150,34 +155,7 @@ static int RenderText(const TextResults &results)
 {
     for (const TextMatch &match : results.matches)
     {
-        const char *place = match.array_element ? "element" : "line";
-        // Archive labels are `bundle:entry`. A single member still prints that
-        // label.
-        const bool prefixed =
-            results.multiple_sources || match.source == "-" || match.source.find(':') != std::string::npos;
-        if (!results.grouped)
-        {
-            if (prefixed)
-            {
-                std::println("{}:{} {}: {:.4f}: {}", EscapeTerminalControls(match.source), place, match.line,
-                             match.score, EscapeTerminalControls(match.text));
-            }
-            else
-            {
-                std::println("{} {}: {:.4f}: {}", place, match.line, match.score, EscapeTerminalControls(match.text));
-            }
-            continue;
-        }
-        if (prefixed)
-        {
-            std::println("{}:{} {} ({}): {:.4f}: {}", EscapeTerminalControls(match.source), place, match.line,
-                         match.occurrences, match.score, EscapeTerminalControls(match.text));
-        }
-        else
-        {
-            std::println("{} {} ({}): {:.4f}: {}", place, match.line, match.occurrences, match.score,
-                         EscapeTerminalControls(match.text));
-        }
+        std::println("{}", FormatTextRow(results, match));
     }
     return 0;
 }
@@ -259,8 +237,51 @@ static int Report(const std::expected<Result, Error> &outcome, int failure_statu
     return outcome ? Render(*outcome, context...) : RenderError(outcome.error(), failure_status);
 }
 
-int Execute(const Nesso &nesso, const GrepRequest &request)
+// `--json --provisional`: each provisional top-k as JSON records on stdout,
+// before the final records. A write error stays on the stream and fails the
+// final render.
+class ProvisionalJson final : public GrepObserver
 {
+  public:
+    ProvisionalJson() = default;
+
+    void OnProvisional(const TextResults &results, size_t /*lines_done*/, size_t /*lines_total*/) override
+    {
+        ++refresh_;
+        for (size_t index = 0; index < results.matches.size(); ++index)
+        {
+            const std::string record = RenderProvisionalMatchJson(results.matches[index], index + 1, refresh_);
+            static_cast<void>(std::fputs(record.c_str(), stdout));
+            static_cast<void>(std::fputc('\n', stdout));
+        }
+        static_cast<void>(std::fflush(stdout));
+    }
+
+    void OnScanDone() noexcept override {}
+
+  private:
+    std::size_t refresh_ = 0;
+};
+
+int Execute(const Nesso &nesso, const GrepCommand &command)
+{
+    GrepRequest request = command.request;
+    ProvisionalJson json;
+    std::unique_ptr<LiveView> view;
+    if (request.json && command.provisional.value_or(false))
+    {
+        request.observer = &json;
+    }
+    else if (LiveViewEnabled({.requested = command.provisional,
+                              .quiet = !request.progress,
+                              .stderr_is_terminal = ::isatty(STDERR_FILENO) != 0,
+                              // The CLI reads the environment once on the main
+                              // thread. NOLINTNEXTLINE(concurrency-mt-unsafe)
+                              .term = std::getenv("TERM")}))
+    {
+        view = MakeStderrLiveView();
+        request.observer = view.get();
+    }
     const auto outcome = nesso.Grep(request);
     return outcome ? Render(*outcome, request.json) : RenderError(outcome.error(), FailureStatus(outcome.error()));
 }

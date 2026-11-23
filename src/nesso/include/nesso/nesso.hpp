@@ -136,6 +136,34 @@ struct Error
 
 inline constexpr size_t DEFAULT_TEXT_TOP_K = 5;
 
+struct TextResults;
+
+/// Watches a `grep` while it embeds. Both calls run on the thread that called
+/// `Nesso::Grep`.
+class GrepObserver
+{
+  public:
+    GrepObserver(const GrepObserver &) = delete;
+    GrepObserver &operator=(const GrepObserver &) = delete;
+    GrepObserver(GrepObserver &&) = delete;
+    GrepObserver &operator=(GrepObserver &&) = delete;
+    virtual ~GrepObserver() = default;
+
+    /// The dense top-k after a flush that embedded new lines, only when its
+    /// ordered (line, score) list changed. Rows are always dense, in every
+    /// mode, and are not the final ranking. `lines_done` of `lines_total`
+    /// input lines are scored. The progress line is drawn again after the
+    /// call.
+    virtual void OnProvisional(const TextResults &results, size_t lines_done, size_t lines_total) = 0;
+
+    /// Called once per `Grep`, on success and on error, before the progress
+    /// line ends. The progress line is drawn again after the call.
+    virtual void OnScanDone() noexcept = 0;
+
+  protected:
+    GrepObserver() = default;
+};
+
 struct GrepRequest
 {
     std::string query;
@@ -149,6 +177,9 @@ struct GrepRequest
     bool group = false;
     /// Caps for tar and zip bundles. Plain files ignore them.
     nesso::parser::ArchiveLimits archive_limits{};
+    /// Not owned. When set, `Grep` reports provisional dense results to it.
+    /// The final results do not change.
+    GrepObserver *observer = nullptr;
 };
 
 struct IndexRequest

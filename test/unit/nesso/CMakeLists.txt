@@ -57,6 +57,16 @@ add_test(NAME check_stdout_test COMMAND check_stdout_test)
 target_link_libraries(check_stdout_test PRIVATE nesso_cli
                                                 Catch2::Catch2WithMain)
 
+add_executable(live_view_test live_view_test.cpp)
+add_test(NAME live_view_test COMMAND live_view_test)
+target_link_libraries(live_view_test PRIVATE nesso_cli Catch2::Catch2WithMain)
+
+add_executable(grep_observer_test grep_observer_test.cpp)
+add_test(NAME grep_observer_test COMMAND grep_observer_test)
+target_link_libraries(
+  grep_observer_test PRIVATE nesso_options nesso_lib nesso_embed nesso_core
+                             Catch2::Catch2WithMain)
+
 add_executable(nesso_group_test nesso_group_test.cpp)
 add_test(NAME nesso_group_test COMMAND nesso_group_test)
 target_link_libraries(
@@ -84,6 +94,8 @@ set_tests_properties(
   render_json_test
   render_text_test
   check_stdout_test
+  live_view_test
+  grep_observer_test
   scan_threads_test
   thread_count_test
   PROPERTIES LABELS unit)

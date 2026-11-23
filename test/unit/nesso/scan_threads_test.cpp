@@ -17,6 +17,7 @@
 #include <span>
 #include <string>
 #include <string_view>
+#include <thread>
 #include <unistd.h>
 #include <utility>
 #include <vector>
@@ -135,6 +136,67 @@ std::vector<Seen> Freeze(const nesso::TextResults &results)
     return seen;
 }
 
+// Embeds on a worker thread, like a session pool, and reports progress there.
+class WorkerEmbedder final : public nesso::embed::Embedder
+{
+  public:
+    [[nodiscard]] size_t sessions() const noexcept override { return 2; }
+
+    [[nodiscard]] std::expected<nesso::embed::EmbedderIdentity, nesso::embed::EmbedError> identity() const override
+    {
+        return TestEmbedderIdentity();
+    }
+
+    [[nodiscard]] std::expected<std::vector<float>, nesso::embed::EmbedError> embed(std::string_view) const override
+    {
+        return std::vector<float>{1.F, 0.F, 0.F, 0.F};
+    }
+
+    [[nodiscard]] std::expected<std::vector<std::vector<float>>, nesso::embed::EmbedError>
+    EmbedBatch(std::span<const std::string> texts, ProgressCallback progress) const override
+    {
+        std::vector<std::vector<float>> rows;
+        std::thread worker{[&texts, &rows]
+                           {
+                               rows.reserve(texts.size());
+                               for (const std::string &text : texts)
+                               {
+                                   rows.push_back({static_cast<float>(text.size() % 31U), 0.F, 0.F, 0.F});
+                               }
+                           }};
+        worker.join();
+        if (progress)
+        {
+            progress(texts.size(), texts.size());
+        }
+        return rows;
+    }
+};
+
+class ThreadObserver final : public nesso::GrepObserver
+{
+  public:
+    void OnProvisional(const nesso::TextResults &, size_t, size_t) override
+    {
+        threads.push_back(std::this_thread::get_id());
+    }
+
+    void OnScanDone() noexcept override { threads.push_back(std::this_thread::get_id()); }
+
+    std::vector<std::thread::id> threads;
+};
+
+std::string Letters(std::size_t index)
+{
+    std::string text;
+    do
+    {
+        text.push_back(static_cast<char>('a' + static_cast<int>(index % 26)));
+        index /= 26;
+    } while (index > 0);
+    return text;
+}
+
 nesso::Nesso App(size_t threads)
 {
     return nesso::Nesso{nesso::Config{.model_dir = {}, .threads = threads}, std::make_unique<FixedEmbedder>()};
@@ -207,4 +269,27 @@ TEST_CASE("search rankings match across thread counts and corpus bytes do not ch
         {.query = "database connection", .files = {small_log}, .top_k = 6, .mode = nesso::SearchMode::Dense});
     REQUIRE(small_grep.has_value());
     CHECK(Freeze(*small_grep) == Freeze(*small_serial));
+}
+
+TEST_CASE("grep observer calls run on the thread that called grep", "[nesso][grep][observer]")
+{
+    const TempDir dir{"nesso_grep_observer_thread"};
+    const auto log = dir.Path() / "app.log";
+    {
+        std::ofstream output(log);
+        REQUIRE(output);
+        for (std::size_t index = 0; index < 2100; ++index)
+        {
+            output << "disk event " << Letters(index * 37) << '\n';
+        }
+    }
+    ThreadObserver observer;
+    const nesso::Nesso app{nesso::Config{}, std::make_unique<WorkerEmbedder>()};
+    const auto result = app.Grep({.query = "disk", .files = {log}, .observer = &observer});
+    REQUIRE(result.has_value());
+    REQUIRE(observer.threads.size() >= 2);
+    for (const std::thread::id &thread : observer.threads)
+    {
+        CHECK(thread == std::this_thread::get_id());
+    }
 }

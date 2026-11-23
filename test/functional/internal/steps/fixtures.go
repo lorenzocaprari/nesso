@@ -136,6 +136,40 @@ func (b *bindings) appendNumberedLines(count int, text, name string) error {
 	return err
 }
 
+// letterSuffix names line i with letters only, so the masked dedup key keeps
+// every line distinct (numbers are masked).
+func letterSuffix(i int) string {
+	var suffix []byte
+	for {
+		suffix = append(suffix, byte('a'+i%26))
+		i /= 26
+		if i == 0 {
+			return string(suffix)
+		}
+	}
+}
+
+func (b *bindings) appendDistinctLines(count int, text, name string) error {
+	if count <= 0 {
+		return fmt.Errorf("line count must be positive")
+	}
+	target, err := b.scenarioPath(name)
+	if err != nil {
+		return err
+	}
+	var body strings.Builder
+	for i := 0; i < count; i++ {
+		fmt.Fprintf(&body, "%s %s\n", text, letterSuffix(i))
+	}
+	file, err := os.OpenFile(target, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+	_, err = file.WriteString(body.String())
+	return err
+}
+
 func (b *bindings) appendRepeatedLine(count int, character, name string) error {
 	target, err := b.scenarioPath(name)
 	if err != nil {

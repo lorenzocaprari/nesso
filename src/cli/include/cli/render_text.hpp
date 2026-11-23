@@ -4,6 +4,8 @@
 #ifndef NESSO_RENDER_TEXT_HPP
 #define NESSO_RENDER_TEXT_HPP
 
+#include <nesso/nesso.hpp>
+
 #include <string>
 #include <string_view>
 
@@ -12,6 +14,12 @@ namespace nesso::cli
 
 /// Escapes control characters and invalid UTF-8 bytes for safe terminal output.
 [[nodiscard]] std::string EscapeTerminalControls(std::string_view text);
+
+/// One text row for `match`, without the newline: `[SOURCE:]line N[ (COUNT)]:
+/// SCORE: TEXT`. The source prefix is printed for several sources, stdin, and
+/// archive members. `--group` results add the count. Source and text are
+/// escaped.
+[[nodiscard]] std::string FormatTextRow(const TextResults &results, const TextMatch &match);
 
 } // namespace nesso::cli
 
