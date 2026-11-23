@@ -84,3 +84,7 @@ mode keeps, for each id, only the first `topK` lines (the first line with
 `--group`), because a later line ties an earlier one on score and loses on
 ordinal. Hybrid and lexical keep every line, as before. `index` still uses
 the two-pass scan.
+
+## Amendment: each text runs alone
+
+[ADR 0016](0016-embed-each-text-alone.md) replaces the int8 consequence above. A planned run is now a scheduling group whose texts run one at a time and unpadded, so a text's int8 or fp32 vector no longer depends on the other texts in its run, on the batch size, or on the window order. Windows, the length sort, and the cuts at 32 texts and 1024 tokens are unchanged. They decide only which session runs a text and when.

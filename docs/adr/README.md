@@ -49,3 +49,4 @@ record.
 | 0011 | Hybrid dense and BM25 search with query-class routing | proposed | 2026-11-09 |
 | 0014 | int8 session and thread policy | proposed | 2026-10-28 |
 | 0015 | Index migration and the model header | accepted | 2026-11-23 |
+| 0016 | Embed each text alone so its vector does not depend on its batch | accepted | 2026-11-23 |
