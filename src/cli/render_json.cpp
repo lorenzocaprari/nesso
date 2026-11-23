@@ -76,4 +76,15 @@ std::string RenderMatchJson(const TextMatch &match, std::size_t rank)
     return out;
 }
 
+// NOLINTNEXTLINE(bugprone-easily-swappable-parameters): rank and refresh are both counts from 1.
+std::string RenderProvisionalMatchJson(const TextMatch &match, std::size_t rank, std::size_t refresh)
+{
+    std::string out = RenderMatchJson(match, rank);
+    out.pop_back();
+    out.append(R"(,"final":false,"refresh":)");
+    out.append(std::format("{}", refresh));
+    out.push_back('}');
+    return out;
+}
+
 } // namespace nesso::cli

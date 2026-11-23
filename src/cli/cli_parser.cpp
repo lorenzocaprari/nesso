@@ -3,6 +3,7 @@
 
 #include "embed/session_policy.hpp"
 #include "nesso/nesso.hpp"
+#include <cli/cli.hpp>
 #include <cli/cli_parser.hpp>
 
 #include <expected>
@@ -18,6 +19,7 @@
 #include <cstdint>
 #include <cstdlib>
 #include <iostream>
+#include <optional>
 #include <span>
 #include <string>
 #include <string_view>
@@ -158,6 +160,8 @@ struct TextOptions
     bool quiet = false;
     bool json = false;
     bool group = false;
+    bool provisional = false;
+    const CLI::Option *provisional_opt = nullptr;
     size_t threads = 0;
     std::string mode = "auto";
     nesso::parser::ArchiveLimits grep_archive_limits{};
@@ -256,6 +260,8 @@ static TextSubcommand AddGrepSubcommand(CLI::App &app, TextOptions &text)
     cmd->add_flag("--quiet", text.quiet, "Suppress interactive progress output");
     cmd->add_flag("--json", text.json, "Print one JSON object per match");
     cmd->add_flag("--group", text.group, "Print one row per masked dedup group");
+    text.provisional_opt = cmd->add_flag("--provisional,!--no-provisional", text.provisional,
+                                         "Show the running dense top-k while embedding. Default on a terminal");
     cmd->add_option("--mode", text.mode, "Ranking mode: auto, hybrid, dense, or lexical")
         ->default_val("auto")
         ->check(CLI::IsMember({"auto", "hybrid", "dense", "lexical"}));
@@ -319,16 +325,23 @@ static ParsedCommand MakeParsedCommand(const CLI::App &grep_cmd, const CLI::App 
 {
     if (grep_cmd.parsed())
     {
+        std::optional<bool> provisional;
+        if (text.provisional_opt->count() > 0)
+        {
+            provisional = text.provisional;
+        }
         return ParsedCommand{.config = ConfigFrom(model_dir_opt, text, threads),
-                             .request = GrepRequest{.query = text.query,
-                                                    .files = ToPaths(text.files),
-                                                    .top_k = text.top_k,
-                                                    .json_field = text.json_field,
-                                                    .progress = !text.quiet,
-                                                    .json = text.json,
-                                                    .mode = ParseSearchMode(text.mode),
-                                                    .group = text.group,
-                                                    .archive_limits = text.grep_archive_limits}};
+                             .request = GrepCommand{.request = GrepRequest{.query = text.query,
+                                                                           .files = ToPaths(text.files),
+                                                                           .top_k = text.top_k,
+                                                                           .json_field = text.json_field,
+                                                                           .progress = !text.quiet,
+                                                                           .json = text.json,
+                                                                           .mode = ParseSearchMode(text.mode),
+                                                                           .group = text.group,
+                                                                           .archive_limits = text.grep_archive_limits,
+                                                                           .observer = nullptr},
+                                                    .provisional = provisional}};
     }
     if (index_cmd.parsed())
     {

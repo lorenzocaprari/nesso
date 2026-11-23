@@ -66,7 +66,7 @@ nesso search "payment timeout" -i case.nesso --json
 
 ## Shell output
 
-Matches are lines on stdout. Skip counts, warnings, and errors stay on stderr, so a pipe reads only matches. `grep` draws a progress line on stderr when that stream is a terminal. `--quiet` turns the line off, which keeps it from drawing over `less`. `search` does not draw one. With nothing to rank, stdout is empty and the command exits 1. `set -o pipefail` makes the pipeline use that status.
+Matches are lines on stdout. Skip counts, warnings, and errors stay on stderr, so a pipe reads only matches. `grep` draws a progress line on stderr when that stream is a terminal. `--quiet` turns the line off, which keeps it from drawing over `less`. Above that line it shows the best dense matches found so far and erases them before the final matches print; `--no-provisional` turns that view off ([Usage](usage.md#provisional-results)). `search` does not draw one. With nothing to rank, stdout is empty and the command exits 1. `set -o pipefail` makes the pipeline use that status.
 
 A text line is for reading. One file prints `line N: SCORE: TEXT`, with four digits after the decimal. An archive member, stdin (`-`), or more than one file prints `SOURCE:line N: SCORE: TEXT`. `--group` inserts the count, as `line N (COUNT): SCORE: TEXT` or `SOURCE:line N (COUNT): SCORE: TEXT`. A JSON array slot prints `element`. The log text can contain `: `, and an archive source already contains a colon, so read fields from `--json`. `grep -F` matches the rendered line, including that source prefix.
 

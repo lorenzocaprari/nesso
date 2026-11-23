@@ -4,6 +4,7 @@
 #ifndef NESSO_CLI_PARSER_HPP
 #define NESSO_CLI_PARSER_HPP
 
+#include <cli/cli.hpp>
 #include <nesso/nesso.hpp>
 
 #include <expected>
@@ -12,7 +13,7 @@
 namespace nesso::cli
 {
 
-using Request = std::variant<GrepRequest, IndexRequest, SearchRequest>;
+using Request = std::variant<GrepCommand, IndexRequest, SearchRequest>;
 
 struct ParsedCommand
 {

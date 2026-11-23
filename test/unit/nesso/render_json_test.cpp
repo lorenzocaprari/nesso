@@ -5,6 +5,7 @@
 #include <cli/render_json.hpp>
 
 #include <clocale>
+#include <optional>
 #include <string>
 
 TEST_CASE("json rows keep schema version 2 and append occurrences", "[json]")
@@ -138,4 +139,27 @@ TEST_CASE("json rows expose hybrid mode and raw scores", "[json]")
     CHECK(
         nesso::cli::RenderMatchJson(hybrid, 1) ==
         R"({"schema_version":2,"rank":1,"source":"blk.log","kind":"line","line":3,"score":1.25,"text":"blk_-1608999687919862906","occurrences":1,"mode":"hybrid","dense":0.42,"lexical":3.5})");
+}
+
+TEST_CASE("provisional json rows append final false and the refresh count", "[json][provisional]")
+{
+    const nesso::TextMatch dense{.source = "app.log",
+                                 .line = 2,
+                                 .score = 0.5F,
+                                 .text = "same",
+                                 .array_element = false,
+                                 .occurrences = 3,
+                                 .mode = "dense",
+                                 .dense = 0.5F,
+                                 .lexical = std::nullopt};
+    CHECK(
+        nesso::cli::RenderProvisionalMatchJson(dense, 1, 1) ==
+        R"({"schema_version":2,"rank":1,"source":"app.log","kind":"line","line":2,"score":0.5,"text":"same","occurrences":3,"mode":"dense","dense":0.5,"lexical":null,"final":false,"refresh":1})");
+
+    const nesso::TextMatch element{
+        .source = "rows.json", .line = 4, .score = -0.25F, .text = "only", .array_element = true, .occurrences = 1};
+    const std::string record = nesso::cli::RenderProvisionalMatchJson(element, 2, 17);
+    const std::string final_record = nesso::cli::RenderMatchJson(element, 2);
+    CHECK(record == final_record.substr(0, final_record.size() - 1) + R"(,"final":false,"refresh":17})");
+    CHECK(final_record.find("\"final\"") == std::string::npos);
 }

@@ -21,6 +21,7 @@
 #include <parser/log_chunker.hpp>
 
 #include <algorithm>
+#include <bit>
 #include <expected>
 #include <optional>
 #include <span>
@@ -128,6 +129,10 @@ struct GrepEmbedState
     std::vector<char> group_seen;
     std::vector<std::string> sources;
     std::vector<GrepCandidate> best;
+    // The request's observer, if any, and the (ordinal, score bits) list last
+    // reported to it, so an unchanged top-k is not reported again.
+    GrepObserver *observer = nullptr;
+    std::vector<std::pair<uint64_t, std::uint32_t>> reported;
     ProgressReporter *progress = nullptr;
     size_t lines_seen = 0;
     size_t lines_reported = 0;
@@ -164,9 +169,11 @@ static bool ScoreHitBefore(const GrepHit &left, const GrepHit &right)
     return BetterHit(left.score, left.ordinal, right.score, right.ordinal);
 }
 
+// Keeps the running dense top-k in `best`. Hybrid and lexical rank at the end
+// and keep it only for an observer.
 static void ConsiderDenseGrep(GrepEmbedState &state, const GrepWaiting &item)
 {
-    if (state.need_lexical)
+    if (state.need_lexical && state.observer == nullptr)
     {
         return;
     }
@@ -199,6 +206,40 @@ static void ConsiderDenseGrep(GrepEmbedState &state, const GrepWaiting &item)
                           state.best.end(), BetterGrepCandidate);
         state.best.resize(state.request->top_k);
     }
+}
+
+static TextResults EmptyGrepResults(const GrepEmbedState &state, bool group);
+
+static void ReportProvisional(GrepEmbedState &state)
+{
+    if (state.observer == nullptr)
+    {
+        return;
+    }
+    std::vector<GrepCandidate> ranked = state.best;
+    std::ranges::sort(ranked, BetterGrepCandidate);
+    std::vector<std::pair<uint64_t, std::uint32_t>> key;
+    key.reserve(ranked.size());
+    for (const GrepCandidate &candidate : ranked)
+    {
+        key.emplace_back(candidate.index, std::bit_cast<std::uint32_t>(candidate.score));
+    }
+    if (key == state.reported)
+    {
+        return;
+    }
+    state.reported = std::move(key);
+    TextResults results = EmptyGrepResults(state, state.request->group);
+    results.matches.reserve(ranked.size());
+    for (GrepCandidate &candidate : ranked)
+    {
+        candidate.match.occurrences = state.distinct.Occurrences(candidate.distinct_id);
+        candidate.match.mode = "dense";
+        candidate.match.dense = candidate.score;
+        results.matches.push_back(std::move(candidate.match));
+    }
+    state.observer->OnProvisional(results, state.lines_reported, state.scanned->chunks);
+    state.progress->Redraw();
 }
 
 static std::expected<void, Error> FlushGrepEmbeddings(GrepEmbedState &state)
@@ -235,6 +276,7 @@ static std::expected<void, Error> FlushGrepEmbeddings(GrepEmbedState &state)
         ConsiderDenseGrep(state, item);
     }
     state.waiting.clear();
+    ReportProvisional(state);
     return {};
 }
 
@@ -567,9 +609,47 @@ static TextResults RankLexicalGrep(GrepEmbedState &state, const nesso::core::Que
     return MaterializeGrepHits(state, hits, lexical.effective, lexical.lexical_fallback);
 }
 
+// Calls `GrepObserver::OnScanDone` once, from `Fire` or on scope exit, then
+// draws the progress line again.
+class ScanDoneNotice
+{
+  public:
+    ScanDoneNotice(GrepObserver *observer, const std::optional<ProgressReporter> &progress) noexcept
+        : observer_(observer), progress_(&progress)
+    {
+    }
+    ScanDoneNotice(const ScanDoneNotice &) = delete;
+    ScanDoneNotice &operator=(const ScanDoneNotice &) = delete;
+    ScanDoneNotice(ScanDoneNotice &&) = delete;
+    ScanDoneNotice &operator=(ScanDoneNotice &&) = delete;
+    ~ScanDoneNotice() { Fire(); }
+
+    void Fire() noexcept
+    {
+        GrepObserver *const observer = std::exchange(observer_, nullptr);
+        if (observer == nullptr)
+        {
+            return;
+        }
+        observer->OnScanDone();
+        if (progress_->has_value())
+        {
+            (*progress_)->Redraw();
+        }
+    }
+
+  private:
+    GrepObserver *observer_;
+    const std::optional<ProgressReporter> *progress_;
+};
+
 std::expected<TextResults, Error> Nesso::Grep(const GrepRequest &input) const
 {
     const TraceSession session;
+    // Declared before the notice, so the notice can still redraw it on an
+    // early return.
+    std::optional<ProgressReporter> progress;
+    ScanDoneNotice scan_done{input.observer, progress};
     auto expanded = ExpandRequestFiles(input.files);
     if (!expanded)
     {
@@ -608,14 +688,15 @@ std::expected<TextResults, Error> Nesso::Grep(const GrepRequest &input) const
     const nesso::core::QueryTokens query_tokens = nesso::core::TokenizeQuery(request.query);
     const EffectiveMode effective = ResolveEffectiveMode(request.mode, nesso::core::ClassifyQuery(request.query));
     const bool need_lexical = effective != EffectiveMode::Dense;
-    ProgressReporter progress(request.progress);
+    progress.emplace(request.progress);
     GrepEmbedState state;
     state.request = &request;
     state.scanned = &*scanned;
     state.query_embedding = &*query_embedding;
     state.model = *model;
     state.need_lexical = need_lexical;
-    state.progress = &progress;
+    state.observer = request.observer;
+    state.progress = &*progress;
     state.batch = StreamBatch();
     state.distinct.Reserve(scanned->chunks);
     state.sources.reserve(request.files.size());
@@ -627,7 +708,8 @@ std::expected<TextResults, Error> Nesso::Grep(const GrepRequest &input) const
     {
         return std::unexpected(embedded.error());
     }
-    progress.Finish();
+    scan_done.Fire();
+    progress->Finish();
 
     if (!need_lexical)
     {

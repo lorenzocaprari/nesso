@@ -1,7 +1,8 @@
 find_package(CLI11 CONFIG REQUIRED)
 find_package(nlohmann_json CONFIG REQUIRED)
 
-add_library(nesso_cli cli.cpp cli_parser.cpp render_json.cpp render_text.cpp)
+add_library(nesso_cli cli.cpp cli_parser.cpp live_view.cpp render_json.cpp
+                      render_text.cpp)
 target_include_directories(
   nesso_cli
   PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include"

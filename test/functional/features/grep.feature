@@ -324,6 +324,44 @@ Feature: grep
     And stderr contains "Embedded"
     And stderr contains "lines/s"
 
+  Scenario: provisional results are drawn on a terminal and stdout is unchanged
+    Given 1100 distinct lines "database connection refused on host" in "big.log"
+    And stderr is a terminal
+    And the environment variable "TERM" is "xterm"
+    When I run nesso with arguments grep "database connection error" {dir}/big.log
+    Then the exit code is 0
+    And stderr contains "Provisional (dense) top-5 after 1024/1100 lines:"
+    And stderr contains "Embedded 1100/1100 lines"
+    And stdout line count is 5
+    And running nesso with arguments grep "database connection error" --no-provisional {dir}/big.log prints the same stdout
+    And stderr does not contain "Provisional"
+
+  Scenario: quiet mode and a dumb terminal hide the provisional view
+    Given 1100 distinct lines "database connection refused on host" in "big.log"
+    And stderr is a terminal
+    And the environment variable "TERM" is "dumb"
+    When I run nesso with arguments grep "database connection error" {dir}/big.log
+    Then the exit code is 0
+    And stderr contains "Embedded 1100/1100 lines"
+    And stderr does not contain "Provisional"
+    Given the environment variable "TERM" is "xterm"
+    When I run nesso with arguments grep "database connection error" --quiet {dir}/big.log
+    Then the exit code is 0
+    And stderr does not contain "Provisional"
+    And stderr does not contain "Embedded"
+
+  Scenario: --json --provisional adds provisional records that repeat run to run
+    Given 1100 distinct lines "database connection refused on host" in "big.log"
+    When I run nesso with arguments grep "database connection error" --json --provisional {dir}/big.log
+    Then the exit code is 0
+    And stdout contains "\"mode\":\"dense\",\"dense\":"
+    And stdout contains ",\"final\":false,\"refresh\":1}"
+    And stderr does not contain "Provisional"
+    And running nesso again prints the same stdout
+    And stdout without provisional records is the stdout of nesso with arguments grep "database connection error" --json {dir}/big.log
+    And stdout does not contain "\"final\""
+    And every stdout line is a JSON match
+
   Scenario: an explicit thread count and quiet mode are accepted
     Given a file "edges.jsonl" with:
       """

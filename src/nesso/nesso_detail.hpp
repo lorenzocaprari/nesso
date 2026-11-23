@@ -19,6 +19,7 @@
 #include <cstdio>
 #include <expected>
 #include <filesystem>
+#include <format>
 #include <print>
 #include <span>
 #include <string>
@@ -48,7 +49,19 @@ class ProgressReporter
         }
         const std::chrono::duration<double> elapsed = std::chrono::steady_clock::now() - started_;
         const double lines_per_second = elapsed.count() > 0.0 ? static_cast<double>(completed) / elapsed.count() : 0.0;
-        std::print(stderr, "\rEmbedded {}/{} lines ({:.0f} lines/s)", completed, total, lines_per_second);
+        last_ = std::format("Embedded {}/{} lines ({:.0f} lines/s)", completed, total, lines_per_second);
+        Redraw();
+    }
+
+    /// Prints the last progress text again on the current terminal row.
+    void Redraw() const noexcept
+    {
+        if (!enabled_ || last_.empty())
+        {
+            return;
+        }
+        static_cast<void>(std::fputc('\r', stderr));
+        static_cast<void>(std::fputs(last_.c_str(), stderr));
         static_cast<void>(std::fflush(stderr));
     }
 
@@ -63,6 +76,7 @@ class ProgressReporter
   private:
     bool enabled_;
     std::chrono::steady_clock::time_point started_;
+    std::string last_;
 };
 
 struct LineCounts
