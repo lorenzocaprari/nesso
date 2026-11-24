@@ -1,0 +1,220 @@
+#!/usr/bin/env python3
+"""Measure nesso's corpus caps: peak RSS of `index` and `search` at N distinct
+texts and M sources.
+
+  scripts/caps-bench generate --distinct N --sources M OUT_DIR [--tar]
+  scripts/caps-bench measure --binary B --model-dir D --threads 1,4 \
+      --machine LABEL INPUT_DIR
+
+`generate` writes `max(N, M)` lines. Line j goes to source `j % M`. The first
+N lines are distinct after the dedup mask; the rest repeat one filler line.
+Every word is letters only and has a letter outside a-f, so the mask keeps it.
+The lexical vocabulary stays at a few dozen words, so the lexical caps are not
+what a run measures. The same arguments write the same bytes.
+
+Sources are files under `OUT_DIR/input/` (zero-padded names, so byte order is
+index order), or one uncompressed `OUT_DIR/input.tar` with `--tar`.
+
+`measure` runs `nesso index`, then one `nesso search`, at each thread count.
+Peak RSS is `ru_maxrss` from `wait4`, the value GNU time prints as "Maximum
+resident set size". It prints one Markdown table row per command and run.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import subprocess
+import sys
+import tarfile
+import time
+from pathlib import Path
+
+# 32 letters-only words; each has a letter outside a-f, none is two bytes.
+WORDS = (
+    "kor", "mel", "tav", "pun", "rist", "gul", "sorn", "vix",
+    "lomb", "trun", "hask", "wilt", "zorp", "nim", "quel", "jask",
+    "pirk", "rulm", "tosk", "vemp", "glin", "snor", "plok", "murt",
+    "yorn", "hilt", "kwop", "lurn", "spik", "tolg", "wren", "zust",
+)  # fmt: skip
+DIGITS = 5  # 32**5 = 33,554,432 distinct prefixes.
+PREFIX = "worker"
+SUFFIX = "finished syncing replica state for the primary partition group without loss"
+FILLER = "heartbeat received from replica group monitor and acknowledged"
+FILES_PER_DIR = 10_000
+MAX_DISTINCT_TEXTS = len(WORDS) ** DIGITS
+SEARCH_QUERY = "replica sync finished"
+
+
+def distinct_line(index: int) -> str:
+    if not 0 <= index < MAX_DISTINCT_TEXTS:
+        raise ValueError(f"index {index} out of range")
+    words = []
+    value = index
+    for _ in range(DIGITS):
+        value, digit = divmod(value, len(WORDS))
+        words.append(WORDS[digit])
+    return f"{PREFIX} {' '.join(reversed(words))} {SUFFIX}"
+
+
+def line_text(line: int, distinct: int) -> str:
+    return distinct_line(line) if line < distinct else FILLER
+
+
+def source_name(source: int, sources: int) -> str:
+    width = max(1, len(str(max(sources - 1, 0))))
+    shard_width = max(1, len(str(max((sources - 1) // FILES_PER_DIR, 0))))
+    return f"{source // FILES_PER_DIR:0{shard_width}d}/{source:0{width}d}.log"
+
+
+def source_lines(source: int, sources: int, distinct: int) -> list[str]:
+    total = max(distinct, sources)
+    return [line_text(line, distinct) for line in range(source, total, sources)]
+
+
+def check_counts(distinct: int, sources: int) -> None:
+    if distinct < 1 or sources < 1:
+        raise ValueError("--distinct and --sources must be at least 1")
+    if distinct > MAX_DISTINCT_TEXTS:
+        raise ValueError(f"--distinct is at most {MAX_DISTINCT_TEXTS}")
+
+
+def generate_dir(root: Path, distinct: int, sources: int) -> None:
+    for source in range(sources):
+        path = root / source_name(source, sources)
+        if source % FILES_PER_DIR == 0:
+            path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("".join(f"{text}\n" for text in source_lines(source, sources, distinct)), encoding="utf-8")
+
+
+def generate_tar(path: Path, distinct: int, sources: int) -> None:
+    with tarfile.open(path, "w", format=tarfile.USTAR_FORMAT) as archive:
+        for source in range(sources):
+            data = "".join(f"{text}\n" for text in source_lines(source, sources, distinct)).encode("utf-8")
+            info = tarfile.TarInfo(source_name(source, sources))
+            info.size = len(data)
+            info.mtime = 0
+            info.mode = 0o644
+            info.uid = info.gid = 0
+            info.uname = info.gname = ""
+            archive.addfile(info, _Bytes(data))
+
+
+class _Bytes:
+    def __init__(self, data: bytes) -> None:
+        self._data = data
+        self._offset = 0
+
+    def read(self, size: int = -1) -> bytes:
+        end = len(self._data) if size < 0 else self._offset + size
+        chunk = self._data[self._offset : end]
+        self._offset += len(chunk)
+        return chunk
+
+
+def generate(args: argparse.Namespace) -> int:
+    check_counts(args.distinct, args.sources)
+    out = Path(args.out_dir)
+    out.mkdir(parents=True, exist_ok=True)
+    if args.tar:
+        generate_tar(out / "input.tar", args.distinct, args.sources)
+        target = "input.tar"
+    else:
+        generate_dir(out / "input", args.distinct, args.sources)
+        target = "input"
+    meta = {
+        "distinct": args.distinct,
+        "sources": args.sources,
+        "lines": max(args.distinct, args.sources),
+        "input": target,
+    }
+    (out / "caps-input.json").write_text(json.dumps(meta, sort_keys=True) + "\n", encoding="utf-8")
+    print(json.dumps(meta, sort_keys=True))
+    return 0
+
+
+def run_measured(argv: list[str], env: dict[str, str], log: Path) -> tuple[int, float, int]:
+    started = time.monotonic()
+    with log.open("wb") as stderr:
+        process = subprocess.Popen(argv, stdout=subprocess.DEVNULL, stderr=stderr, env=env)
+        _pid, status, usage = os.wait4(process.pid, 0)
+    elapsed = time.monotonic() - started
+    process.returncode = os.waitstatus_to_exitcode(status)
+    return process.returncode, elapsed, usage.ru_maxrss  # ru_maxrss is KiB on Linux.
+
+
+def format_row(row: dict) -> str:
+    gib = row["peak_rss_kib"] / (1024 * 1024)
+    return (
+        f"| `{row['command']}` | {row['threads']} | {row['distinct']:,} | {row['sources']:,} | "
+        f"{row['peak_rss_kib'] / 1024:,.0f} MiB ({gib:.2f} GiB) | {row['wall_s']:,.1f} s | "
+        f"{row['exit']} | {row['machine']} |"
+    )
+
+
+def measure(args: argparse.Namespace) -> int:
+    root = Path(args.input_dir)
+    meta = json.loads((root / "caps-input.json").read_text(encoding="utf-8"))
+    target = root / meta["input"]
+    rows = []
+    for threads in [int(value) for value in args.threads.split(",")]:
+        corpus = root / f"corpus-t{threads}.nesso"
+        env = dict(os.environ, NESSO_THREADS=str(threads))
+        index = [args.binary, "index", "-o", str(corpus), "--model-dir", args.model_dir, "--quiet"]
+        if meta["input"].endswith(".tar"):
+            index += ["--archive-max-entries", str(meta["sources"] + 1)]
+        index.append(str(target))
+        search = [args.binary, "search", SEARCH_QUERY, "-i", str(corpus), "--model-dir", args.model_dir, "-k", "5"]
+        for command, argv in (("index", index), ("search", search)):
+            code, wall, rss = run_measured(argv, env, root / f"{command}-t{threads}.stderr")
+            row = {
+                "command": command,
+                "threads": threads,
+                "distinct": meta["distinct"],
+                "sources": meta["sources"],
+                "lines": meta["lines"],
+                "peak_rss_kib": rss,
+                "wall_s": round(wall, 1),
+                "exit": code,
+                "machine": args.machine,
+            }
+            rows.append(row)
+            print(format_row(row), flush=True)
+            if code != 0:
+                break
+        if args.keep_corpus is False:
+            corpus.unlink(missing_ok=True)
+    with (root / "caps-measure.jsonl").open("a", encoding="utf-8") as output:
+        for row in rows:
+            output.write(json.dumps(row, sort_keys=True) + "\n")
+    return 0 if all(row["exit"] == 0 for row in rows) else 1
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    commands = parser.add_subparsers(dest="command", required=True)
+    gen = commands.add_parser("generate", help="write N distinct texts across M sources")
+    gen.add_argument("--distinct", type=int, required=True)
+    gen.add_argument("--sources", type=int, required=True)
+    gen.add_argument("--tar", action="store_true", help="one uncompressed tar instead of a directory")
+    gen.add_argument("out_dir")
+    gen.set_defaults(func=generate)
+    meas = commands.add_parser("measure", help="peak RSS of index and search")
+    meas.add_argument("--binary", default="build/Release/src/nesso")
+    meas.add_argument("--model-dir", default="models")
+    meas.add_argument("--threads", default="1,4")
+    meas.add_argument("--machine", required=True, help="label for every row")
+    meas.add_argument("--keep-corpus", action="store_true")
+    meas.add_argument("input_dir")
+    meas.set_defaults(func=measure)
+    args = parser.parse_args(argv)
+    try:
+        return args.func(args)
+    except ValueError as error:
+        print(f"caps-bench: {error}", file=sys.stderr)
+        return 2
+
+
+if __name__ == "__main__":
+    sys.exit(main())
