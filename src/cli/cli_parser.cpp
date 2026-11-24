@@ -14,9 +14,7 @@
 
 #include <cli/thread_count.hpp>
 
-#include <CLI/App.hpp>
-#include <CLI/Error.hpp>
-#include <CLI/Validators.hpp>
+#include <CLI/CLI.hpp>
 
 #include <charconv>
 #include <cstdint>
