@@ -37,6 +37,34 @@ release_conan_profile() {
   esac
 }
 
+# Host profiles are compiler.version=16. The build profile stays 15 so
+# tool_requires keep the Conan Center package ids baked into the image.
+# conan profile detect would record the toolset major version, 16.
+el9_build_profile() {
+  local machine="${1:-$(uname -m)}"
+  local arch home
+  case "${machine}" in
+    x86_64) arch="x86_64" ;;
+    aarch64) arch="armv8" ;;
+    *)
+      echo "error: no EL9 build profile for machine ${machine}" >&2
+      return 1
+      ;;
+  esac
+  home="${CONAN_HOME:-${HOME}/.conan2}"
+  mkdir -p "${home}/profiles"
+  printf '%s\n' \
+    '[settings]' \
+    'os=Linux' \
+    "arch=${arch}" \
+    'compiler=gcc' \
+    'compiler.version=15' \
+    'compiler.libcxx=libstdc++11' \
+    'compiler.cppstd=17' \
+    'build_type=Release' \
+    > "${home}/profiles/default"
+}
+
 if [[ "${BASH_SOURCE[0]}" != "${0}" ]]; then
   return 0
 fi
@@ -78,18 +106,18 @@ fi
 echo "build-release-binary: SOURCE_DATE_EPOCH=${SOURCE_DATE_EPOCH} ROOT=${ROOT}"
 
 # aarch64 GCC emits -latomic. The EL9 toolset image does not install it.
-# gcc-toolset-15-libatomic-devel's libatomic.so is a linker script for
+# gcc-toolset-16-libatomic-devel's libatomic.so is a linker script for
 # /usr/lib64/libatomic.so.1, and that SONAME is outside the baseline NEEDED
 # set. Remove the script so the driver links the static archive beside it.
 if [[ -n "${NESSO_ABI_BASELINE:-}" && "$(uname -m)" == aarch64 ]]; then
   if ! command -v dnf >/dev/null 2>&1; then
-    echo "error: aarch64 baseline link needs gcc-toolset-15-libatomic-devel and dnf" >&2
+    echo "error: aarch64 baseline link needs gcc-toolset-16-libatomic-devel and dnf" >&2
     exit 1
   fi
-  dnf -y install gcc-toolset-15-libatomic-devel
+  dnf -y install gcc-toolset-16-libatomic-devel
   archive="$(g++ -print-file-name=libatomic.a)"
   if [[ "${archive}" == libatomic.a || ! -f "${archive}" ]]; then
-    echo "error: g++ did not find libatomic.a after installing gcc-toolset-15-libatomic-devel" >&2
+    echo "error: g++ did not find libatomic.a after installing gcc-toolset-16-libatomic-devel" >&2
     exit 1
   fi
   if ! ar t "${archive}" >/dev/null 2>&1; then
@@ -98,12 +126,16 @@ if [[ -n "${NESSO_ABI_BASELINE:-}" && "$(uname -m)" == aarch64 ]]; then
   fi
   rm -f "$(dirname "${archive}")/libatomic.so"
   echo "build-release-binary: static libatomic ${archive}"
-  rpm -q gcc-toolset-15-libatomic-devel
+  rpm -q gcc-toolset-16-libatomic-devel
 fi
 
 PROFILE="$(release_conan_profile)"
 echo "build-release-binary: profile=${PROFILE} machine=$(uname -m)"
-conan profile detect --force
+if [[ -n "${NESSO_ABI_BASELINE:-}" ]]; then
+  el9_build_profile
+else
+  conan profile detect --force
+fi
 # Graph only. Conan skips the binaries of header-only packages and of libraries
 # nothing links, which leaves them without a package folder; skip_binaries=False
 # keeps the folders and their license files. No --build=missing here: this call

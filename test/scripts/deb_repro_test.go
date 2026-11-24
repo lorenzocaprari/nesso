@@ -385,6 +385,47 @@ func TestReleaseConanProfileAbiBaseline(t *testing.T) {
 	}
 }
 
+func TestEl9BuildProfileStaysOnGcc15(t *testing.T) {
+	script := filepath.Join(repoRoot(t), "packaging", "scripts", "build-release-binary")
+	for _, tc := range []struct {
+		machine string
+		arch    string
+	}{
+		{"x86_64", "arch=x86_64"},
+		{"aarch64", "arch=armv8"},
+	} {
+		home := t.TempDir()
+		cmd := exec.Command("bash", "-c", `source "$1"; el9_build_profile "$2"`, "bash", script, tc.machine)
+		cmd.Env = append(envWithout("CONAN_HOME", "HOME"), "CONAN_HOME="+home, "HOME="+home)
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("%s: %v\n%s", tc.machine, err, out)
+		}
+		text, err := os.ReadFile(filepath.Join(home, "profiles", "default"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		profile := string(text)
+		if !strings.Contains(profile, "compiler.version=15") {
+			t.Fatalf("%s profile:\n%s", tc.machine, profile)
+		}
+		if strings.Contains(profile, "compiler.version=16") {
+			t.Fatalf("%s profile recorded the host compiler:\n%s", tc.machine, profile)
+		}
+		if !strings.Contains(profile, tc.arch) {
+			t.Fatalf("%s profile arch:\n%s", tc.machine, profile)
+		}
+	}
+	cmd := exec.Command("bash", "-c", `source "$1"; el9_build_profile ppc64le`, "bash", script)
+	out, err := cmd.CombinedOutput()
+	if err == nil {
+		t.Fatalf("unknown machine exited 0: %s", out)
+	}
+	if !strings.Contains(string(out), "ppc64le") {
+		t.Fatalf("stderr: %s", out)
+	}
+}
+
 func TestPublishRuntimeIndex(t *testing.T) {
 	root := repoRoot(t)
 	script := filepath.Join(root, "packaging", "scripts", "publish-runtime-index")

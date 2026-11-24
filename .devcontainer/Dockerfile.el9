@@ -1,4 +1,4 @@
-# EL9 amd64 build-env. Rocky Linux 9, glibc 2.34, GCC Toolset 15.
+# EL9 amd64 build-env. Rocky Linux 9, glibc 2.34, GCC Toolset 16.2.1.
 # The Ubuntu image stays .devcontainer/Dockerfile and keeps the
 # nesso-build-env tag. This file publishes nesso-build-env-el9.
 # Build on amd64. The host profile is conan/profiles/gcc-26-el9.
@@ -22,24 +22,26 @@ RUN dnf -y install dnf-plugins-core \
       python3.12 \
       python3.12-pip \
       ninja-build \
-      gcc-toolset-15-gcc-15.2.1-7.1.el9_8 \
-      gcc-toolset-15-gcc-c++-15.2.1-7.1.el9_8 \
+      gcc-toolset-16-gcc-16.2.1-1.4.el9_9 \
+      gcc-toolset-16-gcc-c++-16.2.1-1.4.el9_9 \
     && dnf clean all \
     && rm -rf /var/cache/dnf \
     && ln -sfn /usr/bin/python3.12 /usr/local/bin/python3
 
 # Non-login shells (Docker RUN, GitHub Actions) do not source
-# /opt/rh/gcc-toolset-15/enable. PATH is enough for the compiler. That
+# /opt/rh/gcc-toolset-16/enable. PATH is enough for the compiler. That
 # script also sets LD_LIBRARY_PATH, which would shadow system libraries
 # for later dnf runs. The toolset libstdc++ is a linker script, so the
 # built binary still needs the system libstdc++.so.6.
-ENV PATH=/opt/rh/gcc-toolset-15/root/usr/bin:${PATH}
-ENV PKG_CONFIG_PATH=/opt/rh/gcc-toolset-15/root/usr/lib64/pkgconfig
-ENV CC=/opt/rh/gcc-toolset-15/root/usr/bin/gcc
-ENV CXX=/opt/rh/gcc-toolset-15/root/usr/bin/g++
+ENV PATH=/opt/rh/gcc-toolset-16/root/usr/bin:${PATH}
+ENV PKG_CONFIG_PATH=/opt/rh/gcc-toolset-16/root/usr/lib64/pkgconfig
+ENV CC=/opt/rh/gcc-toolset-16/root/usr/bin/gcc
+ENV CXX=/opt/rh/gcc-toolset-16/root/usr/bin/g++
 
-RUN rpm -q --qf '%{VERSION}-%{RELEASE}\n' gcc-toolset-15-gcc | grep -qx '15.2.1-7.1.el9_8' \
-    && g++ -dumpversion | grep -qx 15 \
+RUN rpm -q --qf '%{VERSION}-%{RELEASE}\n' gcc-toolset-16-gcc | grep -qx '16.2.1-1.4.el9_9' \
+    && rpm -q --qf '%{VERSION}-%{RELEASE}\n' gcc-toolset-16-gcc-c++ | grep -qx '16.2.1-1.4.el9_9' \
+    && g++ -dumpversion | grep -qx 16 \
+    && g++ -dumpfullversion | grep -qx 16.2.1 \
     && python3 -c 'import sys; assert sys.version_info[:2] >= (3, 10), sys.version'
 
 # EL9 ships CMake 3.31. This project requires 4.2.
@@ -69,7 +71,20 @@ COPY conanfile.py /tmp/nesso/conanfile.py
 COPY conan.lock /tmp/nesso/conan.lock
 COPY conan/profiles/gcc-26-el9 /tmp/nesso/conan/profiles/gcc-26-el9
 COPY conan/global.conf /tmp/nesso/conan/global.conf
-RUN conan profile detect --force \
+# compiler.version=15 on the build profile only. Host packages are GCC 16
+# (conan/profiles/gcc-26-el9). g++ -dumpfullversion is 16.2.1, which is not
+# a settings.yml key; 16 is. tool_requires stay on Conan Center binaries.
+RUN mkdir -p "${CONAN_HOME}/profiles" \
+    && printf '%s\n' \
+      '[settings]' \
+      'os=Linux' \
+      'arch=x86_64' \
+      'compiler=gcc' \
+      'compiler.version=15' \
+      'compiler.libcxx=libstdc++11' \
+      'compiler.cppstd=17' \
+      'build_type=Release' \
+      > "${CONAN_HOME}/profiles/default" \
     && cat conan/global.conf >> "${CONAN_HOME}/global.conf" \
     && conan remote add conancenter https://center2.conan.io --force \
     && conan install . -pr:h=conan/profiles/gcc-26-el9 -pr:b=default --lockfile=conan.lock --build=missing \

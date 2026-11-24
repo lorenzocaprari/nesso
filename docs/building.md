@@ -2,7 +2,7 @@
 
 ## Prerequisites
 
-- **Compiler:** GCC 15+ with C++26 support
+- **Compiler:** GCC 15+ with C++26 support. Ubuntu CI stays on GCC 15. Release binaries use GCC Toolset 16.2.1 (`conan/profiles/gcc-26-el9`, `conan/profiles/gcc-26-el9-armv8`).
 - **Build system:** CMake 4.2+
 - **Package manager:** Conan 2.x
 - **OS:** Linux
