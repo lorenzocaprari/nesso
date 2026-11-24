@@ -1,0 +1,16 @@
+2026-11-23T10:00:00Z db01 api[7]: payment declined by gateway
+2015-10-18 18:01:47,978 INFO [main] org.apache.hadoop.mapreduce.v2.app.MRAppMaster: Created MRAppMaster
+2026-11-23 10:00:00,123 - app.db - ERROR - connection pool exhausted
+Jun  9 06:06:20 combo sshd(pam_unix)[19939]: authentication failure; logname= uid=0
+<34>Oct 11 22:14:15 mymachine su: 'su root' failed for lonvick on /dev/pts/8
+<165>1 2003-10-11T22:14:15.003Z host.example.com evntslog - ID47 [exampleSDID@32473 iut="3"] An application event
+[Sun Dec 04 04:47:44 2005] [notice] workerEnv.init() ok /etc/httpd/conf/workers2.properties
+[23/Nov/2026:10:00:00 +0000] GET /index.html took 3 ms
+- 1117838570 2005.06.03 R02-M1-N0-C:J12-U11 2005-06-03-15.42.50.675872 R02-M1-N0-C:J12-U11 RAS KERNEL INFO cache parity error corrected
+- 1131566461 2005.11.09 dn228 Nov 9 12:01:01 dn228/dn228 crond(pam_unix)[2915]: session closed for user root
+081109 203615 148 INFO dfs.DataNode$PacketResponder: PacketResponder 1 for block blk_38865049064139660 terminating
+20171223-22:15:29:606|Step_LSC|30002312|onStandStepChanged 3579
+app-server.log.1.2026-11-23_10:00:00 2026-11-23 10:00:00.008 25746 INFO api.server.wsgi [req-1 - - -] GET /v2/servers
+2026-11-23T10:00:00Z INFO
+2026-11-23T10:00:00Z 42 -- 7
+{"ts":"2026-11-23T10:00:00Z","msg":"json stays whole"}

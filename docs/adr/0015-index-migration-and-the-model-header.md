@@ -194,4 +194,6 @@ Does raising the caps need `search` memory work? The code says yes for the line 
 
 ADR 0010 says the checksum is checked "before any other field is read". The reader checks the magic and the version first, then the checksum (`src/core/corpus_reader.cpp:162-180`). That order is what lets a v2 or v4 file get the version message rather than "corrupt". This record keeps that order.
 
+[ADR 0017](0017-embed-the-log-message-without-its-header.md) adds a second optional key the same way, `embed.text`. A corpus without it reads as `line`. It is not an identity key: a different value warns and `search` continues.
+
 This record amends [ADR 0010](0010-corpus-format-v3.md). Revisit it when the stored vector encoding changes, because that change carries the version bump and the first use of `nesso migrate`.

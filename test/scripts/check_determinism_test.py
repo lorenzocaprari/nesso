@@ -296,6 +296,7 @@ class CheckDeterminismTest(unittest.TestCase):
 
         self.assertGreaterEqual(len(lines), 3500)
         self.assertTrue(any("PAY-E1042" in line for line in lines))
+        self.assertTrue(any(line.startswith("2026-11-23T10:") for line in lines))
 
     def test_pr_mode_emit_input_is_eight_batches(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
@@ -312,6 +313,7 @@ class CheckDeterminismTest(unittest.TestCase):
         self.assertEqual(len(lines), 256)
         self.assertEqual(len(lines) % 32, 0)
         self.assertTrue(any("PAY-E1042" in line for line in lines))
+        self.assertTrue(any(line.startswith("2026-11-23T10:") for line in lines))
 
     def test_full_flag_overrides_pr_environment_for_emit(self) -> None:
         with tempfile.TemporaryDirectory() as temp:

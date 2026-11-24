@@ -105,6 +105,7 @@ flags="${CXXFLAGS:-} -std=c++26 -DNESSO_LIBFUZZER -U_LIBCPP_HARDENING_MODE -D_LI
   -I"${root}/src/parser/include" \
   "${root}/src/parser/log_chunker.cpp" \
   "${root}/src/parser/template_mask.cpp" \
+  "${root}/src/parser/line_header.cpp" \
   "${root}/src/parser/gzip_reader.cpp" \
   "${root}/src/parser/archive_source.cpp" \
   "${root}/test/fuzz/fuzz_parser.cpp" \

@@ -68,6 +68,8 @@ A source that is an archive member cannot be re-read by byte offset. `index` sto
 
 [ADR 0015](0015-index-migration-and-the-model-header.md) adds an `embed.prefix` policy key inside version 3, names the differing key in the model mismatch error, reports a corpus over the caps as over this build's limits instead of corrupt, and plans an explicit `nesso migrate` for the next version. The corpus version stays 3.
 
+[ADR 0017](0017-embed-the-log-message-without-its-header.md) embeds each line's message without its header and records the rule as the optional policy key `embed.text`. A corpus without the key reads as `line`, and a different value warns like the batch, truncation, dedup, and mask keys. The dedup key and the corpus version are unchanged.
+
 ### Confirmation
 
 `scripts/check-determinism` compares v3 corpus bytes and rankings across fresh processes under load. The int8 run with `NESSO_THREADS=$(nproc)` must match the default run, and that comparison must be a blocking check. Unit tests round-trip every section, reject v2, truncated, and misaligned files, and read context from stored texts. BDD covers the v2 error, the model mismatch, and the policy warning.

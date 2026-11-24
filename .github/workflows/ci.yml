@@ -33,7 +33,7 @@ env:
   # nesso-bench commit for the eval-retrieval job. eval-retrieval.yml and
   # bench-real-log.yml pin the same commit; bump all three together.
   NESSO_BENCH_REPOSITORY: lorenzocaprari/nesso-bench
-  NESSO_BENCH_REF: 140bb9e077d3070f4ddf9f907588662f98b65450
+  NESSO_BENCH_REF: dc2f9b341cc00e8954e963957bfd20ff43710e80
 
 # Read-only default. Jobs that pull nesso-build-env keep packages: read.
 # prepare-image-amd64, prepare-image-arm64, prepare-image-el9-amd64, and

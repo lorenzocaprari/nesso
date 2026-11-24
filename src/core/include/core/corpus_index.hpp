@@ -42,6 +42,16 @@ inline constexpr std::string_view EMBED_PREFIX_UNRECORDED = "none";
 /// absent.
 [[nodiscard]] std::string_view EmbedPrefixOf(const CorpusPolicy &policy);
 
+/// Optional policy key naming which part of each line was embedded and the
+/// version of that rule (`parser::HEADER_RULE_VERSION`).
+inline constexpr std::string_view EMBED_TEXT_KEY = "embed.text";
+/// Value of `EMBED_TEXT_KEY` for a corpus written before the key existed: the
+/// whole line was embedded.
+inline constexpr std::string_view EMBED_TEXT_UNRECORDED = "line";
+
+/// `embed.text` of `policy`, or `EMBED_TEXT_UNRECORDED` when the key is absent.
+[[nodiscard]] std::string_view EmbedTextOf(const CorpusPolicy &policy);
+
 struct LogChunk
 {
     std::string text;

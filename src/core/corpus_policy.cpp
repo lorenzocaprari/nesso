@@ -30,6 +30,12 @@ std::string_view EmbedPrefixOf(const CorpusPolicy &policy)
     return found == policy.end() ? EMBED_PREFIX_UNRECORDED : std::string_view{found->second};
 }
 
+std::string_view EmbedTextOf(const CorpusPolicy &policy)
+{
+    const auto found = policy.find(EMBED_TEXT_KEY);
+    return found == policy.end() ? EMBED_TEXT_UNRECORDED : std::string_view{found->second};
+}
+
 } // namespace nesso::core
 
 namespace nesso::core::detail

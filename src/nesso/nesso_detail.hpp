@@ -168,6 +168,9 @@ struct EmbedProgressSpan
     size_t total = 0;
 };
 
+/// Embeds the message of each line in `texts`, without its header
+/// (`parser::SplitLogLine`). `index` and `grep` both embed through here, so a
+/// line gets the same vector from either command. Queries do not pass here.
 [[nodiscard]] std::expected<std::vector<std::vector<float>>, Error>
 EmbedDistinct(std::span<const std::string> texts, const nesso::embed::Embedder &embedder, ProgressReporter &progress,
               const EmbedProgressSpan &span, const LineCounts &counts);
