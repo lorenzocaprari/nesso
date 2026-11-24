@@ -10,6 +10,7 @@
 #include <embed/onnx_embedder.hpp>
 #include <nesso/model_paths.hpp>
 #include <nesso/nesso.hpp>
+#include <parser/line_header.hpp>
 #include <parser/template_mask.hpp>
 
 #include "test_embedder_identity.hpp"
@@ -76,6 +77,7 @@ nesso::core::CorpusPolicy TestPolicy()
             {"bm25", std::string{nesso::core::BM25_POLICY}},
             {"dedup", "masked-v1"},
             {"dimensions", std::to_string(identity.dimensions)},
+            {std::string{nesso::core::EMBED_TEXT_KEY}, std::string{nesso::parser::HEADER_RULE_VERSION}},
             {"lexical.terms", std::string{nesso::core::LEXICAL_TERMS_VERSION}},
             {"mask", std::string{nesso::parser::MASK_RULE_VERSION}},
             {"model.id", identity.model_id},
@@ -153,8 +155,10 @@ class RecordingEmbedder final : public nesso::embed::Embedder
         return identity_;
     }
 
-    [[nodiscard]] std::expected<std::vector<float>, nesso::embed::EmbedError> embed(std::string_view) const override
+    [[nodiscard]] std::expected<std::vector<float>, nesso::embed::EmbedError>
+    embed(std::string_view text) const override
     {
+        queries_.emplace_back(text);
         return std::vector<float>{1.F, 0.F, 0.F, 0.F};
     }
 
@@ -162,6 +166,7 @@ class RecordingEmbedder final : public nesso::embed::Embedder
     EmbedBatch(std::span<const std::string> texts, ProgressCallback progress) const override
     {
         batches_.push_back(texts.size());
+        texts_.insert(texts_.end(), texts.begin(), texts.end());
         std::vector<std::vector<float>> embeddings;
         embeddings.reserve(texts.size());
         constexpr size_t mix_window = 32;
@@ -187,10 +192,18 @@ class RecordingEmbedder final : public nesso::embed::Embedder
 
     [[nodiscard]] const std::vector<size_t> &Batches() const { return batches_; }
 
+    /// Every text `EmbedBatch` received, in order.
+    [[nodiscard]] const std::vector<std::string> &Texts() const { return texts_; }
+
+    /// Every text `embed` received, in order.
+    [[nodiscard]] const std::vector<std::string> &Queries() const { return queries_; }
+
   private:
     size_t sessions_;
     nesso::embed::EmbedderIdentity identity_;
     mutable std::vector<size_t> batches_;
+    mutable std::vector<std::string> texts_;
+    mutable std::vector<std::string> queries_;
 };
 
 std::string LetterSuffix(std::size_t index)
@@ -737,5 +750,169 @@ TEST_CASE("a distinct text keeps the same vector when duplicates are added", "[n
         REQUIRE(found != plain_hits->matches.end());
         CHECK(match.score == found->score);
         CHECK(match.occurrences == 2);
+    }
+}
+
+namespace
+{
+
+void WriteText(const std::filesystem::path &path, std::string_view text)
+{
+    std::ofstream output(path, std::ios::binary);
+    REQUIRE(output);
+    output << text;
+    REQUIRE(output);
+}
+
+// Line number to dense score, for every match.
+std::vector<std::pair<std::uint64_t, float>> DenseScores(const std::vector<nesso::TextMatch> &matches)
+{
+    std::vector<std::pair<std::uint64_t, float>> scores;
+    scores.reserve(matches.size());
+    for (const nesso::TextMatch &match : matches)
+    {
+        REQUIRE(match.dense.has_value());
+        scores.emplace_back(match.line, *match.dense);
+    }
+    std::ranges::sort(scores);
+    return scores;
+}
+
+} // namespace
+
+TEST_CASE("index and grep embed each line's message, not its header", "[nesso][text]")
+{
+    const TempDir dir{"nesso_facade_message_only"};
+    const auto log = dir.Path() / "headers.log";
+    WriteText(log, "2026-11-23T10:00:00Z db01 api[7]: payment declined by gateway\n"
+                   "Jun  9 06:06:20 combo sshd[42]: authentication failure\n"
+                   "plain line without a header\n"
+                   "{\"msg\":\"json stays whole\"}\n");
+    const std::vector<std::string> messages{"payment declined by gateway", "authentication failure",
+                                            "plain line without a header", "{\"msg\":\"json stays whole\"}"};
+
+    auto index_embedder = std::make_unique<RecordingEmbedder>();
+    const RecordingEmbedder *index_probe = index_embedder.get();
+    const nesso::Nesso index_app{nesso::Config{}, std::move(index_embedder)};
+    const auto corpus = dir.Path() / "headers.nesso";
+    REQUIRE(index_app.Index({.files = {log}, .output = corpus}).has_value());
+    CHECK(index_probe->Texts() == messages);
+    CHECK(ReadFile(corpus).find("\nembed.text=message-v1\n") != std::string::npos);
+
+    auto grep_embedder = std::make_unique<RecordingEmbedder>();
+    const RecordingEmbedder *grep_probe = grep_embedder.get();
+    const nesso::Nesso grep_app{nesso::Config{}, std::move(grep_embedder)};
+    const std::string query = "2026-11-23T10:00:00Z payment declined";
+    const auto grepped = grep_app.Grep({.query = query, .files = {log}, .top_k = 10, .mode = nesso::SearchMode::Dense});
+    REQUIRE(grepped.has_value());
+    CHECK(grep_probe->Texts() == messages);
+    CHECK(grep_probe->Queries() == std::vector<std::string>{query});
+    // Output keeps each line's own text, header included.
+    REQUIRE(grepped->matches.size() == 4);
+    CHECK(std::ranges::any_of(grepped->matches, [](const nesso::TextMatch &match)
+                              { return match.text.starts_with("Jun  9 06:06:20 combo sshd[42]: "); }));
+
+    const auto found =
+        index_app.Search({.query = query, .index = corpus, .top_k = 10, .mode = nesso::SearchMode::Dense});
+    REQUIRE(found.has_value());
+    CHECK_FALSE(found->policy_mismatch);
+    CHECK(index_probe->Queries() == std::vector<std::string>{query});
+    CHECK(DenseScores(found->matches) == DenseScores(grepped->matches));
+}
+
+TEST_CASE("lines that share a dedup key embed the first line's message", "[nesso][text]")
+{
+    // The month of the second line is out of range, so it keeps its header.
+    // Both lines still mask to one key.
+    constexpr std::string_view first = "081109 203615 148 INFO dfs.DataNode: block received";
+    constexpr std::string_view second = "081399 203615 148 INFO dfs.DataNode: block received";
+    REQUIRE(nesso::parser::MaskTemplate(first) == nesso::parser::MaskTemplate(second));
+    REQUIRE(nesso::parser::SplitLogLine(first).message == "INFO dfs.DataNode: block received");
+    REQUIRE(nesso::parser::SplitLogLine(second).header.empty());
+
+    const TempDir dir{"nesso_facade_shared_key"};
+    const auto log = dir.Path() / "shared.log";
+    WriteText(log, std::format("{}\n{}\n", first, second));
+
+    auto index_embedder = std::make_unique<RecordingEmbedder>();
+    const RecordingEmbedder *index_probe = index_embedder.get();
+    const nesso::Nesso index_app{nesso::Config{}, std::move(index_embedder)};
+    const auto corpus = dir.Path() / "shared.nesso";
+    REQUIRE(index_app.Index({.files = {log}, .output = corpus}).has_value());
+    CHECK(index_probe->Texts() == std::vector<std::string>{"INFO dfs.DataNode: block received"});
+
+    auto grep_embedder = std::make_unique<RecordingEmbedder>();
+    const RecordingEmbedder *grep_probe = grep_embedder.get();
+    const nesso::Nesso grep_app{nesso::Config{}, std::move(grep_embedder)};
+    const auto grepped =
+        grep_app.Grep({.query = "block", .files = {log}, .top_k = 10, .mode = nesso::SearchMode::Dense});
+    REQUIRE(grepped.has_value());
+    CHECK(grep_probe->Texts() == std::vector<std::string>{"INFO dfs.DataNode: block received"});
+    REQUIRE(grepped->matches.size() == 2);
+    CHECK(grepped->matches[0].score == grepped->matches[1].score);
+    CHECK(grepped->matches[0].occurrences == 2);
+    CHECK(grepped->matches[1].text == second);
+}
+
+TEST_CASE("search warns on a corpus that embedded whole lines", "[nesso][text]")
+{
+    const TempDir dir{"nesso_facade_embed_text"};
+    const nesso::Nesso app{nesso::Config{}, std::make_unique<RecordingEmbedder>()};
+
+    const auto search = [&](std::string_view name, nesso::core::CorpusPolicy policy)
+    {
+        const auto path = dir.Path() / name;
+        WriteFixtureCorpus(path, std::move(policy));
+        auto found = app.Search({.query = "alpha", .index = path});
+        REQUIRE(found.has_value());
+        CHECK_FALSE(found->matches.empty());
+        return found->policy_mismatch;
+    };
+
+    CHECK_FALSE(search("current.nesso", TestPolicy()));
+    auto unrecorded = TestPolicy();
+    unrecorded.erase(std::string{nesso::core::EMBED_TEXT_KEY});
+    const bool unrecorded_warns = search("whole-line.nesso", std::move(unrecorded));
+    CHECK(unrecorded_warns);
+    auto other = TestPolicy();
+    other[std::string{nesso::core::EMBED_TEXT_KEY}] = "message-v0";
+    const bool other_warns = search("other-rule.nesso", std::move(other));
+    CHECK(other_warns);
+}
+
+TEST_CASE("index and grep give a header line the same dense score", "[nesso][text]")
+{
+    const std::filesystem::path model_dir{NESSO_MODELS_DIR};
+    if (!std::filesystem::is_regular_file(model_dir / "model.onnx") ||
+        !std::filesystem::is_regular_file(model_dir / "vocab.txt"))
+    {
+#ifdef NESSO_REQUIRE_MODEL
+        FAIL("models/ not present; run scripts/fetch-model");
+#else
+        SKIP("models/ not present; run scripts/fetch-model");
+#endif
+    }
+
+    const TempDir dir{"nesso_facade_header_scores"};
+    const auto log = dir.Path() / "headers.log";
+    WriteText(log, "2026-11-23T10:00:00Z db01 api[7]: payment declined by gateway\n"
+                   "Jun  9 06:06:20 combo sshd[42]: authentication failure for root\n"
+                   "081109 203615 148 INFO dfs.DataNode$PacketResponder: block terminating\n"
+                   "[Sun Dec 04 04:47:44 2005] [error] mod_jk child in error state\n"
+                   "payment timeout without a header\n"
+                   "2026-11-23T10:00:01Z db02 api[8]: payment declined by gateway\n");
+
+    for (const std::size_t threads : {std::size_t{1}, std::size_t{4}})
+    {
+        const nesso::Nesso app{nesso::Config{.model_dir = model_dir, .threads = threads}};
+        const auto corpus = dir.Path() / std::format("headers-{}.nesso", threads);
+        REQUIRE(app.Index({.files = {log}, .output = corpus}).has_value());
+        const std::string query = "payment was declined";
+        const auto found = app.Search({.query = query, .index = corpus, .top_k = 10, .mode = nesso::SearchMode::Dense});
+        const auto grepped = app.Grep({.query = query, .files = {log}, .top_k = 10, .mode = nesso::SearchMode::Dense});
+        REQUIRE(found.has_value());
+        REQUIRE(grepped.has_value());
+        REQUIRE(found->matches.size() == 6);
+        CHECK(DenseScores(found->matches) == DenseScores(grepped->matches));
     }
 }

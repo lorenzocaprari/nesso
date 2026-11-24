@@ -23,6 +23,7 @@
 #include <embed/batch_plan.hpp>
 #include <embed/embedder.hpp>
 #include <embed/onnx_embedder.hpp>
+#include <parser/line_header.hpp>
 #include <parser/template_mask.hpp>
 
 #include <format>
@@ -245,8 +246,14 @@ EmbedDistinct(std::span<const std::string> texts, const nesso::embed::Embedder &
               const EmbedProgressSpan &span, const LineCounts &counts)
 {
     const size_t distinct = texts.size();
+    std::vector<std::string> messages;
+    messages.reserve(distinct);
+    for (const std::string &text : texts)
+    {
+        messages.emplace_back(nesso::parser::SplitLogLine(text).message);
+    }
     auto embeddings = embedder.EmbedBatch(
-        texts, [&progress, span, distinct](size_t batch_completed, size_t)
+        messages, [&progress, span, distinct](size_t batch_completed, size_t)
         { progress.Update(span.lines_before + (span.lines_in_flush * batch_completed / distinct), span.total); });
     if (!embeddings)
     {
@@ -284,6 +291,7 @@ std::expected<nesso::core::CorpusPolicy, Error> MakeCorpusPolicy(const nesso::em
         {"dedup", "masked-v1"},
         {"dimensions", std::to_string(identity->dimensions)},
         {std::string{nesso::core::EMBED_PREFIX_KEY}, std::string{nesso::embed::MINILM_EMBED_PREFIX}},
+        {std::string{nesso::core::EMBED_TEXT_KEY}, std::string{nesso::parser::HEADER_RULE_VERSION}},
         {"lexical.terms", std::string{nesso::core::LEXICAL_TERMS_VERSION}},
         {"mask", std::string{nesso::parser::MASK_RULE_VERSION}},
         {"model.id", identity->model_id},

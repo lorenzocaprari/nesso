@@ -47,7 +47,9 @@ class BuildEnvHashTest(unittest.TestCase):
             for marker in ("zstd", "GOMODCACHE=/opt/go/pkg/mod", "\n    ccache \\"):
                 self.assertLess(conan_at, text.index(marker), f"{dockerfile} places {marker!r} before Conan")
             if arch.startswith("el9"):
-                self.assertIn("gcc-toolset-15-gcc-15.2.1-7.1.el9_8", text)
+                self.assertIn("gcc-toolset-16-gcc-16.2.1-1.4.el9_9", text)
+                self.assertIn("compiler.version=15", text)
+                self.assertNotIn("gcc-toolset-15", text)
                 self.assertIn("python3.12", text)
                 self.assertIn("cmake-4.4.5", text)
                 self.assertIn("dnf config-manager --set-enabled crb", text)
@@ -85,9 +87,15 @@ class BuildEnvHashTest(unittest.TestCase):
             if arch == "el9-amd64":
                 self.assertIn("file:conan/profiles/gcc-26-el9", labels)
                 self.assertNotIn("file:conan/profiles/gcc-26-el9-armv8", labels)
+                profile = (ROOT / "conan/profiles/gcc-26-el9").read_text()
+                self.assertIn("compiler.version=16", profile)
+                self.assertIn("/opt/rh/gcc-toolset-16/root/usr/bin/g++", profile)
             if arch == "el9-arm64":
                 self.assertIn("file:conan/profiles/gcc-26-el9-armv8", labels)
                 self.assertNotIn("file:conan/profiles/gcc-26-el9", labels)
+                profile = (ROOT / "conan/profiles/gcc-26-el9-armv8").read_text()
+                self.assertIn("compiler.version=16", profile)
+                self.assertIn("/opt/rh/gcc-toolset-16/root/usr/bin/g++", profile)
 
     def test_go_sum_and_dockerfile_change_the_image_hash(self) -> None:
         module = load_hash()

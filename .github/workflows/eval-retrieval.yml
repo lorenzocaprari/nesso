@@ -9,11 +9,19 @@ name: Eval retrieval
 # and warns on relative drops over 5%. Scores never fail the job; only script
 # errors do. Also measures nesso, BM25 and grep speed on the BGL 100k window
 # and on thunderbird-needle-1m (report only, never a gate). No gh-pages write yet.
+# workflow_dispatch input nesso_version, when set, skips the HEAD build and
+# scores that GitHub release. The schedule and an empty input build HEAD.
 on:
   schedule:
     # 06:47 UTC, after real-log at 05:47 UTC (fuzz-test 03:17, index-rss 04:47).
     - cron: "47 6 * * *"
   workflow_dispatch:
+    inputs:
+      nesso_version:
+        description: Optional released version (e.g. 0.3.1) to score instead of building HEAD
+        type: string
+        required: false
+        default: ""
 
 concurrency:
   group: eval-retrieval-${{ github.ref }}
@@ -34,7 +42,7 @@ env:
   # warns when this commit is behind nesso-bench's main. ci.yml and
   # bench-real-log.yml pin the same commit; bump all three together.
   NESSO_BENCH_REPOSITORY: lorenzocaprari/nesso-bench
-  NESSO_BENCH_REF: 140bb9e077d3070f4ddf9f907588662f98b65450
+  NESSO_BENCH_REF: dc2f9b341cc00e8954e963957bfd20ff43710e80
 
 jobs:
   guard:
@@ -196,6 +204,8 @@ jobs:
     defaults:
       run:
         shell: bash
+    env:
+      NESSO_VERSION: ${{ inputs.nesso_version || '' }}
     container:
       image: ${{ needs.resolve.outputs.image }} # zizmor: ignore[unpinned-images] deps-<hash> tag, not a digest
       credentials:
@@ -217,6 +227,22 @@ jobs:
           path: nesso-bench
           persist-credentials: false
 
+      # Empty nesso_version (the schedule, or a manual run that left it blank)
+      # keeps the HEAD build. A release version is unpacked here and the Conan
+      # build below is skipped. The version reaches this script only through
+      # the job env.
+      - name: Resolve nesso binary
+        run: |
+          set -euo pipefail
+          if [[ -z "${NESSO_VERSION}" ]]; then
+            {
+              echo "NESSO_BINARY=build/Release/src/nesso"
+              echo "NESSO_MODEL_DIR=models"
+            } >> "${GITHUB_ENV}"
+            exit 0
+          fi
+          ./scripts/fetch-released-nesso --dest build/nesso-release --github-env "${GITHUB_ENV}" -- "${NESSO_VERSION}"
+
       - name: Download previous evaluation report
         id: prev_artifact
         if: needs.resolve.outputs.prev_run_id != ''
@@ -230,7 +256,7 @@ jobs:
 
       - name: Download Pipeline eval-pipeline
         id: pipeline_artifact
-        if: needs.resolve.outputs.pipeline_run_id != ''
+        if: env.NESSO_VERSION == '' && needs.resolve.outputs.pipeline_run_id != ''
         continue-on-error: true
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
@@ -241,13 +267,14 @@ jobs:
 
       - name: Restore MiniLM models
         id: models
+        if: env.NESSO_VERSION == ''
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: models
           key: minilm-${{ hashFiles('scripts/fetch-model') }}
 
       - name: Fetch MiniLM models
-        if: steps.models.outputs.cache-hit != 'true'
+        if: env.NESSO_VERSION == '' && steps.models.outputs.cache-hit != 'true'
         run: ./scripts/fetch-model models
 
       - name: Restore Loghub 2k inputs
@@ -305,11 +332,13 @@ jobs:
           key: loghub2-thunderbird-needle-1m-${{ hashFiles('nesso-bench/scripts/fetch-loghub') }}
 
       - name: Install Dependencies (Conan)
+        if: env.NESSO_VERSION == ''
         run: |
           conan profile detect --force
           conan install . -pr:h ./conan/profiles/gcc-26 -pr:b default --lockfile=conan.lock --build=missing --no-remote -o tests=False $CONAN_WERROR_ARGS
 
       - name: Build
+        if: env.NESSO_VERSION == ''
         run: conan build . -pr:h ./conan/profiles/gcc-26 -pr:b default --lockfile=conan.lock --build=missing --no-remote -o tests=False $CONAN_WERROR_ARGS
 
       - name: Fetch Loghub 2k inputs
@@ -336,13 +365,14 @@ jobs:
           set -euo pipefail
           mkdir -p build/eval
           reuse=false
-          if [[ -f build/eval/pipeline/all_2k.json \
+          if [[ -z "${NESSO_VERSION}" \
+            && -f build/eval/pipeline/all_2k.json \
             && -f build/eval/pipeline/formats.json \
             && -f build/eval/pipeline/needle.json ]]; then
             reuse=true
           fi
           modes=(--modes auto,dense,lexical --split dev)
-          binary=(--binary build/Release/src/nesso --model-dir models)
+          binary=(--binary "${NESSO_BINARY}" --model-dir "${NESSO_MODEL_DIR}")
           if [[ "${reuse}" == "true" ]]; then
             echo "### Scoring path" >> "${GITHUB_STEP_SUMMARY}"
             echo >> "${GITHUB_STEP_SUMMARY}"
@@ -385,7 +415,11 @@ jobs:
           else
             echo "### Scoring path" >> "${GITHUB_STEP_SUMMARY}"
             echo >> "${GITHUB_STEP_SUMMARY}"
-            echo "No Pipeline eval-pipeline for this commit; scored nesso, grep, and BM25." >> "${GITHUB_STEP_SUMMARY}"
+            if [[ -n "${NESSO_VERSION}" ]]; then
+              echo "Scored released nesso ${NESSO_VERSION} (${NESSO_BINARY}, model ${NESSO_MODEL_DIR})." >> "${GITHUB_STEP_SUMMARY}"
+            else
+              echo "No Pipeline eval-pipeline for this commit; scored nesso, grep, and BM25." >> "${GITHUB_STEP_SUMMARY}"
+            fi
             python3 nesso-bench/scripts/eval-retrieval \
               --dataset all-2k "${modes[@]}" --jobs 4 \
               --engine nesso --engine grep --engine bm25 \
@@ -482,7 +516,8 @@ jobs:
             fi
           done < build/eval/compare.txt
 
-      # Speed and memory, report only. nesso (built from this commit), BM25 and
+      # Speed and memory, report only. nesso (this commit, or the released binary
+      # when nesso_version is set), BM25 and
       # grep run back to back on this runner after every scoring step, so the
       # runner's speed cancels out of the ratios. One mode (auto) on the BGL
       # 100k needle window and its 61 alert queries, 3 repeats, quality scoring
@@ -500,7 +535,7 @@ jobs:
             --dataset bgl-needle-100k --measure --measure-only --repeat 3 \
             --modes auto \
             --engine nesso --engine bm25 --engine grep \
-            --skip-fetch --binary build/Release/src/nesso --model-dir models \
+            --skip-fetch --binary "${NESSO_BINARY}" --model-dir "${NESSO_MODEL_DIR}" \
             --workdir build/eval/measure-work \
             --out build/eval/measure-needle.json \
             | tee build/eval/measure-needle.txt
@@ -524,7 +559,7 @@ jobs:
             --dataset thunderbird-needle-1m --measure --measure-only --repeat 3 \
             --modes auto \
             --engine nesso --engine bm25 --engine grep \
-            --skip-fetch --binary build/Release/src/nesso --model-dir models \
+            --skip-fetch --binary "${NESSO_BINARY}" --model-dir "${NESSO_MODEL_DIR}" \
             --workdir build/eval/measure-work-thunderbird \
             --out build/eval/measure-needle-thunderbird.json \
             | tee build/eval/measure-needle-thunderbird.txt

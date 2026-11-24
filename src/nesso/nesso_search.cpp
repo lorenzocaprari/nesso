@@ -907,9 +907,11 @@ std::expected<TextResults, Error> Nesso::Search(const SearchRequest &request) co
         return std::unexpected(identity.error());
     }
     constexpr std::array<std::string_view, 5> policy_keys{"batch", "truncate", "dedup", "mask", "tokens.max"};
+    // `embed.text` is optional: a corpus written before it reads as `line`.
     const bool policy_mismatch =
         std::ranges::any_of(policy_keys, [&](std::string_view key)
-                            { return corpus->Policy().find(key)->second != current->find(key)->second; });
+                            { return corpus->Policy().find(key)->second != current->find(key)->second; }) ||
+        nesso::core::EmbedTextOf(corpus->Policy()) != nesso::core::EmbedTextOf(*current);
     auto source_warnings = StaleSources(corpus->Sources());
     const auto fail = [&](ErrorKind kind, ErrorCause cause)
     {

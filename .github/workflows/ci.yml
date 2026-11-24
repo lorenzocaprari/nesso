@@ -33,7 +33,7 @@ env:
   # nesso-bench commit for the eval-retrieval job. eval-retrieval.yml and
   # bench-real-log.yml pin the same commit; bump all three together.
   NESSO_BENCH_REPOSITORY: lorenzocaprari/nesso-bench
-  NESSO_BENCH_REF: 140bb9e077d3070f4ddf9f907588662f98b65450
+  NESSO_BENCH_REF: dc2f9b341cc00e8954e963957bfd20ff43710e80
 
 # Read-only default. Jobs that pull nesso-build-env keep packages: read.
 # prepare-image-amd64, prepare-image-arm64, prepare-image-el9-amd64, and
@@ -2391,11 +2391,12 @@ jobs:
           avail_kb=$(df -Pk / | awk 'NR==2 {print $4}')
           echo "available_kib_after_build=${avail_kb}"
 
-  # Release binary on the Rocky Linux 9 image. prepare-image-el9-amd64
-  # publishes nesso-build-env-el9 and skips the rebuild when the deps tag
-  # already exists. NESSO_ABI_BASELINE makes packaging/scripts/build-release-binary
-  # select conan/profiles/gcc-26-el9 and run scripts/check-abi-baseline.
-  # There is no EL9 arm64 build lane.
+  # Release binary on the Rocky Linux 9 image, GCC Toolset 16.2.1.
+  # prepare-image-el9-amd64 publishes nesso-build-env-el9 and skips the
+  # rebuild when the deps tag already exists. NESSO_ABI_BASELINE makes
+  # packaging/scripts/build-release-binary select conan/profiles/gcc-26-el9
+  # and run scripts/check-abi-baseline. The build profile stays
+  # compiler.version=15. There is no EL9 arm64 build lane.
   build-el9-amd64:
     needs: [prepare-image-el9-amd64, changes]
     if: needs.changes.outputs.code == 'true'
@@ -2428,9 +2429,9 @@ jobs:
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ github.workspace }}/.ccache
-          key: ccache-${{ runner.arch }}-el9-gcc-15-Release-${{ github.sha }}
+          key: ccache-${{ runner.arch }}-el9-gcc-16-Release-${{ github.sha }}
           restore-keys: |
-            ccache-${{ runner.arch }}-el9-gcc-15-Release-
+            ccache-${{ runner.arch }}-el9-gcc-16-Release-
 
       - name: Zero ccache statistics
         run: ccache --zero-stats
@@ -2451,8 +2452,9 @@ jobs:
         run: |
           set -euo pipefail
           uname -m | grep -qx x86_64
-          g++ -dumpversion | grep -qx 15
-          rpm -q --qf '%{VERSION}-%{RELEASE}\n' gcc-toolset-15-gcc | grep -qx '15.2.1-7.1.el9_8'
+          g++ -dumpversion | grep -qx 16
+          g++ -dumpfullversion | grep -qx 16.2.1
+          rpm -q --qf '%{VERSION}-%{RELEASE}\n' gcc-toolset-16-gcc | grep -qx '16.2.1-1.4.el9_9'
 
       - name: Build the release binary
         shell: bash
@@ -2513,7 +2515,7 @@ jobs:
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ github.workspace }}/.ccache
-          key: ccache-${{ runner.arch }}-el9-gcc-15-Release-${{ github.sha }}
+          key: ccache-${{ runner.arch }}-el9-gcc-16-Release-${{ github.sha }}
 
       - name: Upload JUnit reports
         if: always() && !cancelled()
