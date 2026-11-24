@@ -196,7 +196,7 @@ jobs:
     needs: [guard, resolve]
     if: github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    timeout-minutes: 240
     permissions:
       contents: read
       packages: read
