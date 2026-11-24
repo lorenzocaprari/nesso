@@ -18,7 +18,7 @@
 namespace
 {
 
-std::string BytesFrom(const std::uint8_t *data, std::size_t size)
+auto BytesFrom(const std::uint8_t *data, std::size_t size) -> std::string
 {
     if (data == nullptr || size == 0)
     {
@@ -42,7 +42,7 @@ void SealCorpusChecksum(std::string &bytes)
     std::memcpy(bytes.data() + checksum_offset, checksum.data(), checksum.size());
 }
 
-std::size_t TouchMappedCorpus(const nesso::core::MappedCorpus &corpus)
+auto TouchMappedCorpus(const nesso::core::MappedCorpus &corpus) -> std::size_t
 {
     std::size_t sink = corpus.Dimensions();
     sink += corpus.Policy().size();
@@ -97,7 +97,7 @@ std::size_t TouchMappedCorpus(const nesso::core::MappedCorpus &corpus)
 
 } // namespace
 
-extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t *data, std::size_t size)
+extern "C" auto LLVMFuzzerTestOneInput(const std::uint8_t *data, std::size_t size) -> int
 {
     std::string bytes = BytesFrom(data, size);
     SealCorpusChecksum(bytes);
@@ -135,7 +135,7 @@ extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t *data, std::size_t size
 
 // libFuzzer supplies main. The AFL++ CI job keeps this file-input entry point.
 #ifndef NESSO_LIBFUZZER
-int main(int argc, char *argv[])
+auto main(int argc, char *argv[]) -> int
 {
     if (argc < 2)
     {

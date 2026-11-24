@@ -29,7 +29,7 @@ namespace
 
 struct HitOrder
 {
-    bool operator()(const Hit &left, const Hit &right) const
+    auto operator()(const Hit &left, const Hit &right) const -> bool
     {
         return RankBefore(left.score, left.index, right.score, right.index);
     }
@@ -40,15 +40,15 @@ class Job
   public:
     Job() = default;
     Job(const Job &) = delete;
-    Job &operator=(const Job &) = delete;
+    auto operator=(const Job &) -> Job & = delete;
     Job(Job &&) = delete;
-    Job &operator=(Job &&) = delete;
+    auto operator=(Job &&) -> Job & = delete;
 
     ~Job() { RequestStop(); }
 
     void Start()
     {
-        thread_ = std::jthread([this] { WorkerLoop(); });
+        thread_ = std::jthread([this] -> void { WorkerLoop(); });
     }
 
     void RequestStop()
@@ -75,7 +75,7 @@ class Job
     {
         std::unique_lock lock(mutex_);
         const uint64_t epoch = epoch_;
-        cv_.wait(lock, [&] { return epoch != 0 && finished_ == epoch; });
+        cv_.wait(lock, [&] -> bool { return epoch != 0 && finished_ == epoch; });
     }
 
   private:
@@ -85,7 +85,7 @@ class Job
         std::unique_lock lock(mutex_);
         while (!stop_)
         {
-            cv_.wait(lock, [&] { return stop_ || epoch_ != seen; });
+            cv_.wait(lock, [&] -> bool { return stop_ || epoch_ != seen; });
             if (stop_)
             {
                 return;
@@ -121,9 +121,9 @@ class Pool
   public:
     Pool() = default;
     Pool(const Pool &) = delete;
-    Pool &operator=(const Pool &) = delete;
+    auto operator=(const Pool &) -> Pool & = delete;
     Pool(Pool &&) = delete;
-    Pool &operator=(Pool &&) = delete;
+    auto operator=(Pool &&) -> Pool & = delete;
 
     ~Pool()
     {
@@ -134,11 +134,11 @@ class Pool
         jobs_.clear();
     }
 
-    std::mutex &Mutex() { return mutex_; }
+    auto Mutex() -> std::mutex & { return mutex_; }
 
-    Job &GetJob(size_t index) { return *jobs_[index]; }
+    auto GetJob(size_t index) -> Job & { return *jobs_[index]; }
 
-    bool Ensure(size_t background)
+    auto Ensure(size_t background) -> bool
     {
         try
         {
@@ -186,9 +186,9 @@ class MergedHits
         }
     }
 
-    [[nodiscard]] const std::optional<EngineError> &Error() const { return error_; }
+    [[nodiscard]] auto Error() const -> const std::optional<EngineError> & { return error_; }
 
-    std::vector<Hit> Finish(size_t top_k)
+    auto Finish(size_t top_k) -> std::vector<Hit>
     {
         detail::SelectTopKInPlace(hits_, top_k, HitOrder{});
         return std::move(hits_);
@@ -248,9 +248,9 @@ class TopScan
         merged_.Merge(std::move(local));
     }
 
-    [[nodiscard]] const std::optional<EngineError> &Error() const { return merged_.Error(); }
+    [[nodiscard]] auto Error() const -> const std::optional<EngineError> & { return merged_.Error(); }
 
-    std::vector<Hit> Finish(size_t top_k) { return merged_.Finish(top_k); }
+    auto Finish(size_t top_k) -> std::vector<Hit> { return merged_.Finish(top_k); }
 
   private:
     std::span<const float> query_;
@@ -302,7 +302,7 @@ class RankScan
         merged_.Merge(std::move(local));
     }
 
-    std::vector<Hit> Finish(size_t top_k) { return merged_.Finish(top_k); }
+    auto Finish(size_t top_k) -> std::vector<Hit> { return merged_.Finish(top_k); }
 
   private:
     float (*score_)(void *, size_t) = nullptr;
@@ -317,9 +317,9 @@ class WaitGuard
   public:
     WaitGuard(Pool &team, size_t background) : team_(&team), background_(background) {}
     WaitGuard(const WaitGuard &) = delete;
-    WaitGuard &operator=(const WaitGuard &) = delete;
+    auto operator=(const WaitGuard &) -> WaitGuard & = delete;
     WaitGuard(WaitGuard &&) = delete;
-    WaitGuard &operator=(WaitGuard &&) = delete;
+    auto operator=(WaitGuard &&) -> WaitGuard & = delete;
     ~WaitGuard()
     {
         for (size_t index = 0; index < background_; ++index)
@@ -335,13 +335,13 @@ class WaitGuard
 
 } // namespace
 
-static Pool &GetPool()
+static auto GetPool() -> Pool &
 {
     static Pool instance;
     return instance;
 }
 
-static std::vector<Range> SplitRows(size_t rows, size_t workers)
+static auto SplitRows(size_t rows, size_t workers) -> std::vector<Range>
 {
     NESSO_ASSERT(workers > 0);
     NESSO_ASSERT(rows > 0);
@@ -406,7 +406,7 @@ void ParallelRows(size_t threads, size_t rows, void (*row_fn)(void *context, siz
 
 } // namespace detail
 
-std::expected<std::vector<Hit>, EngineError> TopK(const TopKRequest &request)
+auto TopK(const TopKRequest &request) -> std::expected<std::vector<Hit>, EngineError>
 {
     if (request.k == 0 || request.matrix.empty())
     {
@@ -434,7 +434,7 @@ std::expected<std::vector<Hit>, EngineError> TopK(const TopKRequest &request)
     return scan.Finish(request.k);
 }
 
-std::vector<Hit> RankTop(const RankTopRequest &request)
+auto RankTop(const RankTopRequest &request) -> std::vector<Hit>
 {
     if (request.k == 0 || request.count == 0 || request.score == nullptr || request.keep == nullptr)
     {

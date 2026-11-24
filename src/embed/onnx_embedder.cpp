@@ -49,8 +49,8 @@ static void AssertEncodedInput(const TokenizedInput &item)
     NESSO_ASSERT(item.input_ids.size() == item.token_type_ids.size());
 }
 
-static std::vector<float> MeanPoolAndNormalize(std::span<const float> hidden_states,
-                                               std::span<const int64_t> attention_mask, const HiddenShape &shape)
+static auto MeanPoolAndNormalize(std::span<const float> hidden_states, std::span<const int64_t> attention_mask,
+                                 const HiddenShape &shape) -> std::vector<float>
 {
     NESSO_ASSERT(hidden_states.size() == shape.sequence_length * shape.hidden_size);
     NESSO_ASSERT(attention_mask.size() == shape.sequence_length);
@@ -114,7 +114,7 @@ struct ModelIo
 // A per-byte istreambuf_iterator copy of the 22 MiB int8 MiniLM dominated the
 // Debug BDD suite under ASan. grep, index, and search each load the model.
 // The overlap keeps a marker that straddles two reads.
-static bool ModelIsQuantized(const std::filesystem::path &model_path)
+static auto ModelIsQuantized(const std::filesystem::path &model_path) -> bool
 {
     constexpr std::string_view k_mat_mul_integer = "MatMulInteger";
     constexpr std::string_view k_dynamic_quantize_linear = "DynamicQuantizeLinear";
@@ -145,7 +145,7 @@ static bool ModelIsQuantized(const std::filesystem::path &model_path)
     return false;
 }
 
-static Ort::SessionOptions MakeSessionOptions(int intra_op_threads)
+static auto MakeSessionOptions(int intra_op_threads) -> Ort::SessionOptions
 {
     Ort::SessionOptions options;
     // Inter-op parallelism finishes graph nodes in an arbitrary order, so two
@@ -168,13 +168,13 @@ static Ort::SessionOptions MakeSessionOptions(int intra_op_threads)
 // before the first environment and session. A false result means the filter
 // was not installed or tile permission was already granted, so the int8 model
 // may use the AMX kernel. That case is one stderr line. A refusal stays quiet.
-static Ort::Env MakeEnv()
+static auto MakeEnv() -> Ort::Env
 {
     ReportAmxGuard(DenyAmxTiles(), stderr);
     return Ort::Env{ORT_LOGGING_LEVEL_WARNING, "nesso-embed"};
 }
 
-static ModelIo ReadModelIo(const Ort::Session &session)
+static auto ReadModelIo(const Ort::Session &session) -> ModelIo
 {
     const Ort::AllocatorWithDefaultOptions allocator;
     ModelIo model_io;
@@ -219,17 +219,19 @@ class OnnxEmbedder::SessionImpl
     SessionImpl(const std::filesystem::path &model_path, size_t requested_threads);
     SessionImpl(const std::filesystem::path &model_path, const SessionPolicy &policy);
 
-    [[nodiscard]] const SessionPolicy &Policy() const noexcept { return policy_; }
+    [[nodiscard]] auto Policy() const noexcept -> const SessionPolicy & { return policy_; }
 
-    [[nodiscard]] std::expected<std::vector<std::vector<float>>, EmbedError>
-    InferAll(std::span<const TokenizedInput> encoded, const std::function<void(size_t)> &on_completed);
+    [[nodiscard]] auto InferAll(std::span<const TokenizedInput> encoded,
+                                const std::function<void(size_t)> &on_completed)
+        -> std::expected<std::vector<std::vector<float>>, EmbedError>;
 
   private:
-    [[nodiscard]] std::expected<std::vector<std::vector<float>>, EmbedError>
-    Infer(Ort::Session &session, std::span<const TokenizedInput> encoded, std::span<const size_t> indices) const;
+    [[nodiscard]] auto Infer(Ort::Session &session, std::span<const TokenizedInput> encoded,
+                             std::span<const size_t> indices) const
+        -> std::expected<std::vector<std::vector<float>>, EmbedError>;
 
-    [[nodiscard]] std::expected<std::vector<float>, EmbedError> InferOne(Ort::Session &session,
-                                                                         const TokenizedInput &item) const;
+    [[nodiscard]] auto InferOne(Ort::Session &session, const TokenizedInput &item) const
+        -> std::expected<std::vector<float>, EmbedError>;
 
     Ort::Env env_ = MakeEnv();
     std::vector<std::unique_ptr<Ort::Session>> sessions_;
@@ -260,15 +262,15 @@ OnnxEmbedder::SessionImpl::SessionImpl(const std::filesystem::path &model_path, 
 // quantizes activations with one scale per tensor, so other rows and padded
 // positions would move a text's vector (#362). Each text runs alone and
 // unpadded, so its vector depends only on its own tokens.
-std::expected<std::vector<std::vector<float>>, EmbedError>
-OnnxEmbedder::SessionImpl::Infer(Ort::Session &session, std::span<const TokenizedInput> encoded,
-                                 std::span<const size_t> indices) const
+auto OnnxEmbedder::SessionImpl::Infer(Ort::Session &session, std::span<const TokenizedInput> encoded,
+                                      std::span<const size_t> indices) const
+    -> std::expected<std::vector<std::vector<float>>, EmbedError>
 {
     if (indices.empty())
     {
         return std::unexpected(EmbedError::InvalidInput);
     }
-    NESSO_ASSERT(std::ranges::all_of(indices, [&](const size_t index) { return index < encoded.size(); }));
+    NESSO_ASSERT(std::ranges::all_of(indices, [&](const size_t index) -> bool { return index < encoded.size(); }));
 
     std::vector<std::vector<float>> embeddings;
     embeddings.reserve(indices.size());
@@ -284,8 +286,8 @@ OnnxEmbedder::SessionImpl::Infer(Ort::Session &session, std::span<const Tokenize
     return embeddings;
 }
 
-std::expected<std::vector<float>, EmbedError> OnnxEmbedder::SessionImpl::InferOne(Ort::Session &session,
-                                                                                  const TokenizedInput &item) const
+auto OnnxEmbedder::SessionImpl::InferOne(Ort::Session &session, const TokenizedInput &item) const
+    -> std::expected<std::vector<float>, EmbedError>
 {
     AssertEncodedInput(item);
     const size_t sequence_length = item.input_ids.size();
@@ -355,9 +357,8 @@ std::expected<std::vector<float>, EmbedError> OnnxEmbedder::SessionImpl::InferOn
     }
 }
 
-static std::expected<void, EmbedError> ReportWaveProgress(std::span<const SlotResult> parts, size_t wave_start,
-                                                          size_t wave_batches,
-                                                          const std::function<void(size_t)> &on_completed)
+static auto ReportWaveProgress(std::span<const SlotResult> parts, size_t wave_start, size_t wave_batches,
+                               const std::function<void(size_t)> &on_completed) -> std::expected<void, EmbedError>
 {
     size_t completed = 0;
     for (size_t index = 0; index < wave_start + wave_batches; ++index)
@@ -380,17 +381,17 @@ static std::expected<void, EmbedError> ReportWaveProgress(std::span<const SlotRe
 static void StoreWaveParts(const BatchWave &wave, std::vector<SlotResult> &wave_outcome, std::vector<SlotResult> &parts)
 {
     NESSO_ASSERT(wave.batch_indices.size() == wave_outcome.size());
-    NESSO_ASSERT(
-        std::ranges::all_of(wave.batch_indices, [&](const size_t batch_index) { return batch_index < parts.size(); }));
+    NESSO_ASSERT(std::ranges::all_of(wave.batch_indices,
+                                     [&](const size_t batch_index) -> bool { return batch_index < parts.size(); }));
     for (std::size_t slot = 0; slot < wave.batch_indices.size(); ++slot)
     {
         parts[wave.batch_indices[slot]] = std::move(wave_outcome[slot]);
     }
 }
 
-std::expected<std::vector<std::vector<float>>, EmbedError>
-OnnxEmbedder::SessionImpl::InferAll(std::span<const TokenizedInput> encoded,
-                                    const std::function<void(size_t)> &on_completed)
+auto OnnxEmbedder::SessionImpl::InferAll(std::span<const TokenizedInput> encoded,
+                                         const std::function<void(size_t)> &on_completed)
+    -> std::expected<std::vector<std::vector<float>>, EmbedError>
 {
     if (encoded.empty())
     {
@@ -411,7 +412,8 @@ OnnxEmbedder::SessionImpl::InferAll(std::span<const TokenizedInput> encoded,
     {
         auto wave_outcome =
             RunInferenceWave(wave.batch_indices.size(),
-                             [this, &wave, encoded, &plan](std::size_t slot)
+                             [this, &wave, encoded,
+                              &plan](std::size_t slot) -> std::expected<std::vector<std::vector<float>>, EmbedError>
                              {
                                  NESSO_ASSERT(slot < sessions_.size());
                                  NESSO_ASSERT(slot < wave.batch_indices.size());
@@ -467,14 +469,14 @@ void OnnxEmbedder::PrepareEmbedderEnv()
     static_cast<void>(env);
 }
 
-const SessionPolicy &OnnxEmbedder::Policy() const noexcept { return policy_; }
+auto OnnxEmbedder::Policy() const noexcept -> const SessionPolicy & { return policy_; }
 
-size_t OnnxEmbedder::Sessions() const noexcept { return policy_.sessions; }
+auto OnnxEmbedder::Sessions() const noexcept -> size_t { return policy_.sessions; }
 
 OnnxEmbedder::~OnnxEmbedder() = default;
 
-std::expected<std::unique_ptr<OnnxEmbedder>, EmbedError> OnnxEmbedder::Create(const std::filesystem::path &model_dir,
-                                                                              size_t threads)
+auto OnnxEmbedder::Create(const std::filesystem::path &model_dir, size_t threads)
+    -> std::expected<std::unique_ptr<OnnxEmbedder>, EmbedError>
 {
     const auto vocab_path = model_dir / "vocab.txt";
     const auto model_path = model_dir / "model.onnx";
@@ -499,8 +501,8 @@ std::expected<std::unique_ptr<OnnxEmbedder>, EmbedError> OnnxEmbedder::Create(co
     }
 }
 
-std::expected<std::unique_ptr<OnnxEmbedder>, EmbedError>
-OnnxEmbedder::CreateWithIntraOp(const std::filesystem::path &model_dir, int intra_op_threads)
+auto OnnxEmbedder::CreateWithIntraOp(const std::filesystem::path &model_dir, int intra_op_threads)
+    -> std::expected<std::unique_ptr<OnnxEmbedder>, EmbedError>
 {
     const auto vocab_path = model_dir / "vocab.txt";
     const auto model_path = model_dir / "model.onnx";
@@ -531,7 +533,7 @@ OnnxEmbedder::CreateWithIntraOp(const std::filesystem::path &model_dir, int intr
     }
 }
 
-std::expected<std::vector<float>, EmbedError> OnnxEmbedder::Embed(std::string_view text) const
+auto OnnxEmbedder::Embed(std::string_view text) const -> std::expected<std::vector<float>, EmbedError>
 {
     const std::string owned{text};
     const std::array<std::string, 1> batch{owned};
@@ -547,8 +549,8 @@ std::expected<std::vector<float>, EmbedError> OnnxEmbedder::Embed(std::string_vi
     return batch_result->front();
 }
 
-std::expected<std::vector<std::vector<float>>, EmbedError> OnnxEmbedder::EmbedBatch(std::span<const std::string> texts,
-                                                                                    ProgressCallback progress) const
+auto OnnxEmbedder::EmbedBatch(std::span<const std::string> texts, ProgressCallback progress) const
+    -> std::expected<std::vector<std::vector<float>>, EmbedError>
 {
     if (texts.empty())
     {
@@ -568,7 +570,7 @@ std::expected<std::vector<std::vector<float>>, EmbedError> OnnxEmbedder::EmbedBa
     }
 
     return session_->InferAll(encoded_batch,
-                              [&progress, total = texts.size()](size_t completed)
+                              [&progress, total = texts.size()](size_t completed) -> void
                               {
                                   if (progress)
                                   {

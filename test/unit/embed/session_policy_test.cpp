@@ -33,13 +33,13 @@ class TempDir
     }
 
     TempDir(const TempDir &) = delete;
-    TempDir &operator=(const TempDir &) = delete;
+    auto operator=(const TempDir &) -> TempDir & = delete;
     TempDir(TempDir &&) = delete;
-    TempDir &operator=(TempDir &&) = delete;
+    auto operator=(TempDir &&) -> TempDir & = delete;
 
     ~TempDir() { std::filesystem::remove_all(path_); }
 
-    [[nodiscard]] const std::filesystem::path &Path() const { return path_; }
+    [[nodiscard]] auto Path() const -> const std::filesystem::path & { return path_; }
 
   private:
     std::filesystem::path path_;
@@ -61,7 +61,7 @@ void WriteCpu(const std::filesystem::path &sys_root, const std::string &name, in
     WriteText(topology / "core_id", std::to_string(core) + "\n");
 }
 
-std::uintmax_t Parse(const std::string &text)
+auto Parse(const std::string &text) -> std::uintmax_t
 {
     std::istringstream input(text);
     return nesso::embed::MemAvailableBytes(input);
@@ -136,7 +136,7 @@ TEST_CASE("int8 splits a cpu budget into sessions and intra-op threads", "[sessi
 
     const MachineResources four{.physical_cores = 4, .logical_threads = 4, .memory_limit_bytes = 64 * GIB};
     const MachineResources six{.physical_cores = 6, .logical_threads = 12, .memory_limit_bytes = 64 * GIB};
-    const auto at = [&](size_t budget) { return nesso::embed::MakeSessionPolicy(true, budget, wide); };
+    const auto at = [&](size_t budget) -> SessionPolicy { return nesso::embed::MakeSessionPolicy(true, budget, wide); };
 #ifdef __aarch64__
     CHECK(nesso::embed::MakeSessionPolicy(true, 0, four).sessions == 1);
     CHECK(nesso::embed::MakeSessionPolicy(true, 0, four).intra_op_threads == 4);
@@ -185,7 +185,7 @@ TEST_CASE("the default int8 pool reduces sessions while the estimate exceeds "
           "the memory cap",
           "[session-policy]")
 {
-    const auto policy_with = [](std::uintmax_t available, size_t cores)
+    const auto policy_with = [](std::uintmax_t available, size_t cores) -> SessionPolicy
     {
         const MachineResources machine{
             .physical_cores = cores, .logical_threads = cores * 2, .memory_limit_bytes = available};

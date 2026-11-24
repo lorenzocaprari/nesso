@@ -46,7 +46,7 @@ static constexpr std::uint64_t GET_TILE_PERMISSION = 0x1022;
 static constexpr std::uint32_t REQUEST_TILE_PERMISSION = 0x1023;
 static constexpr std::uint64_t TILE_DATA_FEATURE = 18;
 
-static bool TilePermissionGranted()
+static auto TilePermissionGranted() -> bool
 {
     // mask stays 0 when the kernel predates the call.
     std::uint64_t mask = 0;
@@ -55,7 +55,7 @@ static bool TilePermissionGranted()
     return (mask & (std::uint64_t{1} << TILE_DATA_FEATURE)) != 0;
 }
 
-static bool InstallRefusal()
+static auto InstallRefusal() -> bool
 {
     // Return EPERM for arch_prctl(ARCH_REQ_XCOMP_PERM, ...) and allow every
     // other call. TSYNC applies the filter to threads that already exist.
@@ -79,7 +79,7 @@ static bool InstallRefusal()
     return syscall(SYS_seccomp, SECCOMP_SET_MODE_FILTER, SECCOMP_FILTER_FLAG_TSYNC, &fprog) == 0;
 }
 
-bool DenyAmxTiles()
+auto DenyAmxTiles() -> bool
 {
     static const bool DENIED = !TilePermissionGranted() && InstallRefusal();
     return DENIED;

@@ -11,32 +11,35 @@
 namespace nesso::parser
 {
 
-static bool IsDigit(char character) noexcept { return character >= '0' && character <= '9'; }
+static auto IsDigit(char character) noexcept -> bool { return character >= '0' && character <= '9'; }
 
-static bool IsHex(char character) noexcept
+static auto IsHex(char character) noexcept -> bool
 {
     return IsDigit(character) || (character >= 'a' && character <= 'f') || (character >= 'A' && character <= 'F');
 }
 
-static bool IsLetter(char character) noexcept
+static auto IsLetter(char character) noexcept -> bool
 {
     return (character >= 'a' && character <= 'z') || (character >= 'A' && character <= 'Z');
 }
 
-static bool IsWord(char character) noexcept { return IsLetter(character) || IsDigit(character) || character == '_'; }
+static auto IsWord(char character) noexcept -> bool
+{
+    return IsLetter(character) || IsDigit(character) || character == '_';
+}
 
-static bool IsPathChar(char character) noexcept
+static auto IsPathChar(char character) noexcept -> bool
 {
     return IsWord(character) || character == '/' || character == '.' || character == '-' || character == '+' ||
            character == '~' || character == '%';
 }
 
-static int DecimalValue(char character) noexcept
+static auto DecimalValue(char character) noexcept -> int
 {
     return static_cast<unsigned char>(character) - static_cast<unsigned char>('0');
 }
 
-static bool ReadDigits(std::string_view text, std::size_t index, std::size_t count, int &value) noexcept
+static auto ReadDigits(std::string_view text, std::size_t index, std::size_t count, int &value) noexcept -> bool
 {
     if (index + count > text.size())
     {
@@ -56,7 +59,7 @@ static bool ReadDigits(std::string_view text, std::size_t index, std::size_t cou
     return true;
 }
 
-static bool ReadOctet(std::string_view text, std::size_t index, std::size_t &end) noexcept
+static auto ReadOctet(std::string_view text, std::size_t index, std::size_t &end) noexcept -> bool
 {
     if (index >= text.size() || !IsDigit(text[index]))
     {
@@ -83,7 +86,7 @@ static bool ReadOctet(std::string_view text, std::size_t index, std::size_t &end
     return true;
 }
 
-static std::size_t MatchPort(std::string_view text, std::size_t index) noexcept
+static auto MatchPort(std::string_view text, std::size_t index) noexcept -> std::size_t
 {
     if (index >= text.size() || !IsDigit(text[index]))
     {
@@ -109,7 +112,8 @@ static std::size_t MatchPort(std::string_view text, std::size_t index) noexcept
     return cursor - index;
 }
 
-static std::size_t MatchIpv4At(std::string_view text, std::size_t begin, bool check_lead, bool allow_port) noexcept
+static auto MatchIpv4At(std::string_view text, std::size_t begin, bool check_lead, bool allow_port) noexcept
+    -> std::size_t
 {
     const std::size_t size = text.size();
     if (check_lead && begin > 0 && (IsDigit(text[begin - 1]) || text[begin - 1] == '.'))
@@ -164,7 +168,7 @@ enum class Ipv6Step : unsigned char
 };
 } // namespace
 
-static bool Ipv6ScanStart(std::string_view text, std::size_t begin, std::size_t &cursor, bool &bracket) noexcept
+static auto Ipv6ScanStart(std::string_view text, std::size_t begin, std::size_t &cursor, bool &bracket) noexcept -> bool
 {
     const std::size_t size = text.size();
     cursor = begin;
@@ -181,8 +185,8 @@ static bool Ipv6ScanStart(std::string_view text, std::size_t begin, std::size_t 
     return true;
 }
 
-static Ipv6Step Ipv6TakeCompression(std::string_view text, std::size_t scan_end, std::size_t &cursor,
-                                    bool &compressed) noexcept
+static auto Ipv6TakeCompression(std::string_view text, std::size_t scan_end, std::size_t &cursor,
+                                bool &compressed) noexcept -> Ipv6Step
 {
     if (text[cursor] != ':')
     {
@@ -197,7 +201,7 @@ static Ipv6Step Ipv6TakeCompression(std::string_view text, std::size_t scan_end,
     return Ipv6Step::Break;
 }
 
-static bool Ipv6EmbeddedIpv4Ahead(std::string_view text, std::size_t cursor, std::size_t scan_end) noexcept
+static auto Ipv6EmbeddedIpv4Ahead(std::string_view text, std::size_t cursor, std::size_t scan_end) noexcept -> bool
 {
     if (!IsDigit(text[cursor]))
     {
@@ -218,7 +222,8 @@ static bool Ipv6EmbeddedIpv4Ahead(std::string_view text, std::size_t cursor, std
     return false;
 }
 
-static Ipv6Step Ipv6TakeEmbeddedIpv4(std::string_view text, std::size_t &cursor, int &groups, bool &saw_hex) noexcept
+static auto Ipv6TakeEmbeddedIpv4(std::string_view text, std::size_t &cursor, int &groups, bool &saw_hex) noexcept
+    -> Ipv6Step
 {
     const std::size_t tail = MatchIpv4At(text, cursor, false, false);
     if (tail == 0 || groups > 6)
@@ -231,8 +236,8 @@ static Ipv6Step Ipv6TakeEmbeddedIpv4(std::string_view text, std::size_t &cursor,
     return Ipv6Step::Break;
 }
 
-static Ipv6Step Ipv6TakeHextet(std::string_view text, std::size_t scan_end, std::size_t &cursor, int &groups,
-                               bool &saw_hex) noexcept
+static auto Ipv6TakeHextet(std::string_view text, std::size_t scan_end, std::size_t &cursor, int &groups,
+                           bool &saw_hex) noexcept -> Ipv6Step
 {
     if (!IsHex(text[cursor]))
     {
@@ -274,12 +279,13 @@ static Ipv6Step Ipv6TakeHextet(std::string_view text, std::size_t scan_end, std:
     return Ipv6Step::Break;
 }
 
-static bool Ipv6BodyValid(bool saw_hex, bool compressed, int groups) noexcept
+static auto Ipv6BodyValid(bool saw_hex, bool compressed, int groups) noexcept -> bool
 {
     return saw_hex && ((compressed && groups < 8) || (!compressed && groups == 8));
 }
 
-static std::size_t Ipv6Finish(std::string_view text, std::size_t begin, std::size_t cursor, bool bracket) noexcept
+static auto Ipv6Finish(std::string_view text, std::size_t begin, std::size_t cursor, bool bracket) noexcept
+    -> std::size_t
 {
     const std::size_t size = text.size();
     if (bracket)
@@ -310,7 +316,7 @@ static std::size_t Ipv6Finish(std::string_view text, std::size_t begin, std::siz
     return cursor > begin ? cursor - begin : 0;
 }
 
-static std::size_t MatchIpv6(std::string_view text, std::size_t begin) noexcept
+static auto MatchIpv6(std::string_view text, std::size_t begin) noexcept -> std::size_t
 {
     std::size_t cursor = begin;
     bool bracket = false;
@@ -362,7 +368,7 @@ static std::size_t MatchIpv6(std::string_view text, std::size_t begin) noexcept
     return Ipv6Finish(text, begin, cursor, bracket);
 }
 
-static std::size_t MatchUuid(std::string_view text, std::size_t begin) noexcept
+static auto MatchUuid(std::string_view text, std::size_t begin) noexcept -> std::size_t
 {
     if (begin > 0 && IsWord(text[begin - 1]))
     {
@@ -400,7 +406,7 @@ static std::size_t MatchUuid(std::string_view text, std::size_t begin) noexcept
     return cursor - begin;
 }
 
-static std::size_t MatchBlk(std::string_view text, std::size_t begin) noexcept
+static auto MatchBlk(std::string_view text, std::size_t begin) noexcept -> std::size_t
 {
     // A digit may end the previous id (blk_1blk_2). A letter or '_' glues a
     // prefix (myblk_1).
@@ -439,7 +445,7 @@ static std::size_t MatchBlk(std::string_view text, std::size_t begin) noexcept
     return cursor - begin;
 }
 
-static std::size_t MatchHms(std::string_view text, std::size_t begin, bool lead_boundary) noexcept
+static auto MatchHms(std::string_view text, std::size_t begin, bool lead_boundary) noexcept -> std::size_t
 {
     if (lead_boundary && begin > 0 && IsDigit(text[begin - 1]))
     {
@@ -482,7 +488,7 @@ static std::size_t MatchHms(std::string_view text, std::size_t begin, bool lead_
     return cursor - begin;
 }
 
-static std::size_t MatchZone(std::string_view text, std::size_t begin) noexcept
+static auto MatchZone(std::string_view text, std::size_t begin) noexcept -> std::size_t
 {
     if (begin >= text.size())
     {
@@ -524,7 +530,7 @@ static std::size_t MatchZone(std::string_view text, std::size_t begin) noexcept
     return cursor - begin;
 }
 
-static std::size_t MatchIso(std::string_view text, std::size_t begin) noexcept
+static auto MatchIso(std::string_view text, std::size_t begin) noexcept -> std::size_t
 {
     if (begin > 0 && IsWord(text[begin - 1]))
     {
@@ -580,7 +586,7 @@ static std::size_t MatchIso(std::string_view text, std::size_t begin) noexcept
     return cursor - begin;
 }
 
-static std::size_t MatchSyslog(std::string_view text, std::size_t begin) noexcept
+static auto MatchSyslog(std::string_view text, std::size_t begin) noexcept -> std::size_t
 {
     if (begin > 0 && IsLetter(text[begin - 1]))
     {
@@ -646,7 +652,7 @@ static std::size_t MatchSyslog(std::string_view text, std::size_t begin) noexcep
     return cursor + time - begin;
 }
 
-static std::size_t MatchHex(std::string_view text, std::size_t begin) noexcept
+static auto MatchHex(std::string_view text, std::size_t begin) noexcept -> std::size_t
 {
     const std::size_t size = text.size();
     if (begin >= size || !IsHex(text[begin]))
@@ -700,7 +706,7 @@ static std::size_t MatchHex(std::string_view text, std::size_t begin) noexcept
     return cursor - begin;
 }
 
-static std::size_t MatchDecimal(std::string_view text, std::size_t begin) noexcept
+static auto MatchDecimal(std::string_view text, std::size_t begin) noexcept -> std::size_t
 {
     if (begin >= text.size())
     {
@@ -734,7 +740,7 @@ static std::size_t MatchDecimal(std::string_view text, std::size_t begin) noexce
     return cursor - begin;
 }
 
-static std::size_t PathSpan(std::string_view text, std::size_t begin, bool &has_digit) noexcept
+static auto PathSpan(std::string_view text, std::size_t begin, bool &has_digit) noexcept -> std::size_t
 {
     has_digit = false;
     std::size_t length = 0;
@@ -749,12 +755,12 @@ static std::size_t PathSpan(std::string_view text, std::size_t begin, bool &has_
     return length;
 }
 
-static bool IsJoiner(char character) noexcept
+static auto IsJoiner(char character) noexcept -> bool
 {
     return character == '.' || character == ':' || character == '@' || character == '/' || character == '-';
 }
 
-static bool IsCompoundChar(char character) noexcept { return IsWord(character) || IsJoiner(character); }
+static auto IsCompoundChar(char character) noexcept -> bool { return IsWord(character) || IsJoiner(character); }
 
 static constexpr std::size_t MIXED_MIN_LENGTH = 3;
 
@@ -763,7 +769,7 @@ static constexpr std::size_t MIXED_MIN_LENGTH = 3;
 // a short hex value (`0x01`). It starts at a word byte that does not follow a
 // compound byte, runs over word bytes and single joiners, and drops trailing
 // joiners.
-static std::size_t MatchMixed(std::string_view text, std::size_t begin) noexcept
+static auto MatchMixed(std::string_view text, std::size_t begin) noexcept -> std::size_t
 {
     if (!IsWord(text[begin]) || (begin != 0 && IsCompoundChar(text[begin - 1])))
     {
@@ -800,7 +806,7 @@ static std::size_t MatchMixed(std::string_view text, std::size_t begin) noexcept
 
 static void AppendMasked(std::string &out) { out.append(MASKED_TOKEN); }
 
-static std::size_t VariableLength(std::string_view text, std::size_t index) noexcept
+static auto VariableLength(std::string_view text, std::size_t index) noexcept -> std::size_t
 {
     if (const std::size_t taken = MatchUuid(text, index); taken > 0)
     {
@@ -841,7 +847,7 @@ static std::size_t VariableLength(std::string_view text, std::size_t index) noex
     return MatchMixed(text, index);
 }
 
-static bool TryMaskPath(std::string_view text, std::size_t &index, std::string &out)
+static auto TryMaskPath(std::string_view text, std::size_t &index, std::string &out) -> bool
 {
     if (text[index] != '/' || (index != 0 && IsPathChar(text[index - 1])))
     {
@@ -867,7 +873,7 @@ static bool TryMaskPath(std::string_view text, std::size_t &index, std::string &
     return true;
 }
 
-std::string MaskTemplate(std::string_view text)
+auto MaskTemplate(std::string_view text) -> std::string
 {
     std::string out;
     out.reserve(text.size());

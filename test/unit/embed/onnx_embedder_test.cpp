@@ -19,7 +19,7 @@
 #error "NESSO_MODELS_DIR must be defined"
 #endif
 
-static std::filesystem::path ModelDirOrSkip()
+static auto ModelDirOrSkip() -> std::filesystem::path
 {
     const std::filesystem::path model_dir{NESSO_MODELS_DIR};
     if (std::filesystem::is_regular_file(model_dir / "model.onnx") &&
@@ -68,7 +68,7 @@ TEST_CASE("OnnxEmbedder ranks similar strings above dissimilar ones", "[OnnxEmbe
     REQUIRE(similar.has_value());
     REQUIRE(dissimilar.has_value());
 
-    const auto dot = [](const std::vector<float> &left, const std::vector<float> &right)
+    const auto dot = [](const std::vector<float> &left, const std::vector<float> &right) -> float
     {
         float score = 0.0F;
         for (size_t i = 0; i < left.size(); ++i)
@@ -154,7 +154,7 @@ TEST_CASE("OnnxEmbedder reports completed batches", "[OnnxEmbedder][embed][integ
     }
 
     std::vector<std::pair<size_t, size_t>> progress;
-    const auto batch = (*embedder)->EmbedBatch(texts, [&progress](size_t completed, size_t total)
+    const auto batch = (*embedder)->EmbedBatch(texts, [&progress](size_t completed, size_t total) -> void
                                                { progress.emplace_back(completed, total); });
     REQUIRE(batch.has_value());
     REQUIRE(progress == std::vector<std::pair<size_t, size_t>>{{32, 65}, {64, 65}, {65, 65}});

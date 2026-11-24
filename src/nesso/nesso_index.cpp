@@ -9,6 +9,7 @@
 #include <nesso/trace.hpp>
 #include <nesso_detail.hpp>
 
+#include <core/core_types.hpp>
 #include <core/corpus_index.hpp>
 #include <core/dedup.hpp>
 #include <core/lexical_terms.hpp>
@@ -46,9 +47,9 @@ using detail::StreamBatch;
 // Like VisitChunks, but also yields skipped records so v3 line ordinals stay
 // complete.
 template <typename Consume>
-static std::expected<void, nesso::parser::ParseError>
-VisitRecords(const std::filesystem::path &path, Scan &scan, bool &stdin_used, std::string_view json_field,
-             const nesso::parser::ArchiveLimits &limits, const Consume &consume)
+static auto VisitRecords(const std::filesystem::path &path, Scan &scan, bool &stdin_used, std::string_view json_field,
+                         const nesso::parser::ArchiveLimits &limits, const Consume &consume)
+    -> std::expected<void, nesso::parser::ParseError>
 {
     if (path == "-")
     {
@@ -66,7 +67,7 @@ VisitRecords(const std::filesystem::path &path, Scan &scan, bool &stdin_used, st
 }
 
 // `note` selects the index wording in `message`. `EmptyInput` stays exit 1.
-static std::unexpected<Error> NothingToIndex(const IndexRequest &request, const Scan &scanned)
+static auto NothingToIndex(const IndexRequest &request, const Scan &scanned) -> std::unexpected<Error>
 {
     const ErrorCause cause = NoKeptLines(scanned.counts) ? ErrorCause::EmptyFile : ErrorCause::NothingIndexable;
     const std::filesystem::path path = request.files.size() == 1 ? request.files.front() : std::filesystem::path{};
@@ -104,8 +105,9 @@ struct IndexEmbedState
 };
 } // namespace
 
-static std::expected<void, Error> GuardStableSource(const std::filesystem::path &path, std::string_view json_field,
-                                                    const nesso::core::SourceInfo &expected, const LineCounts &counts)
+static auto GuardStableSource(const std::filesystem::path &path, std::string_view json_field,
+                              const nesso::core::SourceInfo &expected, const LineCounts &counts)
+    -> std::expected<void, Error>
 {
     if (path == "-")
     {
@@ -119,7 +121,7 @@ static std::expected<void, Error> GuardStableSource(const std::filesystem::path 
     return {};
 }
 
-static std::expected<void, Error> FlushIndexEmbeddings(IndexEmbedState &state)
+static auto FlushIndexEmbeddings(IndexEmbedState &state) -> std::expected<void, Error>
 {
     if (state.distinct.Pending().empty())
     {
@@ -151,8 +153,8 @@ static std::expected<void, Error> FlushIndexEmbeddings(IndexEmbedState &state)
     return {};
 }
 
-static std::optional<Error> IngestIndexChunk(IndexEmbedState &state, IndexSourceCursor &cursor,
-                                             const nesso::parser::ParsedChunk &chunk)
+static auto IngestIndexChunk(IndexEmbedState &state, IndexSourceCursor &cursor, const nesso::parser::ParsedChunk &chunk)
+    -> std::optional<Error>
 {
     const LineCounts &counts = state.scanned->counts;
     if (cursor.archive && chunk.entry_start)
@@ -212,7 +214,7 @@ static std::optional<Error> IngestIndexChunk(IndexEmbedState &state, IndexSource
     return std::nullopt;
 }
 
-static std::expected<void, Error> EmbedIndexFiles(IndexEmbedState &state)
+static auto EmbedIndexFiles(IndexEmbedState &state) -> std::expected<void, Error>
 {
     const ScopedStage stage{"embed"};
     bool stdin_used = false;
@@ -239,7 +241,7 @@ static std::expected<void, Error> EmbedIndexFiles(IndexEmbedState &state)
         }
         const auto streamed =
             VisitRecords(path, *state.scanned, stdin_used, state.request->json_field, state.request->archive_limits,
-                         [&](const nesso::parser::ParsedChunk &chunk)
+                         [&](const nesso::parser::ParsedChunk &chunk) -> void
                          {
                              if (state.failed)
                              {
@@ -270,7 +272,7 @@ static std::expected<void, Error> EmbedIndexFiles(IndexEmbedState &state)
     return {};
 }
 
-std::expected<IndexSummary, Error> Nesso::Index(const IndexRequest &input) const
+auto Nesso::Index(const IndexRequest &input) const -> std::expected<IndexSummary, Error>
 {
     const TraceSession session;
     auto expanded = ExpandRequestFiles(input.files);
@@ -334,7 +336,7 @@ std::expected<IndexSummary, Error> Nesso::Index(const IndexRequest &input) const
     progress.Finish();
 
     const LineCounts &counts = scanned->counts;
-    const auto written = [&writer]
+    const auto written = [&writer] -> std::expected<void, core::EngineError>
     {
         const ScopedStage stage{"corpus-write"};
         return writer->Finish();

@@ -37,9 +37,9 @@ class EnvGuard
     }
 
     EnvGuard(const EnvGuard &) = delete;
-    EnvGuard &operator=(const EnvGuard &) = delete;
+    auto operator=(const EnvGuard &) -> EnvGuard & = delete;
     EnvGuard(EnvGuard &&) = delete;
-    EnvGuard &operator=(EnvGuard &&) = delete;
+    auto operator=(EnvGuard &&) -> EnvGuard & = delete;
 
     ~EnvGuard()
     {
@@ -64,7 +64,7 @@ class EnvGuard
     Slot xdg_data_home_;
     Slot home_;
 
-    Slot &GetSlot(const char *key)
+    auto GetSlot(const char *key) -> Slot &
     {
         if (std::string_view(key) == "NESSO_MODEL_DIR")
         {

@@ -32,12 +32,12 @@ class TempDir
     }
 
     TempDir(const TempDir &) = delete;
-    TempDir &operator=(const TempDir &) = delete;
+    auto operator=(const TempDir &) -> TempDir & = delete;
     TempDir(TempDir &&) = delete;
-    TempDir &operator=(TempDir &&) = delete;
+    auto operator=(TempDir &&) -> TempDir & = delete;
     ~TempDir() { std::filesystem::remove_all(path_); }
 
-    [[nodiscard]] const std::filesystem::path &Path() const { return path_; }
+    [[nodiscard]] auto Path() const -> const std::filesystem::path & { return path_; }
 
   private:
     std::filesystem::path path_;
@@ -49,7 +49,7 @@ class CinGuard
     explicit CinGuard(std::istream &input) : previous_(std::cin.rdbuf(input.rdbuf())) { std::cin.clear(); }
 
     CinGuard(const CinGuard &) = delete;
-    CinGuard &operator=(const CinGuard &) = delete;
+    auto operator=(const CinGuard &) -> CinGuard & = delete;
 
     ~CinGuard()
     {
@@ -72,20 +72,22 @@ void WriteFile(const std::filesystem::path &path, std::string_view text)
 class ScriptedEmbedder final : public nesso::embed::Embedder
 {
   public:
-    [[nodiscard]] size_t sessions() const noexcept override { return 1; }
+    [[nodiscard]] auto sessions() const noexcept -> size_t override { return 1; }
 
-    [[nodiscard]] std::expected<nesso::embed::EmbedderIdentity, nesso::embed::EmbedError> identity() const override
+    [[nodiscard]] auto identity() const
+        -> std::expected<nesso::embed::EmbedderIdentity, nesso::embed::EmbedError> override
     {
         return TestEmbedderIdentity();
     }
 
-    [[nodiscard]] std::expected<std::vector<float>, nesso::embed::EmbedError> embed(std::string_view) const override
+    [[nodiscard]] auto embed(std::string_view) const
+        -> std::expected<std::vector<float>, nesso::embed::EmbedError> override
     {
         return std::vector<float>{1.F, 0.F, 0.F, 0.F};
     }
 
-    [[nodiscard]] std::expected<std::vector<std::vector<float>>, nesso::embed::EmbedError>
-    EmbedBatch(std::span<const std::string> texts, ProgressCallback) const override
+    [[nodiscard]] auto EmbedBatch(std::span<const std::string> texts, ProgressCallback) const
+        -> std::expected<std::vector<std::vector<float>>, nesso::embed::EmbedError> override
     {
         std::vector<std::vector<float>> rows;
         rows.reserve(texts.size());
@@ -111,21 +113,22 @@ class ScriptedEmbedder final : public nesso::embed::Embedder
 class HashEmbedder final : public nesso::embed::Embedder
 {
   public:
-    [[nodiscard]] size_t sessions() const noexcept override { return 1; }
+    [[nodiscard]] auto sessions() const noexcept -> size_t override { return 1; }
 
-    [[nodiscard]] std::expected<nesso::embed::EmbedderIdentity, nesso::embed::EmbedError> identity() const override
+    [[nodiscard]] auto identity() const
+        -> std::expected<nesso::embed::EmbedderIdentity, nesso::embed::EmbedError> override
     {
         return TestEmbedderIdentity();
     }
 
-    [[nodiscard]] std::expected<std::vector<float>, nesso::embed::EmbedError>
-    embed(std::string_view text) const override
+    [[nodiscard]] auto embed(std::string_view text) const
+        -> std::expected<std::vector<float>, nesso::embed::EmbedError> override
     {
         return Hashed(text);
     }
 
-    [[nodiscard]] std::expected<std::vector<std::vector<float>>, nesso::embed::EmbedError>
-    EmbedBatch(std::span<const std::string> texts, ProgressCallback) const override
+    [[nodiscard]] auto EmbedBatch(std::span<const std::string> texts, ProgressCallback) const
+        -> std::expected<std::vector<std::vector<float>>, nesso::embed::EmbedError> override
     {
         std::vector<std::vector<float>> rows;
         rows.reserve(texts.size());
@@ -137,7 +140,7 @@ class HashEmbedder final : public nesso::embed::Embedder
     }
 
   private:
-    [[nodiscard]] static std::vector<float> Hashed(std::string_view text)
+    [[nodiscard]] static auto Hashed(std::string_view text) -> std::vector<float>
     {
         std::uint32_t state = 2166136261u;
         for (const char character : text)
@@ -157,9 +160,9 @@ class HashEmbedder final : public nesso::embed::Embedder
     }
 };
 
-nesso::Nesso ScriptedApp() { return nesso::Nesso{nesso::Config{}, std::make_unique<ScriptedEmbedder>()}; }
+auto ScriptedApp() -> nesso::Nesso { return nesso::Nesso{nesso::Config{}, std::make_unique<ScriptedEmbedder>()}; }
 
-const nesso::TextMatch *MatchAtLine(const nesso::TextResults &results, std::uint64_t line)
+auto MatchAtLine(const nesso::TextResults &results, std::uint64_t line) -> const nesso::TextMatch *
 {
     for (const nesso::TextMatch &match : results.matches)
     {

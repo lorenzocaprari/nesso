@@ -18,7 +18,7 @@ namespace
 {
 
 // Splits `text` and aborts unless header + message is `text`, byte for byte.
-std::size_t CheckedSplit(std::string_view text)
+auto CheckedSplit(std::string_view text) -> std::size_t
 {
     const nesso::parser::LineParts parts = nesso::parser::SplitLogLine(text);
     if (parts.header.data() != text.data() || parts.header.size() + parts.message.size() != text.size() ||
@@ -30,7 +30,7 @@ std::size_t CheckedSplit(std::string_view text)
     return parts.header.size();
 }
 
-std::string BytesFrom(const std::uint8_t *data, std::size_t size)
+auto BytesFrom(const std::uint8_t *data, std::size_t size) -> std::string
 {
     if (data == nullptr || size == 0)
     {
@@ -41,7 +41,7 @@ std::string BytesFrom(const std::uint8_t *data, std::size_t size)
 
 } // namespace
 
-extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t *data, std::size_t size)
+extern "C" auto LLVMFuzzerTestOneInput(const std::uint8_t *data, std::size_t size) -> int
 {
     const std::string bytes = BytesFrom(data, size);
     volatile std::size_t sink = nesso::parser::MaskTemplate(bytes).size() + CheckedSplit(bytes);
@@ -72,7 +72,7 @@ extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t *data, std::size_t size
 
 // libFuzzer supplies main. The AFL++ CI job keeps this file-input entry point.
 #ifndef NESSO_LIBFUZZER
-int main(int argc, char *argv[])
+auto main(int argc, char *argv[]) -> int
 {
     if (argc < 2)
     {

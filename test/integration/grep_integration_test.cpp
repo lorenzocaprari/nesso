@@ -31,7 +31,7 @@ void WriteBytes(const std::filesystem::path &path, std::string_view bytes)
 #error "NESSO_MODELS_DIR must be defined"
 #endif
 
-static std::filesystem::path ModelDirOrSkip()
+static auto ModelDirOrSkip() -> std::filesystem::path
 {
     const std::filesystem::path model_dir{NESSO_MODELS_DIR};
     if (std::filesystem::is_regular_file(model_dir / "model.onnx") &&

@@ -77,7 +77,7 @@ struct LineParts
 /// the line (prose, a leading blank, JSON, `key=value` fields), or when the
 /// message would hold no ASCII letter and no byte of 0x80 or above (a header
 /// with nothing after it, or only digits and punctuation).
-[[nodiscard]] LineParts SplitLogLine(std::string_view line) noexcept;
+[[nodiscard]] auto SplitLogLine(std::string_view line) noexcept -> LineParts;
 
 } // namespace nesso::parser
 

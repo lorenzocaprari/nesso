@@ -8,7 +8,7 @@
 #include <string>
 #include <string_view>
 
-static std::string Masked(std::string_view text) { return nesso::parser::MaskTemplate(text); }
+static auto Masked(std::string_view text) -> std::string { return nesso::parser::MaskTemplate(text); }
 
 static void ExpectMasked(std::string_view text, std::string_view key)
 {

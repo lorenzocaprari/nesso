@@ -34,7 +34,7 @@
 namespace nesso::core::detail
 {
 
-static bool AppendVarint(std::vector<std::byte> &out, std::uint64_t value)
+static auto AppendVarint(std::vector<std::byte> &out, std::uint64_t value) -> bool
 {
     while (value >= 0x80)
     {
@@ -45,7 +45,7 @@ static bool AppendVarint(std::vector<std::byte> &out, std::uint64_t value)
     return true;
 }
 
-static std::optional<std::uint64_t> ReadVarint(std::span<const std::byte> bytes, std::uint64_t &cursor)
+static auto ReadVarint(std::span<const std::byte> bytes, std::uint64_t &cursor) -> std::optional<std::uint64_t>
 {
     std::uint64_t value = 0;
     for (unsigned shift = 0; shift < 64; shift += 7)
@@ -68,7 +68,7 @@ static std::optional<std::uint64_t> ReadVarint(std::span<const std::byte> bytes,
     return std::nullopt;
 }
 
-static bool AppendU64(std::vector<std::byte> &out, std::uint64_t value)
+static auto AppendU64(std::vector<std::byte> &out, std::uint64_t value) -> bool
 {
     std::array<std::byte, sizeof(value)> raw{};
     std::memcpy(raw.data(), &value, sizeof(value));
@@ -76,7 +76,7 @@ static bool AppendU64(std::vector<std::byte> &out, std::uint64_t value)
     return true;
 }
 
-static bool ReadU64At(std::span<const std::byte> bytes, std::uint64_t &cursor, std::uint64_t &value)
+static auto ReadU64At(std::span<const std::byte> bytes, std::uint64_t &cursor, std::uint64_t &value) -> bool
 {
     if (!RangeInside(cursor, sizeof(value), bytes.size()))
     {
@@ -86,7 +86,7 @@ static bool ReadU64At(std::span<const std::byte> bytes, std::uint64_t &cursor, s
     cursor += sizeof(value);
     return true;
 }
-static std::vector<std::string> BuildLexicalDictionary(std::span<const std::vector<std::string>> line_terms)
+static auto BuildLexicalDictionary(std::span<const std::vector<std::string>> line_terms) -> std::vector<std::string>
 {
     std::vector<std::string> dictionary;
     std::unordered_set<std::string> seen;
@@ -104,7 +104,7 @@ static std::vector<std::string> BuildLexicalDictionary(std::span<const std::vect
     return dictionary;
 }
 
-static std::unordered_map<std::string, std::uint32_t> LexicalTermIds(std::span<const std::string> dictionary)
+static auto LexicalTermIds(std::span<const std::string> dictionary) -> std::unordered_map<std::string, std::uint32_t>
 {
     std::unordered_map<std::string, std::uint32_t> ids;
     ids.reserve(dictionary.size());
@@ -142,7 +142,7 @@ static void AppendLexicalLinePostings(std::vector<std::byte> &out, std::span<con
     {
         entries.emplace_back(term_id, frequency);
     }
-    std::ranges::sort(entries, [](const auto &left, const auto &right) { return left.first < right.first; });
+    std::ranges::sort(entries, [](const auto &left, const auto &right) -> auto { return left.first < right.first; });
     AppendVarint(out, entries.size());
     std::uint32_t previous = 0;
     for (const auto &[term_id, frequency] : entries)
@@ -154,7 +154,7 @@ static void AppendLexicalLinePostings(std::vector<std::byte> &out, std::span<con
     AppendVarint(out, terms.size());
 }
 
-std::vector<std::byte> EncodeLexicalSection(std::span<const std::vector<std::string>> line_terms)
+auto EncodeLexicalSection(std::span<const std::vector<std::string>> line_terms) -> std::vector<std::byte>
 {
     const std::vector<std::string> dictionary = BuildLexicalDictionary(line_terms);
     const std::unordered_map<std::string, std::uint32_t> ids = LexicalTermIds(dictionary);
@@ -191,8 +191,8 @@ static void RemovePaths(const std::vector<std::filesystem::path> &paths)
     }
 }
 
-static std::expected<std::filesystem::path, EngineError> CreateLexicalTemp(const std::filesystem::path &spill_prefix,
-                                                                           std::string_view suffix)
+static auto CreateLexicalTemp(const std::filesystem::path &spill_prefix, std::string_view suffix)
+    -> std::expected<std::filesystem::path, EngineError>
 {
     static std::atomic<std::uint64_t> counter{0};
     for (unsigned attempt = 0; attempt < 16; ++attempt)
@@ -220,7 +220,7 @@ static std::expected<std::filesystem::path, EngineError> CreateLexicalTemp(const
     return std::unexpected(EngineError::FileOpenFailure);
 }
 
-static bool ReadSpilledTermRow(std::istream &terms, std::vector<std::string> &row)
+static auto ReadSpilledTermRow(std::istream &terms, std::vector<std::string> &row) -> bool
 {
     std::uint32_t count = 0;
     if (!ReadU32Stream(terms, count))
@@ -246,7 +246,8 @@ static bool ReadSpilledTermRow(std::istream &terms, std::vector<std::string> &ro
     return true;
 }
 
-static std::uint64_t RowUniqueFootprint(std::span<const std::string> row, const std::unordered_set<std::string> &seen)
+static auto RowUniqueFootprint(std::span<const std::string> row, const std::unordered_set<std::string> &seen)
+    -> std::uint64_t
 {
     std::uint64_t bytes = 0;
     std::unordered_set<std::string_view> local;
@@ -262,7 +263,7 @@ static std::uint64_t RowUniqueFootprint(std::span<const std::string> row, const 
     return bytes;
 }
 
-static bool WriteSortedRun(const std::filesystem::path &path, std::unordered_set<std::string> &seen)
+static auto WriteSortedRun(const std::filesystem::path &path, std::unordered_set<std::string> &seen) -> bool
 {
     std::vector<std::string> terms(seen.begin(), seen.end());
     seen.clear();
@@ -283,8 +284,8 @@ static bool WriteSortedRun(const std::filesystem::path &path, std::unordered_set
     return static_cast<bool>(output);
 }
 
-static bool FlushUniqueRun(const std::filesystem::path &spill_prefix, std::unordered_set<std::string> &seen,
-                           std::vector<std::filesystem::path> &runs)
+static auto FlushUniqueRun(const std::filesystem::path &spill_prefix, std::unordered_set<std::string> &seen,
+                           std::vector<std::filesystem::path> &runs) -> bool
 {
     auto run = CreateLexicalTemp(spill_prefix, "lexrun");
     if (!run)
@@ -295,9 +296,9 @@ static bool FlushUniqueRun(const std::filesystem::path &spill_prefix, std::unord
     return WriteSortedRun(*run, seen);
 }
 
-static std::expected<std::vector<std::filesystem::path>, EngineError>
-BuildUniqueTermRuns(std::istream &terms, std::uint64_t line_count, const std::filesystem::path &spill_prefix,
-                    std::uint64_t chunk_budget)
+static auto BuildUniqueTermRuns(std::istream &terms, std::uint64_t line_count,
+                                const std::filesystem::path &spill_prefix, std::uint64_t chunk_budget)
+    -> std::expected<std::vector<std::filesystem::path>, EngineError>
 {
     std::vector<std::filesystem::path> runs;
     std::unordered_set<std::string> seen;
@@ -345,7 +346,7 @@ BuildUniqueTermRuns(std::istream &terms, std::uint64_t line_count, const std::fi
     return runs;
 }
 
-static bool ReadRunTerm(std::istream &input, std::uint64_t &remaining, std::string &term)
+static auto ReadRunTerm(std::istream &input, std::uint64_t &remaining, std::string &term) -> bool
 {
     if (remaining == 0)
     {
@@ -376,7 +377,7 @@ struct LexicalRunCursor
 };
 } // namespace
 
-static std::optional<std::size_t> SmallestActiveRun(std::span<const LexicalRunCursor> cursors)
+static auto SmallestActiveRun(std::span<const LexicalRunCursor> cursors) -> std::optional<std::size_t>
 {
     std::optional<std::size_t> best;
     for (std::size_t index = 0; index < cursors.size(); ++index)
@@ -393,8 +394,8 @@ static std::optional<std::size_t> SmallestActiveRun(std::span<const LexicalRunCu
     return best;
 }
 
-static std::expected<std::vector<std::string>, EngineError>
-MergeSortedRuns(const std::vector<std::filesystem::path> &runs, std::uint64_t max_terms)
+static auto MergeSortedRuns(const std::vector<std::filesystem::path> &runs, std::uint64_t max_terms)
+    -> std::expected<std::vector<std::string>, EngineError>
 {
     if (runs.empty())
     {
@@ -456,8 +457,8 @@ MergeSortedRuns(const std::vector<std::filesystem::path> &runs, std::uint64_t ma
     return dictionary;
 }
 
-static bool WriteLexicalHeaderAndDictionary(std::ostream &output, std::span<const std::string> dictionary,
-                                            std::uint64_t line_count, std::uint64_t &written)
+static auto WriteLexicalHeaderAndDictionary(std::ostream &output, std::span<const std::string> dictionary,
+                                            std::uint64_t line_count, std::uint64_t &written) -> bool
 {
     std::vector<std::byte> prefix;
     prefix.reserve(16 + (dictionary.size() * 8));
@@ -482,9 +483,9 @@ enum class PostingWriteStatus : std::uint8_t
 };
 } // namespace
 
-static PostingWriteStatus WriteLinePostings(std::ostream &output, std::span<const std::string> terms,
-                                            const std::unordered_map<std::string, std::uint32_t> &ids,
-                                            std::uint64_t max_bytes, std::uint64_t &written)
+static auto WriteLinePostings(std::ostream &output, std::span<const std::string> terms,
+                              const std::unordered_map<std::string, std::uint32_t> &ids, std::uint64_t max_bytes,
+                              std::uint64_t &written) -> PostingWriteStatus
 {
     std::vector<std::byte> row;
     AppendLexicalLinePostings(row, terms, ids);
@@ -500,10 +501,9 @@ static PostingWriteStatus WriteLinePostings(std::ostream &output, std::span<cons
     return PostingWriteStatus::Ok;
 }
 
-static std::expected<LexicalSpillFile, EngineError> WriteLexicalSpill(std::istream &terms, std::uint64_t line_count,
-                                                                      std::span<const std::string> dictionary,
-                                                                      const std::filesystem::path &spill_prefix,
-                                                                      std::uint64_t max_bytes)
+static auto WriteLexicalSpill(std::istream &terms, std::uint64_t line_count, std::span<const std::string> dictionary,
+                              const std::filesystem::path &spill_prefix, std::uint64_t max_bytes)
+    -> std::expected<LexicalSpillFile, EngineError>
 {
     auto lexical_path = CreateLexicalTemp(spill_prefix, "lexical");
     if (!lexical_path)
@@ -564,11 +564,9 @@ static std::expected<LexicalSpillFile, EngineError> WriteLexicalSpill(std::istre
     return LexicalSpillFile{.path = std::move(*lexical_path), .bytes = written};
 }
 
-std::expected<LexicalSpillFile, EngineError> EncodeLexicalSectionSpilled(const std::filesystem::path &terms_path,
-                                                                         std::uint64_t line_count,
-                                                                         const std::filesystem::path &spill_prefix,
-                                                                         std::uint64_t memory_budget,
-                                                                         const CorpusLimits &limits)
+auto EncodeLexicalSectionSpilled(const std::filesystem::path &terms_path, std::uint64_t line_count,
+                                 const std::filesystem::path &spill_prefix, std::uint64_t memory_budget,
+                                 const CorpusLimits &limits) -> std::expected<LexicalSpillFile, EngineError>
 {
     if (memory_budget == 0)
     {
@@ -603,10 +601,9 @@ std::expected<LexicalSpillFile, EngineError> EncodeLexicalSectionSpilled(const s
     return WriteLexicalSpill(terms, line_count, *dictionary, spill_prefix, limits.lexical_bytes);
 }
 
-static std::expected<void, EngineError> DecodeLexicalDictionary(std::span<const std::byte> bytes, std::uint64_t &cursor,
-                                                                std::uint64_t term_count,
-                                                                std::vector<std::string> &owned_terms,
-                                                                std::vector<std::string_view> &dictionary)
+static auto DecodeLexicalDictionary(std::span<const std::byte> bytes, std::uint64_t &cursor, std::uint64_t term_count,
+                                    std::vector<std::string> &owned_terms, std::vector<std::string_view> &dictionary)
+    -> std::expected<void, EngineError>
 {
     owned_terms.reserve(static_cast<std::size_t>(term_count));
     dictionary.reserve(static_cast<std::size_t>(term_count));
@@ -645,9 +642,9 @@ struct LexicalPostingLimits
 };
 } // namespace
 
-static std::expected<void, EngineError> DecodeLexicalPostings(std::span<const std::byte> bytes, std::uint64_t &cursor,
-                                                              const LexicalPostingLimits &limits,
-                                                              std::vector<LexicalLinePostings> &postings)
+static auto DecodeLexicalPostings(std::span<const std::byte> bytes, std::uint64_t &cursor,
+                                  const LexicalPostingLimits &limits, std::vector<LexicalLinePostings> &postings)
+    -> std::expected<void, EngineError>
 {
     for (std::uint64_t line = 0; line < limits.posting_lines; ++line)
     {
@@ -687,10 +684,9 @@ static std::expected<void, EngineError> DecodeLexicalPostings(std::span<const st
     return {};
 }
 
-std::expected<void, EngineError> DecodeLexicalSection(std::span<const std::byte> bytes, std::uint64_t line_count,
-                                                      std::vector<std::string> &owned_terms,
-                                                      std::vector<std::string_view> &dictionary,
-                                                      std::vector<LexicalLinePostings> &postings)
+auto DecodeLexicalSection(std::span<const std::byte> bytes, std::uint64_t line_count,
+                          std::vector<std::string> &owned_terms, std::vector<std::string_view> &dictionary,
+                          std::vector<LexicalLinePostings> &postings) -> std::expected<void, EngineError>
 {
     std::uint64_t cursor = 0;
     std::uint64_t term_count = 0;

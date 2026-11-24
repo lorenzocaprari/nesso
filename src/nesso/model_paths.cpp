@@ -14,21 +14,21 @@ namespace nesso
 
 // getenv is not thread-safe. The CLI reads the environment once on the main
 // thread.
-static const char *EnvOrEmpty(const char *key)
+static auto EnvOrEmpty(const char *key) -> const char *
 {
     // NOLINTNEXTLINE(concurrency-mt-unsafe)
     const char *value = std::getenv(key);
     return value == nullptr ? "" : value;
 }
 
-bool ContainsModelFiles(const std::filesystem::path &dir)
+auto ContainsModelFiles(const std::filesystem::path &dir) -> bool
 {
     std::error_code error_code;
     return std::filesystem::is_regular_file(dir / VOCAB_FILENAME, error_code) &&
            std::filesystem::is_regular_file(dir / MODEL_FILENAME, error_code);
 }
 
-std::vector<std::filesystem::path> ModelDirCandidates(const ModelDirLookup &lookup)
+auto ModelDirCandidates(const ModelDirLookup &lookup) -> std::vector<std::filesystem::path>
 {
     if (const char *env_dir = EnvOrEmpty("NESSO_MODEL_DIR"); !std::string_view{env_dir}.empty())
     {
@@ -49,7 +49,7 @@ std::vector<std::filesystem::path> ModelDirCandidates(const ModelDirLookup &look
     return dirs;
 }
 
-std::filesystem::path ResolveDefaultModelDir(const ModelDirLookup &lookup)
+auto ResolveDefaultModelDir(const ModelDirLookup &lookup) -> std::filesystem::path
 {
     if (const char *env_dir = EnvOrEmpty("NESSO_MODEL_DIR"); !std::string_view{env_dir}.empty())
     {

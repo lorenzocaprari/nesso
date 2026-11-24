@@ -21,17 +21,17 @@ struct ModelDirLookup
 };
 
 /// True when dir contains both vocab.txt and model.onnx.
-[[nodiscard]] bool ContainsModelFiles(const std::filesystem::path &dir);
+[[nodiscard]] auto ContainsModelFiles(const std::filesystem::path &dir) -> bool;
 
 /// Directories consulted when --model-dir is omitted, in search order. A set
 /// NESSO_MODEL_DIR is the only entry, because that path is used even when it is
 /// incomplete.
-[[nodiscard]] std::vector<std::filesystem::path> ModelDirCandidates(const ModelDirLookup &lookup = {});
+[[nodiscard]] auto ModelDirCandidates(const ModelDirLookup &lookup = {}) -> std::vector<std::filesystem::path>;
 
 /// Default MiniLM directory when --model-dir is omitted:
 /// NESSO_MODEL_DIR, cwd/models (if complete), $XDG_DATA_HOME/nesso, then
 /// packagedDir.
-[[nodiscard]] std::filesystem::path ResolveDefaultModelDir(const ModelDirLookup &lookup = {});
+[[nodiscard]] auto ResolveDefaultModelDir(const ModelDirLookup &lookup = {}) -> std::filesystem::path;
 
 } // namespace nesso
 

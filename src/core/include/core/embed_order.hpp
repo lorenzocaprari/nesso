@@ -37,10 +37,10 @@ class PromiseTerms
     PromiseTerms() = default;
     explicit PromiseTerms(std::span<const std::string> query_terms);
 
-    [[nodiscard]] std::size_t Size() const noexcept { return terms_.size(); }
+    [[nodiscard]] auto Size() const noexcept -> std::size_t { return terms_.size(); }
 
     /// Kept query terms found in `line_terms`. Each counts once.
-    [[nodiscard]] std::uint32_t Hits(std::span<const std::string> line_terms) const;
+    [[nodiscard]] auto Hits(std::span<const std::string> line_terms) const -> std::uint32_t;
 
   private:
     // Sorted by term; the second member is the term's bit.
@@ -49,7 +49,7 @@ class PromiseTerms
 
 /// Window indices, best first: `any_substr`, then `max_hits`, then
 /// `singletons`, each descending, then ascending window index.
-[[nodiscard]] std::vector<std::size_t> EmbedOrder(std::span<const WindowPromise> windows);
+[[nodiscard]] auto EmbedOrder(std::span<const WindowPromise> windows) -> std::vector<std::size_t>;
 
 } // namespace nesso::core
 

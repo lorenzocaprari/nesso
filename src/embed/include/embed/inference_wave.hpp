@@ -24,8 +24,8 @@ using SlotResult = std::expected<std::vector<std::vector<float>>, EmbedError>;
 /// `std::system_error` while creating a thread (for example `EAGAIN` from
 /// `ulimit -u` or a cgroup `pids.max`) is returned as the same error after
 /// those threads join.
-[[nodiscard]] std::expected<std::vector<SlotResult>, EmbedError>
-RunInferenceWave(std::size_t width, const std::function<SlotResult(std::size_t)> &work);
+[[nodiscard]] auto RunInferenceWave(std::size_t width, const std::function<SlotResult(std::size_t)> &work)
+    -> std::expected<std::vector<SlotResult>, EmbedError>;
 
 } // namespace nesso::embed
 

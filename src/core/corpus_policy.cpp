@@ -24,13 +24,13 @@
 namespace nesso::core
 {
 
-std::string_view EmbedPrefixOf(const CorpusPolicy &policy)
+auto EmbedPrefixOf(const CorpusPolicy &policy) -> std::string_view
 {
     const auto found = policy.find(EMBED_PREFIX_KEY);
     return found == policy.end() ? EMBED_PREFIX_UNRECORDED : std::string_view{found->second};
 }
 
-std::string_view EmbedTextOf(const CorpusPolicy &policy)
+auto EmbedTextOf(const CorpusPolicy &policy) -> std::string_view
 {
     const auto found = policy.find(EMBED_TEXT_KEY);
     return found == policy.end() ? EMBED_TEXT_UNRECORDED : std::string_view{found->second};
@@ -41,10 +41,10 @@ std::string_view EmbedTextOf(const CorpusPolicy &policy)
 namespace nesso::core::detail
 {
 
-static bool ValidKey(std::string_view key)
+static auto ValidKey(std::string_view key) -> bool
 {
     return !key.empty() && std::ranges::all_of(key,
-                                               [](char character)
+                                               [](char character) -> bool
                                                {
                                                    return (character >= 'a' && character <= 'z') ||
                                                           (character >= '0' && character <= '9') || character == '.' ||
@@ -52,22 +52,22 @@ static bool ValidKey(std::string_view key)
                                                });
 }
 
-static bool ValidHash(std::string_view value)
+static auto ValidHash(std::string_view value) -> bool
 {
     return value.size() == 64 &&
            std::ranges::all_of(
-               value, [](char character)
+               value, [](char character) -> bool
                { return (character >= '0' && character <= '9') || (character >= 'a' && character <= 'f'); });
 }
 
-static bool ParseNumber(std::string_view text, std::uint32_t &value)
+static auto ParseNumber(std::string_view text, std::uint32_t &value) -> bool
 {
     const char *const first = std::to_address(text.begin());
     const char *const last = std::to_address(text.end());
     const auto parsed = std::from_chars(first, last, value);
     return parsed.ec == std::errc{} && parsed.ptr == last && std::to_string(value) == text;
 }
-std::expected<std::uint32_t, EngineError> ValidatePolicy(const CorpusPolicy &policy)
+auto ValidatePolicy(const CorpusPolicy &policy) -> std::expected<std::uint32_t, EngineError>
 {
     constexpr std::array<std::string_view, 10> required{
         "batch",        "dedup",      "dimensions", "mask",        "model.id", "model.quantization",
@@ -105,7 +105,7 @@ std::expected<std::uint32_t, EngineError> ValidatePolicy(const CorpusPolicy &pol
     return dimensions;
 }
 
-LexicalStatus LexicalStatusOf(bool has_lexical, const CorpusPolicy &policy)
+auto LexicalStatusOf(bool has_lexical, const CorpusPolicy &policy) -> LexicalStatus
 {
     if (!has_lexical)
     {
@@ -120,7 +120,7 @@ LexicalStatus LexicalStatusOf(bool has_lexical, const CorpusPolicy &policy)
     return LexicalStatus::Ok;
 }
 
-std::expected<void, EngineError> ValidateVector(std::span<const float> embedding, std::uint32_t dimensions)
+auto ValidateVector(std::span<const float> embedding, std::uint32_t dimensions) -> std::expected<void, EngineError>
 {
     if (embedding.empty())
     {
@@ -130,14 +130,14 @@ std::expected<void, EngineError> ValidateVector(std::span<const float> embedding
     {
         return std::unexpected(EngineError::MismatchedDimensions);
     }
-    if (!std::ranges::all_of(embedding, [](float value) { return std::isfinite(value); }))
+    if (!std::ranges::all_of(embedding, [](float value) -> bool { return std::isfinite(value); }))
     {
         return std::unexpected(EngineError::CorruptDatabase);
     }
     return {};
 }
 
-std::string SerializePolicy(const CorpusPolicy &policy)
+auto SerializePolicy(const CorpusPolicy &policy) -> std::string
 {
     std::string text;
     for (const auto &[key, value] : policy)
@@ -150,7 +150,7 @@ std::string SerializePolicy(const CorpusPolicy &policy)
     return text;
 }
 
-std::expected<CorpusPolicy, EngineError> ParsePolicy(std::string_view text)
+auto ParsePolicy(std::string_view text) -> std::expected<CorpusPolicy, EngineError>
 {
     CorpusPolicy policy;
     std::string previous;

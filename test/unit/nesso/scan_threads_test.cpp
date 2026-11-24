@@ -36,13 +36,13 @@ class TempDir
     }
 
     TempDir(const TempDir &) = delete;
-    TempDir &operator=(const TempDir &) = delete;
+    auto operator=(const TempDir &) -> TempDir & = delete;
     TempDir(TempDir &&) = delete;
-    TempDir &operator=(TempDir &&) = delete;
+    auto operator=(TempDir &&) -> TempDir & = delete;
 
     ~TempDir() { std::filesystem::remove_all(path_); }
 
-    [[nodiscard]] const std::filesystem::path &Path() const { return path_; }
+    [[nodiscard]] auto Path() const -> const std::filesystem::path & { return path_; }
 
   private:
     std::filesystem::path path_;
@@ -51,20 +51,22 @@ class TempDir
 class FixedEmbedder final : public nesso::embed::Embedder
 {
   public:
-    [[nodiscard]] size_t sessions() const noexcept override { return 1; }
+    [[nodiscard]] auto sessions() const noexcept -> size_t override { return 1; }
 
-    [[nodiscard]] std::expected<nesso::embed::EmbedderIdentity, nesso::embed::EmbedError> identity() const override
+    [[nodiscard]] auto identity() const
+        -> std::expected<nesso::embed::EmbedderIdentity, nesso::embed::EmbedError> override
     {
         return TestEmbedderIdentity();
     }
 
-    [[nodiscard]] std::expected<std::vector<float>, nesso::embed::EmbedError> embed(std::string_view) const override
+    [[nodiscard]] auto embed(std::string_view) const
+        -> std::expected<std::vector<float>, nesso::embed::EmbedError> override
     {
         return std::vector<float>{1.F, 0.F, 0.F, 0.F};
     }
 
-    [[nodiscard]] std::expected<std::vector<std::vector<float>>, nesso::embed::EmbedError>
-    EmbedBatch(std::span<const std::string> texts, ProgressCallback progress) const override
+    [[nodiscard]] auto EmbedBatch(std::span<const std::string> texts, ProgressCallback progress) const
+        -> std::expected<std::vector<std::vector<float>>, nesso::embed::EmbedError> override
     {
         std::vector<std::vector<float>> rows;
         rows.reserve(texts.size());
@@ -101,7 +103,7 @@ void WriteLog(const std::filesystem::path &path, size_t unique_lines)
     REQUIRE(output);
 }
 
-std::vector<char> ReadBytes(const std::filesystem::path &path)
+auto ReadBytes(const std::filesystem::path &path) -> std::vector<char>
 {
     std::ifstream input(path, std::ios::binary);
     REQUIRE(input);
@@ -117,10 +119,10 @@ struct Seen
     std::uint32_t occurrences = 0;
     bool array_element = false;
 
-    bool operator==(const Seen &) const = default;
+    auto operator==(const Seen &) const -> bool = default;
 };
 
-std::vector<Seen> Freeze(const nesso::TextResults &results)
+auto Freeze(const nesso::TextResults &results) -> std::vector<Seen>
 {
     std::vector<Seen> seen;
     seen.reserve(results.matches.size());
@@ -140,23 +142,25 @@ std::vector<Seen> Freeze(const nesso::TextResults &results)
 class WorkerEmbedder final : public nesso::embed::Embedder
 {
   public:
-    [[nodiscard]] size_t sessions() const noexcept override { return 2; }
+    [[nodiscard]] auto sessions() const noexcept -> size_t override { return 2; }
 
-    [[nodiscard]] std::expected<nesso::embed::EmbedderIdentity, nesso::embed::EmbedError> identity() const override
+    [[nodiscard]] auto identity() const
+        -> std::expected<nesso::embed::EmbedderIdentity, nesso::embed::EmbedError> override
     {
         return TestEmbedderIdentity();
     }
 
-    [[nodiscard]] std::expected<std::vector<float>, nesso::embed::EmbedError> embed(std::string_view) const override
+    [[nodiscard]] auto embed(std::string_view) const
+        -> std::expected<std::vector<float>, nesso::embed::EmbedError> override
     {
         return std::vector<float>{1.F, 0.F, 0.F, 0.F};
     }
 
-    [[nodiscard]] std::expected<std::vector<std::vector<float>>, nesso::embed::EmbedError>
-    EmbedBatch(std::span<const std::string> texts, ProgressCallback progress) const override
+    [[nodiscard]] auto EmbedBatch(std::span<const std::string> texts, ProgressCallback progress) const
+        -> std::expected<std::vector<std::vector<float>>, nesso::embed::EmbedError> override
     {
         std::vector<std::vector<float>> rows;
-        std::thread worker{[&texts, &rows]
+        std::thread worker{[&texts, &rows] -> void
                            {
                                rows.reserve(texts.size());
                                for (const std::string &text : texts)
@@ -186,7 +190,7 @@ class ThreadObserver final : public nesso::GrepObserver
     std::vector<std::thread::id> threads;
 };
 
-std::string Letters(std::size_t index)
+auto Letters(std::size_t index) -> std::string
 {
     std::string text;
     do
@@ -197,7 +201,7 @@ std::string Letters(std::size_t index)
     return text;
 }
 
-nesso::Nesso App(size_t threads)
+auto App(size_t threads) -> nesso::Nesso
 {
     return nesso::Nesso{nesso::Config{.model_dir = {}, .threads = threads}, std::make_unique<FixedEmbedder>()};
 }

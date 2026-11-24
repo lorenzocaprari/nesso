@@ -20,16 +20,16 @@ enum class GzipError : uint8_t
 };
 
 /// True when the final extension is `.gz`, compared without regard to case.
-[[nodiscard]] bool IsGzipPath(const std::filesystem::path &path);
+[[nodiscard]] auto IsGzipPath(const std::filesystem::path &path) -> bool;
 
 /// Inflate one gzip file, including concatenated members, into a single byte
 /// string. `OpenFailure` is a path that cannot be read. `Corrupt` is a stream
 /// that is not a complete gzip member.
-[[nodiscard]] std::expected<std::string, GzipError> ReadGzip(const std::filesystem::path &path);
+[[nodiscard]] auto ReadGzip(const std::filesystem::path &path) -> std::expected<std::string, GzipError>;
 
 /// Inflate gzip bytes already in memory, including concatenated members.
 /// `Corrupt` is a stream that is not a complete gzip member.
-[[nodiscard]] std::expected<std::string, GzipError> ReadGzipBytes(std::string_view bytes);
+[[nodiscard]] auto ReadGzipBytes(std::string_view bytes) -> std::expected<std::string, GzipError>;
 
 } // namespace nesso::parser
 

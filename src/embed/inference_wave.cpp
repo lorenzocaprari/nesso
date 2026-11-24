@@ -34,8 +34,8 @@ static void RunWaveSlot(const std::function<SlotResult(std::size_t)> &work, std:
     }
 }
 
-std::expected<std::vector<SlotResult>, EmbedError> RunInferenceWave(std::size_t width,
-                                                                    const std::function<SlotResult(std::size_t)> &work)
+auto RunInferenceWave(std::size_t width, const std::function<SlotResult(std::size_t)> &work)
+    -> std::expected<std::vector<SlotResult>, EmbedError>
 {
     std::vector<SlotResult> slots(width);
     try
@@ -46,7 +46,7 @@ std::expected<std::vector<SlotResult>, EmbedError> RunInferenceWave(std::size_t 
         workers.reserve(width);
         for (std::size_t slot = 0; slot < width; ++slot)
         {
-            workers.emplace_back([&work, &slots, slot] { RunWaveSlot(work, slots, slot); });
+            workers.emplace_back([&work, &slots, slot] -> void { RunWaveSlot(work, slots, slot); });
         }
     }
     catch (const std::system_error &)

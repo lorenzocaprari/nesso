@@ -18,7 +18,7 @@ namespace nesso::parser
 
 // char may be signed. Order by unsigned bytes so a byte above 0x7F does not
 // sort first.
-static bool PathBytesLess(const std::filesystem::path &left, const std::filesystem::path &right)
+static auto PathBytesLess(const std::filesystem::path &left, const std::filesystem::path &right) -> bool
 {
     const std::string &left_bytes = left.native();
     const std::string &right_bytes = right.native();
@@ -35,8 +35,8 @@ static bool PathBytesLess(const std::filesystem::path &left, const std::filesyst
     return left_bytes.size() < right_bytes.size();
 }
 
-static std::expected<std::vector<std::filesystem::path>, InputWalkError>
-WalkDirectory(const std::filesystem::path &root)
+static auto WalkDirectory(const std::filesystem::path &root)
+    -> std::expected<std::vector<std::filesystem::path>, InputWalkError>
 {
     std::vector<std::filesystem::path> files;
     std::error_code error;
@@ -82,8 +82,8 @@ WalkDirectory(const std::filesystem::path &root)
     return files;
 }
 
-std::expected<std::vector<std::filesystem::path>, InputWalkError>
-ExpandInputs(std::span<const std::filesystem::path> inputs)
+auto ExpandInputs(std::span<const std::filesystem::path> inputs)
+    -> std::expected<std::vector<std::filesystem::path>, InputWalkError>
 {
     std::vector<std::filesystem::path> files;
     for (const std::filesystem::path &input : inputs)

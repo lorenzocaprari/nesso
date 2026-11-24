@@ -37,14 +37,14 @@ struct LiveViewInputs
 
 /// True when stderr is a terminal, `TERM` is set and not `dumb`, `--quiet` is
 /// off, and `--no-provisional` was not given.
-[[nodiscard]] bool LiveViewEnabled(const LiveViewInputs &inputs) noexcept;
+[[nodiscard]] auto LiveViewEnabled(const LiveViewInputs &inputs) noexcept -> bool;
 
 /// Columns of the terminal on `descriptor`, or `FALLBACK_TERMINAL_WIDTH`.
-[[nodiscard]] std::size_t TerminalWidth(int descriptor) noexcept;
+[[nodiscard]] auto TerminalWidth(int descriptor) noexcept -> std::size_t;
 
 /// `text` cut to at most `columns` code points. `text` is valid UTF-8 after
 /// `EscapeTerminalControls`, so a character is never split.
-[[nodiscard]] std::string_view CutToColumns(std::string_view text, std::size_t columns) noexcept;
+[[nodiscard]] auto CutToColumns(std::string_view text, std::size_t columns) noexcept -> std::string_view;
 
 /// Draws the provisional top-k as a block of rows above the progress line and
 /// erases it when the scan ends, so the terminal ends as it would without it.
@@ -71,7 +71,7 @@ class LiveView final : public GrepObserver
 };
 
 /// A view on stderr with the steady clock and the stderr terminal width.
-[[nodiscard]] std::unique_ptr<LiveView> MakeStderrLiveView();
+[[nodiscard]] auto MakeStderrLiveView() -> std::unique_ptr<LiveView>;
 
 } // namespace nesso::cli
 

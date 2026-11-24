@@ -18,7 +18,7 @@ struct RestoreTerminate
 {
     explicit RestoreTerminate(std::terminate_handler handler) : previous(std::set_terminate(handler)) {}
     RestoreTerminate(const RestoreTerminate &) = delete;
-    RestoreTerminate &operator=(const RestoreTerminate &) = delete;
+    auto operator=(const RestoreTerminate &) -> RestoreTerminate & = delete;
     ~RestoreTerminate() { std::set_terminate(previous); }
 
     std::terminate_handler previous;
@@ -26,7 +26,7 @@ struct RestoreTerminate
 
 void AbortIfTerminate() { std::abort(); }
 
-bool Failed(const nesso::embed::SlotResult &slot)
+auto Failed(const nesso::embed::SlotResult &slot) -> bool
 {
     if (slot.has_value())
     {
@@ -35,7 +35,7 @@ bool Failed(const nesso::embed::SlotResult &slot)
     return slot.error() == nesso::embed::EmbedError::InferenceFailure;
 }
 
-bool Succeeded(const nesso::embed::SlotResult &slot)
+auto Succeeded(const nesso::embed::SlotResult &slot) -> bool
 {
     if (!slot.has_value() || slot->size() != 1)
     {
@@ -49,7 +49,7 @@ bool Succeeded(const nesso::embed::SlotResult &slot)
     return row[0] == 1.25F && row[1] == -0.5F;
 }
 
-nesso::embed::SlotResult Embedding()
+auto Embedding() -> nesso::embed::SlotResult
 {
     std::vector<float> row{1.25F, -0.5F};
     std::vector<std::vector<float>> batch;

@@ -58,7 +58,7 @@ inline constexpr std::string_view MASK_RULE_VERSION = "template-v2";
 /// Three octets (`1.2.3`), an octet above 255, and `12:34` are not one
 /// address or one clock; `12:34` becomes `<*>:<*>` because each number is a
 /// decimal. `std::vector` is not an IPv6 address.
-[[nodiscard]] std::string MaskTemplate(std::string_view text);
+[[nodiscard]] auto MaskTemplate(std::string_view text) -> std::string;
 
 } // namespace nesso::parser
 

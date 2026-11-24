@@ -39,18 +39,18 @@ constexpr std::size_t LANES = SimdFloat::size();
 static_assert(LANES > 0);
 static_assert(PROBE_WIDTH % LANES == 0, "native_simd<float>::size() does not divide 384");
 
-[[nodiscard]] bool SameBits(float left, float right)
+[[nodiscard]] auto SameBits(float left, float right) -> bool
 {
     return std::bit_cast<std::uint32_t>(left) == std::bit_cast<std::uint32_t>(right);
 }
 
-[[nodiscard]] float LeftValue(std::size_t index)
+[[nodiscard]] auto LeftValue(std::size_t index) -> float
 {
     constexpr std::array<float, 7> pattern{1.0F, 2.0F, 3.0F, 4.0F, 5.0F, 6.0F, 7.0F};
     return pattern[index % pattern.size()];
 }
 
-[[nodiscard]] float RightValue(std::size_t index)
+[[nodiscard]] auto RightValue(std::size_t index) -> float
 {
     constexpr std::array<float, 5> pattern{1.0F, 2.0F, 3.0F, 4.0F, 5.0F};
     return pattern[index % pattern.size()];
@@ -65,7 +65,8 @@ void FillProbe(std::array<float, PROBE_WIDTH> &left, std::array<float, PROBE_WID
     }
 }
 
-[[nodiscard]] float ScalarDot(const std::array<float, PROBE_WIDTH> &left, const std::array<float, PROBE_WIDTH> &right)
+[[nodiscard]] auto ScalarDot(const std::array<float, PROBE_WIDTH> &left, const std::array<float, PROBE_WIDTH> &right)
+    -> float
 {
     float sum = 0.0F;
     for (std::size_t index = 0; index < PROBE_WIDTH; ++index)
@@ -75,8 +76,8 @@ void FillProbe(std::array<float, PROBE_WIDTH> &left, std::array<float, PROBE_WID
     return sum;
 }
 
-[[nodiscard]] float ScalarL2Squared(const std::array<float, PROBE_WIDTH> &left,
-                                    const std::array<float, PROBE_WIDTH> &right)
+[[nodiscard]] auto ScalarL2Squared(const std::array<float, PROBE_WIDTH> &left,
+                                   const std::array<float, PROBE_WIDTH> &right) -> float
 {
     float sum = 0.0F;
     for (std::size_t index = 0; index < PROBE_WIDTH; ++index)
@@ -87,7 +88,8 @@ void FillProbe(std::array<float, PROBE_WIDTH> &left, std::array<float, PROBE_WID
     return sum;
 }
 
-[[nodiscard]] float SimdDot(const std::array<float, PROBE_WIDTH> &left, const std::array<float, PROBE_WIDTH> &right)
+[[nodiscard]] auto SimdDot(const std::array<float, PROBE_WIDTH> &left, const std::array<float, PROBE_WIDTH> &right)
+    -> float
 {
     float sum = 0.0F;
     for (std::size_t index = 0; index < PROBE_WIDTH; index += LANES)
@@ -99,8 +101,8 @@ void FillProbe(std::array<float, PROBE_WIDTH> &left, std::array<float, PROBE_WID
     return sum;
 }
 
-[[nodiscard]] float SimdL2Squared(const std::array<float, PROBE_WIDTH> &left,
-                                  const std::array<float, PROBE_WIDTH> &right)
+[[nodiscard]] auto SimdL2Squared(const std::array<float, PROBE_WIDTH> &left,
+                                 const std::array<float, PROBE_WIDTH> &right) -> float
 {
     float sum = 0.0F;
     for (std::size_t index = 0; index < PROBE_WIDTH; index += LANES)
@@ -120,7 +122,7 @@ void Report(bool dot_ok, bool l2_ok)
               << std::flush;
 }
 
-[[nodiscard]] bool RunProbe()
+[[nodiscard]] auto RunProbe() -> bool
 {
     std::array<float, PROBE_WIDTH> left{};
     std::array<float, PROBE_WIDTH> right{};

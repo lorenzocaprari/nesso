@@ -35,10 +35,10 @@ inline constexpr std::string_view LEXICAL_TERMS_VERSION{"v1"};
 ///
 /// Order is left to right. Duplicates are kept, one entry per occurrence, so
 /// the result is a multiset: `a-a` is `a`, `a`, `a-a`.
-[[nodiscard]] std::vector<std::string> LexicalTerms(std::string_view text);
+[[nodiscard]] auto LexicalTerms(std::string_view text) -> std::vector<std::string>;
 
 /// Strict weak ordering on term bytes as unsigned values (not signed char).
-[[nodiscard]] bool TermByteLess(std::string_view left, std::string_view right) noexcept;
+[[nodiscard]] auto TermByteLess(std::string_view left, std::string_view right) noexcept -> bool;
 
 } // namespace nesso::core
 

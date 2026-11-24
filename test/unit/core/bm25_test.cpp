@@ -20,7 +20,7 @@ static void AddTokens(nesso::core::Bm25Index &index, std::initializer_list<std::
 
 static void ExpectBits(double value, std::uint64_t bits) { CHECK(std::bit_cast<std::uint64_t>(value) == bits); }
 
-static nesso::core::Bm25Index ThreeLineCorpus()
+static auto ThreeLineCorpus() -> nesso::core::Bm25Index
 {
     // line 0: cat elf   |D| = 2
     // line 1: cat       |D| = 1

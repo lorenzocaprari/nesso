@@ -17,19 +17,19 @@ enum class DistanceKernel : uint8_t
     Avx2Fma
 };
 
-[[nodiscard]] DistanceKernel SelectDistanceKernel(std::string_view forced, bool avx2_fma) noexcept;
+[[nodiscard]] auto SelectDistanceKernel(std::string_view forced, bool avx2_fma) noexcept -> DistanceKernel;
 
-[[nodiscard]] DistanceKernel SelectedKernel() noexcept;
+[[nodiscard]] auto SelectedKernel() noexcept -> DistanceKernel;
 
-[[nodiscard]] float DotProductKernel(DistanceKernel kernel, std::span<const float> a,
-                                     std::span<const float> b) noexcept;
+[[nodiscard]] auto DotProductKernel(DistanceKernel kernel, std::span<const float> a, std::span<const float> b) noexcept
+    -> float;
 
-[[nodiscard]] float L2SquaredDistanceKernel(DistanceKernel kernel, std::span<const float> a,
-                                            std::span<const float> b) noexcept;
+[[nodiscard]] auto L2SquaredDistanceKernel(DistanceKernel kernel, std::span<const float> a,
+                                           std::span<const float> b) noexcept -> float;
 
-[[nodiscard]] float DotProductAvx2Fma(std::span<const float> a, std::span<const float> b) noexcept;
+[[nodiscard]] auto DotProductAvx2Fma(std::span<const float> a, std::span<const float> b) noexcept -> float;
 
-[[nodiscard]] float L2SquaredDistanceAvx2Fma(std::span<const float> a, std::span<const float> b) noexcept;
+[[nodiscard]] auto L2SquaredDistanceAvx2Fma(std::span<const float> a, std::span<const float> b) noexcept -> float;
 
 } // namespace nesso::core::math::detail
 

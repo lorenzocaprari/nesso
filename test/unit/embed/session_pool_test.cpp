@@ -16,7 +16,7 @@
 namespace
 {
 
-std::vector<std::string> SampleTexts()
+auto SampleTexts() -> std::vector<std::string>
 {
     std::vector<std::string> texts;
     texts.reserve(33);
@@ -27,7 +27,7 @@ std::vector<std::string> SampleTexts()
     return texts;
 }
 
-bool ModelPresent()
+auto ModelPresent() -> bool
 {
     const std::filesystem::path model_dir{NESSO_MODELS_DIR};
     return std::filesystem::is_regular_file(model_dir / "model.onnx") &&

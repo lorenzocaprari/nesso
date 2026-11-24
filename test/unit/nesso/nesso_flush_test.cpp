@@ -37,18 +37,18 @@ class TempDir
     }
 
     TempDir(const TempDir &) = delete;
-    TempDir &operator=(const TempDir &) = delete;
+    auto operator=(const TempDir &) -> TempDir & = delete;
     TempDir(TempDir &&) = delete;
-    TempDir &operator=(TempDir &&) = delete;
+    auto operator=(TempDir &&) -> TempDir & = delete;
     ~TempDir() { std::filesystem::remove_all(path_); }
 
-    [[nodiscard]] const std::filesystem::path &Path() const { return path_; }
+    [[nodiscard]] auto Path() const -> const std::filesystem::path & { return path_; }
 
   private:
     std::filesystem::path path_;
 };
 
-std::string LetterSuffix(std::size_t index)
+auto LetterSuffix(std::size_t index) -> std::string
 {
     std::string suffix;
     do
@@ -75,29 +75,31 @@ class RecordingEmbedder final : public nesso::embed::Embedder
   public:
     explicit RecordingEmbedder(size_t sessions) : sessions_(sessions) {}
 
-    [[nodiscard]] size_t sessions() const noexcept override { return sessions_; }
+    [[nodiscard]] auto sessions() const noexcept -> size_t override { return sessions_; }
 
-    [[nodiscard]] std::expected<nesso::embed::EmbedderIdentity, nesso::embed::EmbedError> identity() const override
+    [[nodiscard]] auto identity() const
+        -> std::expected<nesso::embed::EmbedderIdentity, nesso::embed::EmbedError> override
     {
         return TestEmbedderIdentity();
     }
 
-    [[nodiscard]] std::expected<std::vector<float>, nesso::embed::EmbedError> embed(std::string_view) const override
+    [[nodiscard]] auto embed(std::string_view) const
+        -> std::expected<std::vector<float>, nesso::embed::EmbedError> override
     {
         return std::vector<float>{1.F, 0.F, 0.F, 0.F};
     }
 
-    [[nodiscard]] std::expected<std::vector<std::vector<float>>, nesso::embed::EmbedError>
-    EmbedBatch(std::span<const std::string> texts, ProgressCallback) const override
+    [[nodiscard]] auto EmbedBatch(std::span<const std::string> texts, ProgressCallback) const
+        -> std::expected<std::vector<std::vector<float>>, nesso::embed::EmbedError> override
     {
         batches_.push_back(texts.size());
         seen_.insert(seen_.end(), texts.begin(), texts.end());
         return std::vector<std::vector<float>>(texts.size(), std::vector<float>{1.F, 0.F, 0.F, 0.F});
     }
 
-    [[nodiscard]] const std::vector<size_t> &Batches() const { return batches_; }
+    [[nodiscard]] auto Batches() const -> const std::vector<size_t> & { return batches_; }
 
-    [[nodiscard]] const std::vector<std::string> &Seen() const { return seen_; }
+    [[nodiscard]] auto Seen() const -> const std::vector<std::string> & { return seen_; }
 
   private:
     size_t sessions_;
@@ -120,14 +122,16 @@ class FallibleEmbedder final : public nesso::embed::Embedder
   public:
     explicit FallibleEmbedder(BatchBehavior batch) : batch_(batch) {}
 
-    [[nodiscard]] size_t sessions() const noexcept override { return 1; }
+    [[nodiscard]] auto sessions() const noexcept -> size_t override { return 1; }
 
-    [[nodiscard]] std::expected<nesso::embed::EmbedderIdentity, nesso::embed::EmbedError> identity() const override
+    [[nodiscard]] auto identity() const
+        -> std::expected<nesso::embed::EmbedderIdentity, nesso::embed::EmbedError> override
     {
         return TestEmbedderIdentity();
     }
 
-    [[nodiscard]] std::expected<std::vector<float>, nesso::embed::EmbedError> embed(std::string_view) const override
+    [[nodiscard]] auto embed(std::string_view) const
+        -> std::expected<std::vector<float>, nesso::embed::EmbedError> override
     {
         if (batch_ == BatchBehavior::QueryThrow)
         {
@@ -140,8 +144,8 @@ class FallibleEmbedder final : public nesso::embed::Embedder
         return std::vector<float>{1.F, 0.F, 0.F, 0.F};
     }
 
-    [[nodiscard]] std::expected<std::vector<std::vector<float>>, nesso::embed::EmbedError>
-    EmbedBatch(std::span<const std::string> texts, ProgressCallback progress) const override
+    [[nodiscard]] auto EmbedBatch(std::span<const std::string> texts, ProgressCallback progress) const
+        -> std::expected<std::vector<std::vector<float>>, nesso::embed::EmbedError> override
     {
         if (progress)
         {
@@ -166,7 +170,7 @@ class FallibleEmbedder final : public nesso::embed::Embedder
     BatchBehavior batch_;
 };
 
-nesso::Nesso FallibleApp(BatchBehavior batch)
+auto FallibleApp(BatchBehavior batch) -> nesso::Nesso
 {
     return nesso::Nesso{nesso::Config{}, std::make_unique<FallibleEmbedder>(batch)};
 }
@@ -193,7 +197,7 @@ class CinGuard
     explicit CinGuard(std::istream &input) : previous_(std::cin.rdbuf(input.rdbuf())) { std::cin.clear(); }
 
     CinGuard(const CinGuard &) = delete;
-    CinGuard &operator=(const CinGuard &) = delete;
+    auto operator=(const CinGuard &) -> CinGuard & = delete;
 
     ~CinGuard()
     {
@@ -515,17 +519,17 @@ TEST_CASE("blank log lines and JSON values are not embedded or returned", "[ness
     auto embedder = std::make_unique<RecordingEmbedder>(1);
     const RecordingEmbedder *recorder = embedder.get();
     const nesso::Nesso app{nesso::Config{}, std::move(embedder)};
-    const auto check_matches = [&](const std::vector<nesso::TextMatch> &matches)
+    const auto check_matches = [&](const std::vector<nesso::TextMatch> &matches) -> void
     {
         REQUIRE(matches.size() == 2);
         const auto log_match =
-            std::ranges::find_if(matches, [&](const auto &match) { return match.source == log.string(); });
+            std::ranges::find_if(matches, [&](const auto &match) -> auto { return match.source == log.string(); });
         REQUIRE(log_match != matches.end());
         CHECK(log_match->line == 2);
         CHECK(log_match->text == "  keep log \t");
         CHECK_FALSE(log_match->array_element);
         const auto json_match =
-            std::ranges::find_if(matches, [&](const auto &match) { return match.source == json.string(); });
+            std::ranges::find_if(matches, [&](const auto &match) -> auto { return match.source == json.string(); });
         REQUIRE(json_match != matches.end());
         CHECK(json_match->line == 3);
         CHECK(json_match->text == "keep json");
@@ -680,7 +684,7 @@ void WriteBytes(const std::filesystem::path &path, std::string_view bytes)
     REQUIRE(output);
 }
 
-std::string Unhex(std::string_view hex)
+auto Unhex(std::string_view hex) -> std::string
 {
     std::string out;
     out.reserve(hex.size() / 2);

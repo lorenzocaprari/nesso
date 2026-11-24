@@ -31,19 +31,19 @@
 namespace
 {
 
-[[nodiscard]] bool AlwaysTrue() noexcept
+[[nodiscard]] auto AlwaysTrue() noexcept -> bool
 {
     const volatile int value = 1;
     return value != 0;
 }
 
-[[nodiscard]] bool AlwaysFalse() noexcept
+[[nodiscard]] auto AlwaysFalse() noexcept -> bool
 {
     const volatile int value = 0;
     return value != 0;
 }
 
-[[nodiscard]] bool Aborted(int status) noexcept
+[[nodiscard]] auto Aborted(int status) noexcept -> bool
 {
     if (WIFSIGNALED(status) != 0 && WTERMSIG(status) == SIGABRT)
     {
@@ -58,7 +58,7 @@ struct ChildReport
     std::string stderr_text;
 };
 
-[[nodiscard]] ChildReport RunFailureChild()
+[[nodiscard]] auto RunFailureChild() -> ChildReport
 {
     std::vector<std::string> env_storage;
     for (char **entry = environ; *entry != nullptr; ++entry)

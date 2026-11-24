@@ -26,12 +26,12 @@
 namespace nesso::cli
 {
 
-static std::string CountPhrase(size_t count, std::string_view singular, std::string_view plural)
+static auto CountPhrase(size_t count, std::string_view singular, std::string_view plural) -> std::string
 {
     return std::format("{} {}", count, count == 1 ? singular : plural);
 }
 
-static std::string JoinAnd(const std::vector<std::string> &parts)
+static auto JoinAnd(const std::vector<std::string> &parts) -> std::string
 {
     if (parts.size() == 1)
     {
@@ -125,7 +125,7 @@ static void RenderPolicyWarning(bool mismatch)
     }
 }
 
-static LineReport MakeLineReport(const TextResults &results)
+static auto MakeLineReport(const TextResults &results) -> LineReport
 {
     return {.empty_lines = results.empty_lines,
             .malformed_lines = results.malformed_lines,
@@ -135,7 +135,7 @@ static LineReport MakeLineReport(const TextResults &results)
             .bundle_skips = results.bundle_skips};
 }
 
-static LineReport MakeLineReport(const IndexSummary &summary)
+static auto MakeLineReport(const IndexSummary &summary) -> LineReport
 {
     return {.empty_lines = summary.empty_lines,
             .malformed_lines = summary.malformed_lines,
@@ -145,7 +145,7 @@ static LineReport MakeLineReport(const IndexSummary &summary)
             .bundle_skips = summary.bundle_skips};
 }
 
-static LineReport MakeLineReport(const OverviewResults &results)
+static auto MakeLineReport(const OverviewResults &results) -> LineReport
 {
     return {.empty_lines = results.empty_lines,
             .malformed_lines = results.malformed_lines,
@@ -155,7 +155,7 @@ static LineReport MakeLineReport(const OverviewResults &results)
             .bundle_skips = results.bundle_skips};
 }
 
-static LineReport MakeLineReport(const Error &error)
+static auto MakeLineReport(const Error &error) -> LineReport
 {
     return {.empty_lines = error.empty_lines,
             .malformed_lines = error.malformed_lines,
@@ -165,7 +165,7 @@ static LineReport MakeLineReport(const Error &error)
             .bundle_skips = error.bundle_skips};
 }
 
-static int RenderText(const TextResults &results)
+static auto RenderText(const TextResults &results) -> int
 {
     for (const TextMatch &match : results.matches)
     {
@@ -174,7 +174,7 @@ static int RenderText(const TextResults &results)
     return 0;
 }
 
-static int RenderJson(const TextResults &results)
+static auto RenderJson(const TextResults &results) -> int
 {
     for (size_t index = 0; index < results.matches.size(); ++index)
     {
@@ -183,7 +183,7 @@ static int RenderJson(const TextResults &results)
     return 0;
 }
 
-static int Render(const TextResults &results, bool json)
+static auto Render(const TextResults &results, bool json) -> int
 {
     RenderLineCounts(MakeLineReport(results));
     RenderPolicyWarning(results.policy_mismatch);
@@ -216,7 +216,7 @@ static int Render(const TextResults &results, bool json)
     return 0;
 }
 
-static int Render(const OverviewResults &results, bool json)
+static auto Render(const OverviewResults &results, bool json) -> int
 {
     RenderLineCounts(MakeLineReport(results));
     std::println(std::cerr, "Listed {} of {} in {}.", results.rows.size(),
@@ -242,14 +242,14 @@ static int Render(const OverviewResults &results, bool json)
     return 0;
 }
 
-static int Render(const IndexSummary &summary, const IndexRequest &request)
+static auto Render(const IndexSummary &summary, const IndexRequest &request) -> int
 {
     RenderLineCounts(MakeLineReport(summary));
     std::println(std::cerr, "Indexed {} chunks into '{}'.", summary.chunks, request.output.string());
     return 0;
 }
 
-static int RenderError(const Error &error, int status)
+static auto RenderError(const Error &error, int status) -> int
 {
     const std::string text = FormatErrorMessage(error);
     if (!text.empty())
@@ -262,7 +262,7 @@ static int RenderError(const Error &error, int status)
     return status;
 }
 
-static int FailureStatus(const Error &error)
+static auto FailureStatus(const Error &error) -> int
 {
     if (error.kind == ErrorKind::EmptyInput || error.kind == ErrorKind::NoMatches)
     {
@@ -272,7 +272,7 @@ static int FailureStatus(const Error &error)
 }
 
 template <typename Result, typename... Context>
-static int Report(const std::expected<Result, Error> &outcome, int failure_status, const Context &...context)
+static auto Report(const std::expected<Result, Error> &outcome, int failure_status, const Context &...context) -> int
 {
     return outcome ? Render(*outcome, context...) : RenderError(outcome.error(), failure_status);
 }
@@ -306,7 +306,7 @@ class ProvisionalJson final : public GrepObserver
 };
 } // namespace
 
-int Execute(const Nesso &nesso, const GrepCommand &command)
+auto Execute(const Nesso &nesso, const GrepCommand &command) -> int
 {
     GrepRequest request = command.request;
     ProvisionalJson json;
@@ -329,19 +329,19 @@ int Execute(const Nesso &nesso, const GrepCommand &command)
     return outcome ? Render(*outcome, request.json) : RenderError(outcome.error(), FailureStatus(outcome.error()));
 }
 
-int Execute(const Nesso &nesso, const IndexRequest &request)
+auto Execute(const Nesso &nesso, const IndexRequest &request) -> int
 {
     const auto outcome = nesso.Index(request);
     return Report(outcome, outcome ? 0 : FailureStatus(outcome.error()), request);
 }
 
-int Execute(const Nesso &nesso, const SearchRequest &request)
+auto Execute(const Nesso &nesso, const SearchRequest &request) -> int
 {
     const auto outcome = nesso.Search(request);
     return outcome ? Render(*outcome, request.json) : RenderError(outcome.error(), FailureStatus(outcome.error()));
 }
 
-int Execute(const Nesso & /*nesso*/, const OverviewCommand &command)
+auto Execute(const Nesso & /*nesso*/, const OverviewCommand &command) -> int
 {
     const auto outcome = Overview(command.request);
     return outcome ? Render(*outcome, command.json) : RenderError(outcome.error(), FailureStatus(outcome.error()));

@@ -24,7 +24,7 @@
 #   -misc-use-anonymous-namespace                 (prefer static; see misc-use-internal-linkage)
 # Enabled (not disabled): misc-include-cleaner
 #   android-cloexec-*                             (POSIX O_CLOEXEC on open/pipe/fopen/socket)
-#   -modernize-use-trailing-return-type           (classical return types)
+#   modernize-use-trailing-return-type            (via modernize-*; classical returns are trailing)
 #   -readability-magic-numbers                    (CLI/embed/scoring constants)
 # clang-tidy 23 removed the hicpp module. The five names this file used to
 # enable are gone; each replacement stays enabled through an existing glob,
@@ -115,7 +115,6 @@ Checks: >
   -llvm-qualified-auto,
   -llvm-use-ranges,
   -misc-use-anonymous-namespace,
-  -modernize-use-trailing-return-type,
   -readability-magic-numbers,
   -readability-trailing-comma,
   -clang-analyzer-osx*,

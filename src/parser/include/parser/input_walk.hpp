@@ -24,8 +24,8 @@ struct InputWalkError
 /// entered. A file symlink is kept and later read through the link. Archive
 /// files stay as one path; members are read from that file. Anything else
 /// fails.
-[[nodiscard]] std::expected<std::vector<std::filesystem::path>, InputWalkError>
-ExpandInputs(std::span<const std::filesystem::path> inputs);
+[[nodiscard]] auto ExpandInputs(std::span<const std::filesystem::path> inputs)
+    -> std::expected<std::vector<std::filesystem::path>, InputWalkError>;
 
 } // namespace nesso::parser
 

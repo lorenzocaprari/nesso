@@ -23,7 +23,7 @@ EventTypeTally::EventTypeTally(std::size_t max_types, KeyFunction key)
 {
 }
 
-bool EventTypeTally::Add(const EventLine &line)
+auto EventTypeTally::Add(const EventLine &line) -> bool
 {
     std::string key = key_(line.text);
     const std::uint64_t ordinal = lines_ + 1;
@@ -52,11 +52,11 @@ bool EventTypeTally::Add(const EventLine &line)
     return true;
 }
 
-std::span<const EventTypeStats> EventTypeTally::Types() const noexcept { return types_; }
+auto EventTypeTally::Types() const noexcept -> std::span<const EventTypeStats> { return types_; }
 
-std::uint64_t EventTypeTally::Lines() const noexcept { return lines_; }
+auto EventTypeTally::Lines() const noexcept -> std::uint64_t { return lines_; }
 
-static bool RareBefore(const EventTypeStats &left, const EventTypeStats &right) noexcept
+static auto RareBefore(const EventTypeStats &left, const EventTypeStats &right) noexcept -> bool
 {
     if (left.count != right.count)
     {
@@ -65,7 +65,7 @@ static bool RareBefore(const EventTypeStats &left, const EventTypeStats &right) 
     return left.first_seen > right.first_seen;
 }
 
-static bool NewBefore(const EventTypeStats &left, const EventTypeStats &right) noexcept
+static auto NewBefore(const EventTypeStats &left, const EventTypeStats &right) noexcept -> bool
 {
     if (left.first_seen != right.first_seen)
     {
@@ -74,13 +74,15 @@ static bool NewBefore(const EventTypeStats &left, const EventTypeStats &right) n
     return left.count < right.count;
 }
 
-std::vector<std::size_t> RankEventTypes(std::span<const EventTypeStats> stats, EventOrder order, std::size_t top_k)
+auto RankEventTypes(std::span<const EventTypeStats> stats, EventOrder order, std::size_t top_k)
+    -> std::vector<std::size_t>
 {
     std::vector<std::size_t> indexes(stats.size());
     std::ranges::iota(indexes, std::size_t{0});
     const auto before = order == EventOrder::Rare ? &RareBefore : &NewBefore;
     const auto keep = static_cast<std::ptrdiff_t>(std::min(top_k, indexes.size()));
-    std::ranges::partial_sort(indexes, indexes.begin() + keep, [&stats, before](std::size_t left, std::size_t right)
+    std::ranges::partial_sort(indexes, indexes.begin() + keep,
+                              [&stats, before](std::size_t left, std::size_t right) -> bool
                               { return before(stats[left], stats[right]); });
     indexes.resize(static_cast<std::size_t>(keep));
     return indexes;

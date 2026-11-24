@@ -24,7 +24,7 @@ static constexpr int SCHEMA_VERSION = 2;
 // nlohmann stores a JSON number as double. Promoting the match float first
 // prints the widened value (0.1 becomes 0.10000000149011612). to_chars on the
 // float is the shortest round-trip and does not read the locale.
-static std::string FormatScore(float score)
+static auto FormatScore(float score) -> std::string
 {
     std::array<char, 64> buffer{};
     const std::to_chars_result result =
@@ -32,7 +32,7 @@ static std::string FormatScore(float score)
     return {buffer.data(), static_cast<std::size_t>(result.ptr - buffer.data())};
 }
 
-static std::string DumpString(std::string_view text)
+static auto DumpString(std::string_view text) -> std::string
 {
     return nlohmann::json(std::string{text}).dump(-1, ' ', false, nlohmann::json::error_handler_t::replace);
 }
@@ -47,7 +47,7 @@ static void AppendOptionalFloat(std::string &out, std::optional<float> value)
     out.append(FormatScore(*value));
 }
 
-std::string RenderMatchJson(const TextMatch &match, std::size_t rank)
+auto RenderMatchJson(const TextMatch &match, std::size_t rank) -> std::string
 {
     std::string out;
     out.reserve(match.source.size() + match.text.size() + 128);
@@ -78,7 +78,7 @@ std::string RenderMatchJson(const TextMatch &match, std::size_t rank)
 }
 
 // NOLINTNEXTLINE(bugprone-easily-swappable-parameters): rank and refresh are both counts from 1.
-std::string RenderProvisionalMatchJson(const TextMatch &match, std::size_t rank, std::size_t refresh)
+auto RenderProvisionalMatchJson(const TextMatch &match, std::size_t rank, std::size_t refresh) -> std::string
 {
     std::string out = RenderMatchJson(match, rank);
     out.pop_back();
@@ -88,7 +88,7 @@ std::string RenderProvisionalMatchJson(const TextMatch &match, std::size_t rank,
     return out;
 }
 
-std::string RenderEventTypeJson(const OverviewResults &results, const EventTypeRow &row, std::size_t rank)
+auto RenderEventTypeJson(const OverviewResults &results, const EventTypeRow &row, std::size_t rank) -> std::string
 {
     std::string out;
     out.reserve(row.source.size() + row.text.size() + row.key.size() + 192);

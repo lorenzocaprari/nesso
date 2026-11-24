@@ -30,8 +30,8 @@ using detail::ParseFailure;
 using detail::RecordBundleSkips;
 using detail::Scan;
 
-static Error TooManyEventTypes(const std::filesystem::path &path, LineCounts counts,
-                               std::vector<BundleSkipSummary> bundle_skips, size_t max_types)
+static auto TooManyEventTypes(const std::filesystem::path &path, LineCounts counts,
+                              std::vector<BundleSkipSummary> bundle_skips, size_t max_types) -> Error
 {
     Error error =
         MakeError(ErrorKind::Parse, ErrorCause::TooManyEventTypes, path, std::move(counts), std::move(bundle_skips));
@@ -39,8 +39,8 @@ static Error TooManyEventTypes(const std::filesystem::path &path, LineCounts cou
     return error;
 }
 
-static OverviewResults MakeResults(const nesso::core::EventTypeTally &tally, const OverviewRequest &request,
-                                   LineCounts counts, std::vector<BundleSkipSummary> bundle_skips)
+static auto MakeResults(const nesso::core::EventTypeTally &tally, const OverviewRequest &request, LineCounts counts,
+                        std::vector<BundleSkipSummary> bundle_skips) -> OverviewResults
 {
     const auto types = tally.Types();
     OverviewResults results{.rows = {},
@@ -71,7 +71,7 @@ static OverviewResults MakeResults(const nesso::core::EventTypeTally &tally, con
     return results;
 }
 
-std::expected<OverviewResults, Error> Overview(const OverviewRequest &request)
+auto Overview(const OverviewRequest &request) -> std::expected<OverviewResults, Error>
 {
     auto expanded = detail::ExpandRequestFiles(request.files);
     if (!expanded)
@@ -100,7 +100,7 @@ std::expected<OverviewResults, Error> Overview(const OverviewRequest &request)
         const nesso::parser::ParseStats before = stats;
         const auto streamed = nesso::parser::Chunker::ForEach(
             path, MAX_LINE_LENGTH, &stats, request.json_field,
-            [&](const nesso::parser::ParsedChunk &chunk)
+            [&](const nesso::parser::ParsedChunk &chunk) -> void
             {
                 if (full)
                 {

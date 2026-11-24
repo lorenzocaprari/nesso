@@ -31,7 +31,7 @@ inline constexpr size_t INT8_NARROW_BUDGET = 4;
 /// GCC 15 emits two ComputeImpl copies in ORT 1.18.1 and only the intra-op 1
 /// copy fuses multiply-add, so intra-op 1 gives different bytes than 2 or more.
 /// aarch64 stays at 2 or more. Other architectures keep 1.
-[[nodiscard]] constexpr int IntraOpThreadFloor() noexcept
+[[nodiscard]] constexpr auto IntraOpThreadFloor() noexcept -> int
 {
 #ifdef __aarch64__
     return 2;
@@ -70,18 +70,18 @@ struct SessionPolicy
 /// `I = min(4, N/2)` and `S = max(1, N/I)` and shrinks the arena. aarch64 keeps
 /// intra-op threads at least IntraOpThreadFloor(). fp32 keeps one session and
 /// uses the budget as its intra-op thread count, with the same floor.
-[[nodiscard]] SessionPolicy MakeSessionPolicy(bool quantized, size_t requested_threads,
-                                              const MachineResources &machine);
+[[nodiscard]] auto MakeSessionPolicy(bool quantized, size_t requested_threads, const MachineResources &machine)
+    -> SessionPolicy;
 
-[[nodiscard]] std::string SessionPolicyText(size_t requested_threads, const MachineResources &machine);
+[[nodiscard]] auto SessionPolicyText(size_t requested_threads, const MachineResources &machine) -> std::string;
 
 /// Empty unless an explicit int8 budget asks for more sessions than the memory
 /// cap.
-[[nodiscard]] std::string OverrideWarning(const SessionPolicy &policy, size_t requested_threads);
+[[nodiscard]] auto OverrideWarning(const SessionPolicy &policy, size_t requested_threads) -> std::string;
 
 /// MemAvailable from /proc/meminfo, in bytes. 0 when the key is missing or
 /// unreadable.
-[[nodiscard]] std::uintmax_t MemAvailableBytes(std::istream &meminfo);
+[[nodiscard]] auto MemAvailableBytes(std::istream &meminfo) -> std::uintmax_t;
 
 struct MachineFsRoots
 {
@@ -90,7 +90,7 @@ struct MachineFsRoots
     std::filesystem::path cgroup_root{"/sys/fs/cgroup"};
 };
 
-[[nodiscard]] MachineResources ReadMachine(const MachineFsRoots &roots = {});
+[[nodiscard]] auto ReadMachine(const MachineFsRoots &roots = {}) -> MachineResources;
 
 } // namespace nesso::embed
 

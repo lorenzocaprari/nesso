@@ -42,19 +42,19 @@ class TempDir
     }
 
     TempDir(const TempDir &) = delete;
-    TempDir &operator=(const TempDir &) = delete;
+    auto operator=(const TempDir &) -> TempDir & = delete;
     TempDir(TempDir &&) = delete;
-    TempDir &operator=(TempDir &&) = delete;
+    auto operator=(TempDir &&) -> TempDir & = delete;
     ~TempDir() { std::filesystem::remove_all(path_); }
 
-    [[nodiscard]] const std::filesystem::path &Path() const { return path_; }
+    [[nodiscard]] auto Path() const -> const std::filesystem::path & { return path_; }
 
   private:
     std::filesystem::path path_;
 };
 
 // Letters only, so the masked dedup key keeps every line distinct.
-std::string LetterSuffix(std::size_t index)
+auto LetterSuffix(std::size_t index) -> std::string
 {
     std::string suffix;
     do
@@ -65,7 +65,7 @@ std::string LetterSuffix(std::size_t index)
     return suffix;
 }
 
-std::string LineText(std::size_t index) { return "disk event " + LetterSuffix(index); }
+auto LineText(std::size_t index) -> std::string { return "disk event " + LetterSuffix(index); }
 
 void WriteScoredLines(const std::filesystem::path &path, std::size_t count)
 {
@@ -88,20 +88,22 @@ class TableEmbedder final : public nesso::embed::Embedder
     {
     }
 
-    [[nodiscard]] size_t sessions() const noexcept override { return 1; }
+    [[nodiscard]] auto sessions() const noexcept -> size_t override { return 1; }
 
-    [[nodiscard]] std::expected<nesso::embed::EmbedderIdentity, nesso::embed::EmbedError> identity() const override
+    [[nodiscard]] auto identity() const
+        -> std::expected<nesso::embed::EmbedderIdentity, nesso::embed::EmbedError> override
     {
         return TestEmbedderIdentity();
     }
 
-    [[nodiscard]] std::expected<std::vector<float>, nesso::embed::EmbedError> embed(std::string_view) const override
+    [[nodiscard]] auto embed(std::string_view) const
+        -> std::expected<std::vector<float>, nesso::embed::EmbedError> override
     {
         return std::vector<float>{1.F, 0.F, 0.F, 0.F};
     }
 
-    [[nodiscard]] std::expected<std::vector<std::vector<float>>, nesso::embed::EmbedError>
-    EmbedBatch(std::span<const std::string> texts, ProgressCallback progress) const override
+    [[nodiscard]] auto EmbedBatch(std::span<const std::string> texts, ProgressCallback progress) const
+        -> std::expected<std::vector<std::vector<float>>, nesso::embed::EmbedError> override
     {
         ++batches_;
         if (batches_ == fail_on_batch_)
@@ -139,10 +141,10 @@ struct Row
     std::optional<std::uint32_t> dense;
     std::optional<std::uint32_t> lexical;
 
-    bool operator==(const Row &) const = default;
+    auto operator==(const Row &) const -> bool = default;
 };
 
-std::optional<std::uint32_t> Bits(std::optional<float> value)
+auto Bits(std::optional<float> value) -> std::optional<std::uint32_t>
 {
     if (!value)
     {
@@ -151,7 +153,7 @@ std::optional<std::uint32_t> Bits(std::optional<float> value)
     return std::bit_cast<std::uint32_t>(*value);
 }
 
-std::vector<Row> Freeze(const nesso::TextResults &results)
+auto Freeze(const nesso::TextResults &results) -> std::vector<Row>
 {
     std::vector<Row> rows;
     rows.reserve(results.matches.size());
@@ -169,7 +171,7 @@ std::vector<Row> Freeze(const nesso::TextResults &results)
     return rows;
 }
 
-bool SameResults(const nesso::TextResults &left, const nesso::TextResults &right)
+auto SameResults(const nesso::TextResults &left, const nesso::TextResults &right) -> bool
 {
     return Freeze(left) == Freeze(right) && left.skipped_lines == right.skipped_lines &&
            left.empty_lines == right.empty_lines && left.multiple_sources == right.multiple_sources &&
@@ -200,13 +202,13 @@ class RecordingObserver final : public nesso::GrepObserver
 constexpr std::size_t WINDOW = nesso::embed::BATCH_WINDOW;
 constexpr std::size_t LINES = (2 * WINDOW) + 52;
 
-nesso::Nesso App(std::unordered_map<std::string, float> scores, std::size_t fail_on_batch = 0)
+auto App(std::unordered_map<std::string, float> scores, std::size_t fail_on_batch = 0) -> nesso::Nesso
 {
     return nesso::Nesso{nesso::Config{}, std::make_unique<TableEmbedder>(std::move(scores), fail_on_batch)};
 }
 
 // Every flush finds a better line, so the top-k changes at each one.
-std::unordered_map<std::string, float> RisingScores()
+auto RisingScores() -> std::unordered_map<std::string, float>
 {
     std::unordered_map<std::string, float> scores;
     for (std::size_t index = 0; index < LINES; ++index)
@@ -217,7 +219,7 @@ std::unordered_map<std::string, float> RisingScores()
 }
 
 // The best lines are all in the first window; later lines score 0.
-std::unordered_map<std::string, float> EarlyBestScores()
+auto EarlyBestScores() -> std::unordered_map<std::string, float>
 {
     std::unordered_map<std::string, float> scores;
     for (std::size_t index = 0; index < 10; ++index)
@@ -357,9 +359,9 @@ class CinGuard
     explicit CinGuard(std::istream &input) : previous_(std::cin.rdbuf(input.rdbuf())) { std::cin.clear(); }
 
     CinGuard(const CinGuard &) = delete;
-    CinGuard &operator=(const CinGuard &) = delete;
+    auto operator=(const CinGuard &) -> CinGuard & = delete;
     CinGuard(CinGuard &&) = delete;
-    CinGuard &operator=(CinGuard &&) = delete;
+    auto operator=(CinGuard &&) -> CinGuard & = delete;
 
     ~CinGuard()
     {
@@ -371,7 +373,7 @@ class CinGuard
     std::streambuf *previous_;
 };
 
-std::uint64_t Fnv(std::string_view text, std::uint64_t hash = 1469598103934665603ULL)
+auto Fnv(std::string_view text, std::uint64_t hash = 1469598103934665603ULL) -> std::uint64_t
 {
     for (const char byte : text)
     {
@@ -384,7 +386,7 @@ std::uint64_t Fnv(std::string_view text, std::uint64_t hash = 146959810393466560
 // The score of a text depends on the other texts of its batch, the way an int8
 // vector depends on its padded run. A window with other members or another
 // member order gives other scores.
-float WindowScore(std::string_view text, std::span<const std::string> batch)
+auto WindowScore(std::string_view text, std::span<const std::string> batch) -> float
 {
     std::uint64_t tag = 0;
     for (std::size_t index = 0; index < batch.size(); ++index)
@@ -398,20 +400,22 @@ float WindowScore(std::string_view text, std::span<const std::string> batch)
 class WindowEmbedder final : public nesso::embed::Embedder
 {
   public:
-    [[nodiscard]] size_t sessions() const noexcept override { return 1; }
+    [[nodiscard]] auto sessions() const noexcept -> size_t override { return 1; }
 
-    [[nodiscard]] std::expected<nesso::embed::EmbedderIdentity, nesso::embed::EmbedError> identity() const override
+    [[nodiscard]] auto identity() const
+        -> std::expected<nesso::embed::EmbedderIdentity, nesso::embed::EmbedError> override
     {
         return TestEmbedderIdentity();
     }
 
-    [[nodiscard]] std::expected<std::vector<float>, nesso::embed::EmbedError> embed(std::string_view) const override
+    [[nodiscard]] auto embed(std::string_view) const
+        -> std::expected<std::vector<float>, nesso::embed::EmbedError> override
     {
         return std::vector<float>{1.F, 0.F, 0.F, 0.F};
     }
 
-    [[nodiscard]] std::expected<std::vector<std::vector<float>>, nesso::embed::EmbedError>
-    EmbedBatch(std::span<const std::string> texts, ProgressCallback progress) const override
+    [[nodiscard]] auto EmbedBatch(std::span<const std::string> texts, ProgressCallback progress) const
+        -> std::expected<std::vector<std::vector<float>>, nesso::embed::EmbedError> override
     {
         batches_->emplace_back(texts.begin(), texts.end());
         std::vector<std::vector<float>> rows;
@@ -436,7 +440,7 @@ class WindowEmbedder final : public nesso::embed::Embedder
 // Three windows. Window 0 ends with a line repeated past -k, window 1 holds
 // lines that share one masked key with different raw text, and the needle is
 // the last line of window 2.
-std::vector<std::string> WindowedLines()
+auto WindowedLines() -> std::vector<std::string>
 {
     std::vector<std::string> lines;
     for (std::size_t index = 0; index < WINDOW; ++index)
@@ -459,7 +463,7 @@ std::vector<std::string> WindowedLines()
     return lines;
 }
 
-std::string Joined(const std::vector<std::string> &lines)
+auto Joined(const std::vector<std::string> &lines) -> std::string
 {
     std::string text;
     for (const std::string &line : lines)
@@ -487,7 +491,7 @@ struct Reference
     std::vector<float> scores;
 };
 
-Reference InputOrderReference(const std::vector<std::string> &lines)
+auto InputOrderReference(const std::vector<std::string> &lines) -> Reference
 {
     Reference reference;
     nesso::core::DistinctIndex distinct;
@@ -517,8 +521,8 @@ Reference InputOrderReference(const std::vector<std::string> &lines)
 
 // Dense top-k over input lines: score descending, then line; --group keeps the
 // first line of each id.
-std::vector<Row> DenseReference(const std::vector<std::string> &lines, const Reference &reference,
-                                const std::string &source, std::size_t top_k, bool group)
+auto DenseReference(const std::vector<std::string> &lines, const Reference &reference, const std::string &source,
+                    std::size_t top_k, bool group) -> std::vector<Row>
 {
     std::vector<std::uint32_t> occurrences(reference.scores.size(), 0);
     for (const std::uint32_t entry_id : reference.ids)
@@ -538,7 +542,7 @@ std::vector<Row> DenseReference(const std::vector<std::string> &lines, const Ref
         order.push_back(line);
     }
     std::ranges::stable_sort(
-        order, [&reference](std::size_t left, std::size_t right)
+        order, [&reference](std::size_t left, std::size_t right) -> bool
         { return reference.scores[reference.ids[left]] > reference.scores[reference.ids[right]]; });
     order.resize(std::min(order.size(), top_k));
     std::vector<Row> rows;
@@ -563,7 +567,7 @@ struct WindowRun
     std::vector<std::vector<std::string>> batches;
 };
 
-WindowRun RunWindowed(const nesso::GrepRequest &request, const std::string &stdin_text)
+auto RunWindowed(const nesso::GrepRequest &request, const std::string &stdin_text) -> WindowRun
 {
     WindowRun run{.result = std::unexpected(nesso::Error{}), .batches = {}};
     const nesso::Nesso app{nesso::Config{}, std::make_unique<WindowEmbedder>(run.batches)};

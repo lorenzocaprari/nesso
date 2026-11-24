@@ -53,8 +53,8 @@ using detail::SameSource;
 
 static void AddSourceWarning(std::vector<StaleSource> &warnings, StaleSource warning)
 {
-    const auto existing =
-        std::ranges::find_if(warnings, [&warning](const StaleSource &item) { return item.path == warning.path; });
+    const auto existing = std::ranges::find_if(warnings, [&warning](const StaleSource &item) -> bool
+                                               { return item.path == warning.path; });
     if (existing == warnings.end())
     {
         warnings.push_back(std::move(warning));
@@ -65,7 +65,7 @@ static void AddSourceWarning(std::vector<StaleSource> &warnings, StaleSource war
     }
 }
 
-static std::vector<StaleSource> StaleSources(std::span<const nesso::core::SourceInfo> sources)
+static auto StaleSources(std::span<const nesso::core::SourceInfo> sources) -> std::vector<StaleSource>
 {
     std::vector<StaleSource> stale;
     for (const nesso::core::SourceInfo &source : sources)
@@ -103,8 +103,8 @@ static std::vector<StaleSource> StaleSources(std::span<const nesso::core::Source
     return stale;
 }
 
-static std::expected<void, Error> RequireLexicalReady(nesso::core::LexicalStatus status,
-                                                      std::string_view corpus_terms_version, SearchMode requested)
+static auto RequireLexicalReady(nesso::core::LexicalStatus status, std::string_view corpus_terms_version,
+                                SearchMode requested) -> std::expected<void, Error>
 {
     if (requested == SearchMode::Dense)
     {
@@ -128,8 +128,8 @@ static std::expected<void, Error> RequireLexicalReady(nesso::core::LexicalStatus
     return std::unexpected(std::move(error));
 }
 
-static nesso::core::Bm25Result Bm25ScoresFromCorpus(const nesso::core::MappedCorpus &corpus,
-                                                    std::span<const std::string_view> query)
+static auto Bm25ScoresFromCorpus(const nesso::core::MappedCorpus &corpus, std::span<const std::string_view> query)
+    -> nesso::core::Bm25Result
 {
     const std::span<const nesso::core::LexicalLinePostings> rows = corpus.LexicalPostings();
     std::vector<nesso::core::Bm25LinePostings> lines;
@@ -141,7 +141,7 @@ static nesso::core::Bm25Result Bm25ScoresFromCorpus(const nesso::core::MappedCor
     return nesso::core::ScoresAndCoverageFromPostings(corpus.LexicalDictionary(), lines, query);
 }
 
-static size_t ScoringThreads(const Config &config)
+static auto ScoringThreads(const Config &config) -> size_t
 {
     if (config.threads != 0)
     {
@@ -208,13 +208,13 @@ struct LineRank
 } // namespace
 
 // RankTop's callback is `void *`. These four only read through it.
-static float LineScore(void *raw, size_t index) // NOLINT(misc-const-correctness)
+static auto LineScore(void *raw, size_t index) -> float // NOLINT(misc-const-correctness)
 {
     const auto *view = static_cast<const LineRank *>(raw);
     return (*view->scores)[view->lines[index].distinct_id];
 }
 
-static bool LineKeep(void *raw, size_t index) // NOLINT(misc-const-correctness)
+static auto LineKeep(void *raw, size_t index) -> bool // NOLINT(misc-const-correctness)
 {
     const auto *view = static_cast<const LineRank *>(raw);
     return view->lines[index].distinct_id != nesso::core::NO_DISTINCT;
@@ -229,13 +229,13 @@ struct FusedLineRank
 };
 } // namespace
 
-static float FusedLineScore(void *raw, size_t index) // NOLINT(misc-const-correctness)
+static auto FusedLineScore(void *raw, size_t index) -> float // NOLINT(misc-const-correctness)
 {
     const auto *view = static_cast<const FusedLineRank *>(raw);
     return (*view->scores)[index];
 }
 
-static bool FusedLineKeep(void *raw, size_t index) // NOLINT(misc-const-correctness)
+static auto FusedLineKeep(void *raw, size_t index) -> bool // NOLINT(misc-const-correctness)
 {
     const auto *view = static_cast<const FusedLineRank *>(raw);
     return (*view->keep)[index] != 0;
@@ -254,8 +254,8 @@ struct RankedLine
 };
 } // namespace
 
-static std::vector<RankedLine> RankDenseGroups(const nesso::core::MappedCorpus &corpus,
-                                               const std::vector<float> &distinct_scores, size_t top_k)
+static auto RankDenseGroups(const nesso::core::MappedCorpus &corpus, const std::vector<float> &distinct_scores,
+                            size_t top_k) -> std::vector<RankedLine>
 {
     const std::size_t distinct = corpus.Texts().size();
     struct Group
@@ -276,7 +276,7 @@ static std::vector<RankedLine> RankDenseGroups(const nesso::core::MappedCorpus &
         seen[line.distinct_id] = 1;
         groups.push_back(Group{.ordinal = ordinal, .score = distinct_scores[line.distinct_id]});
     }
-    std::ranges::sort(groups, [](const Group &left, const Group &right)
+    std::ranges::sort(groups, [](const Group &left, const Group &right) -> bool
                       { return BetterHit(left.score, left.ordinal, right.score, right.ordinal); });
     if (groups.size() > top_k)
     {
@@ -291,9 +291,8 @@ static std::vector<RankedLine> RankDenseGroups(const nesso::core::MappedCorpus &
     return ranked;
 }
 
-static std::vector<RankedLine> RankDenseLines(const nesso::core::MappedCorpus &corpus,
-                                              const std::vector<float> &distinct_scores, size_t top_k, size_t threads,
-                                              bool group)
+static auto RankDenseLines(const nesso::core::MappedCorpus &corpus, const std::vector<float> &distinct_scores,
+                           size_t top_k, size_t threads, bool group) -> std::vector<RankedLine>
 {
     if (group)
     {
@@ -327,9 +326,8 @@ struct HybridScoreInputs
 };
 } // namespace
 
-static HybridScoreInputs CollectHybridScores(const nesso::core::MappedCorpus &corpus,
-                                             const std::vector<float> &distinct_scores,
-                                             const nesso::core::Bm25Result &bm25)
+static auto CollectHybridScores(const nesso::core::MappedCorpus &corpus, const std::vector<float> &distinct_scores,
+                                const nesso::core::Bm25Result &bm25) -> HybridScoreInputs
 {
     std::vector<double> dense_values;
     std::vector<double> lexical_values;
@@ -355,10 +353,9 @@ static HybridScoreInputs CollectHybridScores(const nesso::core::MappedCorpus &co
     return inputs;
 }
 
-static std::vector<RankedLine> RankHybridGrouped(const nesso::core::MappedCorpus &corpus,
-                                                 const std::vector<float> &distinct_scores,
-                                                 const std::vector<double> &bm25_scores,
-                                                 const HybridScoreInputs &inputs, size_t top_k)
+static auto RankHybridGrouped(const nesso::core::MappedCorpus &corpus, const std::vector<float> &distinct_scores,
+                              const std::vector<double> &bm25_scores, const HybridScoreInputs &inputs, size_t top_k)
+    -> std::vector<RankedLine>
 {
     const std::size_t distinct = corpus.Texts().size();
     std::vector<uint64_t> first(distinct, 0);
@@ -406,7 +403,7 @@ static std::vector<RankedLine> RankHybridGrouped(const nesso::core::MappedCorpus
                                .dense = distinct_scores[distinct_id],
                                .lexical = best_lexical[distinct_id]});
     }
-    std::ranges::sort(groups, [](const Group &left, const Group &right)
+    std::ranges::sort(groups, [](const Group &left, const Group &right) -> bool
                       { return BetterHit(left.score, left.ordinal, right.score, right.ordinal); });
     if (groups.size() > top_k)
     {
@@ -426,10 +423,9 @@ static std::vector<RankedLine> RankHybridGrouped(const nesso::core::MappedCorpus
     return ranked;
 }
 
-static std::vector<RankedLine> RankHybridUngrouped(const nesso::core::MappedCorpus &corpus,
-                                                   const std::vector<float> &distinct_scores,
-                                                   const std::vector<double> &bm25_scores,
-                                                   const HybridScoreInputs &inputs, size_t top_k, size_t threads)
+static auto RankHybridUngrouped(const nesso::core::MappedCorpus &corpus, const std::vector<float> &distinct_scores,
+                                const std::vector<double> &bm25_scores, const HybridScoreInputs &inputs, size_t top_k,
+                                size_t threads) -> std::vector<RankedLine>
 {
     std::vector<float> line_scores(corpus.Lines().size(), 0.0F);
     std::vector<char> keep(corpus.Lines().size(), 0);
@@ -461,10 +457,9 @@ static std::vector<RankedLine> RankHybridUngrouped(const nesso::core::MappedCorp
     return ranked;
 }
 
-static std::vector<RankedLine> RankHybridLines(const nesso::core::MappedCorpus &corpus,
-                                               const std::vector<float> &distinct_scores,
-                                               const nesso::core::Bm25Result &bm25, size_t top_k, size_t threads,
-                                               bool group)
+static auto RankHybridLines(const nesso::core::MappedCorpus &corpus, const std::vector<float> &distinct_scores,
+                            const nesso::core::Bm25Result &bm25, size_t top_k, size_t threads, bool group)
+    -> std::vector<RankedLine>
 {
     const HybridScoreInputs inputs = CollectHybridScores(corpus, distinct_scores, bm25);
     if (group)
@@ -485,7 +480,7 @@ struct LexicalCandidate
 };
 } // namespace
 
-static bool LexicalCandidateBefore(const LexicalCandidate &left, const LexicalCandidate &right)
+static auto LexicalCandidateBefore(const LexicalCandidate &left, const LexicalCandidate &right) -> bool
 {
     if (left.substring != right.substring)
     {
@@ -529,8 +524,8 @@ static void RematerializeLexicalSubstrings(const nesso::core::MappedCorpus &corp
     std::ranges::sort(hits, LexicalCandidateBefore);
 }
 
-static std::vector<LexicalCandidate> CollapseLexicalGroups(const nesso::core::MappedCorpus &corpus,
-                                                           const std::vector<LexicalCandidate> &hits)
+static auto CollapseLexicalGroups(const nesso::core::MappedCorpus &corpus, const std::vector<LexicalCandidate> &hits)
+    -> std::vector<LexicalCandidate>
 {
     const std::size_t distinct = corpus.Texts().size();
     std::vector<uint64_t> first(distinct, std::numeric_limits<uint64_t>::max());
@@ -563,9 +558,8 @@ static std::vector<LexicalCandidate> CollapseLexicalGroups(const nesso::core::Ma
     return groups;
 }
 
-static std::vector<RankedLine> RankLexicalLines(const nesso::core::MappedCorpus &corpus,
-                                                const std::vector<double> &bm25_scores, std::string_view needle,
-                                                size_t top_k, bool group)
+static auto RankLexicalLines(const nesso::core::MappedCorpus &corpus, const std::vector<double> &bm25_scores,
+                             std::string_view needle, size_t top_k, bool group) -> std::vector<RankedLine>
 {
     std::vector<LexicalCandidate> hits;
     for (size_t ordinal = 0; ordinal < corpus.Lines().size(); ++ordinal)
@@ -604,9 +598,9 @@ static std::vector<RankedLine> RankLexicalLines(const nesso::core::MappedCorpus 
     return ranked;
 }
 
-static std::expected<nesso::core::MappedCorpus, Error> MapSearchCorpus(const std::filesystem::path &path)
+static auto MapSearchCorpus(const std::filesystem::path &path) -> std::expected<nesso::core::MappedCorpus, Error>
 {
-    auto corpus = [&path]
+    auto corpus = [&path] -> std::expected<core::MappedCorpusFile, core::CorpusMapFailure>
     {
         const ScopedStage stage{"corpus-read"};
         return nesso::core::MapCorpusFile(path);
@@ -628,7 +622,7 @@ static std::expected<nesso::core::MappedCorpus, Error> MapSearchCorpus(const std
     return std::move(corpus->corpus);
 }
 
-static Error ModelMismatchError(const std::filesystem::path &path, ModelMismatchDetail detail)
+static auto ModelMismatchError(const std::filesystem::path &path, ModelMismatchDetail detail) -> Error
 {
     Error error = MakeError(ErrorKind::CorpusRead, ErrorCause::ModelMismatch, path, {});
     error.model_mismatch = std::move(detail);
@@ -637,9 +631,8 @@ static Error ModelMismatchError(const std::filesystem::path &path, ModelMismatch
 
 // Checks the identity keys in order and names the first one that differs.
 // A corpus without `embed.prefix` reads as `none`.
-static std::expected<void, Error> RefuseModelMismatch(const nesso::core::CorpusPolicy &stored,
-                                                      const nesso::core::CorpusPolicy &current,
-                                                      const std::filesystem::path &path)
+static auto RefuseModelMismatch(const nesso::core::CorpusPolicy &stored, const nesso::core::CorpusPolicy &current,
+                                const std::filesystem::path &path) -> std::expected<void, Error>
 {
     constexpr std::array<std::string_view, 5> identity_keys{"model.id", "model.sha256", "vocab.sha256",
                                                             "model.quantization", "dimensions"};
@@ -673,7 +666,7 @@ struct SearchLineMeta
 };
 } // namespace
 
-static SearchLineMeta TallySearchLineMeta(const nesso::core::MappedCorpus &corpus)
+static auto TallySearchLineMeta(const nesso::core::MappedCorpus &corpus) -> SearchLineMeta
 {
     SearchLineMeta meta{.occurrences = std::vector<std::uint32_t>(corpus.Texts().size(), 0)};
     std::optional<std::string_view> first_source;
@@ -698,13 +691,14 @@ static SearchLineMeta TallySearchLineMeta(const nesso::core::MappedCorpus &corpu
     return meta;
 }
 
-static bool SourcePathIsStale(std::span<const StaleSource> warnings, const std::string &path)
+static auto SourcePathIsStale(std::span<const StaleSource> warnings, const std::string &path) -> bool
 {
-    return std::ranges::any_of(warnings, [&path](const StaleSource &warning) { return warning.path == path; });
+    return std::ranges::any_of(warnings, [&path](const StaleSource &warning) -> bool { return warning.path == path; });
 }
 
-static std::string ResolveSearchMatchText(const nesso::core::MappedCorpus &corpus, const nesso::core::CorpusLine &line,
-                                          const nesso::core::SourceInfo &source, std::vector<StaleSource> &warnings)
+static auto ResolveSearchMatchText(const nesso::core::MappedCorpus &corpus, const nesso::core::CorpusLine &line,
+                                   const nesso::core::SourceInfo &source, std::vector<StaleSource> &warnings)
+    -> std::string
 {
     std::string text{line.stored_text.value_or(corpus.Texts()[line.distinct_id])};
     if (line.stored_text || SourcePathIsStale(warnings, source.path))
@@ -732,9 +726,9 @@ static std::string ResolveSearchMatchText(const nesso::core::MappedCorpus &corpu
     return std::move(*reread);
 }
 
-static TextMatch MakeSearchMatch(const nesso::core::MappedCorpus &corpus, const RankedLine &hit,
-                                 const std::vector<std::uint32_t> &occurrences, std::string_view mode_label,
-                                 std::string text)
+static auto MakeSearchMatch(const nesso::core::MappedCorpus &corpus, const RankedLine &hit,
+                            const std::vector<std::uint32_t> &occurrences, std::string_view mode_label,
+                            std::string text) -> TextMatch
 {
     const nesso::core::CorpusLine &line = corpus.Lines()[static_cast<size_t>(hit.ordinal)];
     const nesso::core::SourceInfo &source = corpus.Sources()[line.source_index];
@@ -769,11 +763,10 @@ struct SearchMaterializeFlags
 };
 } // namespace
 
-static TextResults MaterializeSearchMatches(const nesso::core::MappedCorpus &corpus,
-                                            const std::vector<RankedLine> &ranked,
-                                            const std::vector<std::uint32_t> &occurrences,
-                                            const SearchMaterializeFlags &flags, std::string_view mode_label,
-                                            std::vector<StaleSource> source_warnings)
+static auto MaterializeSearchMatches(const nesso::core::MappedCorpus &corpus, const std::vector<RankedLine> &ranked,
+                                     const std::vector<std::uint32_t> &occurrences, const SearchMaterializeFlags &flags,
+                                     std::string_view mode_label, std::vector<StaleSource> source_warnings)
+    -> TextResults
 {
     TextResults results{};
     results.grouped = flags.group;
@@ -810,8 +803,8 @@ struct SearchDenseScores
 };
 } // namespace
 
-static SearchDenseScores ScoreSearchDense(const nesso::core::MappedCorpus &corpus,
-                                          std::span<const float> query_embedding, size_t threads)
+static auto ScoreSearchDense(const nesso::core::MappedCorpus &corpus, std::span<const float> query_embedding,
+                             size_t threads) -> SearchDenseScores
 {
     const ScopedStage distance{"distance"};
     SearchDenseScores result;
@@ -838,10 +831,9 @@ struct SearchRankOptions
 };
 } // namespace
 
-static std::vector<RankedLine> SelectSearchRanked(const nesso::core::MappedCorpus &corpus,
-                                                  const std::vector<float> &scores, const nesso::core::Bm25Result &bm25,
-                                                  const nesso::core::QueryTokens &query_tokens,
-                                                  const SearchRankOptions &options)
+static auto SelectSearchRanked(const nesso::core::MappedCorpus &corpus, const std::vector<float> &scores,
+                               const nesso::core::Bm25Result &bm25, const nesso::core::QueryTokens &query_tokens,
+                               const SearchRankOptions &options) -> std::vector<RankedLine>
 {
     if (options.effective == EffectiveMode::Dense)
     {
@@ -854,21 +846,21 @@ static std::vector<RankedLine> SelectSearchRanked(const nesso::core::MappedCorpu
     return RankHybridLines(corpus, scores, bm25, options.top_k, options.threads, options.group);
 }
 
-static std::expected<std::vector<float>, nesso::embed::EmbedError> EmbedSearchQuery(const nesso::embed::Embedder &model,
-                                                                                    std::string_view query)
+static auto EmbedSearchQuery(const nesso::embed::Embedder &model, std::string_view query)
+    -> std::expected<std::vector<float>, nesso::embed::EmbedError>
 {
     const ScopedStage query_embed{"query-embed"};
     return model.embed(query);
 }
 
-static EffectiveMode MaybeLexicalFallback(EffectiveMode effective, std::span<const double> bm25_scores,
-                                          bool &lexical_fallback)
+static auto MaybeLexicalFallback(EffectiveMode effective, std::span<const double> bm25_scores, bool &lexical_fallback)
+    -> EffectiveMode
 {
     if (effective != EffectiveMode::Lexical)
     {
         return effective;
     }
-    const bool any_hit = std::ranges::any_of(bm25_scores, [](double score) { return score > 0.0; });
+    const bool any_hit = std::ranges::any_of(bm25_scores, [](double score) -> bool { return score > 0.0; });
     if (any_hit)
     {
         return effective;
@@ -877,13 +869,13 @@ static EffectiveMode MaybeLexicalFallback(EffectiveMode effective, std::span<con
     return EffectiveMode::Hybrid;
 }
 
-std::expected<const nesso::embed::Embedder *, Error> Nesso::LoadSearchEmbedder() const
+auto Nesso::LoadSearchEmbedder() const -> std::expected<const nesso::embed::Embedder *, Error>
 {
     const ScopedStage model_load{"model-load"};
     return Embedder();
 }
 
-std::expected<TextResults, Error> Nesso::Search(const SearchRequest &request) const
+auto Nesso::Search(const SearchRequest &request) const -> std::expected<TextResults, Error>
 {
     const TraceSession session;
     auto corpus = MapSearchCorpus(request.index);
@@ -909,11 +901,11 @@ std::expected<TextResults, Error> Nesso::Search(const SearchRequest &request) co
     constexpr std::array<std::string_view, 5> policy_keys{"batch", "truncate", "dedup", "mask", "tokens.max"};
     // `embed.text` is optional: a corpus written before it reads as `line`.
     const bool policy_mismatch =
-        std::ranges::any_of(policy_keys, [&](std::string_view key)
+        std::ranges::any_of(policy_keys, [&](std::string_view key) -> bool
                             { return corpus->Policy().find(key)->second != current->find(key)->second; }) ||
         nesso::core::EmbedTextOf(corpus->Policy()) != nesso::core::EmbedTextOf(*current);
     auto source_warnings = StaleSources(corpus->Sources());
-    const auto fail = [&](ErrorKind kind, ErrorCause cause)
+    const auto fail = [&](ErrorKind kind, ErrorCause cause) -> std::unexpected<nesso::Error>
     {
         Error error = MakeError(kind, cause, {}, {});
         error.policy_mismatch = policy_mismatch;

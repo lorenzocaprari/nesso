@@ -24,7 +24,7 @@ static void CheckLossless(std::string_view line, const LineParts &parts)
     if (!parts.header.empty())
     {
         CHECK(std::ranges::any_of(parts.message,
-                                  [](char character)
+                                  [](char character) -> bool
                                   {
                                       const auto byte = static_cast<unsigned char>(character);
                                       return (byte >= 'A' && byte <= 'Z') || (byte >= 'a' && byte <= 'z') ||
@@ -251,7 +251,7 @@ TEST_CASE("every split is lossless on generated lines", "[line_header]")
                                                              "app.log",
                                                              "{\"a\":1}"};
     std::uint64_t state = 0x9e3779b97f4a7c15ULL;
-    const auto next = [&state]
+    const auto next = [&state] -> std::uint64_t
     {
         state ^= state << 13U;
         state ^= state >> 7U;

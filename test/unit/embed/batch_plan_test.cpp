@@ -79,7 +79,7 @@ void RequireBudget(std::span<const size_t> tokens, const BatchPlan &plan)
     }
 }
 
-std::vector<size_t> FlatWaves(const std::vector<BatchWave> &waves)
+auto FlatWaves(const std::vector<BatchWave> &waves) -> std::vector<size_t>
 {
     std::vector<size_t> order;
     for (const BatchWave &wave : waves)
@@ -89,7 +89,10 @@ std::vector<size_t> FlatWaves(const std::vector<BatchWave> &waves)
     return order;
 }
 
-BatchPlan PlanOf(size_t count, size_t tokens) { return nesso::embed::PlanBatches(std::vector<size_t>(count, tokens)); }
+auto PlanOf(size_t count, size_t tokens) -> BatchPlan
+{
+    return nesso::embed::PlanBatches(std::vector<size_t>(count, tokens));
+}
 
 } // namespace
 
@@ -105,7 +108,7 @@ TEST_CASE("equal token counts keep input order", "[batch-plan]")
 
 TEST_CASE("the token budget cuts at every full run", "[batch-plan]")
 {
-    const auto expect_cut = [](size_t tokens, size_t full)
+    const auto expect_cut = [](size_t tokens, size_t full) -> void
     {
         const BatchPlan exact = PlanOf(full, tokens);
         REQUIRE(exact.batches.size() == 1);
@@ -154,7 +157,7 @@ TEST_CASE("zero-token texts pack until the count cap", "[batch-plan]")
 
 TEST_CASE("windows split at 1024 texts", "[batch-plan]")
 {
-    const auto sizes = [](size_t count)
+    const auto sizes = [](size_t count) -> std::vector<size_t>
     {
         const BatchPlan plan = PlanOf(count, 100);
         std::vector<size_t> out;

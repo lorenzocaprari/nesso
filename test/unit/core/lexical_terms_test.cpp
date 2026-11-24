@@ -10,7 +10,7 @@
 #include <string_view>
 #include <vector>
 
-static std::vector<std::string> TermsOf(std::string_view text) { return nesso::core::LexicalTerms(text); }
+static auto TermsOf(std::string_view text) -> std::vector<std::string> { return nesso::core::LexicalTerms(text); }
 
 TEST_CASE("lexical term rules are version v1", "[lexical]") { CHECK(nesso::core::LEXICAL_TERMS_VERSION == "v1"); }
 
@@ -128,7 +128,7 @@ TEST_CASE("lexical terms scan a very long input", "[lexical]")
     const std::vector<std::string> one = TermsOf(letters);
     REQUIRE(one.size() == 1);
     CHECK(one[0].size() == length);
-    CHECK(std::ranges::all_of(one[0], [](char byte) { return byte == 'a'; }));
+    CHECK(std::ranges::all_of(one[0], [](char byte) -> bool { return byte == 'a'; }));
 
     constexpr std::size_t groups = 20000;
     std::string chained;
