@@ -13,4 +13,6 @@ helpers live elsewhere so a local `ls` stays short.
 
 `scripts/clang-tidy` analyzes `src/` against `compile_commands.json` (override with `NESSO_CLANG_TIDY_BUILD_DIR`). `scripts/clang-tidy-diff` is a local fast path over the diff vs `the main remote-tracking branch`; CI still runs the full tree. With `NESSO_CLANG_TIDY_CACHE` set to a directory, `scripts/clang-tidy` skips units whose clean result is cached there (`scripts/ci` `clang-tidy-cache`; needs Go). CI sets it and caches the directory.
 
+`scripts/caps-bench generate --distinct N --sources M OUT_DIR [--tar]` writes a deterministic input with N distinct texts (after the dedup mask) across M sources. `scripts/caps-bench measure --machine LABEL OUT_DIR` runs `nesso index` and one `nesso search` on it at `--threads 1,4` and prints peak RSS (`ru_maxrss` from `wait4`, the value GNU time reports) and wall time per command. It measures the corpus caps in `src/core/corpus_detail.hpp` (ADR 0015, decision E3).
+
 See [AGENTS.md](../AGENTS.md) and [CONTRIBUTING.md](../CONTRIBUTING.md) for the commands to run before a push.
