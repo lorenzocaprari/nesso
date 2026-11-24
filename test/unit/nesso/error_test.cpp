@@ -69,7 +69,7 @@ TEST_CASE("each cause has a readable phrase", "[nesso][error]")
 
 TEST_CASE("each failure kind names itself", "[nesso][error]")
 {
-    const auto text = [](nesso::ErrorKind kind, nesso::ErrorCause cause)
+    const auto text = [](nesso::ErrorKind kind, nesso::ErrorCause cause) -> std::string
     {
         const nesso::Error error{.kind = kind,
                                  .cause = cause,
@@ -130,7 +130,7 @@ TEST_CASE("each failure kind names itself", "[nesso][error]")
 
 TEST_CASE("a zero-chunk index names the path and what to check", "[nesso][error]")
 {
-    const auto text = [](nesso::ErrorCause cause, std::string path)
+    const auto text = [](nesso::ErrorCause cause, std::string path) -> std::string
     {
         const nesso::Error error{.kind = nesso::ErrorKind::EmptyInput,
                                  .cause = cause,
@@ -160,7 +160,7 @@ TEST_CASE("a zero-chunk index names the path and what to check", "[nesso][error]
 TEST_CASE("message text is byte-stable per kind and optional parts", "[nesso][error]")
 {
     const auto make = [](nesso::ErrorKind kind, nesso::ErrorCause cause, std::filesystem::path path = "in.log",
-                         std::string note = {}, std::optional<std::uint32_t> corpus_version = {})
+                         std::string note = {}, std::optional<std::uint32_t> corpus_version = {}) -> nesso::Error
     {
         return nesso::Error{.kind = kind,
                             .cause = cause,

@@ -12,7 +12,7 @@
 namespace
 {
 
-nesso::OverviewResults Totals()
+auto Totals() -> nesso::OverviewResults
 {
     nesso::OverviewResults results;
     results.lines = 2000;

@@ -52,7 +52,7 @@ class Sha256
         }
     }
 
-    [[nodiscard]] Sha256Digest Finish()
+    [[nodiscard]] auto Finish() -> Sha256Digest
     {
         const std::uint64_t bits = total_bytes_ * 8U;
         const auto buffer = std::span{buffer_};
@@ -141,14 +141,14 @@ class Sha256
 
 } // namespace
 
-Sha256Digest ComputeSha256(std::span<const std::byte> bytes)
+auto ComputeSha256(std::span<const std::byte> bytes) -> Sha256Digest
 {
     Sha256 hash;
     hash.Update(bytes);
     return hash.Finish();
 }
 
-Sha256Digest ComputeSha256(std::span<const std::span<const std::byte>> parts)
+auto ComputeSha256(std::span<const std::span<const std::byte>> parts) -> Sha256Digest
 {
     Sha256 hash;
     for (const std::span<const std::byte> part : parts)
@@ -158,7 +158,7 @@ Sha256Digest ComputeSha256(std::span<const std::span<const std::byte>> parts)
     return hash.Finish();
 }
 
-std::expected<Sha256Digest, HashError> Sha256File(const std::filesystem::path &path)
+auto Sha256File(const std::filesystem::path &path) -> std::expected<Sha256Digest, HashError>
 {
     std::ifstream input(path, std::ios::binary);
     if (!input)
@@ -180,7 +180,7 @@ std::expected<Sha256Digest, HashError> Sha256File(const std::filesystem::path &p
     return hash.Finish();
 }
 
-std::string HexSha256(const Sha256Digest &digest)
+auto HexSha256(const Sha256Digest &digest) -> std::string
 {
     constexpr std::string_view digits = "0123456789abcdef";
     std::string result;

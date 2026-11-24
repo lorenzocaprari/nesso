@@ -27,7 +27,7 @@ using nesso::core::CorpusWriter;
 using nesso::core::NO_DISTINCT;
 using nesso::core::SourceInfo;
 
-CorpusPolicy Policy(std::uint32_t dimensions)
+auto Policy(std::uint32_t dimensions) -> CorpusPolicy
 {
     return {{"batch", "window:1024,max:32,tokens:1024,order:length-then-input"},
             {"bm25", std::string{nesso::core::BM25_POLICY}},
@@ -43,13 +43,13 @@ CorpusPolicy Policy(std::uint32_t dimensions)
             {"vocab.sha256", std::string(64, 'b')}};
 }
 
-bool Report(const std::filesystem::path &path)
+auto Report(const std::filesystem::path &path) -> bool
 {
     std::cerr << "failed to write " << path << '\n';
     return false;
 }
 
-bool WriteEmpty(const std::filesystem::path &path)
+auto WriteEmpty(const std::filesystem::path &path) -> bool
 {
     auto writer = CorpusWriter::Create(path, Policy(0));
     if (!writer || !writer->Finish())
@@ -59,7 +59,7 @@ bool WriteEmpty(const std::filesystem::path &path)
     return true;
 }
 
-bool WriteLine(const std::filesystem::path &path)
+auto WriteLine(const std::filesystem::path &path) -> bool
 {
     auto writer = CorpusWriter::Create(path, Policy(2));
     if (!writer)
@@ -82,7 +82,7 @@ bool WriteLine(const std::filesystem::path &path)
 
 // Same records as line.nesso, with one optional policy key: embed.prefix in
 // prefix.nesso, embed.text in embed-text.nesso.
-bool WriteWithKey(const std::filesystem::path &path, std::string_view key, std::string_view value)
+auto WriteWithKey(const std::filesystem::path &path, std::string_view key, std::string_view value) -> bool
 {
     CorpusPolicy policy = Policy(2);
     policy.emplace(std::string{key}, std::string{value});
@@ -105,7 +105,7 @@ bool WriteWithKey(const std::filesystem::path &path, std::string_view key, std::
     return true;
 }
 
-bool WriteStored(const std::filesystem::path &path)
+auto WriteStored(const std::filesystem::path &path) -> bool
 {
     auto writer = CorpusWriter::Create(path, Policy(2));
     if (!writer)
@@ -134,7 +134,7 @@ bool WriteStored(const std::filesystem::path &path)
 
 } // namespace
 
-int main(int argc, char *argv[])
+auto main(int argc, char *argv[]) -> int
 {
     if (argc != 2)
     {

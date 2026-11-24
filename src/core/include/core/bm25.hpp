@@ -75,19 +75,19 @@ class Bm25Index
     void AddLinePostings(std::span<const std::pair<std::uint32_t, std::uint32_t>> entries, std::uint32_t length);
 
     /// Interns `term` into the shared dictionary; returns its id.
-    [[nodiscard]] std::uint32_t InternTerm(std::string_view term);
+    [[nodiscard]] auto InternTerm(std::string_view term) -> std::uint32_t;
 
     /// Lines added so far.
-    [[nodiscard]] std::size_t LineCount() const noexcept;
+    [[nodiscard]] auto LineCount() const noexcept -> std::size_t;
 
     /// Mean `|D|`, or `0` when `LineCount()` is `0`.
-    [[nodiscard]] double AverageLength() const noexcept;
+    [[nodiscard]] auto AverageLength() const noexcept -> double;
 
     /// One score per added line, in insertion order.
-    [[nodiscard]] std::vector<double> Scores(std::span<const std::string_view> query) const;
+    [[nodiscard]] auto Scores(std::span<const std::string_view> query) const -> std::vector<double>;
 
     /// `Scores` plus per-line query-term coverage (see `Bm25Result`).
-    [[nodiscard]] Bm25Result ScoresAndCoverage(std::span<const std::string_view> query) const;
+    [[nodiscard]] auto ScoresAndCoverage(std::span<const std::string_view> query) const -> Bm25Result;
 
   private:
     struct Line
@@ -107,14 +107,14 @@ class Bm25Index
 /// `lines[i].entries` use those ids. Does not copy the dictionary or postings.
 /// Distinct query terms are scored in unsigned byte order, same formula as
 /// `Bm25Index::scores`.
-[[nodiscard]] std::vector<double> ScoresFromPostings(std::span<const std::string_view> dictionary,
-                                                     std::span<const Bm25LinePostings> lines,
-                                                     std::span<const std::string_view> query);
+[[nodiscard]] auto ScoresFromPostings(std::span<const std::string_view> dictionary,
+                                      std::span<const Bm25LinePostings> lines, std::span<const std::string_view> query)
+    -> std::vector<double>;
 
 /// `ScoresFromPostings` plus per-line query-term coverage (see `Bm25Result`).
-[[nodiscard]] Bm25Result ScoresAndCoverageFromPostings(std::span<const std::string_view> dictionary,
-                                                       std::span<const Bm25LinePostings> lines,
-                                                       std::span<const std::string_view> query);
+[[nodiscard]] auto ScoresAndCoverageFromPostings(std::span<const std::string_view> dictionary,
+                                                 std::span<const Bm25LinePostings> lines,
+                                                 std::span<const std::string_view> query) -> Bm25Result;
 
 } // namespace nesso::core
 

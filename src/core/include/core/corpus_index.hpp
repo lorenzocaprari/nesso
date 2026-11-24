@@ -40,7 +40,7 @@ inline constexpr std::string_view EMBED_PREFIX_UNRECORDED = "none";
 
 /// `embed.prefix` of `policy`, or `EMBED_PREFIX_UNRECORDED` when the key is
 /// absent.
-[[nodiscard]] std::string_view EmbedPrefixOf(const CorpusPolicy &policy);
+[[nodiscard]] auto EmbedPrefixOf(const CorpusPolicy &policy) -> std::string_view;
 
 /// Optional policy key naming which part of each line was embedded and the
 /// version of that rule (`parser::HEADER_RULE_VERSION`).
@@ -50,7 +50,7 @@ inline constexpr std::string_view EMBED_TEXT_KEY = "embed.text";
 inline constexpr std::string_view EMBED_TEXT_UNRECORDED = "line";
 
 /// `embed.text` of `policy`, or `EMBED_TEXT_UNRECORDED` when the key is absent.
-[[nodiscard]] std::string_view EmbedTextOf(const CorpusPolicy &policy);
+[[nodiscard]] auto EmbedTextOf(const CorpusPolicy &policy) -> std::string_view;
 
 struct LogChunk
 {
@@ -107,8 +107,8 @@ enum class LexicalStatus : std::uint8_t
 };
 
 /// Capture metadata used to detect changes before re-reading a source.
-[[nodiscard]] std::expected<SourceInfo, EngineError> SourceInfoFor(const std::filesystem::path &path,
-                                                                   std::string_view json_field);
+[[nodiscard]] auto SourceInfoFor(const std::filesystem::path &path, std::string_view json_field)
+    -> std::expected<SourceInfo, EngineError>;
 
 /// Failure from `MapCorpusFile`. `version` is set when the header named a
 /// format version, including one this build does not read.
@@ -131,28 +131,28 @@ class MappedCorpus
   public:
     ~MappedCorpus();
     MappedCorpus(const MappedCorpus &) = delete;
-    MappedCorpus &operator=(const MappedCorpus &) = delete;
+    auto operator=(const MappedCorpus &) -> MappedCorpus & = delete;
     MappedCorpus(MappedCorpus &&) noexcept;
-    MappedCorpus &operator=(MappedCorpus &&) noexcept;
+    auto operator=(MappedCorpus &&) noexcept -> MappedCorpus &;
 
-    [[nodiscard]] const CorpusPolicy &Policy() const noexcept;
-    [[nodiscard]] std::uint32_t Dimensions() const noexcept;
-    [[nodiscard]] std::span<const SourceInfo> Sources() const noexcept;
-    [[nodiscard]] std::span<const CorpusLine> Lines() const noexcept;
-    [[nodiscard]] std::span<const std::string_view> Texts() const noexcept;
-    [[nodiscard]] std::span<const float> Matrix() const noexcept;
+    [[nodiscard]] auto Policy() const noexcept -> const CorpusPolicy &;
+    [[nodiscard]] auto Dimensions() const noexcept -> std::uint32_t;
+    [[nodiscard]] auto Sources() const noexcept -> std::span<const SourceInfo>;
+    [[nodiscard]] auto Lines() const noexcept -> std::span<const CorpusLine>;
+    [[nodiscard]] auto Texts() const noexcept -> std::span<const std::string_view>;
+    [[nodiscard]] auto Matrix() const noexcept -> std::span<const float>;
     /// Sorted unique lexical terms; ids in `LexicalPostings()` index this table.
-    [[nodiscard]] std::span<const std::string_view> LexicalDictionary() const noexcept;
+    [[nodiscard]] auto LexicalDictionary() const noexcept -> std::span<const std::string_view>;
     /// One posting list per corpus line, including skipped lines.
-    [[nodiscard]] std::span<const LexicalLinePostings> LexicalPostings() const noexcept;
+    [[nodiscard]] auto LexicalPostings() const noexcept -> std::span<const LexicalLinePostings>;
     /// Soft lexical gate for non-dense modes. Dense search ignores this.
-    [[nodiscard]] LexicalStatus GetLexicalStatus() const noexcept;
+    [[nodiscard]] auto GetLexicalStatus() const noexcept -> LexicalStatus;
     /// Corpus `lexical.terms` policy value when present; empty when absent.
-    [[nodiscard]] std::string_view CorpusLexicalTermsVersion() const noexcept;
+    [[nodiscard]] auto CorpusLexicalTermsVersion() const noexcept -> std::string_view;
 
   private:
     struct Impl;
-    friend std::expected<MappedCorpusFile, CorpusMapFailure> MapCorpusFile(const std::filesystem::path &path);
+    friend auto MapCorpusFile(const std::filesystem::path &path) -> std::expected<MappedCorpusFile, CorpusMapFailure>;
     explicit MappedCorpus(std::unique_ptr<Impl> impl);
     std::unique_ptr<Impl> impl_;
 };
@@ -164,27 +164,27 @@ class CorpusWriter
   public:
     ~CorpusWriter();
     CorpusWriter(const CorpusWriter &) = delete;
-    CorpusWriter &operator=(const CorpusWriter &) = delete;
+    auto operator=(const CorpusWriter &) -> CorpusWriter & = delete;
     CorpusWriter(CorpusWriter &&) noexcept;
-    CorpusWriter &operator=(CorpusWriter &&other) noexcept;
+    auto operator=(CorpusWriter &&other) noexcept -> CorpusWriter &;
 
-    [[nodiscard]] static std::expected<CorpusWriter, EngineError> Create(const std::filesystem::path &path,
-                                                                         CorpusPolicy policy);
-    [[nodiscard]] std::expected<std::uint32_t, EngineError> AddSource(SourceInfo source);
+    [[nodiscard]] static auto Create(const std::filesystem::path &path, CorpusPolicy policy)
+        -> std::expected<CorpusWriter, EngineError>;
+    [[nodiscard]] auto AddSource(SourceInfo source) -> std::expected<std::uint32_t, EngineError>;
     /// Reserve a distinct id before its embedding is available, so lines can be
     /// streamed immediately.
-    [[nodiscard]] std::expected<std::uint32_t, EngineError> ReserveDistinct(std::string_view text);
+    [[nodiscard]] auto ReserveDistinct(std::string_view text) -> std::expected<std::uint32_t, EngineError>;
     /// Write vectors in distinct-id order. Every reserved id must have a vector
     /// before finish.
-    [[nodiscard]] std::expected<void, EngineError> AddVector(std::uint32_t distinct_id,
-                                                             std::span<const float> embedding);
-    [[nodiscard]] std::expected<std::uint32_t, EngineError> AddDistinct(std::string_view text,
-                                                                        std::span<const float> embedding);
+    [[nodiscard]] auto AddVector(std::uint32_t distinct_id, std::span<const float> embedding)
+        -> std::expected<void, EngineError>;
+    [[nodiscard]] auto AddDistinct(std::string_view text, std::span<const float> embedding)
+        -> std::expected<std::uint32_t, EngineError>;
     /// `lineTerms.size()` must equal `lines.size()`. Each entry is the term
     /// multiset for that line (`LexicalTerms`); skipped lines use an empty list.
-    [[nodiscard]] std::expected<void, EngineError> AddLines(std::span<const CorpusLine> lines,
-                                                            std::span<const std::vector<std::string>> line_terms);
-    [[nodiscard]] std::expected<void, EngineError> Finish();
+    [[nodiscard]] auto AddLines(std::span<const CorpusLine> lines, std::span<const std::vector<std::string>> line_terms)
+        -> std::expected<void, EngineError>;
+    [[nodiscard]] auto Finish() -> std::expected<void, EngineError>;
 
   private:
     friend struct detail::CorpusWriterAccess;
@@ -203,14 +203,16 @@ struct MappedCorpusFile
 
 /// Maps `path`. A header version is returned on success and on failure,
 /// including when that version is not supported.
-[[nodiscard]] std::expected<MappedCorpusFile, CorpusMapFailure> MapCorpusFile(const std::filesystem::path &path);
+[[nodiscard]] auto MapCorpusFile(const std::filesystem::path &path)
+    -> std::expected<MappedCorpusFile, CorpusMapFailure>;
 
 /// Expands distinct vectors for callers that need owned per-line chunks.
 /// First 16 bytes of the SHA-256 of a whole corpus file, with the checksum
 /// field itself read as zeros. `file` must be at least one header long.
-[[nodiscard]] CorpusChecksum ComputeCorpusChecksum(std::span<const std::byte> file);
+[[nodiscard]] auto ComputeCorpusChecksum(std::span<const std::byte> file) -> CorpusChecksum;
 
-[[nodiscard]] std::expected<std::vector<CorpusChunk>, EngineError> ReadCorpusFile(const std::filesystem::path &path);
+[[nodiscard]] auto ReadCorpusFile(const std::filesystem::path &path)
+    -> std::expected<std::vector<CorpusChunk>, EngineError>;
 
 } // namespace nesso::core
 

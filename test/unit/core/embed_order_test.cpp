@@ -16,7 +16,7 @@ using nesso::core::WindowPromise;
 namespace
 {
 
-WindowPromise Promise(bool any_substr, std::uint32_t max_hits, std::uint32_t singletons)
+auto Promise(bool any_substr, std::uint32_t max_hits, std::uint32_t singletons) -> WindowPromise
 {
     return WindowPromise{.any_substr = any_substr, .max_hits = max_hits, .singletons = singletons};
 }

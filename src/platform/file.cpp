@@ -32,7 +32,7 @@ MappedFile::MappedFile(MappedFile &&other) noexcept : data_(other.data_), size_(
     other.size_ = 0;
 }
 
-MappedFile &MappedFile::operator=(MappedFile &&other) noexcept
+auto MappedFile::operator=(MappedFile &&other) noexcept -> MappedFile &
 {
     if (this != &other)
     {
@@ -48,10 +48,10 @@ MappedFile &MappedFile::operator=(MappedFile &&other) noexcept
     return *this;
 }
 
-std::expected<MappedFile, FileError> MappedFile::Open(const std::filesystem::path &path)
+auto MappedFile::Open(const std::filesystem::path &path) -> std::expected<MappedFile, FileError>
 {
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg, hicpp-vararg)
-    const int file_descriptor = ::open(path.c_str(), O_RDONLY);
+    const int file_descriptor = ::open(path.c_str(), O_RDONLY | O_CLOEXEC);
     if (file_descriptor < 0)
     {
         return std::unexpected(FileError::OpenFailure);
@@ -79,10 +79,10 @@ std::expected<MappedFile, FileError> MappedFile::Open(const std::filesystem::pat
     return mapped;
 }
 
-std::span<const std::byte> MappedFile::Bytes() const noexcept { return {data_, size_}; }
+auto MappedFile::Bytes() const noexcept -> std::span<const std::byte> { return {data_, size_}; }
 
-std::expected<void, FileError> ReplaceFileAtomically(const std::filesystem::path &source,
-                                                     const std::filesystem::path &destination)
+auto ReplaceFileAtomically(const std::filesystem::path &source, const std::filesystem::path &destination)
+    -> std::expected<void, FileError>
 {
     if (::rename(source.c_str(), destination.c_str()) != 0)
     {
@@ -91,7 +91,7 @@ std::expected<void, FileError> ReplaceFileAtomically(const std::filesystem::path
     return {};
 }
 
-std::int64_t PeakResidentBytes() noexcept
+auto PeakResidentBytes() noexcept -> std::int64_t
 {
     rusage usage{};
     const int status = ::getrusage(RUSAGE_SELF, &usage);

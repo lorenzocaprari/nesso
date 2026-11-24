@@ -25,8 +25,8 @@ struct Hit
 
 /// Strict weak order for ranking: higher score first, ties by lower index.
 /// Non-NaN scores rank before NaN; two NaNs break by index. ±0.0 compare equal.
-[[nodiscard]] inline bool RankBefore(float left_score, uint64_t left_index, float right_score,
-                                     uint64_t right_index) noexcept
+[[nodiscard]] inline auto RankBefore(float left_score, uint64_t left_index, float right_score,
+                                     uint64_t right_index) noexcept -> bool
 {
     const bool left_nan = std::isnan(left_score);
     const bool right_nan = std::isnan(right_score);
@@ -94,7 +94,7 @@ struct TopKRequest
 /// contiguous row chunk and keeps a private top k. The chunks merge by score
 /// descending, then ascending index. A budget of one, or a short matrix, stays
 /// on the caller and produces the same hits.
-[[nodiscard]] std::expected<std::vector<Hit>, EngineError> TopK(const TopKRequest &request);
+[[nodiscard]] auto TopK(const TopKRequest &request) -> std::expected<std::vector<Hit>, EngineError>;
 
 /// Inputs for an exact top-k scan over `count` indices.
 struct RankTopRequest
@@ -112,7 +112,7 @@ struct RankTopRequest
 /// `keep` is consulted first. `score` runs once for each kept index. Chunks
 /// keep a private top k and merge by score descending, then ascending index.
 /// `threads` follows the same cutoff as `TopK`.
-[[nodiscard]] std::vector<Hit> RankTop(const RankTopRequest &request);
+[[nodiscard]] auto RankTop(const RankTopRequest &request) -> std::vector<Hit>;
 
 } // namespace nesso::core
 

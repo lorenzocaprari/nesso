@@ -29,8 +29,8 @@ inline constexpr std::string_view MINILM_MODEL_ID = "sentence-transformers/all-M
 inline constexpr std::string_view MINILM_EMBED_PREFIX = "none";
 
 /// Last-hidden MiniLM tensor: [batch, sequence, MINILM_EMBEDDING_DIMENSIONS].
-[[nodiscard]] inline bool MatchesMiniLmHiddenStatesShape(std::span<const int64_t> shape, size_t batch_size,
-                                                         size_t sequence_length) noexcept
+[[nodiscard]] inline auto MatchesMiniLmHiddenStatesShape(std::span<const int64_t> shape, size_t batch_size,
+                                                         size_t sequence_length) noexcept -> bool
 {
     return shape.size() == 3 && std::cmp_equal(shape[0], batch_size) && std::cmp_equal(shape[1], sequence_length) &&
            std::cmp_equal(shape[2], MINILM_EMBEDDING_DIMENSIONS);

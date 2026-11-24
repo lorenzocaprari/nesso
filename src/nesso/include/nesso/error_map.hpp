@@ -13,9 +13,9 @@
 namespace nesso
 {
 
-[[nodiscard]] ErrorCause CauseOf(nesso::parser::ParseError error);
-[[nodiscard]] ErrorCause CauseOf(nesso::embed::EmbedError error);
-[[nodiscard]] ErrorCause CauseOf(nesso::core::EngineError error);
+[[nodiscard]] auto CauseOf(nesso::parser::ParseError error) -> ErrorCause;
+[[nodiscard]] auto CauseOf(nesso::embed::EmbedError error) -> ErrorCause;
+[[nodiscard]] auto CauseOf(nesso::core::EngineError error) -> ErrorCause;
 
 } // namespace nesso
 

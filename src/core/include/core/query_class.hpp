@@ -32,13 +32,13 @@ struct QueryTokens
 /// Strip one surrounding `"…"` pair from the whole query when present, split on
 /// ASCII whitespace (`0x09`, `0x0A`, `0x0D`, `0x20`), drop empty tokens, and
 /// strip one surrounding `"…"` pair from each token.
-[[nodiscard]] QueryTokens TokenizeQuery(std::string_view query);
+[[nodiscard]] auto TokenizeQuery(std::string_view query) -> QueryTokens;
 
 /// True when `token` fully matches one identifier pattern from ADR 0011.
-[[nodiscard]] bool IsIdentifierToken(std::string_view token);
+[[nodiscard]] auto IsIdentifierToken(std::string_view token) -> bool;
 
 /// Classify a query. Empty after tokenization is natural language.
-[[nodiscard]] QueryClass ClassifyQuery(std::string_view query);
+[[nodiscard]] auto ClassifyQuery(std::string_view query) -> QueryClass;
 
 } // namespace nesso::core
 

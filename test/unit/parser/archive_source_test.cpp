@@ -36,10 +36,10 @@ class TempDir
     }
 
     TempDir(const TempDir &) = delete;
-    TempDir &operator=(const TempDir &) = delete;
+    auto operator=(const TempDir &) -> TempDir & = delete;
     ~TempDir() { std::filesystem::remove_all(path_); }
 
-    [[nodiscard]] const std::filesystem::path &Path() const { return path_; }
+    [[nodiscard]] auto Path() const -> const std::filesystem::path & { return path_; }
 
   private:
     std::filesystem::path path_;
@@ -129,17 +129,18 @@ void WriteBundle(const std::filesystem::path &dest, std::string_view format, std
     REQUIRE(archive_write_close(writer.get()) == ARCHIVE_OK);
 }
 
-std::vector<std::pair<std::string, std::string>> ReadMembers(const std::filesystem::path &path,
-                                                             const nesso::parser::ArchiveLimits &limits = {})
+auto ReadMembers(const std::filesystem::path &path, const nesso::parser::ArchiveLimits &limits = {})
+    -> std::vector<std::pair<std::string, std::string>>
 {
     std::vector<std::pair<std::string, std::string>> members;
-    const auto read = nesso::parser::ReadArchive(path, limits, [&members](std::string_view name, std::string_view bytes)
-                                                 { members.emplace_back(name, bytes); });
+    const auto read =
+        nesso::parser::ReadArchive(path, limits, [&members](std::string_view name, std::string_view bytes) -> void
+                                   { members.emplace_back(name, bytes); });
     REQUIRE(read);
     return members;
 }
 
-std::string Unhex(std::string_view hex)
+auto Unhex(std::string_view hex) -> std::string
 {
     std::string out;
     out.reserve(hex.size() / 2);
@@ -176,14 +177,14 @@ void WriteEncryptedZip(const std::filesystem::path &dest, std::string_view name,
     const auto name_bytes = static_cast<std::uint16_t>(name.size());
     const auto size = static_cast<std::uint32_t>(payload.size());
     std::string bytes;
-    const auto append32 = [&bytes](std::uint32_t value)
+    const auto append32 = [&bytes](std::uint32_t value) -> void
     {
         bytes.push_back(static_cast<char>(value & 0xffU));
         bytes.push_back(static_cast<char>((value >> 8) & 0xffU));
         bytes.push_back(static_cast<char>((value >> 16) & 0xffU));
         bytes.push_back(static_cast<char>((value >> 24) & 0xffU));
     };
-    const auto append16 = [&bytes](std::uint16_t value)
+    const auto append16 = [&bytes](std::uint16_t value) -> void
     {
         bytes.push_back(static_cast<char>(value & 0xffU));
         bytes.push_back(static_cast<char>((value >> 8) & 0xffU));
@@ -237,7 +238,7 @@ void WriteEncryptedZip(const std::filesystem::path &dest, std::string_view name,
 
 TEST_CASE("LooksLikeOpenPgp recognizes armor and packet tags", "[parser][archive][openpgp]")
 {
-    const auto as_bytes = [](std::string_view text)
+    const auto as_bytes = [](std::string_view text) -> std::span<const std::byte>
     { return std::span<const std::byte>{reinterpret_cast<const std::byte *>(text.data()), text.size()}; };
     CHECK(nesso::parser::LooksLikeOpenPgp(as_bytes("-----BEGIN PGP MESSAGE-----\n")));
     CHECK(nesso::parser::LooksLikeOpenPgp(as_bytes(std::string{static_cast<char>(0x84)}))); // old PKESK
@@ -291,8 +292,8 @@ TEST_CASE("archives are read in archive order and never touch member paths", "[p
         std::vector<Member> written = members;
         if (std::string_view{format} == "zip")
         {
-            std::erase_if(written,
-                          [](const Member &member) { return member.type == AE_IFREG && member.link != nullptr; });
+            std::erase_if(written, [](const Member &member) -> bool
+                          { return member.type == AE_IFREG && member.link != nullptr; });
         }
         const auto path = dir.Path() / (std::string{"bundle."} + format);
         WriteBundle(path, format, "none", written);
@@ -338,19 +339,22 @@ TEST_CASE("archive limits name the cap they hit", "[parser][archive]")
 
     nesso::parser::ArchiveLimits entry_limit;
     entry_limit.max_entry_bytes = 10;
-    const auto too_big = nesso::parser::ReadArchive(path, entry_limit, [](std::string_view, std::string_view) {});
+    const auto too_big =
+        nesso::parser::ReadArchive(path, entry_limit, [](std::string_view, std::string_view) -> void {});
     REQUIRE_FALSE(too_big);
     CHECK(too_big.error().code == nesso::parser::ArchiveError::EntryTooLarge);
 
     nesso::parser::ArchiveLimits total_limit;
     total_limit.max_total_bytes = 40;
-    const auto too_much = nesso::parser::ReadArchive(path, total_limit, [](std::string_view, std::string_view) {});
+    const auto too_much =
+        nesso::parser::ReadArchive(path, total_limit, [](std::string_view, std::string_view) -> void {});
     REQUIRE_FALSE(too_much);
     CHECK(too_much.error().code == nesso::parser::ArchiveError::TotalTooLarge);
 
     nesso::parser::ArchiveLimits count_limit;
     count_limit.max_entries = 2;
-    const auto too_many = nesso::parser::ReadArchive(path, count_limit, [](std::string_view, std::string_view) {});
+    const auto too_many =
+        nesso::parser::ReadArchive(path, count_limit, [](std::string_view, std::string_view) -> void {});
     REQUIRE_FALSE(too_many);
     CHECK(too_many.error().code == nesso::parser::ArchiveError::TooManyEntries);
 
@@ -358,7 +362,8 @@ TEST_CASE("archive limits name the cap they hit", "[parser][archive]")
     WriteBundle(bomb, "tar", "xz", {{.name = "pad.log", .bytes = std::string(20000, 'A')}});
     nesso::parser::ArchiveLimits ratio_limit;
     ratio_limit.max_ratio = 2;
-    const auto too_dense = nesso::parser::ReadArchive(bomb, ratio_limit, [](std::string_view, std::string_view) {});
+    const auto too_dense =
+        nesso::parser::ReadArchive(bomb, ratio_limit, [](std::string_view, std::string_view) -> void {});
     REQUIRE_FALSE(too_dense);
     CHECK(too_dense.error().code == nesso::parser::ArchiveError::RatioExceeded);
 
@@ -376,7 +381,7 @@ TEST_CASE("a corrupt archive is rejected and an empty one has no members", "[par
         std::ofstream output(bad, std::ios::binary);
         output << "this is not a tar";
     }
-    const auto corrupt = nesso::parser::ReadArchive(bad, {}, [](std::string_view, std::string_view) {});
+    const auto corrupt = nesso::parser::ReadArchive(bad, {}, [](std::string_view, std::string_view) -> void {});
     REQUIRE_FALSE(corrupt);
     CHECK(corrupt.error().code == nesso::parser::ArchiveError::Corrupt);
     const auto chunks = nesso::parser::Chunker::FromFile(bad);
@@ -384,7 +389,7 @@ TEST_CASE("a corrupt archive is rejected and an empty one has no members", "[par
     CHECK(chunks.error() == nesso::parser::ParseError::CorruptArchive);
 
     const auto missing =
-        nesso::parser::ReadArchive(dir.Path() / "missing.tar", {}, [](std::string_view, std::string_view) {});
+        nesso::parser::ReadArchive(dir.Path() / "missing.tar", {}, [](std::string_view, std::string_view) -> void {});
     REQUIRE_FALSE(missing);
     CHECK(missing.error().code == nesso::parser::ArchiveError::OpenFailure);
 
@@ -450,7 +455,7 @@ TEST_CASE("encrypted zip entries and OpenPGP files are named", "[parser][archive
     const TempDir dir{"nesso-archive-encrypted"};
     const auto zip = dir.Path() / "secret.zip";
     WriteEncryptedZip(zip, "secret.log", "database connection refused\n");
-    const auto encrypted = nesso::parser::ReadArchive(zip, {}, [](std::string_view, std::string_view) {});
+    const auto encrypted = nesso::parser::ReadArchive(zip, {}, [](std::string_view, std::string_view) -> void {});
     REQUIRE_FALSE(encrypted);
     CHECK(encrypted.error().code == nesso::parser::ArchiveError::Encrypted);
     CHECK(encrypted.error().entry == "secret.log");
@@ -465,7 +470,7 @@ TEST_CASE("encrypted zip entries and OpenPGP files are named", "[parser][archive
         std::ofstream output(armored, std::ios::binary);
         output << "-----BEGIN PGP MESSAGE-----\n\n";
     }
-    const auto open_pgp = nesso::parser::ReadArchive(armored, {}, [](std::string_view, std::string_view) {});
+    const auto open_pgp = nesso::parser::ReadArchive(armored, {}, [](std::string_view, std::string_view) -> void {});
     REQUIRE_FALSE(open_pgp);
     CHECK(open_pgp.error().code == nesso::parser::ArchiveError::Encrypted);
     CHECK(open_pgp.error().entry.empty());
@@ -477,7 +482,7 @@ TEST_CASE("encrypted zip entries and OpenPGP files are named", "[parser][archive
         output.put(static_cast<char>(0x01));
         output.put(static_cast<char>(0x00));
     }
-    const auto binary_pgp = nesso::parser::ReadArchive(skesk, {}, [](std::string_view, std::string_view) {});
+    const auto binary_pgp = nesso::parser::ReadArchive(skesk, {}, [](std::string_view, std::string_view) -> void {});
     REQUIRE_FALSE(binary_pgp);
     CHECK(binary_pgp.error().code == nesso::parser::ArchiveError::Encrypted);
 
@@ -491,7 +496,7 @@ TEST_CASE("encrypted zip entries and OpenPGP files are named", "[parser][archive
         std::ofstream output(truncated, std::ios::binary);
         output.write(bytes.data(), static_cast<std::streamsize>(bytes.size()));
     }
-    const auto corrupt = nesso::parser::ReadArchive(truncated, {}, [](std::string_view, std::string_view) {});
+    const auto corrupt = nesso::parser::ReadArchive(truncated, {}, [](std::string_view, std::string_view) -> void {});
     REQUIRE_FALSE(corrupt);
     CHECK(corrupt.error().code == nesso::parser::ArchiveError::Corrupt);
 }
@@ -506,7 +511,7 @@ TEST_CASE("archive skips count directories links and binary members", "[parser][
                  {.name = "var/log/syslog", .bytes = "database connection refused\n"},
                  {.name = "lib/mod.bin", .bytes = std::string("bin\0ary", 7)}});
     nesso::parser::ArchiveSkipStats skips;
-    const auto read = nesso::parser::ReadArchive(path, {}, [](std::string_view, std::string_view) {}, &skips);
+    const auto read = nesso::parser::ReadArchive(path, {}, [](std::string_view, std::string_view) -> void {}, &skips);
     REQUIRE(read);
     CHECK(skips.directories == 1);
     CHECK(skips.symlinks == 1);
@@ -528,11 +533,12 @@ TEST_CASE("archive hardlinks increment skip stats", "[parser][archive]")
                 {{.name = "var/log/syslog", .bytes = "database connection refused\n"},
                  {.name = "var/log/messages", .bytes = {}, .type = AE_IFREG, .link = "var/log/syslog"}});
     nesso::parser::ArchiveSkipStats skips;
-    const auto members = [&]
+    const auto members = [&] -> std::vector<std::pair<std::string, std::string>>
     {
         std::vector<std::pair<std::string, std::string>> out;
         const auto read = nesso::parser::ReadArchive(
-            path, {}, [&out](std::string_view name, std::string_view bytes) { out.emplace_back(name, bytes); }, &skips);
+            path, {}, [&out](std::string_view name, std::string_view bytes) -> void { out.emplace_back(name, bytes); },
+            &skips);
         REQUIRE(read);
         return out;
     }();
@@ -552,13 +558,15 @@ TEST_CASE("nested gzip exceeding maxEntryBytes after inflate", "[parser][archive
 
     nesso::parser::ArchiveLimits entry_limit;
     entry_limit.max_entry_bytes = 10;
-    const auto too_big = nesso::parser::ReadArchive(path, entry_limit, [](std::string_view, std::string_view) {});
+    const auto too_big =
+        nesso::parser::ReadArchive(path, entry_limit, [](std::string_view, std::string_view) -> void {});
     REQUIRE_FALSE(too_big);
     CHECK(too_big.error().code == nesso::parser::ArchiveError::EntryTooLarge);
 
     nesso::parser::ArchiveLimits total_limit;
     total_limit.max_total_bytes = 10;
-    const auto too_much = nesso::parser::ReadArchive(path, total_limit, [](std::string_view, std::string_view) {});
+    const auto too_much =
+        nesso::parser::ReadArchive(path, total_limit, [](std::string_view, std::string_view) -> void {});
     REQUIRE_FALSE(too_much);
     CHECK(too_much.error().code == nesso::parser::ArchiveError::TotalTooLarge);
 }
@@ -601,7 +609,7 @@ TEST_CASE("Chunker marks entryStart on a skipped first archive record", "[parser
 
     std::vector<nesso::parser::ParsedChunk> records;
     const auto walked = nesso::parser::Chunker::ForEachRecord(path, 4096, nullptr, "message",
-                                                              [&records](nesso::parser::ParsedChunk chunk)
+                                                              [&records](nesso::parser::ParsedChunk chunk) -> void
                                                               { records.push_back(std::move(chunk)); });
     REQUIRE(walked);
     REQUIRE(records.size() == 2);

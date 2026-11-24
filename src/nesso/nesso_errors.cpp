@@ -23,7 +23,7 @@
 namespace nesso
 {
 
-ErrorCause CauseOf(nesso::parser::ParseError error)
+auto CauseOf(nesso::parser::ParseError error) -> ErrorCause
 {
     switch (error)
     {
@@ -48,7 +48,7 @@ ErrorCause CauseOf(nesso::parser::ParseError error)
     std::unreachable();
 }
 
-ErrorCause CauseOf(nesso::embed::EmbedError error)
+auto CauseOf(nesso::embed::EmbedError error) -> ErrorCause
 {
     switch (error)
     {
@@ -66,7 +66,7 @@ ErrorCause CauseOf(nesso::embed::EmbedError error)
     std::unreachable();
 }
 
-ErrorCause CauseOf(nesso::core::EngineError error)
+auto CauseOf(nesso::core::EngineError error) -> ErrorCause
 {
     switch (error)
     {
@@ -86,7 +86,7 @@ ErrorCause CauseOf(nesso::core::EngineError error)
     std::unreachable();
 }
 
-std::string_view Describe(ErrorCause cause)
+auto Describe(ErrorCause cause) -> std::string_view
 {
     switch (cause)
     {
@@ -149,7 +149,7 @@ std::string_view Describe(ErrorCause cause)
     std::unreachable();
 }
 
-static std::optional<std::string> MessageLexicalSpecial(const Error &error)
+static auto MessageLexicalSpecial(const Error &error) -> std::optional<std::string>
 {
     if (error.cause == ErrorCause::NoLexicalPostings)
     {
@@ -165,7 +165,7 @@ static std::optional<std::string> MessageLexicalSpecial(const Error &error)
     return std::nullopt;
 }
 
-static std::string MessageCorpusRead(const Error &error, std::string_view reason, const std::string &path)
+static auto MessageCorpusRead(const Error &error, std::string_view reason, const std::string &path) -> std::string
 {
     if (const auto special = MessageLexicalSpecial(error))
     {
@@ -188,7 +188,7 @@ static std::string MessageCorpusRead(const Error &error, std::string_view reason
     return std::format("Error: failed to read the corpus '{}': {}", path, reason);
 }
 
-static std::string MessageEmptyInput(const Error &error, std::string_view reason, const std::string &path)
+static auto MessageEmptyInput(const Error &error, std::string_view reason, const std::string &path) -> std::string
 {
     if (!error.note.empty())
     {
@@ -206,7 +206,7 @@ static std::string MessageEmptyInput(const Error &error, std::string_view reason
     return std::format("nothing to search in '{}': {}", path, reason);
 }
 
-std::string Message(const Error &error)
+auto Message(const Error &error) -> std::string
 {
     const std::string_view reason = Describe(error.cause);
     const std::string path = error.path.string();
@@ -259,12 +259,12 @@ std::string Message(const Error &error)
     std::unreachable();
 }
 
-static std::string CountPhrase(size_t count, std::string_view singular, std::string_view plural)
+static auto CountPhrase(size_t count, std::string_view singular, std::string_view plural) -> std::string
 {
     return std::format("{} {}", count, count == 1 ? singular : plural);
 }
 
-static std::string JoinAnd(const std::vector<std::string> &parts)
+static auto JoinAnd(const std::vector<std::string> &parts) -> std::string
 {
     if (parts.size() == 1)
     {
@@ -285,7 +285,7 @@ static std::string JoinAnd(const std::vector<std::string> &parts)
     return text;
 }
 
-std::string FormatBundleSkipSummary(const BundleSkipSummary &summary)
+auto FormatBundleSkipSummary(const BundleSkipSummary &summary) -> std::string
 {
     const size_t total = BundleSkipTotal(summary);
     if (total == 0)
@@ -317,7 +317,7 @@ std::string FormatBundleSkipSummary(const BundleSkipSummary &summary)
                        JoinAnd(parts));
 }
 
-static std::string ArchiveLimitNote(nesso::parser::ParseError code, const nesso::parser::ArchiveLimits &limits)
+static auto ArchiveLimitNote(nesso::parser::ParseError code, const nesso::parser::ArchiveLimits &limits) -> std::string
 {
     switch (code)
     {
@@ -348,7 +348,7 @@ static std::string ArchiveLimitNote(nesso::parser::ParseError code, const nesso:
     std::unreachable();
 }
 
-static std::string EncryptedArchiveNote(std::string_view entry)
+static auto EncryptedArchiveNote(std::string_view entry) -> std::string
 {
     if (entry.empty())
     {
@@ -361,8 +361,8 @@ static std::string EncryptedArchiveNote(std::string_view entry)
 namespace detail
 {
 
-Error MakeError(ErrorKind kind, ErrorCause cause, std::filesystem::path path, LineCounts counts,
-                std::vector<BundleSkipSummary> bundle_skips)
+auto MakeError(ErrorKind kind, ErrorCause cause, std::filesystem::path path, LineCounts counts,
+               std::vector<BundleSkipSummary> bundle_skips) -> Error
 {
     return Error{.kind = kind,
                  .cause = cause,
@@ -382,9 +382,9 @@ Error MakeError(ErrorKind kind, ErrorCause cause, std::filesystem::path path, Li
                  .model_mismatch = {}};
 }
 
-Error ParseFailure(nesso::parser::ParseError code, std::filesystem::path path, const LineCounts &counts,
-                   const nesso::parser::ArchiveLimits &limits, std::string_view encrypted_entry,
-                   std::vector<BundleSkipSummary> bundle_skips)
+auto ParseFailure(nesso::parser::ParseError code, std::filesystem::path path, const LineCounts &counts,
+                  const nesso::parser::ArchiveLimits &limits, std::string_view encrypted_entry,
+                  std::vector<BundleSkipSummary> bundle_skips) -> Error
 {
     Error error = MakeError(ErrorKind::Parse, CauseOf(code), std::move(path), counts, std::move(bundle_skips));
     if (code == nesso::parser::ParseError::EncryptedArchive)

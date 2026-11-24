@@ -13,7 +13,7 @@ using nesso::core::math::CosineSimilarity;
 namespace
 {
 
-[[nodiscard]] float NaiveCosine(std::span<const float> left, std::span<const float> right)
+[[nodiscard]] auto NaiveCosine(std::span<const float> left, std::span<const float> right) -> float
 {
     REQUIRE(left.size() == right.size());
     REQUIRE_FALSE(left.empty());

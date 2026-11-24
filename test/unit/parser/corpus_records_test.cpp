@@ -37,7 +37,7 @@ TEST_CASE("Chunker visits skipped lines with source byte ranges", "[Chunker][par
     nesso::parser::ParseStats stats{};
     std::vector<nesso::parser::ParsedChunk> records;
     REQUIRE(nesso::parser::Chunker::ForEachRecord(path, 4096, &stats, "message",
-                                                  [&records](nesso::parser::ParsedChunk record)
+                                                  [&records](nesso::parser::ParsedChunk record) -> void
                                                   { records.push_back(std::move(record)); }));
     REQUIRE(records.size() == 4);
     CHECK(records[0].text == "one");
@@ -70,8 +70,8 @@ TEST_CASE("Chunker visits skipped lines with source byte ranges", "[Chunker][par
     CHECK_FALSE(nesso::parser::Chunker::ReadRecord(
         directory / "missing",
         {.text = {}, .line_number = 1, .byte_offset = 0, .array_element = false, .byte_length = 1}, "message", 4096));
-    const auto unreadable =
-        nesso::parser::Chunker::ForEachRecord(directory, 4096, nullptr, "message", [](nesso::parser::ParsedChunk) {});
+    const auto unreadable = nesso::parser::Chunker::ForEachRecord(directory, 4096, nullptr, "message",
+                                                                  [](nesso::parser::ParsedChunk) -> void {});
     REQUIRE_FALSE(unreadable);
     CHECK(unreadable.error() == nesso::parser::ParseError::FileOpenFailure);
     std::filesystem::remove_all(directory);
@@ -91,7 +91,7 @@ TEST_CASE("Blank records retain their source ranges and array ordinals", "[Chunk
     nesso::parser::ParseStats stats{};
     std::vector<nesso::parser::ParsedChunk> records;
     REQUIRE(nesso::parser::Chunker::ForEachRecord(log, 4096, &stats, "message",
-                                                  [&records](nesso::parser::ParsedChunk record)
+                                                  [&records](nesso::parser::ParsedChunk record) -> void
                                                   { records.push_back(std::move(record)); }));
     REQUIRE(records.size() == 3);
     CHECK(records[0].skipped);
@@ -127,7 +127,7 @@ TEST_CASE("Blank records retain their source ranges and array ordinals", "[Chunk
     nesso::parser::ParseStats jsonl_stats{};
     std::vector<nesso::parser::ParsedChunk> jsonl_records;
     REQUIRE(nesso::parser::Chunker::ForEachRecord(jsonl, 4096, &jsonl_stats, "msg",
-                                                  [&jsonl_records](nesso::parser::ParsedChunk record)
+                                                  [&jsonl_records](nesso::parser::ParsedChunk record) -> void
                                                   { jsonl_records.push_back(std::move(record)); }));
     REQUIRE(jsonl_records.size() == 3);
     CHECK(jsonl_records[0].skipped);
@@ -150,7 +150,7 @@ TEST_CASE("Blank records retain their source ranges and array ordinals", "[Chunk
     nesso::parser::ParseStats json_stats{};
     std::vector<nesso::parser::ParsedChunk> json_records;
     REQUIRE(nesso::parser::Chunker::ForEachRecord(json, 4096, &json_stats, "msg",
-                                                  [&json_records](nesso::parser::ParsedChunk record)
+                                                  [&json_records](nesso::parser::ParsedChunk record) -> void
                                                   { json_records.push_back(std::move(record)); }));
     REQUIRE(json_records.size() == 3);
     CHECK(json_records[0].skipped);
@@ -178,7 +178,7 @@ TEST_CASE("Chunker re-reads decoded JSON values by field and array ordinal", "[C
     nesso::parser::ParseStats stats{};
     std::vector<nesso::parser::ParsedChunk> records;
     REQUIRE(nesso::parser::Chunker::ForEachRecord(jsonl, 4096, &stats, "msg",
-                                                  [&records](nesso::parser::ParsedChunk record)
+                                                  [&records](nesso::parser::ParsedChunk record) -> void
                                                   { records.push_back(std::move(record)); }));
     REQUIRE(records.size() == 4);
     CHECK(records[0].text == "line\nvalue");
@@ -191,7 +191,7 @@ TEST_CASE("Chunker re-reads decoded JSON values by field and array ordinal", "[C
     size_t callbacks = 0;
     nesso::parser::ParseStats callback_stats{};
     CHECK_THROWS_AS(nesso::parser::Chunker::ForEachRecord(jsonl, 4096, &callback_stats, "msg",
-                                                          [&callbacks](nesso::parser::ParsedChunk)
+                                                          [&callbacks](nesso::parser::ParsedChunk) -> void
                                                           {
                                                               ++callbacks;
                                                               const auto invalid = nlohmann::json::parse("{bad");
@@ -251,7 +251,7 @@ TEST_CASE("Chunker re-reads decoded JSON values by field and array ordinal", "[C
     WriteBytes(json, "[{\"msg\":\"first\"},{\"missing\":1},{\"msg\":\"third\"}]");
     records.clear();
     REQUIRE(nesso::parser::Chunker::ForEachRecord(json, 4096, nullptr, "msg",
-                                                  [&records](nesso::parser::ParsedChunk record)
+                                                  [&records](nesso::parser::ParsedChunk record) -> void
                                                   { records.push_back(std::move(record)); }));
     REQUIRE(records.size() == 3);
     CHECK(records[1].skipped);
@@ -270,7 +270,7 @@ TEST_CASE("Chunker re-reads decoded JSON values by field and array ordinal", "[C
     callbacks = 0;
     callback_stats = {};
     CHECK_THROWS_AS(nesso::parser::Chunker::ForEachRecord(json, 4096, &callback_stats, "msg",
-                                                          [&callbacks](nesso::parser::ParsedChunk)
+                                                          [&callbacks](nesso::parser::ParsedChunk) -> void
                                                           {
                                                               ++callbacks;
                                                               const auto invalid = nlohmann::json::parse("{bad");
@@ -293,7 +293,7 @@ TEST_CASE("Chunker re-reads decoded JSON values by field and array ordinal", "[C
     WriteBytes(json, "{invalid");
     records.clear();
     REQUIRE(nesso::parser::Chunker::ForEachRecord(json, 4096, nullptr, "msg",
-                                                  [&records](nesso::parser::ParsedChunk record)
+                                                  [&records](nesso::parser::ParsedChunk record) -> void
                                                   { records.push_back(std::move(record)); }));
     REQUIRE(records.size() == 1);
     CHECK(records[0].skipped);

@@ -17,6 +17,7 @@
 #include <core/query_class.hpp>
 #include <core/score_fusion.hpp>
 #include <core/top_k.hpp>
+#include <embed/embed_types.hpp>
 #include <embed/embedder.hpp>
 #include <parser/archive_source.hpp>
 #include <parser/log_chunker.hpp>
@@ -159,22 +160,22 @@ struct GrepBm25
 };
 } // namespace
 
-static const std::vector<GrepWaiting> &Kept(const GrepEmbedState &state)
+static auto Kept(const GrepEmbedState &state) -> const std::vector<GrepWaiting> &
 {
     return state.need_lexical ? state.all_lines : state.dense_lines;
 }
 
-static std::string_view LineText(const GrepEmbedState &state, const GrepWaiting &item)
+static auto LineText(const GrepEmbedState &state, const GrepWaiting &item) -> std::string_view
 {
     return item.own_text ? std::string_view{item.text} : state.distinct.Text(item.distinct_id);
 }
 
-static bool BetterGrepCandidate(const GrepCandidate &left, const GrepCandidate &right)
+static auto BetterGrepCandidate(const GrepCandidate &left, const GrepCandidate &right) -> bool
 {
     return nesso::core::RankBefore(left.score, left.index, right.score, right.index);
 }
 
-static bool LexicalHitBefore(const GrepHit &left, const GrepHit &right)
+static auto LexicalHitBefore(const GrepHit &left, const GrepHit &right) -> bool
 {
     if (left.substring != right.substring)
     {
@@ -183,7 +184,7 @@ static bool LexicalHitBefore(const GrepHit &left, const GrepHit &right)
     return BetterHit(left.score, left.ordinal, right.score, right.ordinal);
 }
 
-static bool ScoreHitBefore(const GrepHit &left, const GrepHit &right)
+static auto ScoreHitBefore(const GrepHit &left, const GrepHit &right) -> bool
 {
     return BetterHit(left.score, left.ordinal, right.score, right.ordinal);
 }
@@ -227,7 +228,7 @@ static void ConsiderDenseGrep(GrepEmbedState &state, const GrepWaiting &item)
     }
 }
 
-static TextResults EmptyGrepResults(const GrepEmbedState &state, bool group);
+static auto EmptyGrepResults(const GrepEmbedState &state, bool group) -> TextResults;
 
 static void ReportProvisional(GrepEmbedState &state)
 {
@@ -385,7 +386,7 @@ static void CountSingletons(GrepEmbedState &state)
 
 // Embeds whole windows, most promising first. A window keeps its members and
 // their order (ADR 0004), so each score is the one input order gives.
-static std::expected<void, Error> EmbedGrepWindows(GrepEmbedState &state)
+static auto EmbedGrepWindows(GrepEmbedState &state) -> std::expected<void, Error>
 {
     const ScopedStage stage{"embed"};
     const LineCounts &counts = state.scanned->counts;
@@ -441,7 +442,7 @@ static std::expected<void, Error> EmbedGrepWindows(GrepEmbedState &state)
     return {};
 }
 
-static TextResults DenseGrepResults(GrepEmbedState &state, TextResults results)
+static auto DenseGrepResults(GrepEmbedState &state, TextResults results) -> TextResults
 {
     std::ranges::sort(state.best, BetterGrepCandidate);
     results.matches.reserve(state.best.size());
@@ -455,9 +456,8 @@ static TextResults DenseGrepResults(GrepEmbedState &state, TextResults results)
     return results;
 }
 
-static GrepBm25 BuildGrepBm25Scores(const std::vector<GrepWaiting> &all_lines,
-                                    const nesso::core::QueryTokens &query_tokens, EffectiveMode effective,
-                                    nesso::core::QueryClass query_class)
+static auto BuildGrepBm25Scores(const std::vector<GrepWaiting> &all_lines, const nesso::core::QueryTokens &query_tokens,
+                                EffectiveMode effective, nesso::core::QueryClass query_class) -> GrepBm25
 {
     nesso::core::Bm25Index bm25;
     for (const GrepWaiting &item : all_lines)
@@ -488,7 +488,7 @@ static GrepBm25 BuildGrepBm25Scores(const std::vector<GrepWaiting> &all_lines,
     bool lexical_fallback = false;
     if (effective == EffectiveMode::Lexical)
     {
-        const bool any_hit = std::ranges::any_of(bm25_scores, [](double score) { return score > 0.0; });
+        const bool any_hit = std::ranges::any_of(bm25_scores, [](double score) -> bool { return score > 0.0; });
         if (!any_hit)
         {
             effective = EffectiveMode::Hybrid;
@@ -501,9 +501,8 @@ static GrepBm25 BuildGrepBm25Scores(const std::vector<GrepWaiting> &all_lines,
                     .lexical_fallback = lexical_fallback};
 }
 
-static std::vector<GrepHit> LexicalGrepHits(const std::vector<GrepWaiting> &all_lines,
-                                            const std::vector<double> &bm25_scores,
-                                            const nesso::core::QueryTokens &query_tokens)
+static auto LexicalGrepHits(const std::vector<GrepWaiting> &all_lines, const std::vector<double> &bm25_scores,
+                            const nesso::core::QueryTokens &query_tokens) -> std::vector<GrepHit>
 {
     std::vector<GrepHit> hits;
     hits.reserve(all_lines.size());
@@ -529,8 +528,8 @@ static std::vector<GrepHit> LexicalGrepHits(const std::vector<GrepWaiting> &all_
     return hits;
 }
 
-static std::vector<GrepHit> HybridGrepHits(const std::vector<GrepWaiting> &all_lines, const std::vector<float> &scores,
-                                           const GrepBm25 &lexical)
+static auto HybridGrepHits(const std::vector<GrepWaiting> &all_lines, const std::vector<float> &scores,
+                           const GrepBm25 &lexical) -> std::vector<GrepHit>
 {
     const std::vector<double> &bm25_scores = lexical.scores;
     std::vector<double> dense_values;
@@ -561,8 +560,8 @@ static std::vector<GrepHit> HybridGrepHits(const std::vector<GrepWaiting> &all_l
     return hits;
 }
 
-static std::vector<GrepHit> GroupGrepHits(const std::vector<GrepHit> &hits, const std::vector<GrepWaiting> &all_lines,
-                                          std::uint32_t distinct_count, EffectiveMode effective, size_t top_k)
+static auto GroupGrepHits(const std::vector<GrepHit> &hits, const std::vector<GrepWaiting> &all_lines,
+                          std::uint32_t distinct_count, EffectiveMode effective, size_t top_k) -> std::vector<GrepHit>
 {
     std::vector<char> origin_seen(distinct_count, 0);
     std::vector<GrepWaiting> origin(distinct_count);
@@ -609,7 +608,7 @@ static std::vector<GrepHit> GroupGrepHits(const std::vector<GrepHit> &hits, cons
     return groups;
 }
 
-static TextResults EmptyGrepResults(const GrepEmbedState &state, bool group)
+static auto EmptyGrepResults(const GrepEmbedState &state, bool group) -> TextResults
 {
     return TextResults{.matches = {},
                        .skipped_lines = state.scanned->counts.skipped,
@@ -627,8 +626,8 @@ static TextResults EmptyGrepResults(const GrepEmbedState &state, bool group)
                        .grouped = group};
 }
 
-static TextResults MaterializeGrepHits(const GrepEmbedState &state, std::span<const GrepHit> hits, EffectiveMode mode,
-                                       bool lexical_fallback)
+static auto MaterializeGrepHits(const GrepEmbedState &state, std::span<const GrepHit> hits, EffectiveMode mode,
+                                bool lexical_fallback) -> TextResults
 {
     TextResults results = EmptyGrepResults(state, state.request->group);
     results.lexical_fallback = lexical_fallback;
@@ -658,8 +657,8 @@ static TextResults MaterializeGrepHits(const GrepEmbedState &state, std::span<co
     return results;
 }
 
-static TextResults RankFromBm25(const GrepEmbedState &state, const nesso::core::QueryTokens &query_tokens,
-                                const GrepBm25 &lexical)
+static auto RankFromBm25(const GrepEmbedState &state, const nesso::core::QueryTokens &query_tokens,
+                         const GrepBm25 &lexical) -> TextResults
 {
     std::vector<GrepHit> hits = lexical.effective == EffectiveMode::Lexical
                                     ? LexicalGrepHits(state.all_lines, lexical.scores, query_tokens)
@@ -675,8 +674,8 @@ static TextResults RankFromBm25(const GrepEmbedState &state, const nesso::core::
     return MaterializeGrepHits(state, hits, lexical.effective, lexical.lexical_fallback);
 }
 
-static TextResults RankLexicalGrep(const GrepEmbedState &state, const nesso::core::QueryTokens &query_tokens,
-                                   EffectiveMode effective)
+static auto RankLexicalGrep(const GrepEmbedState &state, const nesso::core::QueryTokens &query_tokens,
+                            EffectiveMode effective) -> TextResults
 {
     const GrepBm25 lexical =
         BuildGrepBm25Scores(state.all_lines, query_tokens, effective, nesso::core::ClassifyQuery(state.request->query));
@@ -695,9 +694,9 @@ class ScanDoneNotice
     {
     }
     ScanDoneNotice(const ScanDoneNotice &) = delete;
-    ScanDoneNotice &operator=(const ScanDoneNotice &) = delete;
+    auto operator=(const ScanDoneNotice &) -> ScanDoneNotice & = delete;
     ScanDoneNotice(ScanDoneNotice &&) = delete;
-    ScanDoneNotice &operator=(ScanDoneNotice &&) = delete;
+    auto operator=(ScanDoneNotice &&) -> ScanDoneNotice & = delete;
     ~ScanDoneNotice() { Fire(); }
 
     void Fire() noexcept
@@ -720,7 +719,7 @@ class ScanDoneNotice
 };
 } // namespace
 
-std::expected<TextResults, Error> Nesso::Grep(const GrepRequest &input) const
+auto Nesso::Grep(const GrepRequest &input) const -> std::expected<TextResults, Error>
 {
     const TraceSession session;
     // Declared before the notice, so the notice can still redraw it on an
@@ -794,7 +793,7 @@ std::expected<TextResults, Error> Nesso::Grep(const GrepRequest &input) const
         }
     }
 
-    const auto query_embedding = [&state, &request]
+    const auto query_embedding = [&state, &request] -> std::expected<std::vector<float>, embed::EmbedError>
     {
         const ScopedStage stage{"query-embed"};
         return state.model->embed(request.query);

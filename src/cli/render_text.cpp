@@ -25,7 +25,7 @@ static void AppendHexByte(std::string &output, unsigned char byte)
     output.push_back(HEX_DIGITS.at(byte & 0x0FU));
 }
 
-static std::size_t Utf8SequenceLength(unsigned char lead)
+static auto Utf8SequenceLength(unsigned char lead) -> std::size_t
 {
     if (lead >= 0xC2U && lead <= 0xDFU)
     {
@@ -51,9 +51,9 @@ struct Utf8Slice
 };
 } // namespace
 
-static bool DecodeUtf8(std::string_view text, const Utf8Slice &slice, std::uint32_t &codepoint)
+static auto DecodeUtf8(std::string_view text, const Utf8Slice &slice, std::uint32_t &codepoint) -> bool
 {
-    const auto byte = [&text](std::size_t index) { return static_cast<unsigned char>(text[index]); };
+    const auto byte = [&text](std::size_t index) -> unsigned char { return static_cast<unsigned char>(text[index]); };
     const unsigned char lead = byte(slice.offset);
     if (slice.length == 2)
     {
@@ -81,7 +81,7 @@ static bool DecodeUtf8(std::string_view text, const Utf8Slice &slice, std::uint3
            (codepoint < 0xD800U || codepoint > 0xDFFFU);
 }
 
-std::string EscapeTerminalControls(std::string_view text)
+auto EscapeTerminalControls(std::string_view text) -> std::string
 {
     std::string output;
     output.reserve(text.size());
@@ -125,7 +125,7 @@ std::string EscapeTerminalControls(std::string_view text)
     return output;
 }
 
-std::string FormatErrorMessage(const Error &error)
+auto FormatErrorMessage(const Error &error) -> std::string
 {
     if (!error.model_mismatch)
     {
@@ -140,7 +140,7 @@ std::string FormatErrorMessage(const Error &error)
     return Message(escaped);
 }
 
-std::string FormatTextRow(const TextResults &results, const TextMatch &match)
+auto FormatTextRow(const TextResults &results, const TextMatch &match) -> std::string
 {
     const char *place = match.array_element ? "element" : "line";
     // Archive labels are `bundle:entry`. A single member still prints that
@@ -164,7 +164,7 @@ std::string FormatTextRow(const TextResults &results, const TextMatch &match)
                        EscapeTerminalControls(match.text));
 }
 
-std::string FormatEventTypeRow(const EventTypeRow &row)
+auto FormatEventTypeRow(const EventTypeRow &row) -> std::string
 {
     return std::format("{}:{} {} ({}): {}", EscapeTerminalControls(row.source), row.array_element ? "element" : "line",
                        row.line, row.count, EscapeTerminalControls(row.text));

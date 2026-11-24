@@ -34,9 +34,9 @@
 namespace nesso::cli
 {
 
-static CLI::Validator InputFile()
+static auto InputFile() -> CLI::Validator
 {
-    return CLI::Validator{[](std::string &value)
+    return CLI::Validator{[](std::string &value) -> std::string
                           {
                               if (value == "-")
                               {
@@ -53,9 +53,9 @@ static CLI::Validator InputFile()
                           "FILE", "existing file or directory, or - for stdin"};
 }
 
-static CLI::Validator PositiveCount()
+static auto PositiveCount() -> CLI::Validator
 {
-    return CLI::Validator{[](std::string &value)
+    return CLI::Validator{[](std::string &value) -> std::string
                           {
                               if (value.empty() || value.find_first_not_of("0123456789") != std::string::npos ||
                                   value.find_first_not_of('0') == std::string::npos)
@@ -72,9 +72,9 @@ static constexpr const char *MODEL_DIR_HELP = "Directory containing model.onnx a
 
 static constexpr const char *TEXT_FILES_HELP = "Text files, directories, or tar/zip bundles. - reads stdin as lines";
 
-static CLI::Validator PositiveUint64()
+static auto PositiveUint64() -> CLI::Validator
 {
-    return CLI::Validator{[](std::string &value)
+    return CLI::Validator{[](std::string &value) -> std::string
                           {
                               if (value.empty() || value.find_first_not_of("0123456789") != std::string::npos ||
                                   value.find_first_not_of('0') == std::string::npos)
@@ -112,9 +112,9 @@ static void AddArchiveLimits(CLI::App *command, nesso::parser::ArchiveLimits &li
 
 static constexpr const char *THREADS_HELP = "CPU budget N from 1 to 1024. Default and layout rules: docs/usage.md.";
 
-static CLI::Validator MakeThreadCountValidator()
+static auto MakeThreadCountValidator() -> CLI::Validator
 {
-    return CLI::Validator{[](std::string &value)
+    return CLI::Validator{[](std::string &value) -> std::string
                           {
                               const auto parsed = ThreadCount::Parse(value);
                               if (!parsed)
@@ -177,7 +177,7 @@ struct TextOptions
 };
 } // namespace
 
-static SearchMode ParseSearchMode(std::string_view mode)
+static auto ParseSearchMode(std::string_view mode) -> SearchMode
 {
     if (mode == "hybrid")
     {
@@ -194,12 +194,12 @@ static SearchMode ParseSearchMode(std::string_view mode)
     return SearchMode::Auto;
 }
 
-static std::vector<std::filesystem::path> ToPaths(const std::vector<std::string> &args)
+static auto ToPaths(const std::vector<std::string> &args) -> std::vector<std::filesystem::path>
 {
     return {args.begin(), args.end()};
 }
 
-static Config ConfigFrom(const CLI::Option &model_dir_opt, const TextOptions &text, size_t threads)
+static auto ConfigFrom(const CLI::Option &model_dir_opt, const TextOptions &text, size_t threads) -> Config
 {
     Config config;
     if (!model_dir_opt.empty())
@@ -210,7 +210,7 @@ static Config ConfigFrom(const CLI::Option &model_dir_opt, const TextOptions &te
     return config;
 }
 
-static std::expected<size_t, ThreadCountError> ThreadsFromEnvironment()
+static auto ThreadsFromEnvironment() -> std::expected<size_t, ThreadCountError>
 {
     // getenv is not thread-safe. The CLI reads the environment once on the main
     // thread. NOLINTNEXTLINE(concurrency-mt-unsafe)
@@ -231,7 +231,7 @@ static void ConfigureAppVersion(CLI::App &app, bool &verbose)
 {
     app.add_flag("--verbose", verbose, "With --version, print the embedding session policy");
     app.set_version_flag("-V,--version",
-                         [&verbose]
+                         [&verbose] -> std::string
                          {
                              const auto from_env = ThreadsFromEnvironment();
                              if (!from_env)
@@ -260,7 +260,7 @@ struct TextSubcommand
 };
 } // namespace
 
-static TextSubcommand AddGrepSubcommand(CLI::App &app, TextOptions &text)
+static auto AddGrepSubcommand(CLI::App &app, TextOptions &text) -> TextSubcommand
 {
     auto *cmd = app.add_subcommand("grep", "Semantic search of text files. See docs/usage.md.");
     cmd->add_option("query", text.query, "Natural-language query")->required();
@@ -284,7 +284,7 @@ static TextSubcommand AddGrepSubcommand(CLI::App &app, TextOptions &text)
         .model_dir_opt = cmd->add_option("--model-dir", text.model_dir, MODEL_DIR_HELP)};
 }
 
-static TextSubcommand AddIndexSubcommand(CLI::App &app, TextOptions &text)
+static auto AddIndexSubcommand(CLI::App &app, TextOptions &text) -> TextSubcommand
 {
     auto *cmd = app.add_subcommand("index", "Embed text into a corpus file. See docs/usage.md.");
     cmd->add_option("-o,--output", text.output, "Corpus file to write")->required();
@@ -298,7 +298,7 @@ static TextSubcommand AddIndexSubcommand(CLI::App &app, TextOptions &text)
         .model_dir_opt = cmd->add_option("--model-dir", text.model_dir, MODEL_DIR_HELP)};
 }
 
-static TextSubcommand AddSearchSubcommand(CLI::App &app, TextOptions &text)
+static auto AddSearchSubcommand(CLI::App &app, TextOptions &text) -> TextSubcommand
 {
     auto *cmd = app.add_subcommand("search", "Semantic search of a corpus file. Prints matches only.");
     cmd->add_option("query", text.query, "Natural-language query")->required();
@@ -318,7 +318,7 @@ static TextSubcommand AddSearchSubcommand(CLI::App &app, TextOptions &text)
 }
 
 // No model is loaded, so there is no --model-dir or --threads.
-static CLI::App *AddOverviewSubcommand(CLI::App &app, TextOptions &text)
+static auto AddOverviewSubcommand(CLI::App &app, TextOptions &text) -> CLI::App *
 {
     auto *cmd = app.add_subcommand("overview", "List rare or new event types of text files. No model is loaded.");
     cmd->add_option("files", text.files, TEXT_FILES_HELP)->required()->expected(1, -1)->check(InputFile());
@@ -334,7 +334,7 @@ static CLI::App *AddOverviewSubcommand(CLI::App &app, TextOptions &text)
     return cmd;
 }
 
-static ParsedCommand MakeOverviewCommand(const TextOptions &text)
+static auto MakeOverviewCommand(const TextOptions &text) -> ParsedCommand
 {
     return ParsedCommand{.config = Config{},
                          .request =
@@ -348,7 +348,7 @@ static ParsedCommand MakeOverviewCommand(const TextOptions &text)
                                              .json = text.json}};
 }
 
-static std::expected<size_t, int> ResolveThreads(const CLI::Option &threads_opt, size_t flagged)
+static auto ResolveThreads(const CLI::Option &threads_opt, size_t flagged) -> std::expected<size_t, int>
 {
     if (!threads_opt.empty())
     {
@@ -363,8 +363,8 @@ static std::expected<size_t, int> ResolveThreads(const CLI::Option &threads_opt,
     return *from_env;
 }
 
-static ParsedCommand MakeParsedCommand(const CLI::App &grep_cmd, const CLI::App &index_cmd,
-                                       const CLI::Option &model_dir_opt, const TextOptions &text, size_t threads)
+static auto MakeParsedCommand(const CLI::App &grep_cmd, const CLI::App &index_cmd, const CLI::Option &model_dir_opt,
+                              const TextOptions &text, size_t threads) -> ParsedCommand
 {
     if (grep_cmd.parsed())
     {
@@ -404,7 +404,7 @@ static ParsedCommand MakeParsedCommand(const CLI::App &grep_cmd, const CLI::App 
                                                   .group = text.group}};
 }
 
-std::expected<ParsedCommand, int> ParseCommandLine(int argc, char **argv)
+auto ParseCommandLine(int argc, char **argv) -> std::expected<ParsedCommand, int>
 {
     TextOptions text;
     CLI::App app{"Nesso - local semantic search for unstructured text"};

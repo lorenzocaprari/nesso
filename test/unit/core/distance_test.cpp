@@ -239,7 +239,7 @@ void FillPair(std::mt19937 &rng, std::vector<float> &left, std::vector<float> &r
     }
 }
 
-[[nodiscard]] bool HostHasAvx2Fma()
+[[nodiscard]] auto HostHasAvx2Fma() -> bool
 {
 #if defined(__x86_64__)
     return __builtin_cpu_supports("avx2") && __builtin_cpu_supports("fma");

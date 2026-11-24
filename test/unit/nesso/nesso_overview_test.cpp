@@ -31,12 +31,12 @@ class TempDir
     }
 
     TempDir(const TempDir &) = delete;
-    TempDir &operator=(const TempDir &) = delete;
+    auto operator=(const TempDir &) -> TempDir & = delete;
     TempDir(TempDir &&) = delete;
-    TempDir &operator=(TempDir &&) = delete;
+    auto operator=(TempDir &&) -> TempDir & = delete;
     ~TempDir() { std::filesystem::remove_all(path_); }
 
-    [[nodiscard]] const std::filesystem::path &Path() const { return path_; }
+    [[nodiscard]] auto Path() const -> const std::filesystem::path & { return path_; }
 
   private:
     std::filesystem::path path_;
@@ -48,9 +48,9 @@ class CinGuard
     explicit CinGuard(std::istream &input) : previous_(std::cin.rdbuf(input.rdbuf())) { std::cin.clear(); }
 
     CinGuard(const CinGuard &) = delete;
-    CinGuard &operator=(const CinGuard &) = delete;
+    auto operator=(const CinGuard &) -> CinGuard & = delete;
     CinGuard(CinGuard &&) = delete;
-    CinGuard &operator=(CinGuard &&) = delete;
+    auto operator=(CinGuard &&) -> CinGuard & = delete;
 
     ~CinGuard()
     {
@@ -118,7 +118,7 @@ void WriteTar(const std::filesystem::path &path, const std::vector<TarMember> &m
     WriteFile(path, archive);
 }
 
-nesso::OverviewRequest Request(std::vector<std::filesystem::path> files)
+auto Request(std::vector<std::filesystem::path> files) -> nesso::OverviewRequest
 {
     return nesso::OverviewRequest{.files = std::move(files),
                                   .top_k = nesso::DEFAULT_OVERVIEW_TOP_K,
@@ -128,7 +128,7 @@ nesso::OverviewRequest Request(std::vector<std::filesystem::path> files)
                                   .max_types = nesso::DEFAULT_MAX_EVENT_TYPES};
 }
 
-std::vector<std::string> Texts(const nesso::OverviewResults &results)
+auto Texts(const nesso::OverviewResults &results) -> std::vector<std::string>
 {
     std::vector<std::string> texts;
     texts.reserve(results.rows.size());

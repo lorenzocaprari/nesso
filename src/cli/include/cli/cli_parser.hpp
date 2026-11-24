@@ -24,7 +24,7 @@ struct ParsedCommand
 /// Parses argv into one request. The error is the process exit code when no
 /// command should run: help and version yield 0, and a usage error yields 2
 /// after printing CLI11's diagnostic.
-[[nodiscard]] std::expected<ParsedCommand, int> ParseCommandLine(int argc, char **argv);
+[[nodiscard]] auto ParseCommandLine(int argc, char **argv) -> std::expected<ParsedCommand, int>;
 
 } // namespace nesso::cli
 

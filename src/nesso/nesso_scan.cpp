@@ -35,7 +35,7 @@ using detail::Scan;
 namespace detail
 {
 
-LineCounts MakeLineCounts(const nesso::parser::ParseStats &stats, std::string json_field)
+auto MakeLineCounts(const nesso::parser::ParseStats &stats, std::string json_field) -> LineCounts
 {
     return {.skipped = stats.skipped_lines,
             .empty_lines = stats.empty_lines,
@@ -67,12 +67,12 @@ void RecordBundleSkips(Scan &scan, const std::filesystem::path &path, const ness
 
 } // namespace detail
 
-static std::expected<void, Error> ScanStdin(Scan &scan, nesso::parser::ParseStats &stats, std::string_view json_field,
-                                            const nesso::parser::ArchiveLimits &limits, bool for_index,
-                                            detail::ScanSink *sink)
+static auto ScanStdin(Scan &scan, nesso::parser::ParseStats &stats, std::string_view json_field,
+                      const nesso::parser::ArchiveLimits &limits, bool for_index, detail::ScanSink *sink)
+    -> std::expected<void, Error>
 {
     const std::filesystem::path path{"-"};
-    const auto keep = [&scan, sink](nesso::parser::ParsedChunk chunk)
+    const auto keep = [&scan, sink](nesso::parser::ParsedChunk chunk) -> void
     {
         if (!chunk.skipped)
         {
@@ -107,9 +107,9 @@ static std::expected<void, Error> ScanStdin(Scan &scan, nesso::parser::ParseStat
 
 // One read pass. With a sink, every path is announced and every chunk goes to
 // the sink; stdin is not kept.
-static std::expected<Scan, Error> ScanEach(std::span<const std::filesystem::path> files, std::string_view json_field,
-                                           const nesso::parser::ArchiveLimits &limits, bool for_index,
-                                           detail::ScanSink *sink)
+static auto ScanEach(std::span<const std::filesystem::path> files, std::string_view json_field,
+                     const nesso::parser::ArchiveLimits &limits, bool for_index, detail::ScanSink *sink)
+    -> std::expected<Scan, Error>
 {
     const ScopedStage stage{"parse"};
     nesso::parser::ParseStats stats{};
@@ -149,7 +149,7 @@ static std::expected<Scan, Error> ScanEach(std::span<const std::filesystem::path
         const nesso::parser::ParseStats before = stats;
         const auto streamed = nesso::parser::Chunker::ForEach(
             path, MAX_LINE_LENGTH, &stats, json_field,
-            [&scan, sink](nesso::parser::ParsedChunk chunk)
+            [&scan, sink](nesso::parser::ParsedChunk chunk) -> void
             {
                 ++scan.chunks;
                 if (sink != nullptr)
@@ -173,25 +173,25 @@ static std::expected<Scan, Error> ScanEach(std::span<const std::filesystem::path
 namespace detail
 {
 
-bool SameSource(const nesso::core::SourceInfo &left, const nesso::core::SourceInfo &right)
+auto SameSource(const nesso::core::SourceInfo &left, const nesso::core::SourceInfo &right) -> bool
 {
     return left.tracked == right.tracked && left.size == right.size && left.modified_time == right.modified_time;
 }
 
-std::expected<Scan, Error> ScanFiles(std::span<const std::filesystem::path> files, std::string_view json_field,
-                                     const nesso::parser::ArchiveLimits &limits, bool for_index)
+auto ScanFiles(std::span<const std::filesystem::path> files, std::string_view json_field,
+               const nesso::parser::ArchiveLimits &limits, bool for_index) -> std::expected<Scan, Error>
 {
     return ScanEach(files, json_field, limits, for_index, nullptr);
 }
 
-std::expected<Scan, Error> ScanFiles(std::span<const std::filesystem::path> files, std::string_view json_field,
-                                     const nesso::parser::ArchiveLimits &limits, ScanSink &sink)
+auto ScanFiles(std::span<const std::filesystem::path> files, std::string_view json_field,
+               const nesso::parser::ArchiveLimits &limits, ScanSink &sink) -> std::expected<Scan, Error>
 {
     return ScanEach(files, json_field, limits, false, &sink);
 }
 
-std::expected<std::vector<std::filesystem::path>, Error>
-ExpandRequestFiles(std::span<const std::filesystem::path> files)
+auto ExpandRequestFiles(std::span<const std::filesystem::path> files)
+    -> std::expected<std::vector<std::filesystem::path>, Error>
 {
     auto expanded = nesso::parser::ExpandInputs(files);
     if (!expanded)

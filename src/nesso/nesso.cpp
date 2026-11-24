@@ -40,7 +40,7 @@
 namespace nesso
 {
 
-static std::string ModelLoadNote(const std::vector<std::filesystem::path> &tried)
+static auto ModelLoadNote(const std::vector<std::filesystem::path> &tried) -> std::string
 {
     std::string text = "Tried";
     for (size_t index = 0; index < tried.size(); ++index)
@@ -77,11 +77,11 @@ struct FileStamp
 
     // A defaulted friend cannot be static. The type is already internal.
     // NOLINTNEXTLINE(llvm-prefer-static-over-anonymous-namespace)
-    friend bool operator==(const FileStamp &, const FileStamp &) = default;
+    friend auto operator==(const FileStamp &, const FileStamp &) -> bool = default;
 };
 } // namespace
 
-static std::optional<FileStamp> ReadFileStamp(const std::filesystem::path &path)
+static auto ReadFileStamp(const std::filesystem::path &path) -> std::optional<FileStamp>
 {
     struct stat status{};
     if (::stat(path.c_str(), &status) != 0)
@@ -116,14 +116,15 @@ class OnnxBoundEmbedder final : public nesso::embed::Embedder
     }
 
     OnnxBoundEmbedder(const OnnxBoundEmbedder &) = delete;
-    OnnxBoundEmbedder &operator=(const OnnxBoundEmbedder &) = delete;
+    auto operator=(const OnnxBoundEmbedder &) -> OnnxBoundEmbedder & = delete;
     OnnxBoundEmbedder(OnnxBoundEmbedder &&) = delete;
-    OnnxBoundEmbedder &operator=(OnnxBoundEmbedder &&) = delete;
+    auto operator=(OnnxBoundEmbedder &&) -> OnnxBoundEmbedder & = delete;
     ~OnnxBoundEmbedder() override = default;
 
-    [[nodiscard]] size_t sessions() const noexcept override { return inner_->Sessions(); }
+    [[nodiscard]] auto sessions() const noexcept -> size_t override { return inner_->Sessions(); }
 
-    [[nodiscard]] std::expected<nesso::embed::EmbedderIdentity, nesso::embed::EmbedError> identity() const override
+    [[nodiscard]] auto identity() const
+        -> std::expected<nesso::embed::EmbedderIdentity, nesso::embed::EmbedError> override
     {
         if (identity_)
         {
@@ -149,14 +150,14 @@ class OnnxBoundEmbedder final : public nesso::embed::Embedder
         return *identity_;
     }
 
-    [[nodiscard]] std::expected<std::vector<float>, nesso::embed::EmbedError>
-    embed(std::string_view text) const override
+    [[nodiscard]] auto embed(std::string_view text) const
+        -> std::expected<std::vector<float>, nesso::embed::EmbedError> override
     {
         return inner_->Embed(text);
     }
 
-    [[nodiscard]] std::expected<std::vector<std::vector<float>>, nesso::embed::EmbedError>
-    EmbedBatch(std::span<const std::string> texts, ProgressCallback progress) const override
+    [[nodiscard]] auto EmbedBatch(std::span<const std::string> texts, ProgressCallback progress) const
+        -> std::expected<std::vector<std::vector<float>>, nesso::embed::EmbedError> override
     {
         return inner_->EmbedBatch(texts, std::move(progress));
     }
@@ -183,9 +184,9 @@ Nesso::~Nesso() = default;
 
 Nesso::Nesso(Nesso &&) noexcept = default;
 
-Nesso &Nesso::operator=(Nesso &&) noexcept = default;
+auto Nesso::operator=(Nesso &&) noexcept -> Nesso & = default;
 
-std::expected<const nesso::embed::Embedder *, Error> Nesso::Embedder() const
+auto Nesso::Embedder() const -> std::expected<const nesso::embed::Embedder *, Error>
 {
     if (!embedder_)
     {
@@ -239,11 +240,11 @@ std::expected<const nesso::embed::Embedder *, Error> Nesso::Embedder() const
 namespace detail
 {
 
-size_t StreamBatch() { return nesso::embed::BATCH_WINDOW; }
+auto StreamBatch() -> size_t { return nesso::embed::BATCH_WINDOW; }
 
-std::expected<std::vector<std::vector<float>>, Error>
-EmbedDistinct(std::span<const std::string> texts, const nesso::embed::Embedder &embedder, ProgressReporter &progress,
-              const EmbedProgressSpan &span, const LineCounts &counts)
+auto EmbedDistinct(std::span<const std::string> texts, const nesso::embed::Embedder &embedder,
+                   ProgressReporter &progress, const EmbedProgressSpan &span, const LineCounts &counts)
+    -> std::expected<std::vector<std::vector<float>>, Error>
 {
     const size_t distinct = texts.size();
     std::vector<std::string> messages;
@@ -253,7 +254,7 @@ EmbedDistinct(std::span<const std::string> texts, const nesso::embed::Embedder &
         messages.emplace_back(nesso::parser::SplitLogLine(text).message);
     }
     auto embeddings = embedder.EmbedBatch(
-        messages, [&progress, span, distinct](size_t batch_completed, size_t)
+        messages, [&progress, span, distinct](size_t batch_completed, size_t) -> void
         { progress.Update(span.lines_before + (span.lines_in_flush * batch_completed / distinct), span.total); });
     if (!embeddings)
     {
@@ -268,15 +269,15 @@ EmbedDistinct(std::span<const std::string> texts, const nesso::embed::Embedder &
 }
 
 // The planned runs and how each one reaches ONNX Runtime (ADR 0004, ADR 0016).
-static std::string BatchPolicy()
+static auto BatchPolicy() -> std::string
 {
     namespace embed = nesso::embed;
     return std::format("window:{},max:{},tokens:{},order:length-then-input,run:{}", embed::BATCH_WINDOW,
                        embed::BATCH_MAX_TEXTS, embed::BATCH_TOKEN_BUDGET, embed::BATCH_RUN);
 }
 
-std::expected<nesso::core::CorpusPolicy, Error> MakeCorpusPolicy(const nesso::embed::Embedder &embedder,
-                                                                 const LineCounts &counts)
+auto MakeCorpusPolicy(const nesso::embed::Embedder &embedder, const LineCounts &counts)
+    -> std::expected<nesso::core::CorpusPolicy, Error>
 {
     const auto identity = embedder.identity();
     if (!identity)
@@ -304,7 +305,7 @@ std::expected<nesso::core::CorpusPolicy, Error> MakeCorpusPolicy(const nesso::em
     return policy;
 }
 
-std::string_view EffectiveModeName(EffectiveMode mode) noexcept
+auto EffectiveModeName(EffectiveMode mode) noexcept -> std::string_view
 {
     switch (mode)
     {
@@ -318,7 +319,7 @@ std::string_view EffectiveModeName(EffectiveMode mode) noexcept
     std::unreachable();
 }
 
-EffectiveMode ResolveEffectiveMode(SearchMode requested, nesso::core::QueryClass query_class) noexcept
+auto ResolveEffectiveMode(SearchMode requested, nesso::core::QueryClass query_class) noexcept -> EffectiveMode
 {
     switch (requested)
     {
@@ -334,7 +335,7 @@ EffectiveMode ResolveEffectiveMode(SearchMode requested, nesso::core::QueryClass
     std::unreachable();
 }
 
-std::vector<std::string_view> QueryTermViews(const std::vector<std::string> &terms)
+auto QueryTermViews(const std::vector<std::string> &terms) -> std::vector<std::string_view>
 {
     std::vector<std::string_view> views;
     views.reserve(terms.size());
@@ -345,7 +346,7 @@ std::vector<std::string_view> QueryTermViews(const std::vector<std::string> &ter
     return views;
 }
 
-bool BetterHit(float left_score, uint64_t left_index, float right_score, uint64_t right_index) noexcept
+auto BetterHit(float left_score, uint64_t left_index, float right_score, uint64_t right_index) noexcept -> bool
 {
     return nesso::core::RankBefore(left_score, left_index, right_score, right_index);
 }

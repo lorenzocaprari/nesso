@@ -36,7 +36,7 @@ struct TraceState
 
 } // namespace
 
-static TraceState &State()
+static auto State() -> TraceState &
 {
     static TraceState current;
     return current;
@@ -44,7 +44,7 @@ static TraceState &State()
 
 // getenv is not thread-safe. The CLI reads it on the main thread, once per
 // stage.
-static bool TracingEnabled()
+static auto TracingEnabled() -> bool
 {
     // NOLINTNEXTLINE(concurrency-mt-unsafe)
     const char *value = std::getenv("NESSO_TRACE");

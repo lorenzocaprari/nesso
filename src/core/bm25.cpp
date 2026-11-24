@@ -19,8 +19,8 @@
 namespace nesso::core
 {
 
-static std::uint32_t FrequencyOf(std::span<const std::pair<std::uint32_t, std::uint32_t>> frequencies,
-                                 std::uint32_t term_id) noexcept
+static auto FrequencyOf(std::span<const std::pair<std::uint32_t, std::uint32_t>> frequencies,
+                        std::uint32_t term_id) noexcept -> std::uint32_t
 {
     for (const auto &entry : frequencies)
     {
@@ -32,7 +32,7 @@ static std::uint32_t FrequencyOf(std::span<const std::pair<std::uint32_t, std::u
     return 0;
 }
 
-static double IdfOf(std::size_t line_count, std::size_t document_frequency) noexcept
+static auto IdfOf(std::size_t line_count, std::size_t document_frequency) noexcept -> double
 {
     const double numerator = static_cast<double>(line_count - document_frequency) + 0.5;
     const double denominator = static_cast<double>(document_frequency) + 0.5;
@@ -49,7 +49,7 @@ struct TermWeightInput
 };
 } // namespace
 
-static double TermWeight(const TermWeightInput &input) noexcept
+static auto TermWeight(const TermWeightInput &input) noexcept -> double
 {
     const auto term_freq = static_cast<double>(input.frequency);
     const double norm = (1.0 - BM25_B) + (BM25_B * (static_cast<double>(input.length) / input.average_length));
@@ -57,7 +57,7 @@ static double TermWeight(const TermWeightInput &input) noexcept
     return (term_freq * (BM25_K1 + 1.0)) / denominator;
 }
 
-static std::vector<std::string> DistinctQueryTerms(std::span<const std::string_view> query)
+static auto DistinctQueryTerms(std::span<const std::string_view> query) -> std::vector<std::string>
 {
     std::vector<std::string> distinct;
     distinct.reserve(query.size());
@@ -78,8 +78,8 @@ static std::vector<std::string> DistinctQueryTerms(std::span<const std::string_v
     return unique_terms;
 }
 
-static std::optional<std::uint32_t> DictionaryId(std::span<const std::string_view> dictionary,
-                                                 std::string_view term) noexcept
+static auto DictionaryId(std::span<const std::string_view> dictionary, std::string_view term) noexcept
+    -> std::optional<std::uint32_t>
 {
     const auto found = std::ranges::lower_bound(dictionary, term, TermByteLess);
     if (found == dictionary.end() || *found != term)
@@ -89,9 +89,9 @@ static std::optional<std::uint32_t> DictionaryId(std::span<const std::string_vie
     return static_cast<std::uint32_t>(found - dictionary.begin());
 }
 
-static Bm25Result ScoreLines(std::size_t line_count, std::size_t total_length,
-                             std::span<const std::size_t> document_frequency, auto &&line_at,
-                             std::span<const std::string_view> query, auto &&resolve_id)
+static auto ScoreLines(std::size_t line_count, std::size_t total_length,
+                       std::span<const std::size_t> document_frequency, auto &&line_at,
+                       std::span<const std::string_view> query, auto &&resolve_id) -> Bm25Result
 {
     Bm25Result result{.scores = std::vector<double>(line_count, 0.0), .coverage = std::vector<double>(line_count, 0.0)};
     if (line_count == 0 || query.empty() || total_length == 0)
@@ -142,7 +142,7 @@ static Bm25Result ScoreLines(std::size_t line_count, std::size_t total_length,
     return result;
 }
 
-std::uint32_t Bm25Index::InternTerm(std::string_view term)
+auto Bm25Index::InternTerm(std::string_view term) -> std::uint32_t
 {
     std::string key{term};
     if (const auto found = ids_.find(key); found != ids_.end())
@@ -173,7 +173,8 @@ void Bm25Index::AddLine(std::span<const std::string_view> terms)
         ++document_frequency_[term_id];
         line.frequencies.emplace_back(term_id, static_cast<std::uint32_t>(entry.second));
     }
-    std::ranges::sort(line.frequencies, [](const auto &left, const auto &right) { return left.first < right.first; });
+    std::ranges::sort(line.frequencies,
+                      [](const auto &left, const auto &right) -> auto { return left.first < right.first; });
     total_length_ += line.length;
     lines_.push_back(std::move(line));
 }
@@ -183,7 +184,8 @@ void Bm25Index::AddLinePostings(std::span<const std::pair<std::uint32_t, std::ui
     Line line;
     line.length = length;
     line.frequencies.assign(entries.begin(), entries.end());
-    std::ranges::sort(line.frequencies, [](const auto &left, const auto &right) { return left.first < right.first; });
+    std::ranges::sort(line.frequencies,
+                      [](const auto &left, const auto &right) -> auto { return left.first < right.first; });
     for (const auto &[term_id, frequency] : line.frequencies)
     {
         (void)frequency;
@@ -197,9 +199,9 @@ void Bm25Index::AddLinePostings(std::span<const std::pair<std::uint32_t, std::ui
     lines_.push_back(std::move(line));
 }
 
-std::size_t Bm25Index::LineCount() const noexcept { return lines_.size(); }
+auto Bm25Index::LineCount() const noexcept -> std::size_t { return lines_.size(); }
 
-double Bm25Index::AverageLength() const noexcept
+auto Bm25Index::AverageLength() const noexcept -> double
 {
     if (lines_.empty())
     {
@@ -208,16 +210,16 @@ double Bm25Index::AverageLength() const noexcept
     return static_cast<double>(total_length_) / static_cast<double>(lines_.size());
 }
 
-std::vector<double> Bm25Index::Scores(std::span<const std::string_view> query) const
+auto Bm25Index::Scores(std::span<const std::string_view> query) const -> std::vector<double>
 {
     return ScoresAndCoverage(query).scores;
 }
 
-Bm25Result Bm25Index::ScoresAndCoverage(std::span<const std::string_view> query) const
+auto Bm25Index::ScoresAndCoverage(std::span<const std::string_view> query) const -> Bm25Result
 {
     return ScoreLines(
         lines_.size(), total_length_, document_frequency_,
-        [this](std::size_t line)
+        [this](std::size_t line) -> std::pair<std::span<const std::pair<unsigned int, unsigned int>>, unsigned int>
         {
             return std::pair{std::span<const std::pair<std::uint32_t, std::uint32_t>>{lines_[line].frequencies},
                              lines_[line].length};
@@ -234,15 +236,15 @@ Bm25Result Bm25Index::ScoresAndCoverage(std::span<const std::string_view> query)
         });
 }
 
-std::vector<double> ScoresFromPostings(std::span<const std::string_view> dictionary,
-                                       std::span<const Bm25LinePostings> lines, std::span<const std::string_view> query)
+auto ScoresFromPostings(std::span<const std::string_view> dictionary, std::span<const Bm25LinePostings> lines,
+                        std::span<const std::string_view> query) -> std::vector<double>
 {
     return ScoresAndCoverageFromPostings(dictionary, lines, query).scores;
 }
 
-Bm25Result ScoresAndCoverageFromPostings(std::span<const std::string_view> dictionary,
-                                         std::span<const Bm25LinePostings> lines,
-                                         std::span<const std::string_view> query)
+auto ScoresAndCoverageFromPostings(std::span<const std::string_view> dictionary,
+                                   std::span<const Bm25LinePostings> lines, std::span<const std::string_view> query)
+    -> Bm25Result
 {
     std::vector<std::size_t> document_frequency(dictionary.size(), 0);
     std::size_t total_length = 0;
@@ -260,8 +262,10 @@ Bm25Result ScoresAndCoverageFromPostings(std::span<const std::string_view> dicti
     }
     return ScoreLines(
         lines.size(), total_length, document_frequency,
-        [&lines](std::size_t line) { return std::pair{lines[line].entries, lines[line].length}; }, query,
-        [&dictionary](std::string_view term) { return DictionaryId(dictionary, term); });
+        [&lines](std::size_t line) -> std::pair<std::span<const std::pair<unsigned int, unsigned int>>, unsigned int>
+        { return std::pair{lines[line].entries, lines[line].length}; }, query,
+        [&dictionary](std::string_view term) -> std::optional<std::uint32_t>
+        { return DictionaryId(dictionary, term); });
 }
 
 } // namespace nesso::core

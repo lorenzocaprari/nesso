@@ -27,7 +27,7 @@ enum class ThreadCountError : uint8_t
 class ThreadCount
 {
   public:
-    [[nodiscard]] static std::expected<ThreadCount, ThreadCountError> Parse(std::string_view text)
+    [[nodiscard]] static auto Parse(std::string_view text) -> std::expected<ThreadCount, ThreadCountError>
     {
         if (text.empty() || text.find_first_not_of("0123456789") != std::string_view::npos ||
             text.find_first_not_of('0') == std::string_view::npos)
@@ -49,7 +49,7 @@ class ThreadCount
         return ThreadCount{parsed};
     }
 
-    [[nodiscard]] constexpr size_t Get() const noexcept { return value_; }
+    [[nodiscard]] constexpr auto Get() const noexcept -> size_t { return value_; }
 
   private:
     explicit constexpr ThreadCount(size_t value) noexcept : value_(value) {}

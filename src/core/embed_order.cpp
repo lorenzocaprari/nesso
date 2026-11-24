@@ -24,7 +24,7 @@ PromiseTerms::PromiseTerms(std::span<const std::string> query_terms)
         {
             break;
         }
-        const bool seen = std::ranges::any_of(terms_, [&term](const auto &kept) { return kept.first == term; });
+        const bool seen = std::ranges::any_of(terms_, [&term](const auto &kept) -> auto { return kept.first == term; });
         if (!seen)
         {
             terms_.emplace_back(term, std::uint64_t{1} << terms_.size());
@@ -33,7 +33,7 @@ PromiseTerms::PromiseTerms(std::span<const std::string> query_terms)
     std::ranges::sort(terms_, {}, &std::pair<std::string, std::uint64_t>::first);
 }
 
-std::uint32_t PromiseTerms::Hits(std::span<const std::string> line_terms) const
+auto PromiseTerms::Hits(std::span<const std::string> line_terms) const -> std::uint32_t
 {
     std::uint64_t found = 0;
     for (const std::string &term : line_terms)
@@ -47,12 +47,12 @@ std::uint32_t PromiseTerms::Hits(std::span<const std::string> line_terms) const
     return static_cast<std::uint32_t>(std::popcount(found));
 }
 
-std::vector<std::size_t> EmbedOrder(std::span<const WindowPromise> windows)
+auto EmbedOrder(std::span<const WindowPromise> windows) -> std::vector<std::size_t>
 {
     std::vector<std::size_t> order(windows.size());
     std::ranges::iota(order, std::size_t{0});
     std::ranges::sort(order,
-                      [windows](std::size_t left, std::size_t right)
+                      [windows](std::size_t left, std::size_t right) -> bool
                       {
                           const WindowPromise &first = windows[left];
                           const WindowPromise &second = windows[right];

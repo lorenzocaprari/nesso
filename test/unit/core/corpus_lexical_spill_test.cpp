@@ -34,13 +34,13 @@ class TempDir
     TempDir() : path_(UniquePath()) { REQUIRE(std::filesystem::create_directory(path_)); }
     ~TempDir() { std::filesystem::remove_all(path_); }
     TempDir(const TempDir &) = delete;
-    TempDir &operator=(const TempDir &) = delete;
+    auto operator=(const TempDir &) -> TempDir & = delete;
     TempDir(TempDir &&) = delete;
-    TempDir &operator=(TempDir &&) = delete;
-    [[nodiscard]] const std::filesystem::path &Path() const { return path_; }
+    auto operator=(TempDir &&) -> TempDir & = delete;
+    [[nodiscard]] auto Path() const -> const std::filesystem::path & { return path_; }
 
   private:
-    static std::filesystem::path UniquePath()
+    static auto UniquePath() -> std::filesystem::path
     {
         static unsigned counter = 0;
         return std::filesystem::temp_directory_path() /
@@ -67,7 +67,7 @@ void WriteTermsSpill(const std::filesystem::path &path, std::span<const std::vec
     REQUIRE(output);
 }
 
-std::vector<std::byte> ReadAllBytes(const std::filesystem::path &path)
+auto ReadAllBytes(const std::filesystem::path &path) -> std::vector<std::byte>
 {
     std::ifstream input(path, std::ios::binary);
     REQUIRE(input);
@@ -82,7 +82,7 @@ std::vector<std::byte> ReadAllBytes(const std::filesystem::path &path)
     return bytes;
 }
 
-bool HasNamedSpill(const std::filesystem::path &directory, std::string_view needle)
+auto HasNamedSpill(const std::filesystem::path &directory, std::string_view needle) -> bool
 {
     for (const auto &entry : std::filesystem::directory_iterator(directory))
     {

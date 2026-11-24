@@ -15,7 +15,7 @@
 namespace
 {
 
-std::vector<std::string_view> ViewsOf(const std::vector<std::string> &lines)
+auto ViewsOf(const std::vector<std::string> &lines) -> std::vector<std::string_view>
 {
     std::vector<std::string_view> views;
     views.reserve(lines.size());
@@ -26,7 +26,7 @@ std::vector<std::string_view> ViewsOf(const std::vector<std::string> &lines)
     return views;
 }
 
-std::string PlainToken(std::size_t index)
+auto PlainToken(std::size_t index) -> std::string
 {
     // A non-hex letter plus base-26 keeps the token off the mask rules.
     std::string token = "w";
@@ -127,7 +127,7 @@ TEST_CASE("expanded distinct scores match the search oracle", "[dedup]")
     {
         oracle.push_back(Row{.index = line, .score = matrix[line], .occurrences = counts[line]});
     }
-    std::ranges::sort(oracle, [](const Row &left, const Row &right)
+    std::ranges::sort(oracle, [](const Row &left, const Row &right) -> bool
                       { return left.score != right.score ? left.score > right.score : left.index < right.index; });
     oracle.resize(top);
 
@@ -150,7 +150,7 @@ TEST_CASE("a repeated text that spans two windows stays one id", "[dedup]")
     nesso::core::DistinctIndex index;
     index.Reserve(nesso::embed::BATCH_WINDOW + 2);
     std::vector<std::string> embedded;
-    const auto flush = [&]
+    const auto flush = [&] -> void
     {
         embedded.insert(embedded.end(), index.Pending().begin(), index.Pending().end());
         index.ClearPending();

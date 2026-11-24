@@ -23,17 +23,17 @@
 namespace nesso::core::detail
 {
 
-bool RangeInside(std::uint64_t offset, std::uint64_t length, std::uint64_t limit)
+auto RangeInside(std::uint64_t offset, std::uint64_t length, std::uint64_t limit) -> bool
 {
     return offset <= limit && length <= limit - offset;
 }
 
-std::uint64_t AlignUp(std::uint64_t value, std::uint64_t alignment)
+auto AlignUp(std::uint64_t value, std::uint64_t alignment) -> std::uint64_t
 {
     return (value + alignment - 1) & ~(alignment - 1);
 }
 
-bool WriteRaw(std::ostream &output, const void *data, std::size_t size)
+auto WriteRaw(std::ostream &output, const void *data, std::size_t size) -> bool
 {
     if (size == 0)
     {
@@ -44,7 +44,7 @@ bool WriteRaw(std::ostream &output, const void *data, std::size_t size)
     return static_cast<bool>(output);
 }
 
-bool WriteU32(std::ostream &output, std::uint32_t value)
+auto WriteU32(std::ostream &output, std::uint32_t value) -> bool
 {
     const std::array<unsigned char, 4> bytes{static_cast<unsigned char>(value), static_cast<unsigned char>(value >> 8U),
                                              static_cast<unsigned char>(value >> 16U),
@@ -52,7 +52,7 @@ bool WriteU32(std::ostream &output, std::uint32_t value)
     return WriteRaw(output, bytes.data(), bytes.size());
 }
 
-bool WriteU64(std::ostream &output, std::uint64_t value)
+auto WriteU64(std::ostream &output, std::uint64_t value) -> bool
 {
     const std::array<unsigned char, 8> bytes{
         static_cast<unsigned char>(value),        static_cast<unsigned char>(value >> 8U),
@@ -62,7 +62,7 @@ bool WriteU64(std::ostream &output, std::uint64_t value)
     return WriteRaw(output, bytes.data(), bytes.size());
 }
 
-bool ReadExact(std::istream &input, void *data, std::size_t size)
+auto ReadExact(std::istream &input, void *data, std::size_t size) -> bool
 {
     if (size == 0)
     {
@@ -73,7 +73,7 @@ bool ReadExact(std::istream &input, void *data, std::size_t size)
     return std::cmp_equal(input.gcount(), size);
 }
 
-bool ReadU32Stream(std::istream &input, std::uint32_t &value)
+auto ReadU32Stream(std::istream &input, std::uint32_t &value) -> bool
 {
     std::array<unsigned char, 4> bytes{};
     if (!ReadExact(input, bytes.data(), bytes.size()))
@@ -85,7 +85,7 @@ bool ReadU32Stream(std::istream &input, std::uint32_t &value)
     return true;
 }
 
-bool ReadU64Stream(std::istream &input, std::uint64_t &value)
+auto ReadU64Stream(std::istream &input, std::uint64_t &value) -> bool
 {
     std::uint32_t low = 0;
     std::uint32_t high = 0;
@@ -97,7 +97,7 @@ bool ReadU64Stream(std::istream &input, std::uint64_t &value)
     return true;
 }
 
-bool ReadU32(std::span<const std::byte> bytes, std::uint64_t offset, std::uint32_t &value)
+auto ReadU32(std::span<const std::byte> bytes, std::uint64_t offset, std::uint32_t &value) -> bool
 {
     if (!RangeInside(offset, sizeof(value), bytes.size()))
     {
@@ -111,7 +111,7 @@ bool ReadU32(std::span<const std::byte> bytes, std::uint64_t offset, std::uint32
     return true;
 }
 
-bool ReadU64(std::span<const std::byte> bytes, std::uint64_t offset, std::uint64_t &value)
+auto ReadU64(std::span<const std::byte> bytes, std::uint64_t offset, std::uint64_t &value) -> bool
 {
     if (!RangeInside(offset, sizeof(value), bytes.size()))
     {
@@ -125,7 +125,7 @@ bool ReadU64(std::span<const std::byte> bytes, std::uint64_t offset, std::uint64
     return true;
 }
 
-std::string_view ViewBytes(std::span<const std::byte> bytes, std::uint64_t offset, std::uint64_t length)
+auto ViewBytes(std::span<const std::byte> bytes, std::uint64_t offset, std::uint64_t length) -> std::string_view
 {
     const std::span<const std::byte> slice =
         bytes.subspan(static_cast<std::size_t>(offset), static_cast<std::size_t>(length));
@@ -133,9 +133,12 @@ std::string_view ViewBytes(std::span<const std::byte> bytes, std::uint64_t offse
     return {reinterpret_cast<const char *>(slice.data()), slice.size()};
 }
 
-bool AtEnd(std::istream &input) { return input.peek() == std::char_traits<char>::eof() && input.eof() && !input.bad(); }
+auto AtEnd(std::istream &input) -> bool
+{
+    return input.peek() == std::char_traits<char>::eof() && input.eof() && !input.bad();
+}
 
-bool CopyBytes(std::istream &input, std::ostream &output, std::uint64_t bytes)
+auto CopyBytes(std::istream &input, std::ostream &output, std::uint64_t bytes) -> bool
 {
     std::array<char, 64ULL * 1024ULL> buffer{};
     while (bytes > 0)
@@ -150,7 +153,7 @@ bool CopyBytes(std::istream &input, std::ostream &output, std::uint64_t bytes)
     return AtEnd(input);
 }
 
-bool WritePadding(std::ostream &output, std::uint64_t count)
+auto WritePadding(std::ostream &output, std::uint64_t count) -> bool
 {
     constexpr std::array<char, 64> zeros{};
     while (count > 0)
@@ -165,14 +168,14 @@ bool WritePadding(std::ostream &output, std::uint64_t count)
     return true;
 }
 
-bool IsZero(std::span<const std::byte> bytes, std::uint64_t begin, std::uint64_t end)
+auto IsZero(std::span<const std::byte> bytes, std::uint64_t begin, std::uint64_t end) -> bool
 {
     if (begin > end || end > bytes.size())
     {
         return false;
     }
     return std::ranges::all_of(bytes.subspan(begin, end - begin),
-                               [](std::byte value) { return value == std::byte{0}; });
+                               [](std::byte value) -> bool { return value == std::byte{0}; });
 }
 
 } // namespace nesso::core::detail
@@ -182,7 +185,7 @@ namespace nesso::core
 
 static_assert(std::endian::native == std::endian::little);
 
-CorpusChecksum ComputeCorpusChecksum(std::span<const std::byte> file)
+auto ComputeCorpusChecksum(std::span<const std::byte> file) -> CorpusChecksum
 {
     constexpr std::array<std::byte, CORPUS_CHECKSUM_BYTES> zeros{};
     const std::array<std::span<const std::byte>, 3> parts{file.first(CORPUS_CHECKSUM_OFFSET), zeros,
@@ -190,7 +193,7 @@ CorpusChecksum ComputeCorpusChecksum(std::span<const std::byte> file)
     const Sha256Digest digest = ComputeSha256(parts);
     CorpusChecksum checksum{};
     std::ranges::transform(std::span{digest}.first(CORPUS_CHECKSUM_BYTES), checksum.begin(),
-                           [](std::uint8_t value) { return std::byte{value}; });
+                           [](std::uint8_t value) -> std::byte { return std::byte{value}; });
     return checksum;
 }
 
