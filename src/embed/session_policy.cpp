@@ -188,11 +188,14 @@ static std::optional<std::set<int>> AllowedFromStatus(const std::filesystem::pat
     return std::nullopt;
 }
 
+namespace
+{
 enum class CgroupController : std::uint8_t
 {
     Cpu,
     Memory,
 };
+} // namespace
 
 static bool ControllerHas(std::string_view controllers, CgroupController wanted)
 {
@@ -260,12 +263,15 @@ static void MinHeadroom(std::optional<std::uintmax_t> &tightest, std::uintmax_t 
     tightest = tightest ? std::min(*tightest, headroom) : std::optional<std::uintmax_t>{headroom};
 }
 
+namespace
+{
 struct CgroupPaths
 {
     std::optional<std::filesystem::path> v2_path;
     std::optional<std::filesystem::path> v1_cpu_path;
     std::optional<std::filesystem::path> v1_memory_path;
 };
+} // namespace
 
 static std::optional<CgroupPaths> ReadCgroupPaths(const std::filesystem::path &proc_root)
 {
@@ -336,17 +342,23 @@ static std::optional<std::uintmax_t> ReadUintFile(const std::filesystem::path &p
     return ParseUintBytes(line);
 }
 
+namespace
+{
 struct CgroupV1Walk
 {
     std::filesystem::path cgroup_root;
     std::filesystem::path relative;
 };
+} // namespace
 
+namespace
+{
 struct ProcCgroupRoots
 {
     std::filesystem::path proc_root;
     std::filesystem::path cgroup_root;
 };
+} // namespace
 
 // nullopt when memory.max is "max", missing, or unreadable.
 static std::optional<std::uintmax_t> V2MemoryHeadroomAt(const std::filesystem::path &directory)

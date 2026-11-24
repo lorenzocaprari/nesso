@@ -91,11 +91,11 @@ class ScriptedEmbedder final : public nesso::embed::Embedder
         rows.reserve(texts.size());
         for (const std::string &text : texts)
         {
-            if (text.find("BEST") != std::string::npos)
+            if (text.contains("BEST"))
             {
                 rows.push_back({1.F, 0.F, 0.F, 0.F});
             }
-            else if (text.find("MID") != std::string::npos)
+            else if (text.contains("MID"))
             {
                 rows.push_back({0.5F, 0.F, 0.F, 0.F});
             }

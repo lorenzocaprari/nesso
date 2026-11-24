@@ -84,13 +84,10 @@ TEST_CASE("each failure kind names itself", "[nesso][error]")
         return nesso::Message(error);
     };
 
-    REQUIRE(text(nesso::ErrorKind::EmbedderLoad, nesso::ErrorCause::ModelLoad).find("failed to load the embedder") !=
-            std::string::npos);
-    REQUIRE(text(nesso::ErrorKind::Parse, nesso::ErrorCause::UnsupportedFormat).find("failed to parse") !=
-            std::string::npos);
-    REQUIRE(
-        text(nesso::ErrorKind::Parse, nesso::ErrorCause::CorruptGzip).find("the gzip stream is truncated or corrupt") !=
-        std::string::npos);
+    REQUIRE(text(nesso::ErrorKind::EmbedderLoad, nesso::ErrorCause::ModelLoad).contains("failed to load the embedder"));
+    REQUIRE(text(nesso::ErrorKind::Parse, nesso::ErrorCause::UnsupportedFormat).contains("failed to parse"));
+    REQUIRE(text(nesso::ErrorKind::Parse, nesso::ErrorCause::CorruptGzip)
+                .contains("the gzip stream is truncated or corrupt"));
     nesso::Error limited{.kind = nesso::ErrorKind::Parse,
                          .cause = nesso::ErrorCause::ArchiveLimit,
                          .path = "bundle.tar.xz",
@@ -101,8 +98,8 @@ TEST_CASE("each failure kind names itself", "[nesso][error]")
                          .policy_mismatch = false,
                          .corpus_version = {},
                          .model_mismatch = {}};
-    REQUIRE(nesso::Message(limited).find("the archive entry count exceeds 2") != std::string::npos);
-    REQUIRE(nesso::Message(limited).find("--archive-max-entries") != std::string::npos);
+    REQUIRE(nesso::Message(limited).contains("the archive entry count exceeds 2"));
+    REQUIRE(nesso::Message(limited).contains("--archive-max-entries"));
     nesso::Error encrypted{.kind = nesso::ErrorKind::Parse,
                            .cause = nesso::ErrorCause::EncryptedArchive,
                            .path = "secret.zip",
@@ -112,27 +109,22 @@ TEST_CASE("each failure kind names itself", "[nesso][error]")
                            .policy_mismatch = false,
                            .corpus_version = {},
                            .model_mismatch = {}};
-    REQUIRE(nesso::Message(encrypted).find("entry 'secret.log' is encrypted") != std::string::npos);
+    REQUIRE(nesso::Message(encrypted).contains("entry 'secret.log' is encrypted"));
     REQUIRE(nesso::FormatBundleSkipSummary({.path = "mix.tar", .directories = 2, .binary = 1}) ==
             "Skipped 3 entries in 'mix.tar' (2 directories and 1 binary file).");
-    REQUIRE(text(nesso::ErrorKind::Embed, nesso::ErrorCause::Inference).find("failed to embed the input") !=
-            std::string::npos);
-    REQUIRE(text(nesso::ErrorKind::QueryEmbed, nesso::ErrorCause::Tokenization).find("failed to embed the query") !=
-            std::string::npos);
-    REQUIRE(text(nesso::ErrorKind::IndexBuild, nesso::ErrorCause::EmptyEmbedding).find("failed to build the index") !=
-            std::string::npos);
-    REQUIRE(text(nesso::ErrorKind::Search, nesso::ErrorCause::MismatchedDimensions).find("failed to search") !=
-            std::string::npos);
-    REQUIRE(text(nesso::ErrorKind::CorpusRead, nesso::ErrorCause::CorruptFile).find("failed to read the corpus") !=
-            std::string::npos);
-    REQUIRE(text(nesso::ErrorKind::CorpusWrite, nesso::ErrorCause::FileOpen).find("failed to write the corpus") !=
-            std::string::npos);
-    REQUIRE(text(nesso::ErrorKind::CorpusLoad, nesso::ErrorCause::EmptyEmbedding).find("failed to load the corpus") !=
-            std::string::npos);
+    REQUIRE(text(nesso::ErrorKind::Embed, nesso::ErrorCause::Inference).contains("failed to embed the input"));
+    REQUIRE(text(nesso::ErrorKind::QueryEmbed, nesso::ErrorCause::Tokenization).contains("failed to embed the query"));
+    REQUIRE(
+        text(nesso::ErrorKind::IndexBuild, nesso::ErrorCause::EmptyEmbedding).contains("failed to build the index"));
+    REQUIRE(text(nesso::ErrorKind::Search, nesso::ErrorCause::MismatchedDimensions).contains("failed to search"));
+    REQUIRE(text(nesso::ErrorKind::CorpusRead, nesso::ErrorCause::CorruptFile).contains("failed to read the corpus"));
+    REQUIRE(text(nesso::ErrorKind::CorpusWrite, nesso::ErrorCause::FileOpen).contains("failed to write the corpus"));
+    REQUIRE(
+        text(nesso::ErrorKind::CorpusLoad, nesso::ErrorCause::EmptyEmbedding).contains("failed to load the corpus"));
     const std::string empty_file = text(nesso::ErrorKind::EmptyInput, nesso::ErrorCause::EmptyFile);
-    REQUIRE(empty_file.find("nothing to search") != std::string::npos);
-    REQUIRE(empty_file.find("the file is empty") != std::string::npos);
-    REQUIRE(empty_file.find("in.log") != std::string::npos);
+    REQUIRE(empty_file.contains("nothing to search"));
+    REQUIRE(empty_file.contains("the file is empty"));
+    REQUIRE(empty_file.contains("in.log"));
     REQUIRE(text(nesso::ErrorKind::NoMatches, nesso::ErrorCause::None).empty());
 }
 

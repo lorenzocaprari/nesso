@@ -13,11 +13,14 @@
 namespace nesso::embed
 {
 
+namespace
+{
 struct BatchBudget
 {
     size_t count = 0;
     size_t tokens = 0;
 };
+} // namespace
 
 // Ascending order makes tokens(next) the padded length of the run that would
 // include it.

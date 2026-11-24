@@ -86,7 +86,7 @@ bool HasNamedSpill(const std::filesystem::path &directory, std::string_view need
 {
     for (const auto &entry : std::filesystem::directory_iterator(directory))
     {
-        if (entry.path().filename().string().find(needle) != std::string::npos)
+        if (entry.path().filename().string().contains(needle))
         {
             return true;
         }
@@ -143,7 +143,7 @@ TEST_CASE("spilled lexical encode sorts dictionary with TermByteLess", "[corpus]
 {
     const std::vector<std::vector<std::string>> lines{{"\xFF", "a", ""}, {"a", "b"}};
     ExpectSpilledMatchesOracle(lines, 64);
-    CHECK(TermByteLess(std::string{""}, std::string{"a"}));
+    CHECK(TermByteLess("", "a"));
 }
 
 TEST_CASE("spilled lexical encode rejects a zero memory budget", "[corpus][lexical][spill]")

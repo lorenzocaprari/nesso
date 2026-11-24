@@ -294,7 +294,7 @@ TEST_CASE("text operations report model and corpus failures", "[nesso][text]")
     REQUIRE(mismatched.error().kind == nesso::ErrorKind::CorpusRead);
     REQUIRE(mismatched.error().cause == nesso::ErrorCause::ModelMismatch);
     REQUIRE(mismatched.error().path == other_model);
-    REQUIRE(nesso::Message(mismatched.error()).find("built with a different model") != std::string::npos);
+    REQUIRE(nesso::Message(mismatched.error()).contains("built with a different model"));
 
     const auto newer = app.Search({.query = "database", .index = future_version});
     REQUIRE_FALSE(newer.has_value());
@@ -382,7 +382,7 @@ TEST_CASE("search names the first identity key that differs from the loaded mode
     REQUIRE(mapped);
     REQUIRE(mapped->corpus.Policy().contains("embed.prefix"));
     CHECK(mapped->corpus.Policy().at("embed.prefix") == "none");
-    CHECK(ReadFile(indexed).find("\nembed.prefix=none\n") != std::string::npos);
+    CHECK(ReadFile(indexed).contains("\nembed.prefix=none\n"));
 }
 
 TEST_CASE("search warns on a corpus embedded in padded runs", "[nesso][text]")
@@ -453,7 +453,7 @@ TEST_CASE("a missing default model lists every directory it tried", "[nesso][tex
         model_env == nullptr ? std::nullopt : std::optional<std::string>{model_env};
     const std::optional<std::string> saved_xdg =
         xdg_env == nullptr ? std::nullopt : std::optional<std::string>{xdg_env};
-    const auto restore = [&]()
+    const auto restore = [&]
     {
         std::filesystem::current_path(previous_dir);
         if (saved_model)
@@ -484,8 +484,8 @@ TEST_CASE("a missing default model lists every directory it tried", "[nesso][tex
 
     REQUIRE_FALSE(grepped.has_value());
     REQUIRE(grepped.error().kind == nesso::ErrorKind::EmbedderLoad);
-    REQUIRE(grepped.error().note.find(" and ") != std::string::npos);
-    REQUIRE(grepped.error().note.find(',') != std::string::npos);
+    REQUIRE(grepped.error().note.contains(" and "));
+    REQUIRE(grepped.error().note.contains(','));
 }
 
 TEST_CASE("index fails when no chunks are produced and does not replace the corpus", "[nesso][text]")

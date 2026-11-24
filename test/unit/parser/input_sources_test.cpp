@@ -168,7 +168,7 @@ TEST_CASE("ExpandInputs does not follow directory symlinks and keeps file symlin
     for (const std::filesystem::path &path : *expanded)
     {
         names.push_back(path.filename().string());
-        CHECK(path.string().find("linkdir") == std::string::npos);
+        CHECK(!path.string().contains("linkdir"));
     }
     CHECK(names == std::vector<std::string>{"link.log", "a.log", "target.log"});
 

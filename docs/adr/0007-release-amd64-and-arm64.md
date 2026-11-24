@@ -18,7 +18,7 @@ Distance on arm64 is still the scalar path. `src/core/CMakeLists.txt` compiles `
 * arm64 bytes are built on `ubuntu-24.04-arm`, not under QEMU.
 * Both architectures get the same `.deb` reproducibility check, distro install check, SBOM, checksum, cosign signature, and SLSA provenance.
 * Ordinary pull requests stay on the path-filtered Package workflow. arm64 packaging runs in parallel with amd64.
-* Clang 21 stays a CI compiler. It is not a release compiler.
+* Clang 23.1.6 stays a CI compiler. It is not a release compiler.
 
 ## Considered Options
 
@@ -32,7 +32,7 @@ Chosen option: "Publish an arm64 `.deb` and a multi-arch manifest list", because
 
 `packaging/scripts/package-deb` names the package from the binary's ELF `e_machine` (`amd64` or `arm64`). `packaging/scripts/build-release-binary` selects `conan/profiles/gcc-26` or `conan/profiles/gcc-26-armv8` from `uname -m`. `.github/workflows/release.yml` builds each runtime image on its native runner, pushes `vX.Y.Z-amd64` and `vX.Y.Z-arm64`, and `packaging/scripts/publish-runtime-index` points `vX.Y.Z`, `X.Y.Z`, and `latest` at one manifest list. Keyless cosign signs the index digest and each platform digest. One generic SLSA attestation covers both `.deb` files and both SPDX SBOMs. The container generator attests the index and each platform digest.
 
-This supersedes ADR 0006. Clang 21 with libstdc++ (`conan/profiles/clang-26`) runs nightly and is not published.
+This supersedes ADR 0006. Clang 23.1.6 with libstdc++ (`conan/profiles/clang-26`) runs nightly and is not published.
 
 ### Consequences
 

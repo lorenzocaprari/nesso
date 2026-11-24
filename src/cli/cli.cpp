@@ -52,6 +52,8 @@ static std::string JoinAnd(const std::vector<std::string> &parts)
     return text;
 }
 
+namespace
+{
 struct LineReport
 {
     size_t empty_lines = 0;
@@ -61,6 +63,7 @@ struct LineReport
     std::string_view json_field = "message";
     std::vector<BundleSkipSummary> bundle_skips;
 };
+} // namespace
 
 static void RenderLineCounts(const LineReport &lines)
 {
@@ -277,6 +280,8 @@ static int Report(const std::expected<Result, Error> &outcome, int failure_statu
 // `--json --provisional`: each provisional top-k as JSON records on stdout,
 // before the final records. A write error stays on the stream and fails the
 // final render.
+namespace
+{
 class ProvisionalJson final : public GrepObserver
 {
   public:
@@ -299,6 +304,7 @@ class ProvisionalJson final : public GrepObserver
   private:
     std::size_t refresh_ = 0;
 };
+} // namespace
 
 int Execute(const Nesso &nesso, const GrepCommand &command)
 {

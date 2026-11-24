@@ -60,12 +60,9 @@ static bool MatchUuid(std::string_view token) noexcept
                 return false;
             }
         }
-        if (group < 4U)
+        if (group < 4U && token[index++] != UUID_SEPS.at(group))
         {
-            if (token[index++] != UUID_SEPS.at(group))
-            {
-                return false;
-            }
+            return false;
         }
     }
     return index == token.size();
@@ -331,7 +328,7 @@ static int CountIpv6Pieces(std::string_view text, bool allow_ipv4_tail) noexcept
         const std::string_view piece =
             colon == std::string_view::npos ? text.substr(index) : text.substr(index, colon - index);
 
-        if (allow_ipv4_tail && colon == std::string_view::npos && piece.find('.') != std::string_view::npos)
+        if (allow_ipv4_tail && colon == std::string_view::npos && piece.contains('.'))
         {
             if (!ParseIpv4Dotted(piece))
             {
@@ -358,18 +355,20 @@ static int CountIpv6Pieces(std::string_view text, bool allow_ipv4_tail) noexcept
 
 static bool ParseIpv6Address(std::string_view addr) noexcept
 {
-    if (addr.empty() || addr.find('%') != std::string_view::npos)
+    if (addr.empty() || addr.contains('%'))
     {
         return false;
     }
-    if (addr.find(":::") != std::string_view::npos)
+    if (addr.contains(":::"))
     {
         return false;
     }
 
     const std::size_t compression = addr.find("::");
     const bool has_compression = compression != std::string_view::npos;
-    if (has_compression && addr.find("::", compression + 2) != std::string_view::npos)
+    // contains() has no start position. This rejects a second "::".
+    if (has_compression &&
+        addr.find("::", compression + 2) != std::string_view::npos) // NOLINT(readability-container-contains)
     {
         return false;
     }
@@ -430,7 +429,7 @@ static bool MatchIpv6(std::string_view token) noexcept
         return ParseDecimalPort(token.substr(close + 2), port);
     }
 
-    if (token.find(':') == std::string_view::npos)
+    if (!token.contains(':'))
     {
         return false;
     }

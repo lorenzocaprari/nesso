@@ -138,18 +138,18 @@ static void AppendLexicalLinePostings(std::vector<std::byte> &out, std::span<con
     }
     std::vector<std::pair<std::uint32_t, std::uint32_t>> entries;
     entries.reserve(counts.size());
-    for (const auto &[termId, frequency] : counts)
+    for (const auto &[term_id, frequency] : counts)
     {
-        entries.emplace_back(termId, frequency);
+        entries.emplace_back(term_id, frequency);
     }
     std::ranges::sort(entries, [](const auto &left, const auto &right) { return left.first < right.first; });
     AppendVarint(out, entries.size());
     std::uint32_t previous = 0;
-    for (const auto &[termId, frequency] : entries)
+    for (const auto &[term_id, frequency] : entries)
     {
-        AppendVarint(out, static_cast<std::uint64_t>(termId) - previous);
+        AppendVarint(out, static_cast<std::uint64_t>(term_id) - previous);
         AppendVarint(out, frequency);
-        previous = termId;
+        previous = term_id;
     }
     AppendVarint(out, terms.size());
 }
@@ -334,15 +334,13 @@ BuildUniqueTermRuns(std::istream &terms, std::uint64_t line_count, const std::fi
         RemovePaths(runs);
         return std::unexpected(EngineError::CorruptDatabase);
     }
-    if (!seen.empty() || runs.empty())
+    // Always emit at least one run when there were no prior flushes so merge
+    // sees a defined (possibly empty) dictionary input. Flush only then:
+    // the call has the side effect the outer condition guards.
+    if ((!seen.empty() || runs.empty()) && !FlushUniqueRun(spill_prefix, seen, runs))
     {
-        // Always emit at least one run when there were no prior flushes so merge
-        // sees a defined (possibly empty) dictionary input.
-        if (!FlushUniqueRun(spill_prefix, seen, runs))
-        {
-            RemovePaths(runs);
-            return std::unexpected(EngineError::FileOpenFailure);
-        }
+        RemovePaths(runs);
+        return std::unexpected(EngineError::FileOpenFailure);
     }
     return runs;
 }
@@ -367,6 +365,8 @@ static bool ReadRunTerm(std::istream &input, std::uint64_t &remaining, std::stri
     return true;
 }
 
+namespace
+{
 struct LexicalRunCursor
 {
     std::ifstream input;
@@ -374,6 +374,7 @@ struct LexicalRunCursor
     std::string term;
     bool active = false;
 };
+} // namespace
 
 static std::optional<std::size_t> SmallestActiveRun(std::span<const LexicalRunCursor> cursors)
 {
@@ -471,12 +472,15 @@ static bool WriteLexicalHeaderAndDictionary(std::ostream &output, std::span<cons
     return true;
 }
 
+namespace
+{
 enum class PostingWriteStatus : std::uint8_t
 {
     Ok,
     TooLarge,
     IoError
 };
+} // namespace
 
 static PostingWriteStatus WriteLinePostings(std::ostream &output, std::span<const std::string> terms,
                                             const std::unordered_map<std::string, std::uint32_t> &ids,
@@ -632,11 +636,14 @@ static std::expected<void, EngineError> DecodeLexicalDictionary(std::span<const 
     return {};
 }
 
+namespace
+{
 struct LexicalPostingLimits
 {
     std::uint64_t term_count = 0;
     std::uint64_t posting_lines = 0;
 };
+} // namespace
 
 static std::expected<void, EngineError> DecodeLexicalPostings(std::span<const std::byte> bytes, std::uint64_t &cursor,
                                                               const LexicalPostingLimits &limits,

@@ -2,6 +2,9 @@
 # AFL++ library harnesses: LogChunker, WordPieceTokenizer, archive reader, corpus reader.
 # Builds AFL-instrumented binaries with ASan and UBSan via Conan + CMake.
 # Requires: afl++ (afl-fuzz, afl-clang-lto++), lld-21, llvm-21, Conan deps in cache.
+# Ubuntu's afl++ is built against LLVM 21 (debian/rules LLVM_MAJOR_VERSION) and
+# its LTO pass plugin does not load into Clang 23. Archive that bitcode with
+# llvm-ar-21 / llvm-ranlib-21. llvm-ar-23 is the nesso Clang toolchain, not this one.
 #
 # LTO mode, not afl-clang-fast: PCGUARD emits guard loads past __stop___sancov_guards
 # for comdat nlohmann instantiations, so the edge index is whatever data follows

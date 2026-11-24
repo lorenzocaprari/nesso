@@ -39,12 +39,15 @@ static double IdfOf(std::size_t line_count, std::size_t document_frequency) noex
     return std::log(1.0 + (numerator / denominator));
 }
 
+namespace
+{
 struct TermWeightInput
 {
     std::uint32_t frequency = 0;
     std::uint32_t length = 0;
     double average_length = 0.0;
 };
+} // namespace
 
 static double TermWeight(const TermWeightInput &input) noexcept
 {
@@ -181,14 +184,14 @@ void Bm25Index::AddLinePostings(std::span<const std::pair<std::uint32_t, std::ui
     line.length = length;
     line.frequencies.assign(entries.begin(), entries.end());
     std::ranges::sort(line.frequencies, [](const auto &left, const auto &right) { return left.first < right.first; });
-    for (const auto &[termId, frequency] : line.frequencies)
+    for (const auto &[term_id, frequency] : line.frequencies)
     {
         (void)frequency;
-        if (termId >= document_frequency_.size())
+        if (term_id >= document_frequency_.size())
         {
             continue;
         }
-        ++document_frequency_[termId];
+        ++document_frequency_[term_id];
     }
     total_length_ += line.length;
     lines_.push_back(std::move(line));
@@ -246,12 +249,12 @@ Bm25Result ScoresAndCoverageFromPostings(std::span<const std::string_view> dicti
     for (const Bm25LinePostings &line : lines)
     {
         total_length += line.length;
-        for (const auto &[termId, frequency] : line.entries)
+        for (const auto &[term_id, frequency] : line.entries)
         {
             (void)frequency;
-            if (termId < document_frequency.size())
+            if (term_id < document_frequency.size())
             {
-                ++document_frequency[termId];
+                ++document_frequency[term_id];
             }
         }
     }

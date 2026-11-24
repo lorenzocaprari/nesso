@@ -528,7 +528,7 @@ TEST_CASE("archive hardlinks increment skip stats", "[parser][archive]")
                 {{.name = "var/log/syslog", .bytes = "database connection refused\n"},
                  {.name = "var/log/messages", .bytes = {}, .type = AE_IFREG, .link = "var/log/syslog"}});
     nesso::parser::ArchiveSkipStats skips;
-    const auto members = [&]()
+    const auto members = [&]
     {
         std::vector<std::pair<std::string, std::string>> out;
         const auto read = nesso::parser::ReadArchive(

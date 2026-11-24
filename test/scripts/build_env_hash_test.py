@@ -61,8 +61,21 @@ class BuildEnvHashTest(unittest.TestCase):
                 self.assertLess(conan_at, text.index("stress-ng"), f"{dockerfile} places stress-ng before Conan")
             if arch == "amd64":
                 self.assertLess(text.index("afl++"), conan_at)
+                compiler = text[:conan_at]
+                self.assertIn("6084F3CF814B57C1CF12EFD515CF4D18AF4F7421", compiler)
+                self.assertIn("23\\.1\\.6", compiler)
+                self.assertIn("clang-23", compiler)
+                self.assertIn("clang-tidy-23", compiler)
+                self.assertIn("libclang-rt-23-dev", compiler)
                 tail = text[conan_at:]
-                for marker in ("\n    afl++ \\", "lld-21", "llvm-21", "\n    time \\"):
+                for marker in (
+                    "\n    afl++ \\",
+                    "lld-21",
+                    "llvm-21",
+                    "lld-23",
+                    "llvm-23",
+                    "\n    time \\",
+                ):
                     self.assertIn(marker, tail, f"{dockerfile} missing {marker!r} after Conan")
             labels = {label for label, _ in module.hashed_chunks(ROOT, arch)}
             self.assertIn(f"file:{dockerfile}", labels)

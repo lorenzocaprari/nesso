@@ -195,10 +195,10 @@ TEST_CASE("rows escape terminal controls from the log text", "[live_view]")
     results.matches.push_back({.source = "app.log", .line = 1, .score = 1.0F, .text = "a\x1b[2J\x07z"});
     view.OnProvisional(results, 1, 1);
     const std::string written = capture.Next();
-    CHECK(written.find("line 1: 1.0000: a\\x1B[2J\\x07z\n") != std::string::npos);
+    CHECK(written.contains("line 1: 1.0000: a\\x1B[2J\\x07z\n"));
     // The only escape byte is the view's own clear sequence.
     CHECK(std::ranges::count(written, '\x1b') == 1);
-    CHECK(written.find('\x07') == std::string::npos);
+    CHECK(!written.contains('\x07'));
 }
 
 TEST_CASE("the view is on only for an interactive terminal", "[live_view]")

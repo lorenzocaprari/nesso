@@ -51,6 +51,8 @@ using detail::ScanFiles;
 using detail::StreamBatch;
 using detail::TextFailure;
 
+namespace
+{
 struct GrepWaiting
 {
     uint64_t ordinal = 0;
@@ -63,7 +65,10 @@ struct GrepWaiting
     bool own_text = true;
     std::string text;
 };
+} // namespace
 
+namespace
+{
 struct GrepCandidate
 {
     uint64_t index = 0;
@@ -71,7 +76,10 @@ struct GrepCandidate
     std::uint32_t distinct_id = 0;
     TextMatch match;
 };
+} // namespace
 
+namespace
+{
 struct GrepHit
 {
     uint64_t ordinal = 0;
@@ -87,14 +95,20 @@ struct GrepHit
     bool array_element = false;
     std::string text;
 };
+} // namespace
 
+namespace
+{
 struct GrepSourceCursor
 {
     bool archive = false;
     std::uint32_t source_id = 0;
     std::string source;
 };
+} // namespace
 
+namespace
+{
 struct GrepEmbedState
 {
     const GrepRequest *request = nullptr;
@@ -132,7 +146,10 @@ struct GrepEmbedState
     std::string first_source;
     size_t batch = 0;
 };
+} // namespace
 
+namespace
+{
 struct GrepBm25
 {
     std::vector<double> scores;
@@ -140,6 +157,7 @@ struct GrepBm25
     EffectiveMode effective = EffectiveMode::Dense;
     bool lexical_fallback = false;
 };
+} // namespace
 
 static const std::vector<GrepWaiting> &Kept(const GrepEmbedState &state)
 {
@@ -243,9 +261,9 @@ static void ReportProvisional(GrepEmbedState &state)
     state.progress->Redraw();
 }
 
-static void UpdatePromise(GrepEmbedState &state, nesso::core::WindowPromise &promise, std::string_view text)
+static void UpdatePromise(const GrepEmbedState &state, nesso::core::WindowPromise &promise, std::string_view text)
 {
-    if (!promise.any_substr && !state.stripped_query.empty() && text.find(state.stripped_query) != std::string::npos)
+    if (!promise.any_substr && !state.stripped_query.empty() && text.contains(state.stripped_query))
     {
         promise.any_substr = true;
     }
@@ -322,6 +340,8 @@ static void IngestGrepChunk(GrepEmbedState &state, GrepSourceCursor &cursor, nes
 
 // Receives the read pass. Each path gets its source cursor, as the second parse
 // used to.
+namespace
+{
 class GrepIngest final : public detail::ScanSink
 {
   public:
@@ -350,6 +370,7 @@ class GrepIngest final : public detail::ScanSink
     GrepEmbedState *state_;
     GrepSourceCursor cursor_;
 };
+} // namespace
 
 static void CountSingletons(GrepEmbedState &state)
 {
@@ -450,9 +471,9 @@ static GrepBm25 BuildGrepBm25Scores(const std::vector<GrepWaiting> &all_lines,
         }
         std::vector<std::pair<std::uint32_t, std::uint32_t>> entries;
         entries.reserve(term_counts.size());
-        for (const auto &[termId, frequency] : term_counts)
+        for (const auto &[term_id, frequency] : term_counts)
         {
-            entries.emplace_back(termId, frequency);
+            entries.emplace_back(term_id, frequency);
         }
         bm25.AddLinePostings(entries, static_cast<std::uint32_t>(terms.size()));
     }
@@ -493,17 +514,16 @@ static std::vector<GrepHit> LexicalGrepHits(const std::vector<GrepWaiting> &all_
             continue;
         }
         const GrepWaiting &item = all_lines[index];
-        hits.push_back(
-            {.ordinal = item.ordinal,
-             .score = static_cast<float>(bm25_scores[index]),
-             .lexical = static_cast<float>(bm25_scores[index]),
-             .has_lexical = true,
-             .substring = !query_tokens.stripped.empty() && item.text.find(query_tokens.stripped) != std::string::npos,
-             .distinct_id = item.distinct_id,
-             .source = item.source,
-             .line = item.line,
-             .array_element = item.array_element,
-             .text = item.text});
+        hits.push_back({.ordinal = item.ordinal,
+                        .score = static_cast<float>(bm25_scores[index]),
+                        .lexical = static_cast<float>(bm25_scores[index]),
+                        .has_lexical = true,
+                        .substring = !query_tokens.stripped.empty() && item.text.contains(query_tokens.stripped),
+                        .distinct_id = item.distinct_id,
+                        .source = item.source,
+                        .line = item.line,
+                        .array_element = item.array_element,
+                        .text = item.text});
     }
     std::ranges::sort(hits, LexicalHitBefore);
     return hits;
@@ -638,7 +658,7 @@ static TextResults MaterializeGrepHits(const GrepEmbedState &state, std::span<co
     return results;
 }
 
-static TextResults RankFromBm25(GrepEmbedState &state, const nesso::core::QueryTokens &query_tokens,
+static TextResults RankFromBm25(const GrepEmbedState &state, const nesso::core::QueryTokens &query_tokens,
                                 const GrepBm25 &lexical)
 {
     std::vector<GrepHit> hits = lexical.effective == EffectiveMode::Lexical
@@ -655,7 +675,7 @@ static TextResults RankFromBm25(GrepEmbedState &state, const nesso::core::QueryT
     return MaterializeGrepHits(state, hits, lexical.effective, lexical.lexical_fallback);
 }
 
-static TextResults RankLexicalGrep(GrepEmbedState &state, const nesso::core::QueryTokens &query_tokens,
+static TextResults RankLexicalGrep(const GrepEmbedState &state, const nesso::core::QueryTokens &query_tokens,
                                    EffectiveMode effective)
 {
     const GrepBm25 lexical =
@@ -665,6 +685,8 @@ static TextResults RankLexicalGrep(GrepEmbedState &state, const nesso::core::Que
 
 // Calls `GrepObserver::OnScanDone` once, from `Fire` or on scope exit, then
 // draws the progress line again.
+namespace
+{
 class ScanDoneNotice
 {
   public:
@@ -696,6 +718,7 @@ class ScanDoneNotice
     GrepObserver *observer_;
     const std::optional<ProgressReporter> *progress_;
 };
+} // namespace
 
 std::expected<TextResults, Error> Nesso::Grep(const GrepRequest &input) const
 {
@@ -726,7 +749,7 @@ std::expected<TextResults, Error> Nesso::Grep(const GrepRequest &input) const
     state.stripped_query = query_tokens.stripped;
     state.query_terms = nesso::core::PromiseTerms{nesso::core::LexicalTerms(query_tokens.stripped)};
     state.sources.reserve(request.files.size());
-    const auto load_model = [&]() -> std::expected<void, Error>
+    const auto load_model = [&] -> std::expected<void, Error>
     {
         const auto model = Embedder();
         if (!model)

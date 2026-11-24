@@ -126,5 +126,5 @@ TEST_CASE("match json records keep no record key", "[overview][json]")
                                  .mode = "dense",
                                  .dense = std::nullopt,
                                  .lexical = std::nullopt};
-    CHECK(nesso::cli::RenderMatchJson(match, 1).find("\"record\"") == std::string::npos);
+    CHECK(!nesso::cli::RenderMatchJson(match, 1).contains("\"record\""));
 }

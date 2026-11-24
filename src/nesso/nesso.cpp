@@ -62,6 +62,8 @@ static std::string ModelLoadNote(const std::vector<std::filesystem::path> &tried
     return text;
 }
 
+namespace
+{
 struct FileStamp
 {
     std::uintmax_t device = 0;
@@ -72,8 +74,11 @@ struct FileStamp
     std::intmax_t changed_seconds = 0;
     std::intmax_t changed_nanoseconds = 0;
 
+    // A defaulted friend cannot be static. The type is already internal.
+    // NOLINTNEXTLINE(llvm-prefer-static-over-anonymous-namespace)
     friend bool operator==(const FileStamp &, const FileStamp &) = default;
 };
+} // namespace
 
 static std::optional<FileStamp> ReadFileStamp(const std::filesystem::path &path)
 {

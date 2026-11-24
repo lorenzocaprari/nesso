@@ -20,19 +20,27 @@
 namespace nesso::embed
 {
 
+namespace
+{
 struct CodeRange
 {
     char32_t first;
     char32_t last;
 };
+} // namespace
 
+namespace
+{
 struct LowerRange
 {
     char32_t first;
     char32_t last;
     std::int32_t delta;
 };
+} // namespace
 
+namespace
+{
 struct Decomp
 {
     char32_t code;
@@ -42,6 +50,7 @@ struct Decomp
     char32_t part2;
     char32_t part3;
 };
+} // namespace
 
 #include "unicode_bert.inc"
 
@@ -408,7 +417,7 @@ static void NormalizeBasicSpan(const std::vector<char32_t> &spaced, std::size_t 
 static void AppendPunctSplit(const std::vector<char32_t> &plain, std::vector<std::string> &tokens)
 {
     std::vector<char32_t> current;
-    const auto flush = [&tokens, &current]()
+    const auto flush = [&tokens, &current]
     {
         if (!current.empty())
         {

@@ -71,8 +71,8 @@ TEST_CASE("NESSO_TRACE=1 emits one json line per session", "[trace]")
     REQUIRE(parse_at != std::string::npos);
     REQUIRE(embed_at != std::string::npos);
     REQUIRE(parse_at < embed_at);
-    REQUIRE(text.find("\"name\":\"corpus-read\"") != std::string::npos);
-    REQUIRE(text.find("\"peakRssBytes\":") != std::string::npos);
+    REQUIRE(text.contains("\"name\":\"corpus-read\""));
+    REQUIRE(text.contains("\"peakRssBytes\":"));
     REQUIRE(std::count(text.begin(), text.end(), '\n') == 2);
 }
 

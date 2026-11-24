@@ -1,12 +1,22 @@
 # Inherit the repo gate, then drop checks that are noise or intentional in tests
 # (Catch2 macros, short fixture names, binary/corpus bytes, fuzz C APIs, getenv).
 # bugprone-unused-return-value: Catch2 *_THROWS_AS discards std::expected returns.
+# bugprone-signed-bitwise: clang-tidy 23 removed hicpp-signed-bitwise; tests
+# still do intentional signed bitwise (fuzz bytes, hashes). src/ keeps the check.
+# bugprone-chained-comparison: Catch2 CHECK/REQUIRE expands through operator<=,
+# so the assertion looks like a chained comparison.
+# bugprone-random-generator-seed: primary of cert-msc51-cpp, already disabled
+# here. Tests seed RNGs with constants on purpose.
+# misc-override-with-different-visibility: a test streambuf hides underflow.
 # bugprone-unchecked-optional-access: Catch2 REQUIRE is not a recognized assertion.
 # misc-include-cleaner: Catch2 macros do not count as a direct use of catch_all.hpp.
 InheritParentConfig: true
 Checks: >
+  -bugprone-chained-comparison,
   -bugprone-easily-swappable-parameters,
   -bugprone-implicit-widening-of-multiplication-result,
+  -bugprone-random-generator-seed,
+  -bugprone-signed-bitwise,
   -bugprone-unchecked-optional-access,
   -bugprone-unused-return-value,
   -cert-msc51-cpp,
@@ -22,9 +32,9 @@ Checks: >
   -cppcoreguidelines-special-member-functions,
   -google-build-using-namespace,
   -google-runtime-int,
-  -hicpp-signed-bitwise,
   -llvm-prefer-static-over-anonymous-namespace,
   -misc-const-correctness,
+  -misc-override-with-different-visibility,
   -misc-include-cleaner,
   -misc-non-private-member-variables-in-classes,
   -misc-use-internal-linkage,

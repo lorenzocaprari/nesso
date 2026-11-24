@@ -64,12 +64,17 @@ using detail::WriteRaw;
 using detail::WriteU32;
 using detail::WriteU64;
 
+namespace
+{
 struct SpillFile
 {
     std::filesystem::path path;
     std::ofstream output;
 };
+} // namespace
 
+namespace
+{
 struct SpilledLine
 {
     std::uint64_t line_number = 0;
@@ -80,6 +85,8 @@ struct SpilledLine
     std::uint32_t flags = 0;
     std::string stored_text;
 };
+} // namespace
+
 static std::expected<SpillFile, EngineError> CreateSpill(const std::filesystem::path &destination,
                                                          std::string_view suffix)
 {
@@ -319,7 +326,7 @@ std::expected<std::uint32_t, EngineError> CorpusWriter::AddSource(SourceInfo sou
         return std::unexpected(EngineError::LimitsExceeded);
     }
     if (source.path.empty() || source.path.size() > MAX_TEXT_BYTES || source.json_field.size() > MAX_TEXT_BYTES ||
-        source.path.find('\0') != std::string::npos || source.json_field.find('\0') != std::string::npos)
+        source.path.contains('\0') || source.json_field.contains('\0'))
     {
         return std::unexpected(EngineError::CorruptDatabase);
     }
@@ -397,12 +404,15 @@ std::expected<std::uint32_t, EngineError> CorpusWriter::AddDistinct(std::string_
     return *distinct_id;
 }
 
+namespace
+{
 struct LastLineCursor
 {
     std::uint32_t last_source = 0;
     std::uint64_t last_line = 0;
     bool has_last_line = false;
 };
+} // namespace
 
 static bool AddLineRejected(const CorpusLine &line, std::span<const SourceInfo> sources,
                             std::span<const std::uint32_t> uses, std::span<const std::string> terms,
@@ -419,7 +429,7 @@ static bool AddLineRejected(const CorpusLine &line, std::span<const SourceInfo> 
     }
     for (const std::string &term : terms)
     {
-        if (term.empty() || term.size() > MAX_TEXT_BYTES || term.find('\0') != std::string::npos)
+        if (term.empty() || term.size() > MAX_TEXT_BYTES || term.contains('\0'))
         {
             return true;
         }
@@ -449,11 +459,14 @@ static std::expected<void, EngineError> ValidateAddLines(std::span<const SourceI
     return {};
 }
 
+namespace
+{
 struct SpillCounters
 {
     std::uint64_t stored_bytes = 0;
     std::uint64_t line_count = 0;
 };
+} // namespace
 
 static std::expected<void, EngineError> SpillAddLines(std::ostream &lines_out, std::ostream &terms_out,
                                                       std::span<std::uint32_t> uses, SpillCounters &counters,
@@ -535,6 +548,8 @@ std::expected<void, EngineError> CorpusWriter::AddLines(std::span<const CorpusLi
     return {};
 }
 
+namespace
+{
 struct CorpusOffsets
 {
     std::uint64_t source_offset = 0;
@@ -547,7 +562,10 @@ struct CorpusOffsets
     std::uint64_t matrix_offset = 0;
     std::uint64_t matrix_bytes = 0;
 };
+} // namespace
 
+namespace
+{
 struct CorpusLayoutSizes
 {
     std::uint64_t line_count = 0;
@@ -558,6 +576,7 @@ struct CorpusLayoutSizes
     std::uint64_t policy_bytes = 0;
     std::uint64_t lexical_bytes = 0;
 };
+} // namespace
 
 static CorpusOffsets CorpusLayoutOffsets(std::span<const SourceInfo> sources, const CorpusLayoutSizes &sizes)
 {
@@ -578,6 +597,8 @@ static CorpusOffsets CorpusLayoutOffsets(std::span<const SourceInfo> sources, co
     return offsets;
 }
 
+namespace
+{
 struct CorpusHeaderCounts
 {
     std::uint32_t dimensions = 0;
@@ -585,6 +606,7 @@ struct CorpusHeaderCounts
     std::uint64_t line_count = 0;
     std::uint64_t distinct_count = 0;
 };
+} // namespace
 
 static bool WriteCorpusHeader(std::ostream &output, std::string_view policy, const CorpusHeaderCounts &counts,
                               const CorpusOffsets &offsets)
@@ -653,12 +675,15 @@ static bool WriteCorpusLineTable(std::istream &lines, std::ostream &output, std:
     return AtEnd(lines);
 }
 
+namespace
+{
 struct DistinctTextLayout
 {
     std::size_t distinct_count = 0;
     std::uint64_t text_offset = 0;
     std::uint64_t stored_offset = 0;
 };
+} // namespace
 
 static bool WriteCorpusDistinctTexts(std::istream &texts, std::istream &lines, std::ostream &output,
                                      const DistinctTextLayout &layout)
@@ -688,12 +713,15 @@ static bool WriteCorpusDistinctTexts(std::istream &texts, std::istream &lines, s
     return AtEnd(texts) && Rewind(lines);
 }
 
+namespace
+{
 struct StoredMatrixCounts
 {
     std::uint64_t line_count = 0;
     std::uint64_t stored_cursor = 0;
     std::uint64_t stored_bytes = 0;
 };
+} // namespace
 
 static bool WriteCorpusStoredAndMatrix(std::istream &lines, std::istream &vectors, std::istream &lexical,
                                        std::ostream &output, const CorpusOffsets &offsets,
@@ -713,6 +741,8 @@ static bool WriteCorpusStoredAndMatrix(std::istream &lines, std::istream &vector
            CopyBytes(vectors, output, offsets.matrix_bytes);
 }
 
+namespace
+{
 struct CorpusEmitMeta
 {
     std::span<const SourceInfo> sources;
@@ -723,7 +753,10 @@ struct CorpusEmitMeta
     std::uint64_t stored_bytes = 0;
     std::uint64_t lexical_bytes = 0;
 };
+} // namespace
 
+namespace
+{
 struct CorpusSpillStreams
 {
     std::istream *lines = nullptr;
@@ -732,6 +765,7 @@ struct CorpusSpillStreams
     std::istream *lexical = nullptr;
     std::ostream *output = nullptr;
 };
+} // namespace
 
 static bool WriteCorpusSections(const CorpusSpillStreams &streams, const CorpusPolicy &policy,
                                 const CorpusEmitMeta &meta)
@@ -819,7 +853,7 @@ std::expected<void, EngineError> CorpusWriter::Finish()
     }
     impl_->temporary = temporary->path;
     std::ofstream &output = temporary->output;
-    const auto fail = [&]() -> std::expected<void, EngineError>
+    const auto fail = [&] -> std::expected<void, EngineError>
     {
         impl_->failed = true;
         return std::unexpected(EngineError::FileOpenFailure);

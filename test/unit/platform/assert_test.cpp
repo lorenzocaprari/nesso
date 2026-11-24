@@ -151,7 +151,7 @@ TEST_CASE("NESSO_ASSERT aborts and names the condition", "[assert]")
     const auto line_at = child.stderr_text.find(':', path_start);
     REQUIRE(line_at != std::string::npos);
     const std::string path = child.stderr_text.substr(path_start, line_at - path_start);
-    REQUIRE(path.find("assert_test.cpp") != std::string::npos);
+    REQUIRE(path.contains("assert_test.cpp"));
     const auto line_end = child.stderr_text.find('\n', line_at + 1);
     REQUIRE(line_end != std::string::npos);
     const std::string line_text = child.stderr_text.substr(line_at + 1, line_end - (line_at + 1));
