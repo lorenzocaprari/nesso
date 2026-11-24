@@ -9,4 +9,5 @@
 075b12f9f3559aa243fcc6235f2f4cf20e7d2457
 
 # style: rewrite functions with trailing return types
-af3bfc04b28d188303dcfb4bb1d12efd1fa7d7a4
+# style: enable cloexec and trailing-return-type tidy checks (#391)
+fc75b880abf1d8757b8026aa7c5dc8ae6bcd8167
