@@ -12,7 +12,7 @@ Bugs and feature requests use the issue forms. Vulnerabilities follow [SECURITY.
 - GCC 15+ with C++26 (`conan/profiles/gcc-26*`)
 - CMake 4.2+ (`cmake_minimum_required` in `CMakeLists.txt`) and Ninja
 - Conan 2 (`conanfile.py`, `conan.lock`)
-- Python 3 for pre-commit, `scripts/bench`, and `scripts/bench-compare`. `go run -C scripts/ci . bench-baseline` rewrites `bench/baseline.json` from one or more of those results, keeping the slower wall time of each tier. Commit that file in its own change.
+- Python 3 for pre-commit, `scripts/bench`, and `scripts/bench-compare`. `go run -C scripts/ci . bench-baseline` rewrites `bench/baseline.json` from one or more of those results, keeping the slower wall time of each tier. Commit that file in its own change. The committed sample is the Ubuntu GCC 15 Release binary. EL9 release builds use GCC Toolset 16.2.1 and the Clang lanes and clang-tidy use Clang 23.1.6; Ubuntu 26.04 CI stayed on GCC 15, so that switch is not itself a reason to rewrite the file.
 - Go 1.24+ only for the godog specs (`test/functional/go.mod`)
 - AFL++, lld 21, and llvm-21 only for `scripts/fuzz-test` (Ubuntu's `afl++` is built against LLVM 21). Clang 23.1.6 is `conan/profiles/clang-26`, `conan/profiles/clang-26-asan`, `conan/profiles/clang-26-tsan`, and `clang-tidy`
 
