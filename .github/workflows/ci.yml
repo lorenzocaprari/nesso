@@ -1181,6 +1181,11 @@ jobs:
   # across both runner classes stayed within about 7%. The limits below sit
   # above that spread. A missing baseline file fails the job.
   #
+  # The binary is the Ubuntu GCC 15 Release build (build-gcc-26-amd64). EL9
+  # release builds use GCC Toolset 16.2.1. The Clang lanes and clang-tidy use
+  # Clang 23.1.6. Ubuntu 26.04 CI stayed on GCC 15. A shift against this
+  # baseline is not that toolchain switch.
+  #
   # The same job runs threadScaleLines (scripts/ci) once with NESSO_THREADS=1
   # and once with NESSO_THREADS=4. bench-scale fails when the speedup is below
   # threadScaleMinRatio. The summary lists lines/s for every tier and that ratio.
