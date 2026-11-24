@@ -18,11 +18,11 @@ import (
 )
 
 func TestSplitCommand(t *testing.T) {
-	got, err := splitCommand(`/usr/bin/clang++-21 -DNAME="a b" -I'/x y' -DQ=\"v\" -c  src/a.cpp`)
+	got, err := splitCommand(`/usr/bin/clang++-23 -DNAME="a b" -I'/x y' -DQ=\"v\" -c  src/a.cpp`)
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []string{"/usr/bin/clang++-21", "-DNAME=a b", "-I/x y", `-DQ="v"`, "-c", "src/a.cpp"}
+	want := []string{"/usr/bin/clang++-23", "-DNAME=a b", "-I/x y", `-DQ="v"`, "-c", "src/a.cpp"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("got %q, want %q", got, want)
 	}

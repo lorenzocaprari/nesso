@@ -42,11 +42,14 @@ static std::size_t Utf8SequenceLength(unsigned char lead)
     return 0;
 }
 
+namespace
+{
 struct Utf8Slice
 {
     std::size_t offset = 0;
     std::size_t length = 0;
 };
+} // namespace
 
 static bool DecodeUtf8(std::string_view text, const Utf8Slice &slice, std::uint32_t &codepoint)
 {
@@ -142,8 +145,7 @@ std::string FormatTextRow(const TextResults &results, const TextMatch &match)
     const char *place = match.array_element ? "element" : "line";
     // Archive labels are `bundle:entry`. A single member still prints that
     // label.
-    const bool prefixed =
-        results.multiple_sources || match.source == "-" || match.source.find(':') != std::string::npos;
+    const bool prefixed = results.multiple_sources || match.source == "-" || match.source.contains(':');
     if (!results.grouped)
     {
         if (prefixed)

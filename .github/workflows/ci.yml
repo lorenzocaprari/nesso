@@ -330,7 +330,8 @@ jobs:
             -DCMAKE_TOOLCHAIN_FILE=build/Release/generators/conan_toolchain.cmake \
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
-          grep -q 'clang++-21' build/Release/compile_commands.json
+          clang++-23 --version | grep -q '23\.1\.6'
+          grep -q 'clang++-23' build/Release/compile_commands.json
 
       # One marker per unit that clang-tidy found clean, keyed on the
       # preprocessed source, the project files it read, the compile arguments,
@@ -2570,15 +2571,17 @@ jobs:
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ github.workspace }}/.ccache
-          key: ccache-${{ runner.arch }}-clang-21-tsan-${{ github.sha }}
+          key: ccache-${{ runner.arch }}-clang-23-tsan-${{ github.sha }}
           restore-keys: |
-            ccache-${{ runner.arch }}-clang-21-tsan-
+            ccache-${{ runner.arch }}-clang-23-tsan-
 
       - name: Zero ccache statistics
         run: ccache --zero-stats
 
       - name: Show Clang
-        run: clang++-21 --version
+        run: |
+          clang++-23 --version
+          clang++-23 --version | grep -q '23\.1\.6'
 
       - name: Install Dependencies (Conan)
         run: |
@@ -2595,7 +2598,7 @@ jobs:
         run: |
           set -euo pipefail
           commands=build/Release/compile_commands.json
-          grep -q 'clang++-21' "${commands}"
+          grep -q 'clang++-23' "${commands}"
           grep -q -- '-fsanitize=thread' "${commands}"
           if grep -q -- '-stdlib=libc++' "${commands}"; then
             echo "error: compile commands select libc++" >&2
@@ -2673,7 +2676,7 @@ jobs:
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ github.workspace }}/.ccache
-          key: ccache-${{ runner.arch }}-clang-21-tsan-${{ github.sha }}
+          key: ccache-${{ runner.arch }}-clang-23-tsan-${{ github.sha }}
 
   # Single status check for a ruleset on main. The check run name is the job
   # name, CI gate. needs is every other job in this file. The lint step

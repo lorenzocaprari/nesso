@@ -35,12 +35,15 @@ constexpr std::size_t CHUNK_BYTES = static_cast<std::size_t>(16) * 1024;
 
 } // namespace
 
+namespace
+{
 enum class PullStatus : std::uint8_t
 {
     Bytes,
     End,
     Error
 };
+} // namespace
 
 static std::expected<void, GzipError> InitGzipInflate(z_stream &stream)
 {

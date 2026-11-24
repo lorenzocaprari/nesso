@@ -768,7 +768,7 @@ TEST_CASE("a truncated gzip fails the parse", "[nesso][text]")
     REQUIRE_FALSE(indexed);
     CHECK(indexed.error().kind == nesso::ErrorKind::Parse);
     CHECK(indexed.error().cause == nesso::ErrorCause::CorruptGzip);
-    CHECK(nesso::Message(indexed.error()).find("truncated or corrupt") != std::string::npos);
+    CHECK(nesso::Message(indexed.error()).contains("truncated or corrupt"));
 }
 
 TEST_CASE("a dangling symlink inside a directory fails the walk", "[nesso][text]")

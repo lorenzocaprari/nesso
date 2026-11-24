@@ -150,7 +150,7 @@ TEST_CASE("a repeated text that spans two windows stays one id", "[dedup]")
     nesso::core::DistinctIndex index;
     index.Reserve(nesso::embed::BATCH_WINDOW + 2);
     std::vector<std::string> embedded;
-    const auto flush = [&]()
+    const auto flush = [&]
     {
         embedded.insert(embedded.end(), index.Pending().begin(), index.Pending().end());
         index.ClearPending();

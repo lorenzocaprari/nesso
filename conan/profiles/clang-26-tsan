@@ -1,4 +1,4 @@
-# Clang 21 + libstdc++ (the GCC 15 ABI), C++26, ThreadSanitizer.
+# Clang 23.1.6 + libstdc++ (the GCC 15 ABI), C++26, ThreadSanitizer.
 #
 # settings.compiler stays gcc/15/libstdc++11 on purpose, same as clang-26.
 # nesso-build-env bakes Release packages for that tuple; compiler=clang would
@@ -7,7 +7,7 @@
 #
 # tools.build:compiler_executables is not part of the package id, so
 # `conan install --no-remote` reuses the gcc-26 cache while CMake compiles
-# and links nesso with clang++-21 -stdlib=libstdc++.
+# and links nesso with clang++-23 -stdlib=libstdc++.
 #
 # No -flto: clang turns -flto=auto into LLVM bitcode, which does not mix
 # cleanly with the gcc-built static dependencies. -Werror is not set here.
@@ -24,12 +24,12 @@ compiler.cppstd=26
 build_type=Release
 
 [conf]
-tools.build:compiler_executables={"c": "clang-21", "cpp": "clang++-21"}
+tools.build:compiler_executables={"c": "clang-23", "cpp": "clang++-23"}
 user.nesso:cxxflags=["-O3", "-g", "-march=x86-64-v2", "-stdlib=libstdc++", "-fvisibility=hidden", "-DNDEBUG", "-fno-omit-frame-pointer", "-fsanitize=thread", "-fno-sanitize-recover=all"]
 user.nesso:cflags=["-O3", "-g", "-march=x86-64-v2", "-fvisibility=hidden", "-DNDEBUG", "-fno-omit-frame-pointer", "-fsanitize=thread", "-fno-sanitize-recover=all"]
 user.nesso:sharedlinkflags=["-fsanitize=thread", "-Wl,-O1", "-Wl,--as-needed"]
 user.nesso:exelinkflags=["-stdlib=libstdc++", "-fsanitize=thread", "-Wl,-O1", "-Wl,--as-needed"]
 
 [buildenv]
-CC=clang-21
-CXX=clang++-21
+CC=clang-23
+CXX=clang++-23

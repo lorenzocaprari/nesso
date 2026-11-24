@@ -154,12 +154,15 @@ static std::size_t MatchIpv4At(std::string_view text, std::size_t begin, bool ch
     return cursor - begin;
 }
 
+namespace
+{
 enum class Ipv6Step : unsigned char
 {
     Continue,
     Break,
     Fail
 };
+} // namespace
 
 static bool Ipv6ScanStart(std::string_view text, std::size_t begin, std::size_t &cursor, bool &bracket) noexcept
 {

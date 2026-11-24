@@ -43,7 +43,7 @@ static std::string ExtensionLower(const std::filesystem::path &path)
     return extension;
 }
 
-static bool ContainsNul(std::string_view bytes) { return bytes.find('\0') != std::string_view::npos; }
+static bool ContainsNul(std::string_view bytes) { return bytes.contains('\0'); }
 
 static std::expected<std::ifstream, ParseError> OpenChecked(const std::filesystem::path &path)
 {
@@ -108,12 +108,15 @@ static bool StripCarriageReturn(std::string &line)
 
 static bool IsBlank(std::string_view text) { return text.find_first_not_of(" \t\n\r\f\v") == std::string_view::npos; }
 
+namespace
+{
 enum class SkipReason : uint8_t
 {
     Empty,
     Malformed,
     MissingField
 };
+} // namespace
 
 static void CountSkip(ParseStats *stats, SkipReason reason)
 {
@@ -503,11 +506,14 @@ static std::expected<void, ParseError> DecodeJsonlField(std::string &text, std::
     }
 }
 
+namespace
+{
 struct ByteRange
 {
     uint64_t offset = 0;
     uint64_t length = 0;
 };
+} // namespace
 
 static std::expected<std::string, ParseError> ReadOpenedRangedRecord(std::istream &input, const std::string &extension,
                                                                      const ByteRange &range,
@@ -586,6 +592,8 @@ std::expected<void, ParseError> Chunker::ForEach(const std::filesystem::path &pa
         limits);
 }
 
+namespace
+{
 struct ArchiveMemberIngest
 {
     std::filesystem::path path;
@@ -593,12 +601,16 @@ struct ArchiveMemberIngest
     // NOLINTNEXTLINE(readability-redundant-member-init)
     std::string json_field{};
 };
+} // namespace
 
+namespace
+{
 struct ArchiveMemberContent
 {
     std::string_view name;
     std::string_view bytes;
 };
+} // namespace
 
 static void IngestArchiveMember(const ArchiveMemberContent &member, const ArchiveMemberIngest &opts, ParseStats *stats,
                                 const std::function<void(ParsedChunk)> &consume, std::optional<ParseError> &failed)

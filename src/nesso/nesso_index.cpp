@@ -75,13 +75,18 @@ static std::unexpected<Error> NothingToIndex(const IndexRequest &request, const 
     return std::unexpected(std::move(error));
 }
 
+namespace
+{
 struct IndexSourceCursor
 {
     bool archive = false;
     std::uint32_t active_source = 0;
     bool store_lines = false;
 };
+} // namespace
 
+namespace
+{
 struct IndexEmbedState
 {
     const IndexRequest *request = nullptr;
@@ -97,6 +102,7 @@ struct IndexEmbedState
     size_t batch = 0;
     std::optional<Error> failed;
 };
+} // namespace
 
 static std::expected<void, Error> GuardStableSource(const std::filesystem::path &path, std::string_view json_field,
                                                     const nesso::core::SourceInfo &expected, const LineCounts &counts)

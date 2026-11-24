@@ -52,12 +52,12 @@ TEST_CASE("json escapes controls and replaces invalid utf-8", "[json]")
     const std::string expected = std::string(R"({"schema_version":2,"rank":1,"source":"a)") + "\uFFFD" +
                                  R"(","kind":"line","line":1,"score":1,"text":")";
     CHECK(json.find(expected) == 0);
-    CHECK(json.find(R"(\"\\\b\f\n\r\t\u0001\u000eok )") != std::string::npos);
-    CHECK(json.find("\u00E9") != std::string::npos);
-    CHECK(json.find("\u20AC") != std::string::npos);
-    CHECK(json.find("\U0001F600") != std::string::npos);
-    CHECK(json.find("occurrences\":1") != std::string::npos);
-    CHECK(json.find("schema_version\":2") != std::string::npos);
+    CHECK(json.contains(R"(\"\\\b\f\n\r\t\u0001\u000eok )"));
+    CHECK(json.contains("\u00E9"));
+    CHECK(json.contains("\u20AC"));
+    CHECK(json.contains("\U0001F600"));
+    CHECK(json.contains("occurrences\":1"));
+    CHECK(json.contains("schema_version\":2"));
     std::size_t replacements = 0;
     for (std::size_t position = 0; (position = json.find("\uFFFD", position)) != std::string::npos;
          position += std::string("\uFFFD").size())
@@ -81,13 +81,13 @@ TEST_CASE("json score is the shortest round-trip form in any locale", "[json]")
     CHECK(
         under_classic ==
         R"({"schema_version":2,"rank":1,"source":"a","kind":"line","line":1,"score":0.1,"text":"t","occurrences":1,"mode":"dense","dense":null,"lexical":null})");
-    CHECK(under_classic.find("0.10000000149011612") == std::string::npos);
+    CHECK(!under_classic.contains("0.10000000149011612"));
 
     const nesso::TextMatch whole{
         .source = "a", .line = 1, .score = 1.0F, .text = "t", .array_element = false, .occurrences = 1};
     const std::string whole_json = nesso::cli::RenderMatchJson(whole, 1);
-    CHECK(whole_json.find("\"score\":1,") != std::string::npos);
-    CHECK(whole_json.find("\"score\":1.0") == std::string::npos);
+    CHECK(whole_json.contains("\"score\":1,"));
+    CHECK(!whole_json.contains("\"score\":1.0"));
 
     const char *saved_locale = std::setlocale(LC_ALL, nullptr);
     const std::string saved = saved_locale == nullptr ? "C" : saved_locale;
@@ -114,8 +114,8 @@ TEST_CASE("a truncated multi-byte tail becomes one replacement character", "[jso
     const nesso::TextMatch interrupted{
         .source = "log", .line = 8, .score = -0.5F, .text = "\xE2\x82!", .array_element = true, .occurrences = 2};
     const std::string interrupted_json = nesso::cli::RenderMatchJson(interrupted, 1);
-    CHECK(interrupted_json.find(std::string("\"text\":\"") + "\uFFFD" + "!\"") != std::string::npos);
-    CHECK(interrupted_json.find("\"kind\":\"element\"") != std::string::npos);
+    CHECK(interrupted_json.contains(std::string("\"text\":\"") + "\uFFFD" + "!\""));
+    CHECK(interrupted_json.contains("\"kind\":\"element\""));
     std::size_t replacements = 0;
     for (std::size_t position = 0; (position = interrupted_json.find("\uFFFD", position)) != std::string::npos;
          position += std::string("\uFFFD").size())
@@ -161,5 +161,5 @@ TEST_CASE("provisional json rows append final false and the refresh count", "[js
     const std::string record = nesso::cli::RenderProvisionalMatchJson(element, 2, 17);
     const std::string final_record = nesso::cli::RenderMatchJson(element, 2);
     CHECK(record == final_record.substr(0, final_record.size() - 1) + R"(,"final":false,"refresh":17})");
-    CHECK(final_record.find("\"final\"") == std::string::npos);
+    CHECK(!final_record.contains("\"final\""));
 }

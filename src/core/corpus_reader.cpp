@@ -55,6 +55,8 @@ using detail::TEXT_RECORD_BYTES;
 using detail::ValidatePolicy;
 using detail::ViewBytes;
 
+namespace
+{
 struct Layout
 {
     std::uint32_t policy_bytes = 0;
@@ -72,6 +74,8 @@ struct Layout
     std::uint64_t lexical_bytes = 0;
     std::uint64_t policy_offset = 0;
 };
+} // namespace
+
 struct MappedCorpus::Impl
 {
     nesso::platform::MappedFile file;
@@ -88,6 +92,8 @@ struct MappedCorpus::Impl
     std::string corpus_lexical_terms_version;
 };
 
+namespace
+{
 struct MappedShape
 {
     std::size_t sources = 0;
@@ -98,6 +104,7 @@ struct MappedShape
     std::size_t dictionary = 0;
     std::size_t stored_terms = 0;
 };
+} // namespace
 
 static void AssertMappedShape(const MappedShape &shape, const Layout &layout, bool has_lexical)
 {
@@ -147,11 +154,14 @@ static bool ReadLayoutFields(std::span<const std::byte> bytes, Layout &layout)
            ReadU64(bytes, 104, layout.policy_offset);
 }
 
+namespace
+{
 struct ParsedHeader
 {
     Layout layout{};
     std::uint32_t version = 0;
 };
+} // namespace
 
 static CorpusMapFailure MakeMapFailure(EngineError code, const std::optional<std::uint32_t> &version = std::nullopt)
 {
@@ -252,6 +262,8 @@ static std::expected<void, EngineError> ValidateCorpusLayout(const Layout &layou
     return {};
 }
 
+namespace
+{
 struct SourceRecordFields
 {
     std::uint64_t path_at = 0;
@@ -262,6 +274,7 @@ struct SourceRecordFields
     std::uint64_t field_at = 0;
     std::uint32_t field_length = 0;
 };
+} // namespace
 
 static bool SourceRecordRejected(std::span<const std::byte> bytes, std::uint64_t record, std::uint64_t source_cursor,
                                  std::uint64_t line_limit, SourceRecordFields &fields)
@@ -297,7 +310,7 @@ static std::expected<void, EngineError> LoadMappedSources(std::span<const std::b
                           .tracked = (fields.flags & SOURCE_TRACKED) != 0,
                           .json_field = std::string{ViewBytes(bytes, fields.field_at, fields.field_length)},
                           .stored_only = (fields.flags & SOURCE_STORED_ONLY) != 0};
-        if (source.path.find('\0') != std::string::npos || source.json_field.find('\0') != std::string::npos)
+        if (source.path.contains('\0') || source.json_field.contains('\0'))
         {
             return std::unexpected(EngineError::CorruptDatabase);
         }
@@ -346,12 +359,15 @@ static std::expected<void, EngineError> LoadMappedDistinctTexts(std::span<const 
     return {};
 }
 
+namespace
+{
 struct LineRecordExtras
 {
     std::uint64_t text_offset = 0;
     std::uint32_t text_length = 0;
     std::uint32_t flags = 0;
 };
+} // namespace
 
 static bool LineRecordRejected(std::span<const std::byte> bytes, std::uint64_t record, std::uint64_t source_count,
                                std::uint64_t distinct_count, CorpusLine &line, LineRecordExtras &extras)
@@ -368,6 +384,8 @@ static bool LineRecordRejected(std::span<const std::byte> bytes, std::uint64_t r
            extras.text_length > MAX_TEXT_BYTES;
 }
 
+namespace
+{
 struct StoredTextSpan
 {
     std::uint32_t flags = 0;
@@ -375,6 +393,7 @@ struct StoredTextSpan
     std::uint32_t text_length = 0;
     std::uint64_t stored_limit = 0;
 };
+} // namespace
 
 static std::expected<void, EngineError> TakeStoredLineText(CorpusLine &line, std::span<const std::byte> bytes,
                                                            const StoredTextSpan &span, std::uint64_t &stored_cursor)
@@ -500,7 +519,7 @@ std::expected<MappedCorpusFile, CorpusMapFailure> MapCorpusFile(const std::files
     }
     const Layout &layout = header->layout;
     const std::uint32_t version = header->version;
-    auto fail = [version](EngineError code) { return std::unexpected(MakeMapFailure(code, version)); };
+    const auto fail = [version](EngineError code) { return std::unexpected(MakeMapFailure(code, version)); };
     // Pre-postings v3 used lexicalOffset=lexicalBytes=0. Those corpora stay
     // readable for dense search; new writers always emit a non-empty section.
     const bool has_lexical = layout.lexical_offset != 0 || layout.lexical_bytes != 0;

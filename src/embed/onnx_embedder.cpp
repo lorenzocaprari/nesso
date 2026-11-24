@@ -34,11 +34,14 @@
 namespace nesso::embed
 {
 
+namespace
+{
 struct HiddenShape
 {
     size_t sequence_length = 0;
     size_t hidden_size = 0;
 };
+} // namespace
 
 static void AssertEncodedInput(const TokenizedInput &item)
 {
@@ -97,6 +100,8 @@ static std::vector<float> MeanPoolAndNormalize(std::span<const float> hidden_sta
     return pooled;
 }
 
+namespace
+{
 struct ModelIo
 {
     std::string input_ids;
@@ -104,6 +109,7 @@ struct ModelIo
     std::string token_type_ids;
     std::string output;
 };
+} // namespace
 
 // A per-byte istreambuf_iterator copy of the 22 MiB int8 MiniLM dominated the
 // Debug BDD suite under ASan. grep, index, and search each load the model.
@@ -124,8 +130,7 @@ static bool ModelIsQuantized(const std::filesystem::path &model_path)
         input.read(storage.subspan(kept).data(), static_cast<std::streamsize>(k_chunk));
         const auto got = static_cast<std::size_t>(input.gcount());
         const std::string_view window(storage.data(), kept + got);
-        if (window.find(k_mat_mul_integer) != std::string_view::npos ||
-            window.find(k_dynamic_quantize_linear) != std::string_view::npos)
+        if (window.contains(k_mat_mul_integer) || window.contains(k_dynamic_quantize_linear))
         {
             return true;
         }
@@ -169,7 +174,7 @@ static Ort::Env MakeEnv()
     return Ort::Env{ORT_LOGGING_LEVEL_WARNING, "nesso-embed"};
 }
 
-static ModelIo ReadModelIo(Ort::Session &session)
+static ModelIo ReadModelIo(const Ort::Session &session)
 {
     const Ort::AllocatorWithDefaultOptions allocator;
     ModelIo model_io;

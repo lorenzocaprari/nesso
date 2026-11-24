@@ -80,7 +80,7 @@ DistanceKernel SelectDistanceKernel(std::string_view forced, bool avx2_fma) noex
 
 DistanceKernel SelectedKernel() noexcept
 {
-    static const DistanceKernel KERNEL = []() noexcept
+    static const DistanceKernel KERNEL = [] noexcept
     {
         // getenv is not thread-safe. The choice is fixed on first use; later
         // calls return the cached kernel and do not read the environment.

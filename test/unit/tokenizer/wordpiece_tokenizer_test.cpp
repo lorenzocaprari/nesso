@@ -237,7 +237,7 @@ TEST_CASE("WordPieceTokenizer matches BERT uncased token ids", "[WordPieceTokeni
     REQUIRE(padded.has_value());
     REQUIRE(padded->input_ids == std::vector<int64_t>{101, 7592, 2088, 102});
 
-    const auto soh = tokenizer->Encode(std::string("hel\x01lo"));
+    const auto soh = tokenizer->Encode("hel\x01lo");
     REQUIRE(soh.has_value());
     REQUIRE(soh->input_ids == std::vector<int64_t>{101, 7592, 102});
 

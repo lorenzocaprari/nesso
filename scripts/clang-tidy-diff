@@ -24,14 +24,14 @@ if [ ! -f "$BUILD_DIR/compile_commands.json" ]; then
 fi
 
 DIFF_BIN=""
-for candidate in clang-tidy-diff-21.py clang-tidy-diff.py; do
+for candidate in clang-tidy-diff-23.py clang-tidy-diff.py; do
     if command -v "$candidate" &> /dev/null; then
         DIFF_BIN="$candidate"
         break
     fi
 done
 if [ -z "$DIFF_BIN" ]; then
-    echo "clang-tidy-diff: clang-tidy-diff-21.py not found in PATH." >&2
+    echo "clang-tidy-diff: clang-tidy-diff-23.py not found in PATH." >&2
     exit 1
 fi
 

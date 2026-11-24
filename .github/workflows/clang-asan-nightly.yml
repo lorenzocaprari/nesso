@@ -88,7 +88,7 @@ jobs:
           deps_hash="$(./scripts/ci/build-env-hash amd64)"
           echo "image=${REGISTRY_NAME}/${owner_lc}/nesso-build-env:deps-${deps_hash}" >> "${GITHUB_OUTPUT}"
 
-  # Clang 21 compiles nesso against the gcc-built libstdc++ packages
+  # Clang 23.1.6 compiles nesso against the gcc-built libstdc++ packages
   # already in nesso-build-env (see conan/profiles/clang-26). libc++ is
   # not used: it is a different ABI from those static archives.
   build-clang-26-amd64:
@@ -122,15 +122,17 @@ jobs:
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ github.workspace }}/.ccache
-          key: ccache-${{ runner.arch }}-clang-21-Release-${{ github.sha }}
+          key: ccache-${{ runner.arch }}-clang-23-Release-${{ github.sha }}
           restore-keys: |
-            ccache-${{ runner.arch }}-clang-21-Release-
+            ccache-${{ runner.arch }}-clang-23-Release-
 
       - name: Zero ccache statistics
         run: ccache --zero-stats
 
       - name: Show Clang
-        run: clang++-21 --version
+        run: |
+          clang++-23 --version
+          clang++-23 --version | grep -q '23\.1\.6'
 
       - name: Install Dependencies (Conan)
         run: |
@@ -148,8 +150,8 @@ jobs:
           set -euo pipefail
           toolchain="build/Release/generators/conan_toolchain.cmake"
           commands="build/Release/compile_commands.json"
-          grep -q 'clang++-21' "${toolchain}"
-          grep -q 'clang++-21' "${commands}"
+          grep -q 'clang++-23' "${toolchain}"
+          grep -q 'clang++-23' "${commands}"
           if grep -q -- '-stdlib=libc++' "${commands}"; then
             echo "error: compile commands select libc++" >&2
             exit 1
@@ -192,7 +194,7 @@ jobs:
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ github.workspace }}/.ccache
-          key: ccache-${{ runner.arch }}-clang-21-Release-${{ github.sha }}
+          key: ccache-${{ runner.arch }}-clang-23-Release-${{ github.sha }}
 
       - name: Archive Release build
         id: archive
@@ -510,15 +512,17 @@ jobs:
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ github.workspace }}/.ccache
-          key: ccache-${{ runner.arch }}-clang-21-asan-${{ github.sha }}
+          key: ccache-${{ runner.arch }}-clang-23-asan-${{ github.sha }}
           restore-keys: |
-            ccache-${{ runner.arch }}-clang-21-asan-
+            ccache-${{ runner.arch }}-clang-23-asan-
 
       - name: Zero ccache statistics
         run: ccache --zero-stats
 
       - name: Show Clang
-        run: clang++-21 --version
+        run: |
+          clang++-23 --version
+          clang++-23 --version | grep -q '23\.1\.6'
 
       - name: Install Dependencies (Conan)
         run: |
@@ -538,7 +542,7 @@ jobs:
         run: |
           set -euo pipefail
           commands=build/Debug/compile_commands.json
-          grep -q 'clang++-21' "${commands}"
+          grep -q 'clang++-23' "${commands}"
           grep -q 'libstdcxx-format.ignorelist' "${commands}"
           if grep -q -- '-stdlib=libc++' "${commands}"; then
             echo "error: compile commands select libc++" >&2
@@ -657,4 +661,4 @@ jobs:
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ github.workspace }}/.ccache
-          key: ccache-${{ runner.arch }}-clang-21-asan-${{ github.sha }}
+          key: ccache-${{ runner.arch }}-clang-23-asan-${{ github.sha }}

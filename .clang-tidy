@@ -25,6 +25,43 @@
 # Enabled (not disabled): misc-include-cleaner
 #   -modernize-use-trailing-return-type           (classical return types)
 #   -readability-magic-numbers                    (CLI/embed/scoring constants)
+# clang-tidy 23 removed the hicpp module. The five names this file used to
+# enable are gone; each replacement stays enabled through an existing glob,
+# so the check is not dropped:
+#   hicpp-exception-baseclass     -> bugprone-std-exception-baseclass     (bugprone-*)
+#   hicpp-ignored-remove-result   -> bugprone-unused-return-value         (bugprone-*)
+#   hicpp-multiway-paths-covered  -> bugprone-unhandled-code-paths        (bugprone-*)
+#                                 -> readability-trivial-switch           (readability-*)
+#   hicpp-no-assembler            -> portability-no-assembler              (portability-*)
+#   hicpp-signed-bitwise          -> bugprone-signed-bitwise              (bugprone-*)
+# clang-tidy 22 kept these cert names as aliases of checks the globs already
+# enable. The alias names stay listed. Neither name is disabled:
+#   cert-dcl50-cpp -> modernize-avoid-variadic-functions
+#   cert-dcl58-cpp -> bugprone-std-namespace-modification
+#   cert-env33-c   -> bugprone-command-processor
+#   cert-err34-c   -> bugprone-unchecked-string-to-number-conversion
+#   cert-err52-cpp -> modernize-avoid-setjmp-longjmp
+#   cert-err58-cpp -> bugprone-throwing-static-initialization
+#   cert-err60-cpp -> bugprone-exception-copy-constructor-throws
+#   cert-flp30-c   -> bugprone-float-loop-counter
+#   cert-mem57-cpp -> bugprone-default-operator-new-on-overaligned-type
+#   cert-msc50-cpp -> misc-predictable-rand
+#   cert-msc51-cpp -> bugprone-random-generator-seed
+#   cert-oop57-cpp -> bugprone-raw-memory-call-on-non-trivial-type
+#   cert-oop58-cpp -> bugprone-copy-constructor-mutates-argument
+# clang-tidy 23 also keeps aliases (not disabled): cppcoreguidelines-explicit-constructor
+# and google-explicit-constructor -> misc-explicit-constructor; performance-faster-string-find
+# -> performance-prefer-single-char-overloads. New bugprone/modernize/performance/readability
+# checks from 22 and 23 stay on through those globs, except:
+#   -cppcoreguidelines-pro-bounds-avoid-unchecked-container-access
+#       New in clang-tidy 22. Flags every operator[]. Indexes here are already
+#       bounded; .at() would throw, which these paths do not use.
+#   -readability-trailing-comma
+#       New in clang-tidy 23. clang-format is LLVM style and does not insert
+#       trailing commas.
+#   -llvm-use-ranges
+#       New in clang-tidy 22. Suggests llvm:: range algorithms. This tree does
+#       not use LLVM ADT.
 # Irrelevant on this Linux CLI (never fire usefully):
 #   -google-objc-*, -clang-analyzer-osx*, -clang-analyzer-optin.mpi*,
 #   -clang-analyzer-optin.osx*, -clang-analyzer-fuchsia*, -clang-analyzer-webkit*
@@ -49,11 +86,6 @@ Checks: >
   concurrency-*,
   cppcoreguidelines-*,
   google-*,
-  hicpp-exception-baseclass,
-  hicpp-ignored-remove-result,
-  hicpp-multiway-paths-covered,
-  hicpp-no-assembler,
-  hicpp-signed-bitwise,
   llvm-*,
   misc-*,
   modernize-*,
@@ -70,6 +102,7 @@ Checks: >
   -cppcoreguidelines-noexcept-move-operations,
   -cppcoreguidelines-noexcept-swap,
   -cppcoreguidelines-non-private-member-variables-in-classes,
+  -cppcoreguidelines-pro-bounds-avoid-unchecked-container-access,
   -cppcoreguidelines-use-default-member-init,
   -google-objc-*,
   -google-readability-braces-around-statements,
@@ -78,9 +111,11 @@ Checks: >
   -llvm-else-after-return,
   -llvm-header-guard,
   -llvm-qualified-auto,
+  -llvm-use-ranges,
   -misc-use-anonymous-namespace,
   -modernize-use-trailing-return-type,
   -readability-magic-numbers,
+  -readability-trailing-comma,
   -clang-analyzer-osx*,
   -clang-analyzer-optin.mpi*,
   -clang-analyzer-optin.osx*,
@@ -148,5 +183,8 @@ CheckOptions:
   readability-identifier-length.IgnoredLoopCounterNames: '^[ijk]$'
   readability-identifier-length.IgnoredParameterNames: '^[ab]$'
   readability-identifier-length.IgnoredVariableNames: '^[a-h]$'
+  # clang-tidy 23 names structured bindings separately from variables.
+  # sha256.cpp binds the SHA-256 working words a through h.
+  readability-identifier-length.IgnoredBindingNames: '^([a-h]|_)$'
   readability-identifier-length.IgnoredExceptionVariableNames: '^[e]$'
   cppcoreguidelines-macro-usage.AllowedRegexp: '^(NESSO_|ZLIB_CONST$)'

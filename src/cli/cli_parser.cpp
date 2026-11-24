@@ -151,6 +151,8 @@ static constexpr const char *HELP_FOOTER = "Examples:\n"
                                            "1 nothing to search or index; 2 error.\n"
                                            "overview: 0 event types printed; 1 nothing to list; 2 error.";
 
+namespace
+{
 struct TextOptions
 {
     std::string query;
@@ -173,6 +175,7 @@ struct TextOptions
     std::string order = "rare";
     nesso::parser::ArchiveLimits overview_archive_limits{};
 };
+} // namespace
 
 static SearchMode ParseSearchMode(std::string_view mode)
 {
@@ -228,7 +231,7 @@ static void ConfigureAppVersion(CLI::App &app, bool &verbose)
 {
     app.add_flag("--verbose", verbose, "With --version, print the embedding session policy");
     app.set_version_flag("-V,--version",
-                         [&verbose]()
+                         [&verbose]
                          {
                              const auto from_env = ThreadsFromEnvironment();
                              if (!from_env)
@@ -247,12 +250,15 @@ static void ConfigureAppVersion(CLI::App &app, bool &verbose)
                          });
 }
 
+namespace
+{
 struct TextSubcommand
 {
     CLI::App *cmd = nullptr;
     const CLI::Option *threads_opt = nullptr;
     const CLI::Option *model_dir_opt = nullptr;
 };
+} // namespace
 
 static TextSubcommand AddGrepSubcommand(CLI::App &app, TextOptions &text)
 {

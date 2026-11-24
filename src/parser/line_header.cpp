@@ -324,12 +324,15 @@ static std::size_t MatchCompactTimestamp(std::string_view text, std::size_t inde
     return clock;
 }
 
+namespace
+{
 struct Anchor
 {
     std::size_t end = NO_MATCH;
     // An RFC 3164 timestamp: the next token is the host.
     bool host_next = false;
 };
+} // namespace
 
 static Anchor MatchAnchor(std::string_view text, std::size_t index) noexcept
 {
@@ -398,8 +401,7 @@ static std::size_t SkipLogFileName(std::string_view text, std::size_t index) noe
     {
         ++end;
     }
-    if (end == index || end >= text.size() || !IsBlank(text[end]) ||
-        text.substr(index, end - index).find(".log") == std::string_view::npos)
+    if (end == index || end >= text.size() || !IsBlank(text[end]) || !text.substr(index, end - index).contains(".log"))
     {
         return NO_MATCH;
     }
@@ -591,7 +593,7 @@ static std::size_t MatchBracketField(std::string_view text, std::size_t index) n
     }
     const std::size_t close = text.find(']', index + 1);
     if (close == std::string_view::npos || close - index >= MAX_FIELD_BYTES ||
-        text.substr(index + 1, close - index - 1).find('[') != std::string_view::npos || !IsBoundary(text, close + 1))
+        text.substr(index + 1, close - index - 1).contains('[') || !IsBoundary(text, close + 1))
     {
         return NO_MATCH;
     }
@@ -614,7 +616,7 @@ static std::size_t MatchComponent(std::string_view text, std::size_t index) noex
         ++cursor;
     }
     if (!dot || !letter || text[index] == '.' || text[cursor - 1] == '.' || !IsBoundary(text, cursor) ||
-        text.substr(index, cursor - index).find("..") != std::string_view::npos)
+        text.substr(index, cursor - index).contains(".."))
     {
         return NO_MATCH;
     }
@@ -696,6 +698,8 @@ static std::size_t MatchHost(std::string_view text, std::size_t index, bool any_
     return any_token || (letter && digit) ? end : NO_MATCH;
 }
 
+namespace
+{
 struct FieldScan
 {
     std::size_t position = 0;
@@ -719,6 +723,7 @@ struct Field
     std::size_t end = NO_MATCH;
     FieldKind kind = FieldKind::None;
 };
+} // namespace
 
 static Field ReadField(std::string_view text, std::size_t index, FieldScan &scan) noexcept
 {

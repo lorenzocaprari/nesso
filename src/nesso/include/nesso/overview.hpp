@@ -25,7 +25,7 @@ inline constexpr size_t DEFAULT_OVERVIEW_TOP_K = 20;
 /// `ErrorCause::TooManyEventTypes`.
 inline constexpr size_t DEFAULT_MAX_EVENT_TYPES = 1'000'000;
 
-using EventOrder = nesso::core::EventOrder;
+using nesso::core::EventOrder;
 
 /// Event types of `files`. No model is loaded.
 struct OverviewRequest

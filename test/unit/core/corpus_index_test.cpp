@@ -233,10 +233,9 @@ bool HasSpill(const std::filesystem::path &directory)
     for (const auto &entry : std::filesystem::directory_iterator(directory))
     {
         const std::string name = entry.path().filename().string();
-        if (name.find(".lines.") != std::string::npos || name.find(".texts.") != std::string::npos ||
-            name.find(".vectors.") != std::string::npos || name.find(".terms.") != std::string::npos ||
-            name.find(".lexrun.") != std::string::npos || name.find(".lexical.") != std::string::npos ||
-            name.find(".tmp.") != std::string::npos)
+        if (name.contains(".lines.") || name.contains(".texts.") || name.contains(".vectors.") ||
+            name.contains(".terms.") || name.contains(".lexrun.") || name.contains(".lexical.") ||
+            name.contains(".tmp."))
         {
             return true;
         }
@@ -303,9 +302,9 @@ TEST_CASE("v3 stores ordered lines, distinct vectors, policy and stored texts", 
     {
         const auto expected_alpha = TermsOf("alpha");
         std::uint32_t length = 0;
-        for (const auto &[termId, frequency] : mapped->corpus.LexicalPostings()[0].entries)
+        for (const auto &[term_id, frequency] : mapped->corpus.LexicalPostings()[0].entries)
         {
-            REQUIRE(termId < mapped->corpus.LexicalDictionary().size());
+            REQUIRE(term_id < mapped->corpus.LexicalDictionary().size());
             length += frequency;
         }
         CHECK(mapped->corpus.LexicalPostings()[0].length == expected_alpha.size());
@@ -315,11 +314,11 @@ TEST_CASE("v3 stores ordered lines, distinct vectors, policy and stored texts", 
         {
             std::vector<std::string_view> tokens;
             tokens.reserve(row.length);
-            for (const auto &[termId, frequency] : row.entries)
+            for (const auto &[term_id, frequency] : row.entries)
             {
                 for (std::uint32_t copy = 0; copy < frequency; ++copy)
                 {
-                    tokens.push_back(mapped->corpus.LexicalDictionary()[termId]);
+                    tokens.push_back(mapped->corpus.LexicalDictionary()[term_id]);
                 }
             }
             rebuilt.AddLine(tokens);
@@ -809,7 +808,7 @@ TEST_CASE("v3 policy keeps embed.prefix optional and reads a missing key as none
     CHECK(nesso::core::EmbedPrefixOf(legacy->corpus.Policy()) == "none");
 
     const auto with_key = write("recorded.nesso", recorded);
-    CHECK(ReadBytes(with_key).find("\nembed.prefix=none\nlexical.terms=") != std::string::npos);
+    CHECK(ReadBytes(with_key).contains("\nembed.prefix=none\nlexical.terms="));
     const auto mapped = nesso::core::MapCorpusFile(with_key);
     REQUIRE(mapped);
     CHECK(mapped->corpus.Policy() == recorded);
@@ -844,7 +843,7 @@ TEST_CASE("v3 policy keeps embed.text optional and reads a missing key as line",
     const std::vector<std::string> terms = TermsOf("alpha");
     REQUIRE(writer->AddLines(std::span{&line, 1}, std::span{&terms, 1}));
     REQUIRE(writer->Finish());
-    CHECK(ReadBytes(path).find("\nembed.text=message-v1\n") != std::string::npos);
+    CHECK(ReadBytes(path).contains("\nembed.text=message-v1\n"));
     const auto mapped = nesso::core::MapCorpusFile(path);
     REQUIRE(mapped);
     CHECK(nesso::core::EmbedTextOf(mapped->corpus.Policy()) == "message-v1");
@@ -887,11 +886,11 @@ TEST_CASE("v3 lexical postings round-trip for empty and one-line corpora", "[cor
         REQUIRE(mapped->corpus.LexicalPostings().size() == 1);
         CHECK(mapped->corpus.LexicalPostings()[0].length == terms.size());
         std::vector<std::string> rebuilt;
-        for (const auto &[termId, frequency] : mapped->corpus.LexicalPostings()[0].entries)
+        for (const auto &[term_id, frequency] : mapped->corpus.LexicalPostings()[0].entries)
         {
             for (std::uint32_t copy = 0; copy < frequency; ++copy)
             {
-                rebuilt.push_back(std::string{mapped->corpus.LexicalDictionary()[termId]});
+                rebuilt.push_back(std::string{mapped->corpus.LexicalDictionary()[term_id]});
             }
         }
         std::ranges::sort(rebuilt);
@@ -1058,7 +1057,7 @@ TEST_CASE("v3 file open failures stay distinct from corrupt corpora", "[corpus][
         REQUIRE(writer->AddLines(std::span{&line, 1}, std::span{&terms, 1}));
         for (const auto &entry : std::filesystem::directory_iterator(dir.Path()))
         {
-            if (entry.path().filename().string().find(".lines.") != std::string::npos)
+            if (entry.path().filename().string().contains(".lines."))
             {
                 std::filesystem::remove(entry.path());
             }
@@ -1079,7 +1078,7 @@ TEST_CASE("v3 file open failures stay distinct from corrupt corpora", "[corpus][
         REQUIRE(writer->AddLines(std::span{&line, 1}, std::span{&terms, 1}));
         for (const auto &entry : std::filesystem::directory_iterator(dir.Path()))
         {
-            if (entry.path().filename().string().find(".terms.") != std::string::npos)
+            if (entry.path().filename().string().contains(".terms."))
             {
                 std::filesystem::remove(entry.path());
             }

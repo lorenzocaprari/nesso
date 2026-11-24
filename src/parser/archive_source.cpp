@@ -312,18 +312,24 @@ OpenArchiveReader(const std::filesystem::path &path)
     return reader;
 }
 
+namespace
+{
 enum class ArchiveHeaderKind : std::uint8_t
 {
     End,
     Retry,
     Ready
 };
+} // namespace
 
+namespace
+{
 struct ArchiveHeaderStep
 {
     ArchiveHeaderKind kind = ArchiveHeaderKind::End;
     archive_entry *entry = nullptr;
 };
+} // namespace
 
 static std::expected<ArchiveHeaderStep, ArchiveFailure> AdvanceArchiveHeader(archive *handle,
                                                                              const std::filesystem::path &path)
@@ -394,19 +400,25 @@ static std::uint64_t DeclaredMemberSize(archive_entry *entry)
     return static_cast<std::uint64_t>(size);
 }
 
+namespace
+{
 struct MemberLoadBudget
 {
     std::uint64_t declared = 0;
     std::uint64_t accepted = 0;
     std::uint64_t compressed = 0;
 };
+} // namespace
 
+namespace
+{
 struct MemberIdentity
 {
     // NOLINTNEXTLINE(readability-redundant-member-init)
     std::string name{};
     std::filesystem::path path;
 };
+} // namespace
 
 static std::expected<void, ArchiveFailure> LoadMemberPayload(archive *handle, std::string &payload,
                                                              const MemberLoadBudget &budget,
@@ -465,19 +477,27 @@ static std::expected<void, ArchiveFailure> AcceptMemberAgainstLimits(std::uint64
     return {};
 }
 
+namespace
+{
 enum class ArchiveMemberAction : std::uint8_t
 {
     Skip,
     Accept
 };
+} // namespace
 
+namespace
+{
 struct ArchiveMemberSession
 {
     ArchiveLimits limits;
     std::uint64_t compressed = 0;
     std::filesystem::path path;
 };
+} // namespace
 
+namespace
+{
 struct ArchiveAccumulate
 {
     std::uint64_t accepted = 0;
@@ -485,6 +505,7 @@ struct ArchiveAccumulate
     // NOLINTNEXTLINE(readability-redundant-member-init)
     std::string payload{};
 };
+} // namespace
 
 // One regular member: encrypt/count/limits, load (and optional nested gzip),
 // then accept against totals.
