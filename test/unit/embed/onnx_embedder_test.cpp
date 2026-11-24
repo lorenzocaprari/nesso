@@ -88,7 +88,11 @@ TEST_CASE("OnnxEmbedder EmbedBatch matches per-string embed", "[OnnxEmbedder][em
     const auto embedder = nesso::embed::OnnxEmbedder::Create(model_dir);
     REQUIRE(embedder.has_value());
 
-    const std::array<std::string, 2> texts{"payment timeout", "database connection refused"};
+    // GCC 16 -O3 -fsanitize=thread reports a false maybe-uninitialized in
+    // libstdc++ basic_string when this array is aggregate-initialized.
+    std::vector<std::string> texts;
+    texts.emplace_back("payment timeout");
+    texts.emplace_back("database connection refused");
     const auto batch = (*embedder)->EmbedBatch(texts);
     REQUIRE(batch.has_value());
     REQUIRE(batch->size() == texts.size());
