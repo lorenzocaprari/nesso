@@ -797,7 +797,7 @@ TEST_CASE("index and grep embed each line's message, not its header", "[nesso][t
     const auto corpus = dir.Path() / "headers.nesso";
     REQUIRE(index_app.Index({.files = {log}, .output = corpus}).has_value());
     CHECK(index_probe->Texts() == messages);
-    CHECK(ReadFile(corpus).find("\nembed.text=message-v1\n") != std::string::npos);
+    CHECK(ReadFile(corpus).contains("\nembed.text=message-v1\n"));
 
     auto grep_embedder = std::make_unique<RecordingEmbedder>();
     const RecordingEmbedder *grep_probe = grep_embedder.get();

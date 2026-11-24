@@ -843,7 +843,7 @@ TEST_CASE("v3 policy keeps embed.text optional and reads a missing key as line",
     const std::vector<std::string> terms = TermsOf("alpha");
     REQUIRE(writer->AddLines(std::span{&line, 1}, std::span{&terms, 1}));
     REQUIRE(writer->Finish());
-    CHECK(ReadBytes(path).find("\nembed.text=message-v1\n") != std::string::npos);
+    CHECK(ReadBytes(path).contains("\nembed.text=message-v1\n"));
     const auto mapped = nesso::core::MapCorpusFile(path);
     REQUIRE(mapped);
     CHECK(nesso::core::EmbedTextOf(mapped->corpus.Policy()) == "message-v1");
