@@ -13,10 +13,9 @@
 #include <cstdio>
 #include <format>
 #include <memory>
+#include <platform/terminal.hpp>
 #include <string>
 #include <string_view>
-#include <sys/ioctl.h>
-#include <unistd.h>
 #include <utility>
 
 namespace nesso::cli
@@ -36,17 +35,7 @@ auto LiveViewEnabled(const LiveViewInputs &inputs) noexcept -> bool
     return !term.empty() && term != "dumb";
 }
 
-auto TerminalWidth(int descriptor) noexcept -> std::size_t
-{
-    winsize size{};
-    // TIOCGWINSZ comes from <sys/ioctl.h> through kernel headers.
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg, hicpp-vararg, misc-include-cleaner)
-    if (::ioctl(descriptor, TIOCGWINSZ, &size) == 0 && size.ws_col > 0)
-    {
-        return size.ws_col;
-    }
-    return FALLBACK_TERMINAL_WIDTH;
-}
+auto TerminalWidth(int descriptor) noexcept -> std::size_t { return nesso::platform::TerminalColumns(descriptor); }
 
 auto CutToColumns(std::string_view text, std::size_t columns) noexcept -> std::string_view
 {
@@ -127,7 +116,7 @@ auto MakeStderrLiveView() -> std::unique_ptr<LiveView>
 {
     return std::make_unique<LiveView>(
         stderr, [] -> std::chrono::steady_clock::time_point { return std::chrono::steady_clock::now(); },
-        TerminalWidth(STDERR_FILENO));
+        nesso::platform::StderrTerminalColumns());
 }
 
 } // namespace nesso::cli

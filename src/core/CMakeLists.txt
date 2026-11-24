@@ -29,7 +29,10 @@ target_link_libraries(
 # -mavx2/-mfma also compiles inline functions this file emits (libstdc++ debug
 # helpers reached from std::span::operator[] at -O0) with AVX2 encodings. The
 # linker can keep that COMDAT for the whole program and SIGILL on a CPU without
-# AVX2.
-if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64" AND NOT MSVC)
-  target_sources(nesso_core PRIVATE distance_avx2.cpp)
+# AVX2. clang-cl reports MSVC=TRUE but still compiles the GNU target attributes
+# in this TU. Pure MSVC cl.exe stays on the scalar path until a /arch:AVX2 port.
+if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64")
+  if(NOT MSVC OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+    target_sources(nesso_core PRIVATE distance_avx2.cpp)
+  endif()
 endif()

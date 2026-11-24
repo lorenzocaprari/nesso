@@ -16,11 +16,11 @@
 #include <format>
 #include <iostream>
 #include <memory>
+#include <platform/terminal.hpp>
 #include <print>
 #include <string>
 #include <string_view>
 #include <system_error>
-#include <unistd.h>
 #include <vector>
 
 namespace nesso::cli
@@ -317,7 +317,7 @@ auto Execute(const Nesso &nesso, const GrepCommand &command) -> int
     }
     else if (LiveViewEnabled({.requested = command.provisional,
                               .quiet = !request.progress,
-                              .stderr_is_terminal = ::isatty(STDERR_FILENO) != 0,
+                              .stderr_is_terminal = nesso::platform::IsStderrTerminal(),
                               // The CLI reads the environment once on the main
                               // thread. NOLINTNEXTLINE(concurrency-mt-unsafe)
                               .term = std::getenv("TERM")}))

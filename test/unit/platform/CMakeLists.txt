@@ -15,10 +15,14 @@ add_test(NAME experimental_simd_probe_test COMMAND experimental_simd_probe_test)
 target_link_libraries(experimental_simd_probe_test
                       PRIVATE nesso_options Catch2::Catch2WithMain)
 
-add_executable(assert_test assert_test.cpp)
-add_test(NAME assert_test COMMAND assert_test)
-target_link_libraries(assert_test PRIVATE nesso_options nesso_platform
-                                          Catch2::Catch2WithMain)
-
 set_tests_properties(file_test narrow_cast_test experimental_simd_probe_test
-                     assert_test PROPERTIES LABELS unit)
+                     PROPERTIES LABELS unit)
+
+# fork + /proc/self/exe — POSIX only.
+if(NOT WIN32)
+  add_executable(assert_test assert_test.cpp)
+  add_test(NAME assert_test COMMAND assert_test)
+  target_link_libraries(assert_test PRIVATE nesso_options nesso_platform
+                                            Catch2::Catch2WithMain)
+  set_tests_properties(assert_test PROPERTIES LABELS unit)
+endif()

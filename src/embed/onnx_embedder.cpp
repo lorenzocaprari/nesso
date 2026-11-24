@@ -8,6 +8,7 @@
 #include <embed/batch_plan.hpp>
 #include <embed/inference_wave.hpp>
 #include <embed/onnx_embedder.hpp>
+#include <embed/ort_session.hpp>
 #include <platform/assert.hpp>
 
 #include <algorithm>
@@ -248,11 +249,10 @@ OnnxEmbedder::SessionImpl::SessionImpl(const std::filesystem::path &model_path, 
     : policy_(policy)
 {
     const Ort::SessionOptions options = MakeSessionOptions(policy_.intra_op_threads);
-    const std::string path = model_path.string();
     sessions_.reserve(policy_.sessions);
     for (size_t index = 0; index < policy_.sessions; ++index)
     {
-        sessions_.push_back(std::make_unique<Ort::Session>(env_, path.c_str(), options));
+        sessions_.push_back(MakeOrtSession(env_, model_path, options));
     }
     NESSO_ASSERT(!sessions_.empty());
     io_ = ReadModelIo(*sessions_.front());

@@ -819,8 +819,8 @@ jobs:
           fi
 
   subjects:
-    needs: [image, distro-rpm]
-    if: ${{ !cancelled() && needs.image.result == 'success' && needs.distro-rpm.result == 'success' }}
+    needs: [image, distro-rpm, verify-package]
+    if: ${{ !cancelled() && needs.image.result == 'success' && needs.distro-rpm.result == 'success' && needs.verify-package.result == 'success' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
@@ -849,6 +849,12 @@ jobs:
           pattern: release-rpm-*-a
           merge-multiple: true
           path: release-rpms
+
+      - name: Download Windows zip
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: nesso-windows-amd64-zip
+          path: release-windows
 
       - name: Hash release subjects
         id: hash
@@ -884,11 +890,19 @@ jobs:
             fi
             cp -a "${rpm}" .
           done
+          win="$(find release-windows -type f -name "nesso_${ver}_windows_amd64.zip" -print -quit)"
+          if [[ -z "${win}" || ! -f "${win}" ]]; then
+            echo "error: missing nesso_${ver}_windows_amd64.zip" >&2
+            find release-windows -type f -print >&2
+            exit 1
+          fi
+          cp -a "${win}" .
           hashes="$(sha256sum \
             "nesso_${ver}_amd64.deb" \
             "nesso_${ver}_arm64.deb" \
             "nesso-${ver}-1.x86_64.rpm" \
             "nesso-${ver}-1.aarch64.rpm" \
+            "nesso_${ver}_windows_amd64.zip" \
             "nesso_${ver}_amd64.spdx.json" \
             "nesso_${ver}_arm64.spdx.json" | base64 -w0)"
           sha256sum \
@@ -896,6 +910,7 @@ jobs:
             "nesso_${ver}_arm64.deb" \
             "nesso-${ver}-1.x86_64.rpm" \
             "nesso-${ver}-1.aarch64.rpm" \
+            "nesso_${ver}_windows_amd64.zip" \
             "nesso_${ver}_amd64.spdx.json" \
             "nesso_${ver}_arm64.spdx.json" \
             > SHA256SUMS
@@ -915,6 +930,7 @@ jobs:
             nesso_${{ steps.hash.outputs.ver }}_arm64.deb
             nesso-${{ steps.hash.outputs.ver }}-1.x86_64.rpm
             nesso-${{ steps.hash.outputs.ver }}-1.aarch64.rpm
+            nesso_${{ steps.hash.outputs.ver }}_windows_amd64.zip
             nesso_${{ steps.hash.outputs.ver }}_amd64.spdx.json
             nesso_${{ steps.hash.outputs.ver }}_arm64.spdx.json
             SHA256SUMS
@@ -1230,6 +1246,7 @@ jobs:
             "nesso_${VER}_arm64.deb" \
             "nesso-${VER}-1.x86_64.rpm" \
             "nesso-${VER}-1.aarch64.rpm" \
+            "nesso_${VER}_windows_amd64.zip" \
             "nesso_${VER}_amd64.spdx.json" \
             "nesso_${VER}_arm64.spdx.json" \
             "${PROVENANCE_NAME}" \
@@ -1248,6 +1265,7 @@ jobs:
             nesso_${{ needs.subjects.outputs.ver }}_arm64.deb
             nesso-${{ needs.subjects.outputs.ver }}-1.x86_64.rpm
             nesso-${{ needs.subjects.outputs.ver }}-1.aarch64.rpm
+            nesso_${{ needs.subjects.outputs.ver }}_windows_amd64.zip
             nesso_${{ needs.subjects.outputs.ver }}_amd64.spdx.json
             nesso_${{ needs.subjects.outputs.ver }}_arm64.spdx.json
             ${{ needs.provenance.outputs.provenance-name }}

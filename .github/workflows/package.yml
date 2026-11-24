@@ -64,7 +64,10 @@ on:
       - "scripts/ci/wait_build_env.go"
       - "packaging/scripts/smoke-runtime-image"
       - "packaging/scripts/third-party-notices"
+      - "packaging/scripts/package-zip"
       - "packaging/notices/**"
+      - ".github/workflows/windows.yml"
+      - "conan/profiles/clang-cl-26"
   workflow_dispatch:
   workflow_call:
     inputs:
@@ -1070,3 +1073,11 @@ jobs:
         with:
           sarif_file: trivy.sarif
           category: trivy-runtime-${{ matrix.arch }}
+
+  # Native Windows zip (clang-cl). Not merge-blocking for Pipeline; Package and
+  # Release treat a failure here as a failed package gate.
+  windows-zip:
+    uses: ./.github/workflows/windows.yml # zizmor: ignore[self-repository] same-commit reusable workflow; actionlint 1.7.12 rejects the self-repository form
+    permissions:
+      contents: read
+      actions: write

@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include <filesystem>
+#include <nesso/model_path_roots.hpp>
 #include <nesso/model_paths.hpp>
 
 #include <cstdlib>
@@ -37,13 +38,9 @@ auto ModelDirCandidates(const ModelDirLookup &lookup) -> std::vector<std::filesy
 
     std::vector<std::filesystem::path> dirs;
     dirs.push_back(lookup.cwd / "models");
-    if (const char *xdg = EnvOrEmpty("XDG_DATA_HOME"); !std::string_view{xdg}.empty())
+    for (const std::filesystem::path &dir : UserModelDataDirs())
     {
-        dirs.push_back(std::filesystem::path(xdg) / "nesso");
-    }
-    else if (const char *home = EnvOrEmpty("HOME"); !std::string_view{home}.empty())
-    {
-        dirs.push_back(std::filesystem::path(home) / ".local" / "share" / "nesso");
+        dirs.push_back(dir);
     }
     dirs.push_back(lookup.packaged_dir);
     return dirs;

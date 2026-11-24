@@ -73,7 +73,7 @@ line 552: 3.4186: Oct  7 05:07:28 web-02 app[7872]: write /var/lib/app/queue.db:
 
 ## Install
 
-Ubuntu 22.04+, Debian 12+, and RHEL/Rocky 9, amd64/x86_64 or arm64/aarch64. The `.deb` and `.rpm` install `/usr/bin/nesso` and the MiniLM files in `/usr/share/nesso`.
+Ubuntu 22.04+, Debian 12+, and RHEL/Rocky 9, amd64/x86_64 or arm64/aarch64. The `.deb` and `.rpm` install `/usr/bin/nesso` and the MiniLM files in `/usr/share/nesso`. Windows x86_64 gets a zip with `nesso.exe` and `models/` (static CRT, no VCRedist).
 
 ```bash
 curl -fL -o nesso_0.3.1_amd64.deb \
@@ -91,6 +91,13 @@ sudo dnf install ./nesso-0.3.1-1.x86_64.rpm
 curl -fL -o nesso-0.3.1-1.aarch64.rpm \
   https://github.com/lorenzocaprari/nesso/releases/download/v0.3.1/nesso-0.3.1-1.aarch64.rpm
 sudo dnf install ./nesso-0.3.1-1.aarch64.rpm
+```
+
+```powershell
+Invoke-WebRequest -Uri https://github.com/lorenzocaprari/nesso/releases/download/v0.3.1/nesso_0.3.1_windows_amd64.zip `
+  -OutFile nesso_0.3.1_windows_amd64.zip
+Expand-Archive nesso_0.3.1_windows_amd64.zip -DestinationPath nesso
+.\nesso\nesso.exe grep "the disk is full" app.log --model-dir .\nesso\models
 ```
 
 The tags `v0.3.1`, `0.3.1`, and `latest` on `ghcr.io/lorenzocaprari/nesso` are one manifest list (`linux/amd64` and `linux/arm64`). The image stores the model at `/usr/share/nesso` and sets `NESSO_MODEL_DIR` to that directory. The entrypoint is `nesso` (`/usr/local/bin/nesso`). Mount the log directory:

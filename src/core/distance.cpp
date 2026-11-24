@@ -68,10 +68,7 @@ auto SelectDistanceKernel(std::string_view forced, bool avx2_fma) noexcept -> Di
 
 [[nodiscard]] static auto HostSupportsAvx2Fma() noexcept -> bool
 {
-#ifdef _MSC_VER
-    // Phase 6 selects AVX2 with __cpuidex and _xgetbv under /arch:AVX2.
-    return false;
-#elifdef __x86_64__
+#if (defined(__x86_64__) || defined(_M_X64)) && (defined(__clang__) || defined(__GNUC__))
     return __builtin_cpu_supports("avx2") && __builtin_cpu_supports("fma");
 #else
     return false;

@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Native Windows x86_64 release zip (`nesso_<version>_windows_amd64.zip`) built with clang-cl and a static CRT. Platform I/O uses CMake-selected `*_posix.cpp` / `*_win32.cpp` backends. `.github/workflows/windows.yml` builds, tests, and packs; Package and Release publish the zip. Not a Pipeline `ci-gate` job. See ADR 0018.
+
 ### Changed
 
 - The real-log bench per-command hang guard is 2400 seconds. BGL and Thunderbird `index` and `grep` on the 1,000,000-line prefix take 21–30 minutes, which exceeded the previous 1200-second guard. The job timeout stays 300 minutes.

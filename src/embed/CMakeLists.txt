@@ -12,3 +12,10 @@ target_link_libraries(
   nesso_embed
   PUBLIC nesso_platform nesso_tokenizer onnxruntime::onnxruntime
   PRIVATE nesso_options)
+if(WIN32)
+  target_sources(nesso_embed PRIVATE amx_guard_win32.cpp ort_session_win32.cpp
+                                     session_policy_win32.cpp)
+else()
+  target_sources(nesso_embed PRIVATE amx_guard_posix.cpp ort_session_posix.cpp
+                                     session_policy_posix.cpp)
+endif()

@@ -754,6 +754,7 @@ TEST_CASE("Chunker does not re-read stdin records as files", "[Chunker][parser][
     CHECK(record.error() == nesso::parser::ParseError::UnsupportedFormat);
 }
 
+#ifndef _WIN32
 TEST_CASE("Chunker reports non-rewindable file input", "[Chunker][parser][Unit]")
 {
     int descriptors[2]{};
@@ -777,6 +778,7 @@ TEST_CASE("Chunker reports non-rewindable file input", "[Chunker][parser][Unit]"
     REQUIRE_FALSE(record);
     REQUIRE(record.error() == nesso::parser::ParseError::FileOpenFailure);
 }
+#endif
 
 TEST_CASE("Chunker propagates consumer failures for kept and skipped records", "[Chunker][parser][Unit]")
 {

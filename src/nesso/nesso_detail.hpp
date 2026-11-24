@@ -21,11 +21,11 @@
 #include <expected>
 #include <filesystem>
 #include <format>
+#include <platform/terminal.hpp>
 #include <print>
 #include <span>
 #include <string>
 #include <string_view>
-#include <unistd.h>
 #include <utility>
 #include <vector>
 
@@ -38,7 +38,7 @@ class ProgressReporter
 {
   public:
     explicit ProgressReporter(bool requested)
-        : enabled_(requested && ::isatty(STDERR_FILENO) != 0), started_(std::chrono::steady_clock::now())
+        : enabled_(requested && nesso::platform::IsStderrTerminal()), started_(std::chrono::steady_clock::now())
     {
     }
 

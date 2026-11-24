@@ -1,6 +1,6 @@
 # Contributing
 
-Nesso is a solo-maintained Linux CLI. Pull requests are squash-merged: the PR title becomes the commit on `main`.
+Nesso is a solo-maintained CLI (Linux packages plus a Windows x86_64 zip). Pull requests are squash-merged: the PR title becomes the commit on `main`.
 
 ## Reports
 

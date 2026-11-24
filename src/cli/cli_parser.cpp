@@ -68,7 +68,7 @@ static auto PositiveCount() -> CLI::Validator
 }
 
 static constexpr const char *MODEL_DIR_HELP = "Directory containing model.onnx and vocab.txt. "
-                                              "Default: NESSO_MODEL_DIR, ./models, XDG data, /usr/share/nesso";
+                                              "Default: NESSO_MODEL_DIR, ./models, user data, packaged models";
 
 static constexpr const char *TEXT_FILES_HELP = "Text files, directories, or tar/zip bundles. - reads stdin as lines";
 

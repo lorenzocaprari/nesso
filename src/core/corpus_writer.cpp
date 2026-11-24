@@ -15,6 +15,7 @@
 #include <parser/gzip_reader.hpp>
 #include <platform/assert.hpp>
 #include <platform/file.hpp>
+#include <platform/terminal.hpp>
 
 #include <algorithm>
 #include <atomic>
@@ -30,7 +31,6 @@
 #include <string>
 #include <string_view>
 #include <system_error>
-#include <unistd.h>
 #include <unordered_set>
 #include <utility>
 #include <vector>
@@ -95,7 +95,7 @@ static auto CreateSpill(const std::filesystem::path &destination, std::string_vi
     {
         const auto number = counter.fetch_add(1, std::memory_order_relaxed);
         const std::filesystem::path path = destination.string() + "." + std::string{suffix} + "." +
-                                           std::to_string(getpid()) + "." + std::to_string(number);
+                                           std::to_string(nesso::platform::ProcessId()) + "." + std::to_string(number);
         errno = 0;
         std::ofstream output(path, std::ios::binary | std::ios::out | std::ios::noreplace);
         if (output)

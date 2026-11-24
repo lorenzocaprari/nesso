@@ -9,30 +9,32 @@
 #include <algorithm>
 #include <iterator>
 #include <span>
-#include <string>
 #include <system_error>
+#include <type_traits>
 #include <vector>
 
 namespace nesso::parser
 {
 
-// char may be signed. Order by unsigned bytes so a byte above 0x7F does not
-// sort first.
+// native() is char on POSIX and wchar_t on Windows. Order by unsigned code
+// units so a value above the signed max does not sort first.
 static auto PathBytesLess(const std::filesystem::path &left, const std::filesystem::path &right) -> bool
 {
-    const std::string &left_bytes = left.native();
-    const std::string &right_bytes = right.native();
-    const std::size_t count = std::min(left_bytes.size(), right_bytes.size());
+    using Native = std::filesystem::path::string_type;
+    using Unit = std::make_unsigned_t<Native::value_type>;
+    const Native &left_native = left.native();
+    const Native &right_native = right.native();
+    const std::size_t count = std::min(left_native.size(), right_native.size());
     for (std::size_t index = 0; index < count; ++index)
     {
-        const auto left_byte = static_cast<unsigned char>(left_bytes[index]);
-        const auto right_byte = static_cast<unsigned char>(right_bytes[index]);
-        if (left_byte != right_byte)
+        const auto left_unit = static_cast<Unit>(left_native[index]);
+        const auto right_unit = static_cast<Unit>(right_native[index]);
+        if (left_unit != right_unit)
         {
-            return left_byte < right_byte;
+            return left_unit < right_unit;
         }
     }
-    return left_bytes.size() < right_bytes.size();
+    return left_native.size() < right_native.size();
 }
 
 static auto WalkDirectory(const std::filesystem::path &root)

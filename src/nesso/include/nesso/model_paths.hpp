@@ -4,6 +4,8 @@
 #ifndef NESSO_MODEL_PATHS_HPP
 #define NESSO_MODEL_PATHS_HPP
 
+#include <nesso/model_path_roots.hpp>
+
 #include <filesystem>
 #include <vector>
 
@@ -17,7 +19,7 @@ inline constexpr const char *MODEL_FILENAME = "model.onnx";
 struct ModelDirLookup
 {
     std::filesystem::path cwd{std::filesystem::current_path()};
-    std::filesystem::path packaged_dir{"/usr/share/nesso"};
+    std::filesystem::path packaged_dir{DefaultPackagedModelDir()};
 };
 
 /// True when dir contains both vocab.txt and model.onnx.
@@ -29,8 +31,7 @@ struct ModelDirLookup
 [[nodiscard]] auto ModelDirCandidates(const ModelDirLookup &lookup = {}) -> std::vector<std::filesystem::path>;
 
 /// Default MiniLM directory when --model-dir is omitted:
-/// NESSO_MODEL_DIR, cwd/models (if complete), $XDG_DATA_HOME/nesso, then
-/// packagedDir.
+/// NESSO_MODEL_DIR, cwd/models (if complete), user data dirs, then packagedDir.
 [[nodiscard]] auto ResolveDefaultModelDir(const ModelDirLookup &lookup = {}) -> std::filesystem::path;
 
 } // namespace nesso

@@ -6,13 +6,13 @@ Matches go to stdout. Skipped lines, the index summary, and errors go to stderr.
 
 ## Model
 
-The `.deb`, the `.rpm`, and the container image ship the MiniLM files in `/usr/share/nesso`. A source build downloads them once:
+The `.deb`, the `.rpm`, and the container image ship the MiniLM files in `/usr/share/nesso`. The Windows zip ships them under `models/` next to `nesso.exe`. A source build downloads them once:
 
 ```bash
 ./scripts/fetch-model
 ```
 
-An omitted `--model-dir` uses `NESSO_MODEL_DIR`, then `./models` when both files are present, then `$XDG_DATA_HOME/nesso` (or `~/.local/share/nesso`), then `/usr/share/nesso`.
+An omitted `--model-dir` uses `NESSO_MODEL_DIR`, then `./models` when both files are present, then the platform user-data directory (`$XDG_DATA_HOME/nesso` or `~/.local/share/nesso` on Linux; `%LOCALAPPDATA%\nesso` on Windows), then the packaged location (`/usr/share/nesso` on Linux; `models\` next to the executable on Windows).
 
 ## Commands
 
@@ -119,4 +119,4 @@ For a short sosreport or tarball triage path, see [Quick start](quick-start.md).
 ## What this is not
 
 - Not a hosted service. Text stays on the machine. There is no server, no cloud call, and no API key.
-- Linux only.
+- Linux and Windows x86_64 (Windows ships as a zip; see the README Install section).

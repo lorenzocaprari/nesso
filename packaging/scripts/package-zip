@@ -1,0 +1,62 @@
+#!/usr/bin/env python3
+# Copyright (c) 2026 Lorenzo Caprari
+# SPDX-License-Identifier: Apache-2.0
+"""Pack nesso.exe, models/, and notices into nesso_<ver>_windows_amd64.zip."""
+
+from __future__ import annotations
+
+import argparse
+import sys
+import zipfile
+from pathlib import Path
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("version", help="Package version, e.g. 0.3.1")
+    parser.add_argument("binary", type=Path, help="Path to nesso.exe")
+    parser.add_argument("models", type=Path, help="Directory with model.onnx and vocab.txt")
+    parser.add_argument("out_dir", type=Path, help="Directory that receives the zip")
+    parser.add_argument(
+        "--doc-dir",
+        type=Path,
+        default=None,
+        help="Directory with copyright and THIRD_PARTY_NOTICES (default: next to binary)",
+    )
+    args = parser.parse_args()
+
+    binary: Path = args.binary
+    models: Path = args.models
+    out_dir: Path = args.out_dir
+    doc_dir: Path = args.doc_dir if args.doc_dir is not None else binary.parent / "doc"
+
+    if not binary.is_file():
+        print(f"error: binary not found: {binary}", file=sys.stderr)
+        return 1
+    for name in ("model.onnx", "vocab.txt"):
+        if not (models / name).is_file():
+            print(f"error: missing {models / name}", file=sys.stderr)
+            return 1
+
+    out_dir.mkdir(parents=True, exist_ok=True)
+    zip_path = out_dir / f"nesso_{args.version}_windows_amd64.zip"
+    if zip_path.exists():
+        zip_path.unlink()
+
+    with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        archive.write(binary, arcname="nesso.exe")
+        for name in ("model.onnx", "vocab.txt"):
+            archive.write(models / name, arcname=f"models/{name}")
+        for notice in ("copyright", "THIRD_PARTY_NOTICES"):
+            path = doc_dir / notice
+            if path.is_file():
+                archive.write(path, arcname=notice)
+            else:
+                print(f"warning: missing {path}", file=sys.stderr)
+
+    print(zip_path)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
