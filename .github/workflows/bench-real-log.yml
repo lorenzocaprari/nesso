@@ -263,9 +263,10 @@ jobs:
         run: conan build . -pr:h ./conan/profiles/gcc-26 -pr:b default --lockfile=conan.lock --build=missing --no-remote -o tests=False $CONAN_WERROR_ARGS
 
       # --timeout is a per-command hang guard, not a speed budget. Each corpus
-      # is the 1000000-line prefix (REAL_LOG_DEFAULT_LINES). 1200 s keeps a
+      # is the 1000000-line prefix (REAL_LOG_DEFAULT_LINES). 2400 s keeps a
       # stuck command inside timeout-minutes.
       - name: Run real-log benchmark
+        shell: bash
         env:
           CORPORA: ${{ steps.corpora.outputs.corpora }}
         run: |
@@ -273,7 +274,7 @@ jobs:
           mem_kb=$(awk '/^MemTotal:/ {print $2}' /proc/meminfo)
           export NESSO_BENCH_AS_LIMIT_KB=$((mem_kb * 3 / 4))
           if [[ -z "${NESSO_VERSION}" ]]; then
-            python3 scripts/bench --dataset real-log --corpora "${CORPORA}" --loghub-dir build/bench --binary build/Release/src/nesso --timeout 1200 \
+            python3 scripts/bench --dataset real-log --corpora "${CORPORA}" --loghub-dir build/bench --binary build/Release/src/nesso --timeout 2400 \
               --output bench/results/real-log.json
           else
             {
@@ -283,7 +284,7 @@ jobs:
               echo
             } >> "${GITHUB_STEP_SUMMARY}"
             python3 scripts/bench --dataset real-log --corpora "${CORPORA}" --loghub-dir build/bench \
-              --binary "${NESSO_BINARY}" --model-dir "${NESSO_MODEL_DIR}" --timeout 1200 \
+              --binary "${NESSO_BINARY}" --model-dir "${NESSO_MODEL_DIR}" --timeout 2400 \
               --output bench/results/real-log.json
           fi
 
