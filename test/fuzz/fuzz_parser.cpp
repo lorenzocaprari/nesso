@@ -2,10 +2,12 @@
 // SPDX-License-Identifier: Apache-2.0
 // Licensed under the Apache License, Version 2.0. See LICENSE for details.
 
+#include <parser/line_header.hpp>
 #include <parser/log_chunker.hpp>
 #include <parser/template_mask.hpp>
 
 #include <cstdint>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
@@ -14,6 +16,19 @@
 
 namespace
 {
+
+// Splits `text` and aborts unless header + message is `text`, byte for byte.
+std::size_t CheckedSplit(std::string_view text)
+{
+    const nesso::parser::LineParts parts = nesso::parser::SplitLogLine(text);
+    if (parts.header.data() != text.data() || parts.header.size() + parts.message.size() != text.size() ||
+        parts.message.data() != text.data() + parts.header.size() ||
+        parts.header.size() > nesso::parser::MAX_HEADER_BYTES)
+    {
+        std::abort();
+    }
+    return parts.header.size();
+}
 
 std::string BytesFrom(const std::uint8_t *data, std::size_t size)
 {
@@ -29,7 +44,7 @@ std::string BytesFrom(const std::uint8_t *data, std::size_t size)
 extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t *data, std::size_t size)
 {
     const std::string bytes = BytesFrom(data, size);
-    volatile std::size_t sink = nesso::parser::MaskTemplate(bytes).size();
+    volatile std::size_t sink = nesso::parser::MaskTemplate(bytes).size() + CheckedSplit(bytes);
 
     const auto dir = std::filesystem::temp_directory_path() / ("nesso-fuzz-parser-" + std::to_string(::getpid()));
     std::error_code ec;
@@ -46,7 +61,7 @@ extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t *data, std::size_t size
         {
             for (const nesso::parser::ParsedChunk &chunk : *chunks)
             {
-                sink = sink + nesso::parser::MaskTemplate(chunk.text).size();
+                sink = sink + nesso::parser::MaskTemplate(chunk.text).size() + CheckedSplit(chunk.text);
             }
         }
     }

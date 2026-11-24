@@ -14,6 +14,7 @@
 #include <filesystem>
 #include <iostream>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -79,11 +80,12 @@ bool WriteLine(const std::filesystem::path &path)
     return true;
 }
 
-// Same records as line.nesso, with the optional embed.prefix policy key.
-bool WritePrefixed(const std::filesystem::path &path)
+// Same records as line.nesso, with one optional policy key: embed.prefix in
+// prefix.nesso, embed.text in embed-text.nesso.
+bool WriteWithKey(const std::filesystem::path &path, std::string_view key, std::string_view value)
 {
     CorpusPolicy policy = Policy(2);
-    policy.emplace(std::string{nesso::core::EMBED_PREFIX_KEY}, "none");
+    policy.emplace(std::string{key}, std::string{value});
     auto writer = CorpusWriter::Create(path, std::move(policy));
     if (!writer)
     {
@@ -143,7 +145,9 @@ int main(int argc, char *argv[])
     std::error_code error;
     std::filesystem::create_directories(dest, error);
     if (error || !WriteEmpty(dest / "empty.nesso") || !WriteLine(dest / "line.nesso") ||
-        !WriteStored(dest / "stored.nesso") || !WritePrefixed(dest / "prefix.nesso"))
+        !WriteStored(dest / "stored.nesso") ||
+        !WriteWithKey(dest / "prefix.nesso", nesso::core::EMBED_PREFIX_KEY, "none") ||
+        !WriteWithKey(dest / "embed-text.nesso", nesso::core::EMBED_TEXT_KEY, "message-v1"))
     {
         return 1;
     }

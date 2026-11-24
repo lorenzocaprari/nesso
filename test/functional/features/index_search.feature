@@ -212,3 +212,32 @@ Feature: index and search
     And stdout does not contain "Warning"
     And stdout contains "\"source\":\"{dir}/app.log\""
     And every stdout line is a JSON match
+
+  Scenario: index and grep embed a header line's message alike
+    Given a file "app.log" with:
+      """
+      2026-11-23T10:00:00Z db01 api[7]: payment declined by gateway
+      Jun  9 06:06:20 combo sshd[42]: authentication failure for root
+      081109 203615 148 INFO dfs.DataNode$PacketResponder: block terminating
+      [Sun Dec 04 04:47:44 2005] [error] mod_jk child in error state
+      payment timeout without a header
+      """
+    When I run nesso with arguments index --threads 1 -o {dir}/one.nesso {dir}/app.log
+    Then the exit code is 0
+    When I run nesso with arguments index --threads 4 -o {dir}/four.nesso {dir}/app.log
+    Then the exit code is 0
+    And the files "{dir}/one.nesso" and "{dir}/four.nesso" have the same bytes
+    When I run nesso with arguments search "payment was declined" --mode dense --json -k 5 -i {dir}/one.nesso
+    Then the exit code is 0
+    And stderr does not contain "indexing policy differs"
+    And stdout contains "\"text\":\"2026-11-23T10:00:00Z db01 api[7]: payment declined by gateway\""
+    When I run nesso with arguments grep "payment was declined" --mode dense --json -k 5 --threads 1 {dir}/app.log
+    Then the exit code is 0
+    When running nesso with arguments search "payment was declined" --mode dense --json -k 5 --threads 1 -i {dir}/one.nesso prints the same stdout
+    When running nesso with arguments search "payment was declined" --mode dense --json -k 5 --threads 4 -i {dir}/four.nesso prints the same stdout
+
+  Scenario: search warns on a corpus that embedded whole lines
+    When I run nesso with arguments search "database connection error" -i {fixture}/whole-line.nesso
+    Then the exit code is 0
+    And stdout contains "database connection refused"
+    And stderr contains "Warning: corpus indexing policy differs from this nesso; search results may differ."
