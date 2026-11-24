@@ -25,30 +25,30 @@ class OnnxEmbedder
   public:
     using ProgressCallback = std::function<void(size_t completed, size_t total)>;
 
-    [[nodiscard]] static std::expected<std::unique_ptr<OnnxEmbedder>, EmbedError>
-    Create(const std::filesystem::path &model_dir, size_t threads = 0);
+    [[nodiscard]] static auto Create(const std::filesystem::path &model_dir, size_t threads = 0)
+        -> std::expected<std::unique_ptr<OnnxEmbedder>, EmbedError>;
 
     /// One session at this intra-op width, raised to IntraOpThreadFloor().
     /// The product path is create(). This pins a width the policy would not.
-    [[nodiscard]] static std::expected<std::unique_ptr<OnnxEmbedder>, EmbedError>
-    CreateWithIntraOp(const std::filesystem::path &model_dir, int intra_op_threads);
+    [[nodiscard]] static auto CreateWithIntraOp(const std::filesystem::path &model_dir, int intra_op_threads)
+        -> std::expected<std::unique_ptr<OnnxEmbedder>, EmbedError>;
 
     OnnxEmbedder(WordPieceTokenizer tokenizer, const std::filesystem::path &model_path, size_t threads);
 
-    [[nodiscard]] const SessionPolicy &Policy() const noexcept;
+    [[nodiscard]] auto Policy() const noexcept -> const SessionPolicy &;
 
     /// int8 session count, or 1 for an fp32 model.
-    [[nodiscard]] size_t Sessions() const noexcept;
+    [[nodiscard]] auto Sessions() const noexcept -> size_t;
 
-    [[nodiscard]] std::expected<std::vector<float>, EmbedError> Embed(std::string_view text) const;
+    [[nodiscard]] auto Embed(std::string_view text) const -> std::expected<std::vector<float>, EmbedError>;
 
-    [[nodiscard]] std::expected<std::vector<std::vector<float>>, EmbedError>
-    EmbedBatch(std::span<const std::string> texts, ProgressCallback progress = {}) const;
+    [[nodiscard]] auto EmbedBatch(std::span<const std::string> texts, ProgressCallback progress = {}) const
+        -> std::expected<std::vector<std::vector<float>>, EmbedError>;
 
     OnnxEmbedder(const OnnxEmbedder &) = delete;
-    OnnxEmbedder &operator=(const OnnxEmbedder &) = delete;
+    auto operator=(const OnnxEmbedder &) -> OnnxEmbedder & = delete;
     OnnxEmbedder(OnnxEmbedder &&) = delete;
-    OnnxEmbedder &operator=(OnnxEmbedder &&) = delete;
+    auto operator=(OnnxEmbedder &&) -> OnnxEmbedder & = delete;
     ~OnnxEmbedder();
 
     /// The first embedder environment, including the AMX guard.

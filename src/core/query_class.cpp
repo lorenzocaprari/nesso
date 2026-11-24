@@ -15,24 +15,24 @@ namespace nesso::core
 static constexpr std::array<std::size_t, 5> UUID_GROUP_LENGTHS{8U, 4U, 4U, 4U, 12U};
 static constexpr std::array<char, 4> UUID_SEPS{'-', '-', '-', '-'};
 
-static bool IsAsciiWhitespace(unsigned char byte) noexcept
+static auto IsAsciiWhitespace(unsigned char byte) noexcept -> bool
 {
     return byte == 0x09U || byte == 0x0AU || byte == 0x0DU || byte == 0x20U;
 }
 
-static bool IsAsciiHex(unsigned char byte) noexcept
+static auto IsAsciiHex(unsigned char byte) noexcept -> bool
 {
     return (byte >= '0' && byte <= '9') || (byte >= 'a' && byte <= 'f') || (byte >= 'A' && byte <= 'F');
 }
 
-static bool IsAsciiDigit(unsigned char byte) noexcept { return byte >= '0' && byte <= '9'; }
+static auto IsAsciiDigit(unsigned char byte) noexcept -> bool { return byte >= '0' && byte <= '9'; }
 
-static bool IsAsciiLetter(unsigned char byte) noexcept
+static auto IsAsciiLetter(unsigned char byte) noexcept -> bool
 {
     return (byte >= 'a' && byte <= 'z') || (byte >= 'A' && byte <= 'Z');
 }
 
-static bool StripOneSurroundingQuotes(std::string_view &text) noexcept
+static auto StripOneSurroundingQuotes(std::string_view &text) noexcept -> bool
 {
     if (text.size() < 2U || text.front() != '"' || text.back() != '"')
     {
@@ -43,7 +43,7 @@ static bool StripOneSurroundingQuotes(std::string_view &text) noexcept
     return true;
 }
 
-static bool MatchUuid(std::string_view token) noexcept
+static auto MatchUuid(std::string_view token) noexcept -> bool
 {
     if (token.size() != 36U)
     {
@@ -68,7 +68,7 @@ static bool MatchUuid(std::string_view token) noexcept
     return index == token.size();
 }
 
-static bool MatchLongHex(std::string_view token) noexcept
+static auto MatchLongHex(std::string_view token) noexcept -> bool
 {
     std::string_view body = token;
     if (body.size() >= 2U && body[0] == '0' && (body[1] == 'x' || body[1] == 'X'))
@@ -80,26 +80,26 @@ static bool MatchLongHex(std::string_view token) noexcept
         return false;
     }
 
-    if (!std::ranges::all_of(body,
-                             [](const char code_unit) { return IsAsciiHex(static_cast<unsigned char>(code_unit)); }))
+    if (!std::ranges::all_of(body, [](const char code_unit) -> bool
+                             { return IsAsciiHex(static_cast<unsigned char>(code_unit)); }))
     {
         return false;
     }
-    return std::ranges::any_of(body, [](const char code_unit)
+    return std::ranges::any_of(body, [](const char code_unit) -> bool
                                { return IsAsciiDigit(static_cast<unsigned char>(code_unit)); });
 }
 
-static bool MatchDecimalDigits(std::string_view token) noexcept
+static auto MatchDecimalDigits(std::string_view token) noexcept -> bool
 {
     if (token.size() < 4U)
     {
         return false;
     }
-    return std::ranges::all_of(token, [](const char code_unit)
+    return std::ranges::all_of(token, [](const char code_unit) -> bool
                                { return IsAsciiDigit(static_cast<unsigned char>(code_unit)); });
 }
 
-static bool MatchPrefixedCode(std::string_view token) noexcept
+static auto MatchPrefixedCode(std::string_view token) noexcept -> bool
 {
     std::size_t index = 0;
     const std::size_t size = token.size();
@@ -147,15 +147,15 @@ static bool MatchPrefixedCode(std::string_view token) noexcept
 // 2-16 ASCII letters, then two or more "_" segments of ASCII letters and digits, one of them
 // four or more digits: Hadoop/YARN ids such as attempt_1445144423722_0020_m_000002_1,
 // container_1445144423722_0020_01_000002, jvm_..., job_..., and application_....
-static bool MatchUnderscoreSegmentedId(std::string_view token) noexcept
+static auto MatchUnderscoreSegmentedId(std::string_view token) noexcept -> bool
 {
     const std::size_t first_underscore = token.find('_');
     if (first_underscore == std::string_view::npos || first_underscore < 2U || first_underscore > 16U)
     {
         return false;
     }
-    if (!std::ranges::all_of(token.substr(0, first_underscore),
-                             [](const char code_unit) { return IsAsciiLetter(static_cast<unsigned char>(code_unit)); }))
+    if (!std::ranges::all_of(token.substr(0, first_underscore), [](const char code_unit) -> bool
+                             { return IsAsciiLetter(static_cast<unsigned char>(code_unit)); }))
     {
         return false;
     }
@@ -196,7 +196,7 @@ static bool MatchUnderscoreSegmentedId(std::string_view token) noexcept
     return segments >= 2U && has_long_number;
 }
 
-static bool ParseDecimalPort(std::string_view text, std::uint32_t &port) noexcept
+static auto ParseDecimalPort(std::string_view text, std::uint32_t &port) noexcept -> bool
 {
     if (text.empty())
     {
@@ -219,7 +219,7 @@ static bool ParseDecimalPort(std::string_view text, std::uint32_t &port) noexcep
     return true;
 }
 
-static bool ParseIpv4Dotted(std::string_view text) noexcept
+static auto ParseIpv4Dotted(std::string_view text) noexcept -> bool
 {
     if (text.empty())
     {
@@ -279,7 +279,7 @@ static bool ParseIpv4Dotted(std::string_view text) noexcept
     return octets == 4;
 }
 
-static bool MatchIpv4(std::string_view token) noexcept
+static auto MatchIpv4(std::string_view token) noexcept -> bool
 {
     if (token.empty() || token.front() == '+')
     {
@@ -302,17 +302,17 @@ static bool MatchIpv4(std::string_view token) noexcept
     return ParseDecimalPort(token.substr(colon + 1), port);
 }
 
-static bool ParseIpv6HexGroup(std::string_view group) noexcept
+static auto ParseIpv6HexGroup(std::string_view group) noexcept -> bool
 {
     if (group.empty() || group.size() > 4U)
     {
         return false;
     }
-    return std::ranges::all_of(group,
-                               [](const char code_unit) { return IsAsciiHex(static_cast<unsigned char>(code_unit)); });
+    return std::ranges::all_of(group, [](const char code_unit) -> bool
+                               { return IsAsciiHex(static_cast<unsigned char>(code_unit)); });
 }
 
-static int CountIpv6Pieces(std::string_view text, bool allow_ipv4_tail) noexcept
+static auto CountIpv6Pieces(std::string_view text, bool allow_ipv4_tail) noexcept -> int
 {
     if (text.empty())
     {
@@ -353,7 +353,7 @@ static int CountIpv6Pieces(std::string_view text, bool allow_ipv4_tail) noexcept
     return groups;
 }
 
-static bool ParseIpv6Address(std::string_view addr) noexcept
+static auto ParseIpv6Address(std::string_view addr) noexcept -> bool
 {
     if (addr.empty() || addr.contains('%'))
     {
@@ -400,7 +400,7 @@ static bool ParseIpv6Address(std::string_view addr) noexcept
     return explicit_groups == 8;
 }
 
-static bool MatchIpv6(std::string_view token) noexcept
+static auto MatchIpv6(std::string_view token) noexcept -> bool
 {
     if (token.starts_with('['))
     {
@@ -438,7 +438,7 @@ static bool MatchIpv6(std::string_view token) noexcept
     return ParseIpv6Address(token);
 }
 
-static bool MatchUnixAbsolutePath(std::string_view token) noexcept
+static auto MatchUnixAbsolutePath(std::string_view token) noexcept -> bool
 {
     if (!token.starts_with('/'))
     {
@@ -468,7 +468,7 @@ static bool MatchUnixAbsolutePath(std::string_view token) noexcept
     return segments >= 2U;
 }
 
-QueryTokens TokenizeQuery(std::string_view query)
+auto TokenizeQuery(std::string_view query) -> QueryTokens
 {
     QueryTokens result;
     std::string_view stripped_view = query;
@@ -504,13 +504,13 @@ QueryTokens TokenizeQuery(std::string_view query)
     return result;
 }
 
-bool IsIdentifierToken(std::string_view token)
+auto IsIdentifierToken(std::string_view token) -> bool
 {
     return MatchUuid(token) || MatchLongHex(token) || MatchDecimalDigits(token) || MatchPrefixedCode(token) ||
            MatchUnderscoreSegmentedId(token) || MatchIpv4(token) || MatchIpv6(token) || MatchUnixAbsolutePath(token);
 }
 
-QueryClass ClassifyQuery(std::string_view query)
+auto ClassifyQuery(std::string_view query) -> QueryClass
 {
     const QueryTokens tokens = TokenizeQuery(query);
     if (tokens.tokens.empty())

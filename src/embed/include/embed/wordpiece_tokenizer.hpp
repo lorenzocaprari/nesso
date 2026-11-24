@@ -27,10 +27,11 @@ struct TokenizedInput
 class WordPieceTokenizer
 {
   public:
-    [[nodiscard]] static std::expected<WordPieceTokenizer, EmbedError>
-    FromVocabFile(const std::filesystem::path &vocab_path, size_t max_sequence_length = DEFAULT_MAX_SEQUENCE_LENGTH);
+    [[nodiscard]] static auto FromVocabFile(const std::filesystem::path &vocab_path,
+                                            size_t max_sequence_length = DEFAULT_MAX_SEQUENCE_LENGTH)
+        -> std::expected<WordPieceTokenizer, EmbedError>;
 
-    [[nodiscard]] std::expected<TokenizedInput, EmbedError> Encode(std::string_view text) const;
+    [[nodiscard]] auto Encode(std::string_view text) const -> std::expected<TokenizedInput, EmbedError>;
 
   private:
     struct SpecialTokenIds
@@ -43,7 +44,7 @@ class WordPieceTokenizer
     WordPieceTokenizer(std::unordered_map<std::string, int64_t> vocab, const SpecialTokenIds &ids,
                        size_t max_sequence_length);
 
-    [[nodiscard]] std::vector<std::string> WordPieceTokenize(std::string_view token) const;
+    [[nodiscard]] auto WordPieceTokenize(std::string_view token) const -> std::vector<std::string>;
 
     std::unordered_map<std::string, int64_t> vocab_;
     int64_t cls_id_ = 0;

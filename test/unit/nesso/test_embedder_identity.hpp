@@ -8,7 +8,7 @@
 
 #include <string>
 
-inline nesso::embed::EmbedderIdentity TestEmbedderIdentity()
+inline auto TestEmbedderIdentity() -> nesso::embed::EmbedderIdentity
 {
     return {.model_id = "test/model",
             .model_sha256 = std::string(64, 'a'),

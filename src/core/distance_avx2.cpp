@@ -24,7 +24,7 @@ namespace
 #endif
 
 // NOLINTBEGIN(portability-simd-intrinsics)
-NESSO_TARGET_AVX2_FMA float HorizontalSum(__m256 value) noexcept
+NESSO_TARGET_AVX2_FMA auto HorizontalSum(__m256 value) noexcept -> float
 {
     const __m128 low = _mm256_castps256_ps128(value);
     const __m128 high = _mm256_extractf128_ps(value, 1);
@@ -34,15 +34,15 @@ NESSO_TARGET_AVX2_FMA float HorizontalSum(__m256 value) noexcept
     return _mm_cvtss_f32(sum);
 }
 
-[[nodiscard, gnu::always_inline]] NESSO_TARGET_AVX2_FMA inline const float *FloatAddr(std::span<const float> values,
-                                                                                      size_t index) noexcept
+[[nodiscard, gnu::always_inline]] NESSO_TARGET_AVX2_FMA inline auto FloatAddr(std::span<const float> values,
+                                                                              size_t index) noexcept -> const float *
 {
     return values.subspan(index).data();
 }
 
 } // namespace
 
-NESSO_TARGET_AVX2_FMA float DotProductAvx2Fma(std::span<const float> a, std::span<const float> b) noexcept
+NESSO_TARGET_AVX2_FMA auto DotProductAvx2Fma(std::span<const float> a, std::span<const float> b) noexcept -> float
 {
     NESSO_ASSERT(a.size() == b.size());
     __m256 sum0 = _mm256_setzero_ps();
@@ -75,7 +75,8 @@ NESSO_TARGET_AVX2_FMA float DotProductAvx2Fma(std::span<const float> a, std::spa
     return result;
 }
 
-NESSO_TARGET_AVX2_FMA float L2SquaredDistanceAvx2Fma(std::span<const float> a, std::span<const float> b) noexcept
+NESSO_TARGET_AVX2_FMA auto L2SquaredDistanceAvx2Fma(std::span<const float> a, std::span<const float> b) noexcept
+    -> float
 {
     NESSO_ASSERT(a.size() == b.size());
     __m256 sum0 = _mm256_setzero_ps();

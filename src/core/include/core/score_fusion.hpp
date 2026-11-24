@@ -31,10 +31,10 @@ struct ZScoreStats
     double deviation = 0.0;
 };
 
-[[nodiscard]] ZScoreStats ComputeZScoreStats(std::span<const double> values);
+[[nodiscard]] auto ComputeZScoreStats(std::span<const double> values) -> ZScoreStats;
 
 /// `(value - mean) / deviation`, or `0` when `deviation` is 0.
-[[nodiscard]] double ZScore(double value, const ZScoreStats &stats) noexcept;
+[[nodiscard]] auto ZScore(double value, const ZScoreStats &stats) noexcept -> double;
 
 /// `HYBRID_DENSE_WEIGHT * z(dense) + HYBRID_LEXICAL_WEIGHT * z(bm25) *
 /// coverage²`, then `static_cast<float>`. Callers sort on that float.
@@ -48,15 +48,15 @@ struct ZScoreStats
 /// Only natural-language queries do. A query with an identifier token keeps
 /// coverage 1 on every line, so a line holding only the identifier still gets
 /// the full lexical weight ([ADR 0011](docs/adr/0011-hybrid-search-and-identifier-routing.md)).
-[[nodiscard]] bool HybridUsesCoverage(QueryClass query_class) noexcept;
+[[nodiscard]] auto HybridUsesCoverage(QueryClass query_class) noexcept -> bool;
 
-[[nodiscard]] float FuseHybridScore(double dense, double bm25, double coverage, const ZScoreStats &dense_stats,
-                                    const ZScoreStats &bm25_stats) noexcept;
+[[nodiscard]] auto FuseHybridScore(double dense, double bm25, double coverage, const ZScoreStats &dense_stats,
+                                   const ZScoreStats &bm25_stats) noexcept -> float;
 
 /// One fused float per aligned dense/bm25/coverage triple. Lengths must match,
 /// otherwise the result is empty.
-[[nodiscard]] std::vector<float> FuseHybridScores(std::span<const double> dense, std::span<const double> bm25,
-                                                  std::span<const double> coverage);
+[[nodiscard]] auto FuseHybridScores(std::span<const double> dense, std::span<const double> bm25,
+                                    std::span<const double> coverage) -> std::vector<float>;
 
 } // namespace nesso::core
 

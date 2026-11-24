@@ -10,20 +10,23 @@
 namespace nesso::core
 {
 
-static bool IsAsciiUpper(unsigned char byte) noexcept { return byte >= 'A' && byte <= 'Z'; }
+static auto IsAsciiUpper(unsigned char byte) noexcept -> bool { return byte >= 'A' && byte <= 'Z'; }
 
-static bool IsAsciiLower(unsigned char byte) noexcept { return byte >= 'a' && byte <= 'z'; }
+static auto IsAsciiLower(unsigned char byte) noexcept -> bool { return byte >= 'a' && byte <= 'z'; }
 
-static bool IsAsciiDigit(unsigned char byte) noexcept { return byte >= '0' && byte <= '9'; }
+static auto IsAsciiDigit(unsigned char byte) noexcept -> bool { return byte >= '0' && byte <= '9'; }
 
-static bool IsTermByte(unsigned char byte) noexcept
+static auto IsTermByte(unsigned char byte) noexcept -> bool
 {
     return IsAsciiUpper(byte) || IsAsciiLower(byte) || IsAsciiDigit(byte) || byte >= 0x80U;
 }
 
-static bool IsJoiner(unsigned char byte) noexcept { return byte == '-' || byte == '_' || byte == '.' || byte == ':'; }
+static auto IsJoiner(unsigned char byte) noexcept -> bool
+{
+    return byte == '-' || byte == '_' || byte == '.' || byte == ':';
+}
 
-static char AsciiLower(unsigned char byte) noexcept
+static auto AsciiLower(unsigned char byte) noexcept -> char
 {
     if (IsAsciiUpper(byte))
     {
@@ -32,7 +35,7 @@ static char AsciiLower(unsigned char byte) noexcept
     return static_cast<char>(byte);
 }
 
-static std::string Lowered(std::string_view text, std::size_t begin, std::size_t end)
+static auto Lowered(std::string_view text, std::size_t begin, std::size_t end) -> std::string
 {
     std::string out(end - begin, '\0');
     for (std::size_t index = begin; index < end; ++index)
@@ -60,7 +63,7 @@ static void AppendRun(std::vector<std::string> &terms, std::string_view text, st
     terms.push_back(Lowered(text, piece_begin, end));
 }
 
-std::vector<std::string> LexicalTerms(std::string_view text)
+auto LexicalTerms(std::string_view text) -> std::vector<std::string>
 {
     std::vector<std::string> terms;
     const std::size_t size = text.size();
@@ -107,7 +110,7 @@ std::vector<std::string> LexicalTerms(std::string_view text)
     return terms;
 }
 
-bool TermByteLess(std::string_view left, std::string_view right) noexcept
+auto TermByteLess(std::string_view left, std::string_view right) noexcept -> bool
 {
     const std::size_t count = left.size() < right.size() ? left.size() : right.size();
     for (std::size_t index = 0; index < count; ++index)

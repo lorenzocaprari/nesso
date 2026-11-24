@@ -64,11 +64,11 @@ struct ArchiveSkipStats
 
 /// True when `bytes` are an armored PGP message or the first packet is PKESK,
 /// SKESK, or SEIPD.
-[[nodiscard]] bool LooksLikeOpenPgp(std::span<const std::byte> bytes);
+[[nodiscard]] auto LooksLikeOpenPgp(std::span<const std::byte> bytes) -> bool;
 
 /// True for `.tar`, `.tgz`, `.tar.gz`, `.tar.xz`, and `.zip`, compared without
 /// regard to case.
-[[nodiscard]] bool IsArchivePath(const std::filesystem::path &path);
+[[nodiscard]] auto IsArchivePath(const std::filesystem::path &path) -> bool;
 
 /// Read regular-file members of a tar, tar.gz, tgz, tar.xz, or zip archive.
 /// Members are visited in archive order. That order is fixed by the file bytes,
@@ -78,10 +78,9 @@ struct ArchiveSkipStats
 /// symlinks, and hard links are skipped. When `skips` is set, those skips are
 /// counted. An encrypted zip member or a whole-file OpenPGP payload (checked
 /// only after open or read fails) returns `ArchiveError::Encrypted`.
-[[nodiscard]] std::expected<void, ArchiveFailure>
-ReadArchive(const std::filesystem::path &path, const ArchiveLimits &limits,
-            const std::function<void(std::string_view name, std::string_view bytes)> &consume,
-            ArchiveSkipStats *skips = nullptr);
+[[nodiscard]] auto ReadArchive(const std::filesystem::path &path, const ArchiveLimits &limits,
+                               const std::function<void(std::string_view name, std::string_view bytes)> &consume,
+                               ArchiveSkipStats *skips = nullptr) -> std::expected<void, ArchiveFailure>;
 
 } // namespace nesso::parser
 

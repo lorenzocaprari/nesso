@@ -20,32 +20,35 @@ static constexpr std::size_t MAX_FIELD_BYTES = 128;
 static constexpr std::size_t MAX_TAG_NAME = 96;
 static constexpr std::size_t MAX_PIPE_FIELD = 64;
 
-static bool IsDigit(char character) noexcept { return character >= '0' && character <= '9'; }
+static auto IsDigit(char character) noexcept -> bool { return character >= '0' && character <= '9'; }
 
-static bool IsUpper(char character) noexcept { return character >= 'A' && character <= 'Z'; }
+static auto IsUpper(char character) noexcept -> bool { return character >= 'A' && character <= 'Z'; }
 
-static bool IsLetter(char character) noexcept { return IsUpper(character) || (character >= 'a' && character <= 'z'); }
+static auto IsLetter(char character) noexcept -> bool
+{
+    return IsUpper(character) || (character >= 'a' && character <= 'z');
+}
 
-static bool IsBlank(char character) noexcept { return character == ' ' || character == '\t'; }
+static auto IsBlank(char character) noexcept -> bool { return character == ' ' || character == '\t'; }
 
-static char Lower(char character) noexcept
+static auto Lower(char character) noexcept -> char
 {
     return IsUpper(character) ? static_cast<char>(character - 'A' + 'a') : character;
 }
 
-static bool At(std::string_view text, std::size_t index, char character) noexcept
+static auto At(std::string_view text, std::size_t index, char character) noexcept -> bool
 {
     return index < text.size() && text[index] == character;
 }
 
 // A token ends at the end of the line or before a blank or a `|`.
-static bool IsBoundary(std::string_view text, std::size_t index) noexcept
+static auto IsBoundary(std::string_view text, std::size_t index) noexcept -> bool
 {
     return index == text.size() || (index < text.size() && (IsBlank(text[index]) || text[index] == '|'));
 }
 
 // Exactly `count` digits at `index` whose value is in [low, high].
-static bool ReadNumber(std::string_view text, std::size_t index, std::size_t count, int low, int high) noexcept
+static auto ReadNumber(std::string_view text, std::size_t index, std::size_t count, int low, int high) noexcept -> bool
 {
     if (index > text.size() || count > text.size() - index)
     {
@@ -64,7 +67,7 @@ static bool ReadNumber(std::string_view text, std::size_t index, std::size_t cou
     return value >= low && value <= high;
 }
 
-static std::size_t DigitRun(std::string_view text, std::size_t index) noexcept
+static auto DigitRun(std::string_view text, std::size_t index) noexcept -> std::size_t
 {
     std::size_t end = index;
     while (end < text.size() && IsDigit(text[end]))
@@ -74,27 +77,27 @@ static std::size_t DigitRun(std::string_view text, std::size_t index) noexcept
     return end - index;
 }
 
-static bool MatchWord(std::string_view text, std::size_t index, std::string_view word) noexcept
+static auto MatchWord(std::string_view text, std::size_t index, std::string_view word) noexcept -> bool
 {
     return index <= text.size() && text.substr(index, word.size()) == word;
 }
 
 // `Jan` to `Dec`, case-exact.
-static bool MatchMonthName(std::string_view text, std::size_t index) noexcept
+static auto MatchMonthName(std::string_view text, std::size_t index) noexcept -> bool
 {
     static constexpr std::array<std::string_view, 12> MONTHS{"Jan", "Feb", "Mar", "Apr", "May", "Jun",
                                                              "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"};
-    return std::ranges::any_of(MONTHS, [&](std::string_view month) { return MatchWord(text, index, month); });
+    return std::ranges::any_of(MONTHS, [&](std::string_view month) -> bool { return MatchWord(text, index, month); });
 }
 
-static bool MatchWeekdayName(std::string_view text, std::size_t index) noexcept
+static auto MatchWeekdayName(std::string_view text, std::size_t index) noexcept -> bool
 {
     static constexpr std::array<std::string_view, 7> DAYS{"Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"};
-    return std::ranges::any_of(DAYS, [&](std::string_view day) { return MatchWord(text, index, day); });
+    return std::ranges::any_of(DAYS, [&](std::string_view day) -> bool { return MatchWord(text, index, day); });
 }
 
 // `YYYY-MM-DD`.
-static std::size_t MatchIsoDate(std::string_view text, std::size_t index) noexcept
+static auto MatchIsoDate(std::string_view text, std::size_t index) noexcept -> std::size_t
 {
     if (ReadNumber(text, index, 4, 0, 9999) && At(text, index + 4, '-') && ReadNumber(text, index + 5, 2, 1, 12) &&
         At(text, index + 7, '-') && ReadNumber(text, index + 8, 2, 1, 31))
@@ -105,7 +108,7 @@ static std::size_t MatchIsoDate(std::string_view text, std::size_t index) noexce
 }
 
 // `YYYY.MM.DD`.
-static std::size_t MatchDottedDate(std::string_view text, std::size_t index) noexcept
+static auto MatchDottedDate(std::string_view text, std::size_t index) noexcept -> std::size_t
 {
     if (ReadNumber(text, index, 4, 0, 9999) && At(text, index + 4, '.') && ReadNumber(text, index + 5, 2, 1, 12) &&
         At(text, index + 7, '.') && ReadNumber(text, index + 8, 2, 1, 31))
@@ -116,7 +119,7 @@ static std::size_t MatchDottedDate(std::string_view text, std::size_t index) noe
 }
 
 // `.` or `,` and 1 to 9 digits, or nothing.
-static std::size_t SkipFraction(std::string_view text, std::size_t index) noexcept
+static auto SkipFraction(std::string_view text, std::size_t index) noexcept -> std::size_t
 {
     if (!At(text, index, '.') && !At(text, index, ','))
     {
@@ -127,7 +130,7 @@ static std::size_t SkipFraction(std::string_view text, std::size_t index) noexce
 }
 
 // `HH:MM:SS` with an optional fraction.
-static std::size_t MatchClock(std::string_view text, std::size_t index) noexcept
+static auto MatchClock(std::string_view text, std::size_t index) noexcept -> std::size_t
 {
     if (ReadNumber(text, index, 2, 0, 23) && At(text, index + 2, ':') && ReadNumber(text, index + 3, 2, 0, 59) &&
         At(text, index + 5, ':') && ReadNumber(text, index + 6, 2, 0, 60))
@@ -138,7 +141,7 @@ static std::size_t MatchClock(std::string_view text, std::size_t index) noexcept
 }
 
 // `Z`, `+HH:MM`, `+HHMM`, or nothing.
-static std::size_t SkipZone(std::string_view text, std::size_t index) noexcept
+static auto SkipZone(std::string_view text, std::size_t index) noexcept -> std::size_t
 {
     if (At(text, index, 'Z'))
     {
@@ -157,7 +160,7 @@ static std::size_t SkipZone(std::string_view text, std::size_t index) noexcept
 }
 
 // `YYYY-MM-DD` and `T` or a space and a clock, with an optional zone.
-static std::size_t MatchIsoTimestamp(std::string_view text, std::size_t index) noexcept
+static auto MatchIsoTimestamp(std::string_view text, std::size_t index) noexcept -> std::size_t
 {
     const std::size_t date = MatchIsoDate(text, index);
     if (date == NO_MATCH || !(At(text, date, 'T') || At(text, date, ' ')))
@@ -170,7 +173,7 @@ static std::size_t MatchIsoTimestamp(std::string_view text, std::size_t index) n
 
 // RFC 3164 `Mmm D HH:MM:SS` (one or two blanks before a one-digit day), with
 // an optional year.
-static std::size_t MatchSyslogTimestamp(std::string_view text, std::size_t index) noexcept
+static auto MatchSyslogTimestamp(std::string_view text, std::size_t index) noexcept -> std::size_t
 {
     if (!MatchMonthName(text, index) || !At(text, index + 3, ' '))
     {
@@ -199,7 +202,7 @@ static std::size_t MatchSyslogTimestamp(std::string_view text, std::size_t index
 }
 
 // `Www Mmm DD HH:MM:SS YYYY`.
-static std::size_t MatchCtime(std::string_view text, std::size_t index) noexcept
+static auto MatchCtime(std::string_view text, std::size_t index) noexcept -> std::size_t
 {
     if (!MatchWeekdayName(text, index) || !At(text, index + 3, ' ') || !MatchMonthName(text, index + 4) ||
         !At(text, index + 7, ' ') || !ReadNumber(text, index + 8, 2, 1, 31) || !At(text, index + 10, ' '))
@@ -215,7 +218,7 @@ static std::size_t MatchCtime(std::string_view text, std::size_t index) noexcept
 }
 
 // `DD/Mmm/YYYY:HH:MM:SS +zzzz`.
-static std::size_t MatchCommonLogTime(std::string_view text, std::size_t index) noexcept
+static auto MatchCommonLogTime(std::string_view text, std::size_t index) noexcept -> std::size_t
 {
     if (!ReadNumber(text, index, 2, 1, 31) || !At(text, index + 2, '/') || !MatchMonthName(text, index + 3) ||
         !At(text, index + 6, '/') || !ReadNumber(text, index + 7, 4, 0, 9999) || !At(text, index + 11, ':'))
@@ -232,7 +235,7 @@ static std::size_t MatchCommonLogTime(std::string_view text, std::size_t index) 
 }
 
 // One of the timestamps above inside `[` and `]`.
-static std::size_t MatchBracketTimestamp(std::string_view text, std::size_t index) noexcept
+static auto MatchBracketTimestamp(std::string_view text, std::size_t index) noexcept -> std::size_t
 {
     if (!At(text, index, '['))
     {
@@ -251,7 +254,7 @@ static std::size_t MatchBracketTimestamp(std::string_view text, std::size_t inde
 
 // A 10- or 13-digit epoch, then blanks and a date. The date is part of the
 // match.
-static std::size_t MatchEpoch(std::string_view text, std::size_t index) noexcept
+static auto MatchEpoch(std::string_view text, std::size_t index) noexcept -> std::size_t
 {
     const std::size_t digits = DigitRun(text, index);
     if ((digits != 10 && digits != 13) || !IsBlank(index + digits < text.size() ? text[index + digits] : '\0'))
@@ -274,14 +277,14 @@ static std::size_t MatchEpoch(std::string_view text, std::size_t index) noexcept
 }
 
 // 1 or 2 digits at `index` with a value in [low, high]. Returns the end.
-static std::size_t ReadShortNumber(std::string_view text, std::size_t index, int high) noexcept
+static auto ReadShortNumber(std::string_view text, std::size_t index, int high) noexcept -> std::size_t
 {
     const std::size_t digits = DigitRun(text, index);
     return digits >= 1 && digits <= 2 && ReadNumber(text, index, digits, 0, high) ? index + digits : NO_MATCH;
 }
 
 // `H:M:S`, each field 1 or 2 digits.
-static std::size_t MatchLooseClock(std::string_view text, std::size_t index) noexcept
+static auto MatchLooseClock(std::string_view text, std::size_t index) noexcept -> std::size_t
 {
     const std::size_t hours = ReadShortNumber(text, index, 23);
     if (hours == NO_MATCH || !At(text, hours, ':'))
@@ -298,7 +301,7 @@ static std::size_t MatchLooseClock(std::string_view text, std::size_t index) noe
 
 // `YYMMDD HHMMSS`, or `YYYYMMDD-H:M:S` (fields of 1 or 2 digits) with optional
 // `:fff` or `.fff`.
-static std::size_t MatchCompactTimestamp(std::string_view text, std::size_t index) noexcept
+static auto MatchCompactTimestamp(std::string_view text, std::size_t index) noexcept -> std::size_t
 {
     if (ReadNumber(text, index, 2, 0, 99) && ReadNumber(text, index + 2, 2, 1, 12) &&
         ReadNumber(text, index + 4, 2, 1, 31) && At(text, index + 6, ' ') && ReadNumber(text, index + 7, 2, 0, 23) &&
@@ -334,7 +337,7 @@ struct Anchor
 };
 } // namespace
 
-static Anchor MatchAnchor(std::string_view text, std::size_t index) noexcept
+static auto MatchAnchor(std::string_view text, std::size_t index) noexcept -> Anchor
 {
     if (const std::size_t end = MatchSyslogTimestamp(text, index); end != NO_MATCH)
     {
@@ -351,7 +354,7 @@ static Anchor MatchAnchor(std::string_view text, std::size_t index) noexcept
 }
 
 // `<N>`, 1 to 3 digits.
-static std::size_t SkipPriority(std::string_view text) noexcept
+static auto SkipPriority(std::string_view text) noexcept -> std::size_t
 {
     if (!At(text, 0, '<'))
     {
@@ -363,7 +366,7 @@ static std::size_t SkipPriority(std::string_view text) noexcept
 
 // `-` or an upper-case word of 2 to 16 bytes, a blank, then an epoch anchor.
 // Returns where the epoch starts.
-static std::size_t SkipLabel(std::string_view text, std::size_t index) noexcept
+static auto SkipLabel(std::string_view text, std::size_t index) noexcept -> std::size_t
 {
     std::size_t end = index;
     if (At(text, index, '-'))
@@ -394,7 +397,7 @@ static std::size_t SkipLabel(std::string_view text, std::size_t index) noexcept
 
 // A token of up to 128 bytes that contains `.log`, blanks, then an ISO 8601
 // date and time. Returns where the timestamp starts.
-static std::size_t SkipLogFileName(std::string_view text, std::size_t index) noexcept
+static auto SkipLogFileName(std::string_view text, std::size_t index) noexcept -> std::size_t
 {
     std::size_t end = index;
     while (end < text.size() && !IsBlank(text[end]) && end - index < MAX_PREFIX_TOKEN)
@@ -414,7 +417,7 @@ static std::size_t SkipLogFileName(std::string_view text, std::size_t index) noe
 
 // One RFC 5424 structured-data element list: `-`, or `[...]` blocks that
 // honor `\]`.
-static std::size_t SkipStructuredData(std::string_view text, std::size_t index) noexcept
+static auto SkipStructuredData(std::string_view text, std::size_t index) noexcept -> std::size_t
 {
     if (At(text, index, '-'))
     {
@@ -439,7 +442,7 @@ static std::size_t SkipStructuredData(std::string_view text, std::size_t index) 
 
 // RFC 5424 after the priority: `1 TIMESTAMP HOST APP PROCID MSGID SD`. The
 // header ends after HOST: APP-NAME is a program name and stays in the message.
-static std::size_t MatchRfc5424(std::string_view text, std::size_t index) noexcept
+static auto MatchRfc5424(std::string_view text, std::size_t index) noexcept -> std::size_t
 {
     if (!At(text, index, '1') || !At(text, index + 1, ' '))
     {
@@ -471,7 +474,7 @@ static std::size_t MatchRfc5424(std::string_view text, std::size_t index) noexce
 }
 
 // Blanks, then an optional `|` or a `-` between blanks, then blanks.
-static std::size_t SkipSeparator(std::string_view text, std::size_t index, bool &pipe) noexcept
+static auto SkipSeparator(std::string_view text, std::size_t index, bool &pipe) noexcept -> std::size_t
 {
     std::size_t cursor = index;
     while (cursor < text.size() && IsBlank(text[cursor]))
@@ -494,7 +497,7 @@ static std::size_t SkipSeparator(std::string_view text, std::size_t index, bool 
     return cursor;
 }
 
-static bool IsLevelWord(std::string_view word) noexcept
+static auto IsLevelWord(std::string_view word) noexcept -> bool
 {
     static constexpr std::array<std::string_view, 17> LEVELS{
         "trace",  "debug", "dbg",      "info",  "notice", "warn",  "warning", "error",  "err",
@@ -510,7 +513,7 @@ static bool IsLevelWord(std::string_view word) noexcept
 }
 
 // A level: bare, `[x]`, `<x>`, or `x:`.
-static std::size_t MatchLevel(std::string_view text, std::size_t index) noexcept
+static auto MatchLevel(std::string_view text, std::size_t index) noexcept -> std::size_t
 {
     char close = '\0';
     std::size_t start = index;
@@ -544,14 +547,14 @@ static std::size_t MatchLevel(std::string_view text, std::size_t index) noexcept
     return IsBoundary(text, end) ? end : NO_MATCH;
 }
 
-static bool IsTagNameChar(char character) noexcept
+static auto IsTagNameChar(char character) noexcept -> bool
 {
     return IsLetter(character) || IsDigit(character) || character == '_' || character == '.' || character == '$' ||
            character == '/' || character == '@' || character == '-';
 }
 
 // `name`, an optional `(sub)`, an optional `[pid]`, and `:` before a blank.
-static std::size_t MatchTag(std::string_view text, std::size_t index) noexcept
+static auto MatchTag(std::string_view text, std::size_t index) noexcept -> std::size_t
 {
     if (index >= text.size() || (!IsLetter(text[index]) && text[index] != '_'))
     {
@@ -585,7 +588,7 @@ static std::size_t MatchTag(std::string_view text, std::size_t index) noexcept
 }
 
 // `[...]`, up to 128 bytes, with no `[` inside.
-static std::size_t MatchBracketField(std::string_view text, std::size_t index) noexcept
+static auto MatchBracketField(std::string_view text, std::size_t index) noexcept -> std::size_t
 {
     if (!At(text, index, '['))
     {
@@ -602,7 +605,7 @@ static std::size_t MatchBracketField(std::string_view text, std::size_t index) n
 
 // A dotted name such as `app.db` or `org.apache.Main$Inner`, with no dot
 // leader (`..`).
-static std::size_t MatchComponent(std::string_view text, std::size_t index) noexcept
+static auto MatchComponent(std::string_view text, std::size_t index) noexcept -> std::size_t
 {
     std::size_t cursor = index;
     bool dot = false;
@@ -624,7 +627,7 @@ static std::size_t MatchComponent(std::string_view text, std::size_t index) noex
 }
 
 // `YYYY-MM-DD-HH.MM.SS` with an optional fraction.
-static std::size_t MatchDashedTimestamp(std::string_view text, std::size_t index) noexcept
+static auto MatchDashedTimestamp(std::string_view text, std::size_t index) noexcept -> std::size_t
 {
     const std::size_t date = MatchIsoDate(text, index);
     if (date == NO_MATCH || !At(text, date, '-') || !ReadNumber(text, date + 1, 2, 0, 23) || !At(text, date + 3, '.') ||
@@ -636,7 +639,7 @@ static std::size_t MatchDashedTimestamp(std::string_view text, std::size_t index
 }
 
 // A date or time field after the anchor.
-static Anchor MatchDateTimeField(std::string_view text, std::size_t index) noexcept
+static auto MatchDateTimeField(std::string_view text, std::size_t index) noexcept -> Anchor
 {
     if (const std::size_t end = MatchSyslogTimestamp(text, index); end != NO_MATCH && IsBoundary(text, end))
     {
@@ -653,14 +656,14 @@ static Anchor MatchDateTimeField(std::string_view text, std::size_t index) noexc
 }
 
 // 1 to 7 digits.
-static std::size_t MatchNumber(std::string_view text, std::size_t index) noexcept
+static auto MatchNumber(std::string_view text, std::size_t index) noexcept -> std::size_t
 {
     const std::size_t digits = DigitRun(text, index);
     return digits >= 1 && digits <= 7 && IsBoundary(text, index + digits) ? index + digits : NO_MATCH;
 }
 
 // An upper-case word of 2 to 10 bytes.
-static std::size_t MatchCapsWord(std::string_view text, std::size_t index) noexcept
+static auto MatchCapsWord(std::string_view text, std::size_t index) noexcept -> std::size_t
 {
     std::size_t end = index;
     while (end < text.size() && IsUpper(text[end]))
@@ -673,7 +676,7 @@ static std::size_t MatchCapsWord(std::string_view text, std::size_t index) noexc
 // A host. After an RFC 3164 timestamp any token that does not end in `:`;
 // otherwise letters and digits joined by `-`, `.`, `:`, `/`, or `_`, with at
 // least one of each.
-static std::size_t MatchHost(std::string_view text, std::size_t index, bool any_token) noexcept
+static auto MatchHost(std::string_view text, std::size_t index, bool any_token) noexcept -> std::size_t
 {
     std::size_t end = index;
     bool letter = false;
@@ -725,7 +728,7 @@ struct Field
 };
 } // namespace
 
-static Field ReadField(std::string_view text, std::size_t index, FieldScan &scan) noexcept
+static auto ReadField(std::string_view text, std::size_t index, FieldScan &scan) noexcept -> Field
 {
     const bool host_next = std::exchange(scan.host_next, false);
     if (const std::size_t end = MatchLevel(text, index); end != NO_MATCH)
@@ -764,7 +767,7 @@ static Field ReadField(std::string_view text, std::size_t index, FieldScan &scan
 
 // A field that ends at `end` can join the header: it and the separator after
 // it fit in `MAX_HEADER_BYTES`, and text follows them.
-static bool FitsBeforeMessage(std::string_view text, std::size_t end) noexcept
+static auto FitsBeforeMessage(std::string_view text, std::size_t end) noexcept -> bool
 {
     bool pipe = false;
     const std::size_t next = SkipSeparator(text, end, pipe);
@@ -773,7 +776,7 @@ static bool FitsBeforeMessage(std::string_view text, std::size_t end) noexcept
 
 // After an anchor followed by `|`: each field that ends in `|` joins the
 // header.
-static std::size_t ScanPipeFields(std::string_view text, std::size_t start) noexcept
+static auto ScanPipeFields(std::string_view text, std::size_t start) noexcept -> std::size_t
 {
     std::size_t header_end = start;
     std::size_t cursor = start;
@@ -797,7 +800,7 @@ static std::size_t ScanPipeFields(std::string_view text, std::size_t start) noex
 // Reads fields after the anchor and returns where the header ends: after the
 // noise fields that come right before the first field with meaning, or after
 // the anchor when no such field follows.
-static std::size_t ScanFields(std::string_view text, std::size_t anchor_end, bool host_next) noexcept
+static auto ScanFields(std::string_view text, std::size_t anchor_end, bool host_next) noexcept -> std::size_t
 {
     FieldScan scan{.position = anchor_end, .host_next = host_next};
     for (std::size_t field = 0; field < MAX_HEADER_FIELDS; ++field)
@@ -831,7 +834,7 @@ static std::size_t ScanFields(std::string_view text, std::size_t anchor_end, boo
 }
 
 // Where the header's fields end, or `NO_MATCH` when no anchor starts the line.
-static std::size_t HeaderFieldsEnd(std::string_view line) noexcept
+static auto HeaderFieldsEnd(std::string_view line) noexcept -> std::size_t
 {
     const std::size_t priority = SkipPriority(line);
     if (priority > 0)
@@ -858,13 +861,13 @@ static std::size_t HeaderFieldsEnd(std::string_view line) noexcept
     return ScanFields(line, anchor.end, anchor.host_next);
 }
 
-static bool Informative(std::string_view message) noexcept
+static auto Informative(std::string_view message) noexcept -> bool
 {
-    return std::ranges::any_of(message, [](char character)
+    return std::ranges::any_of(message, [](char character) -> bool
                                { return IsLetter(character) || static_cast<unsigned char>(character) >= 0x80; });
 }
 
-LineParts SplitLogLine(std::string_view line) noexcept
+auto SplitLogLine(std::string_view line) noexcept -> LineParts
 {
     const LineParts whole{.header = line.substr(0, 0), .message = line};
     const std::size_t fields_end = HeaderFieldsEnd(line);

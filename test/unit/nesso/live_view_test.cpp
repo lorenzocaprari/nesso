@@ -10,6 +10,7 @@
 #include <chrono>
 #include <cstddef>
 #include <cstdio>
+#include <fcntl.h>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -27,15 +28,15 @@ class Capture
   public:
     Capture() : stream_(std::tmpfile()) { REQUIRE(stream_ != nullptr); }
     Capture(const Capture &) = delete;
-    Capture &operator=(const Capture &) = delete;
+    auto operator=(const Capture &) -> Capture & = delete;
     Capture(Capture &&) = delete;
-    Capture &operator=(Capture &&) = delete;
+    auto operator=(Capture &&) -> Capture & = delete;
     ~Capture() { static_cast<void>(std::fclose(stream_)); }
 
-    [[nodiscard]] std::FILE *Stream() const { return stream_; }
+    [[nodiscard]] auto Stream() const -> std::FILE * { return stream_; }
 
     // Bytes written since the previous call.
-    [[nodiscard]] std::string Next()
+    [[nodiscard]] auto Next() -> std::string
     {
         REQUIRE(std::fflush(stream_) == 0);
         REQUIRE(std::fseek(stream_, taken_, SEEK_SET) == 0);
@@ -57,9 +58,9 @@ class Capture
 class FakeClock
 {
   public:
-    [[nodiscard]] nesso::cli::LiveView::Clock Function()
+    [[nodiscard]] auto Function() -> nesso::cli::LiveView::Clock
     {
-        return [this] { return now_; };
+        return [this] -> TimePoint { return now_; };
     }
 
     void Advance(milliseconds step) { now_ += step; }
@@ -68,7 +69,7 @@ class FakeClock
     TimePoint now_;
 };
 
-nesso::TextResults TwoRows()
+auto TwoRows() -> nesso::TextResults
 {
     nesso::TextResults results;
     results.matches.push_back({.source = "app.log", .line = 3, .score = 0.75F, .text = "disk full"});
@@ -204,7 +205,8 @@ TEST_CASE("rows escape terminal controls from the log text", "[live_view]")
 TEST_CASE("the view is on only for an interactive terminal", "[live_view]")
 {
     using nesso::cli::LiveViewEnabled;
-    const auto inputs = [](std::optional<bool> requested, bool quiet, bool terminal, const char *term)
+    const auto inputs = [](std::optional<bool> requested, bool quiet, bool terminal,
+                           const char *term) -> nesso::cli::LiveViewInputs
     {
         return nesso::cli::LiveViewInputs{
             .requested = requested, .quiet = quiet, .stderr_is_terminal = terminal, .term = term};
@@ -227,7 +229,7 @@ TEST_CASE("the view is on only for an interactive terminal", "[live_view]")
 TEST_CASE("the width falls back to 80 columns off a terminal", "[live_view]")
 {
     std::array<int, 2> pipe_ends{};
-    REQUIRE(::pipe(pipe_ends.data()) == 0);
+    REQUIRE(::pipe2(pipe_ends.data(), O_CLOEXEC) == 0);
     CHECK(nesso::cli::TerminalWidth(pipe_ends[0]) == nesso::cli::FALLBACK_TERMINAL_WIDTH);
     static_cast<void>(::close(pipe_ends[0]));
     static_cast<void>(::close(pipe_ends[1]));

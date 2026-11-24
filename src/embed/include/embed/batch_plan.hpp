@@ -49,18 +49,18 @@ struct BatchWave
 /// Split into windows of `BATCH_WINDOW`, sort each by token count then input
 /// ordinal, and cut. A text that does not fit starts the next run. A single
 /// text is always its own run.
-[[nodiscard]] BatchPlan PlanBatches(std::span<const size_t> token_counts);
+[[nodiscard]] auto PlanBatches(std::span<const size_t> token_counts) -> BatchPlan;
 
 /// Wave width is `sessions`. Batch order is unchanged. `sessions` of 0 yields
 /// no waves.
-[[nodiscard]] std::vector<BatchWave> BatchWaves(size_t batch_count, size_t sessions);
+[[nodiscard]] auto BatchWaves(size_t batch_count, size_t sessions) -> std::vector<BatchWave>;
 
 /// Input index of each embedding in execution order.
-[[nodiscard]] std::vector<size_t> ExecutionOrder(const BatchPlan &plan);
+[[nodiscard]] auto ExecutionOrder(const BatchPlan &plan) -> std::vector<size_t>;
 
 /// Move plan-order values back to input order. A size mismatch returns an empty
 /// vector.
-template <typename T> [[nodiscard]] std::vector<T> Scatter(const BatchPlan &plan, std::vector<T> plan_order)
+template <typename T> [[nodiscard]] auto Scatter(const BatchPlan &plan, std::vector<T> plan_order) -> std::vector<T>
 {
     const std::vector<size_t> order = ExecutionOrder(plan);
     if (plan_order.size() != order.size())

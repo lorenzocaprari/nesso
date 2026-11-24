@@ -14,7 +14,7 @@
 namespace nesso::core
 {
 
-std::uint32_t DistinctIndex::Add(std::string_view text)
+auto DistinctIndex::Add(std::string_view text) -> std::uint32_t
 {
     const std::string key = nesso::parser::MaskTemplate(text);
     const auto found = ids_.find(key);
@@ -36,15 +36,18 @@ std::uint32_t DistinctIndex::Add(std::string_view text)
 
 void DistinctIndex::Reserve(std::size_t lines) { occurrences_.reserve(lines); }
 
-std::span<const std::string> DistinctIndex::Pending() const noexcept { return pending_; }
+auto DistinctIndex::Pending() const noexcept -> std::span<const std::string> { return pending_; }
 
 void DistinctIndex::ClearPending() noexcept { pending_.clear(); }
 
-std::string_view DistinctIndex::Text(std::uint32_t entry_id) const noexcept { return texts_[entry_id]; }
+auto DistinctIndex::Text(std::uint32_t entry_id) const noexcept -> std::string_view { return texts_[entry_id]; }
 
-std::uint32_t DistinctIndex::Occurrences(std::uint32_t entry_id) const noexcept { return occurrences_[entry_id]; }
+auto DistinctIndex::Occurrences(std::uint32_t entry_id) const noexcept -> std::uint32_t
+{
+    return occurrences_[entry_id];
+}
 
-std::vector<std::uint32_t> OccurrenceCounts(std::span<const std::string_view> texts)
+auto OccurrenceCounts(std::span<const std::string_view> texts) -> std::vector<std::uint32_t>
 {
     DistinctIndex index;
     index.Reserve(texts.size());

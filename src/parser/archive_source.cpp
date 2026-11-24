@@ -42,12 +42,12 @@ struct ArchiveFree
 
 static constexpr std::string_view PGP_ARMOR_HEADER = "-----BEGIN PGP MESSAGE-----";
 
-static ArchiveFailure Failure(ArchiveError code, std::string entry = {})
+static auto Failure(ArchiveError code, std::string entry = {}) -> ArchiveFailure
 {
     return ArchiveFailure{.code = code, .entry = std::move(entry)};
 }
 
-static bool FileLooksLikeOpenPgp(const std::filesystem::path &path)
+static auto FileLooksLikeOpenPgp(const std::filesystem::path &path) -> bool
 {
     std::ifstream input(path, std::ios::binary);
     if (!input)
@@ -64,7 +64,7 @@ static bool FileLooksLikeOpenPgp(const std::filesystem::path &path)
     return LooksLikeOpenPgp(std::as_bytes(std::span(buffer).first(counted)));
 }
 
-static ArchiveFailure AfterReadFailure(ArchiveError code, const std::filesystem::path &path)
+static auto AfterReadFailure(ArchiveError code, const std::filesystem::path &path) -> ArchiveFailure
 {
     if ((code == ArchiveError::Corrupt || code == ArchiveError::OpenFailure) && FileLooksLikeOpenPgp(path))
     {
@@ -73,7 +73,7 @@ static ArchiveFailure AfterReadFailure(ArchiveError code, const std::filesystem:
     return Failure(code);
 }
 
-static ArchiveFailure AfterOpenFailure(const std::filesystem::path &path)
+static auto AfterOpenFailure(const std::filesystem::path &path) -> ArchiveFailure
 {
     const std::ifstream probe(path, std::ios::binary);
     if (!probe)
@@ -111,7 +111,7 @@ static void CountSkippedEntry(archive_entry *entry, ArchiveSkipStats *skips)
     ++skips->other;
 }
 
-bool LooksLikeOpenPgp(std::span<const std::byte> bytes)
+auto LooksLikeOpenPgp(std::span<const std::byte> bytes) -> bool
 {
     if (bytes.size() >= PGP_ARMOR_HEADER.size())
     {
@@ -149,7 +149,7 @@ bool LooksLikeOpenPgp(std::span<const std::byte> bytes)
     return false;
 }
 
-static std::string LowerExtension(const std::filesystem::path &path)
+static auto LowerExtension(const std::filesystem::path &path) -> std::string
 {
     std::string extension = path.extension().string();
     for (char &character : extension)
@@ -166,7 +166,7 @@ static std::string LowerExtension(const std::filesystem::path &path)
 // require holding every member, and a compressed stream cannot be rewound to
 // one member. The order is a property of the file bytes, so a later pass and
 // any thread count see the same sequence.
-static std::string MemberName(const char *raw)
+static auto MemberName(const char *raw) -> std::string
 {
     if (raw == nullptr)
     {
@@ -191,7 +191,7 @@ static std::string MemberName(const char *raw)
     return name;
 }
 
-static bool ExceedsRatio(std::uint64_t uncompressed, std::uint64_t compressed, std::uint64_t ratio)
+static auto ExceedsRatio(std::uint64_t uncompressed, std::uint64_t compressed, std::uint64_t ratio) -> bool
 {
     if (ratio == 0 || compressed == 0)
     {
@@ -201,14 +201,13 @@ static bool ExceedsRatio(std::uint64_t uncompressed, std::uint64_t compressed, s
     return whole > compressed || (whole == compressed && uncompressed % ratio != 0);
 }
 
-static bool Fits(std::uint64_t used, std::uint64_t extra, std::uint64_t limit)
+static auto Fits(std::uint64_t used, std::uint64_t extra, std::uint64_t limit) -> bool
 {
     return extra <= limit && used <= limit - extra;
 }
 
-static std::expected<void, ArchiveError> ReadMember(archive *handle, std::string &payload, std::uint64_t declared,
-                                                    const ArchiveLimits &limits, std::uint64_t accepted,
-                                                    std::uint64_t compressed)
+static auto ReadMember(archive *handle, std::string &payload, std::uint64_t declared, const ArchiveLimits &limits,
+                       std::uint64_t accepted, std::uint64_t compressed) -> std::expected<void, ArchiveError>
 {
     if (declared > limits.max_entry_bytes)
     {
@@ -257,13 +256,13 @@ static std::expected<void, ArchiveError> ReadMember(archive *handle, std::string
     }
 }
 
-static bool SkipMember(archive *handle)
+static auto SkipMember(archive *handle) -> bool
 {
     const int status = archive_read_data_skip(handle);
     return status == ARCHIVE_OK || status == ARCHIVE_WARN || status == ARCHIVE_EOF;
 }
 
-bool IsArchivePath(const std::filesystem::path &path)
+auto IsArchivePath(const std::filesystem::path &path) -> bool
 {
     const std::string extension = LowerExtension(path);
     if (extension == ".tar" || extension == ".tgz" || extension == ".zip")
@@ -277,7 +276,7 @@ bool IsArchivePath(const std::filesystem::path &path)
     return false;
 }
 
-static std::expected<std::uint64_t, ArchiveFailure> ArchiveCompressedSize(const std::filesystem::path &path)
+static auto ArchiveCompressedSize(const std::filesystem::path &path) -> std::expected<std::uint64_t, ArchiveFailure>
 {
     std::error_code error;
     const auto compressed_size = std::filesystem::file_size(path, error);
@@ -288,8 +287,8 @@ static std::expected<std::uint64_t, ArchiveFailure> ArchiveCompressedSize(const 
     return static_cast<std::uint64_t>(compressed_size);
 }
 
-static std::expected<std::unique_ptr<archive, ArchiveFree>, ArchiveFailure>
-OpenArchiveReader(const std::filesystem::path &path)
+static auto OpenArchiveReader(const std::filesystem::path &path)
+    -> std::expected<std::unique_ptr<archive, ArchiveFree>, ArchiveFailure>
 {
     // open_filename only opens the archive path. Member names are never passed to
     // the filesystem.
@@ -331,8 +330,8 @@ struct ArchiveHeaderStep
 };
 } // namespace
 
-static std::expected<ArchiveHeaderStep, ArchiveFailure> AdvanceArchiveHeader(archive *handle,
-                                                                             const std::filesystem::path &path)
+static auto AdvanceArchiveHeader(archive *handle, const std::filesystem::path &path)
+    -> std::expected<ArchiveHeaderStep, ArchiveFailure>
 {
     archive_entry *entry = nullptr;
     const int status = archive_read_next_header(handle, &entry);
@@ -351,14 +350,14 @@ static std::expected<ArchiveHeaderStep, ArchiveFailure> AdvanceArchiveHeader(arc
     return ArchiveHeaderStep{.kind = ArchiveHeaderKind::Ready, .entry = entry};
 }
 
-static bool IsRegularArchiveMember(archive_entry *entry)
+static auto IsRegularArchiveMember(archive_entry *entry) -> bool
 {
     const auto type = archive_entry_filetype(entry);
     return type == AE_IFREG && archive_entry_hardlink(entry) == nullptr && archive_entry_symlink(entry) == nullptr;
 }
 
-static std::expected<void, ArchiveFailure>
-SkipNonRegularMember(archive *handle, archive_entry *entry, ArchiveSkipStats *skips, const std::filesystem::path &path)
+static auto SkipNonRegularMember(archive *handle, archive_entry *entry, ArchiveSkipStats *skips,
+                                 const std::filesystem::path &path) -> std::expected<void, ArchiveFailure>
 {
     CountSkippedEntry(entry, skips);
     if (!SkipMember(handle))
@@ -368,7 +367,7 @@ SkipNonRegularMember(archive *handle, archive_entry *entry, ArchiveSkipStats *sk
     return {};
 }
 
-static std::expected<void, ArchiveFailure> RejectEncryptedHeader(archive_entry *entry, const std::string &name)
+static auto RejectEncryptedHeader(archive_entry *entry, const std::string &name) -> std::expected<void, ArchiveFailure>
 {
     if (archive_entry_is_encrypted(entry) != 0)
     {
@@ -377,7 +376,8 @@ static std::expected<void, ArchiveFailure> RejectEncryptedHeader(archive_entry *
     return {};
 }
 
-static std::expected<void, ArchiveFailure> RejectTooManyEntries(std::uint64_t entries, std::uint64_t max_entries)
+static auto RejectTooManyEntries(std::uint64_t entries, std::uint64_t max_entries)
+    -> std::expected<void, ArchiveFailure>
 {
     if (entries > max_entries)
     {
@@ -386,7 +386,7 @@ static std::expected<void, ArchiveFailure> RejectTooManyEntries(std::uint64_t en
     return {};
 }
 
-static std::uint64_t DeclaredMemberSize(archive_entry *entry)
+static auto DeclaredMemberSize(archive_entry *entry) -> std::uint64_t
 {
     if (archive_entry_size_is_set(entry) == 0)
     {
@@ -420,9 +420,9 @@ struct MemberIdentity
 };
 } // namespace
 
-static std::expected<void, ArchiveFailure> LoadMemberPayload(archive *handle, std::string &payload,
-                                                             const MemberLoadBudget &budget,
-                                                             const ArchiveLimits &limits, const MemberIdentity &member)
+static auto LoadMemberPayload(archive *handle, std::string &payload, const MemberLoadBudget &budget,
+                              const ArchiveLimits &limits, const MemberIdentity &member)
+    -> std::expected<void, ArchiveFailure>
 {
     const auto read_error = ReadMember(handle, payload, budget.declared, limits, budget.accepted, budget.compressed);
     if (read_error)
@@ -439,9 +439,8 @@ static std::expected<void, ArchiveFailure> LoadMemberPayload(archive *handle, st
     return std::unexpected(AfterReadFailure(read_error.error(), member.path));
 }
 
-static std::expected<void, ArchiveFailure> InflateNestedGzipMember(std::string &payload, const std::string &name,
-                                                                   const ArchiveLimits &limits,
-                                                                   const std::filesystem::path &path)
+static auto InflateNestedGzipMember(std::string &payload, const std::string &name, const ArchiveLimits &limits,
+                                    const std::filesystem::path &path) -> std::expected<void, ArchiveFailure>
 {
     if (!IsGzipPath(name))
     {
@@ -462,9 +461,8 @@ static std::expected<void, ArchiveFailure> InflateNestedGzipMember(std::string &
     return {};
 }
 
-static std::expected<void, ArchiveFailure> AcceptMemberAgainstLimits(std::uint64_t accepted, std::uint64_t payload_size,
-                                                                     std::uint64_t compressed,
-                                                                     const ArchiveLimits &limits)
+static auto AcceptMemberAgainstLimits(std::uint64_t accepted, std::uint64_t payload_size, std::uint64_t compressed,
+                                      const ArchiveLimits &limits) -> std::expected<void, ArchiveFailure>
 {
     if (!Fits(accepted, payload_size, limits.max_total_bytes))
     {
@@ -509,10 +507,10 @@ struct ArchiveAccumulate
 
 // One regular member: encrypt/count/limits, load (and optional nested gzip),
 // then accept against totals.
-static std::expected<ArchiveMemberAction, ArchiveFailure>
-ProcessArchiveMember(archive *handle, archive_entry *entry, ArchiveSkipStats *skips,
-                     const ArchiveMemberSession &session, ArchiveAccumulate &acc,
-                     const std::function<void(std::string_view name, std::string_view bytes)> &consume)
+static auto ProcessArchiveMember(archive *handle, archive_entry *entry, ArchiveSkipStats *skips,
+                                 const ArchiveMemberSession &session, ArchiveAccumulate &acc,
+                                 const std::function<void(std::string_view name, std::string_view bytes)> &consume)
+    -> std::expected<ArchiveMemberAction, ArchiveFailure>
 {
     const bool regular = IsRegularArchiveMember(entry);
     const std::string name = regular ? MemberName(archive_entry_pathname(entry)) : std::string{};
@@ -558,9 +556,9 @@ ProcessArchiveMember(archive *handle, archive_entry *entry, ArchiveSkipStats *sk
     return ArchiveMemberAction::Accept;
 }
 
-std::expected<void, ArchiveFailure>
-ReadArchive(const std::filesystem::path &path, const ArchiveLimits &limits,
-            const std::function<void(std::string_view name, std::string_view bytes)> &consume, ArchiveSkipStats *skips)
+auto ReadArchive(const std::filesystem::path &path, const ArchiveLimits &limits,
+                 const std::function<void(std::string_view name, std::string_view bytes)> &consume,
+                 ArchiveSkipStats *skips) -> std::expected<void, ArchiveFailure>
 {
     const auto compressed = ArchiveCompressedSize(path);
     if (!compressed)

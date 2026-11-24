@@ -28,9 +28,9 @@ class TempDir
     ~TempDir() { std::filesystem::remove_all(path_); }
 
     TempDir(const TempDir &) = delete;
-    TempDir &operator=(const TempDir &) = delete;
+    auto operator=(const TempDir &) -> TempDir & = delete;
 
-    [[nodiscard]] const std::filesystem::path &Path() const { return path_; }
+    [[nodiscard]] auto Path() const -> const std::filesystem::path & { return path_; }
 
   private:
     std::filesystem::path path_;
@@ -118,7 +118,7 @@ TEST_CASE("WordPieceTokenizer decomposes a four-part character", "[WordPieceToke
 TEST_CASE("WordPieceTokenizer rejects a vocabulary without each special token", "[WordPieceTokenizer][embed][Unit]")
 {
     const TempDir directory("nesso-vocab-specials");
-    const auto write_vocab = [&](std::string_view name, std::string_view body)
+    const auto write_vocab = [&](std::string_view name, std::string_view body) -> std::filesystem::path
     {
         const auto path = directory.Path() / std::string(name);
         WriteBytes(path, body);

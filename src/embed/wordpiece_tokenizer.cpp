@@ -68,9 +68,9 @@ static constexpr char32_t HANGUL_N_COUNT = HANGUL_V_COUNT * HANGUL_T_COUNT;
 static constexpr char32_t HANGUL_L_COUNT = 19;
 static constexpr char32_t HANGUL_S_COUNT = HANGUL_L_COUNT * HANGUL_N_COUNT;
 
-static std::string UnkTokenSymbol() { return std::string("[") + "UNK" + "]"; }
+static auto UnkTokenSymbol() -> std::string { return std::string("[") + "UNK" + "]"; }
 
-static bool ContainsCode(std::span<const CodeRange> ranges, char32_t code)
+static auto ContainsCode(std::span<const CodeRange> ranges, char32_t code) -> bool
 {
     std::size_t low = 0;
     std::size_t high = ranges.size();
@@ -93,25 +93,28 @@ static bool ContainsCode(std::span<const CodeRange> ranges, char32_t code)
     return false;
 }
 
-static bool IsWhitespace(char32_t code)
+static auto IsWhitespace(char32_t code) -> bool
 {
     return code == '\t' || code == '\n' || code == '\r' || ContainsCode(SPACE_RANGES, code);
 }
 
-static bool IsControl(char32_t code) { return ContainsCode(CONTROL_RANGES, code); }
+static auto IsControl(char32_t code) -> bool { return ContainsCode(CONTROL_RANGES, code); }
 
-static bool IsMark(char32_t code) { return ContainsCode(MARK_RANGES, code); }
+static auto IsMark(char32_t code) -> bool { return ContainsCode(MARK_RANGES, code); }
 
-static bool IsAsciiPunctuation(char32_t code)
+static auto IsAsciiPunctuation(char32_t code) -> bool
 {
     return (code >= 33 && code <= 47) || (code >= 58 && code <= 64) || (code >= 91 && code <= 96) ||
            (code >= 123 && code <= 126);
 }
 
-static bool IsPunctuation(char32_t code) { return IsAsciiPunctuation(code) || ContainsCode(PUNCT_RANGES, code); }
+static auto IsPunctuation(char32_t code) -> bool
+{
+    return IsAsciiPunctuation(code) || ContainsCode(PUNCT_RANGES, code);
+}
 
 // BERT BasicTokenizer's CJK set, which is narrower than every Han character.
-static bool IsChinese(char32_t code)
+static auto IsChinese(char32_t code) -> bool
 {
     return (code >= 0x4E00 && code <= 0x9FFF) || (code >= 0x3400 && code <= 0x4DBF) ||
            (code >= 0x20000 && code <= 0x2A6DF) || (code >= 0x2A700 && code <= 0x2B73F) ||
@@ -119,7 +122,7 @@ static bool IsChinese(char32_t code)
            (code >= 0xF900 && code <= 0xFAFF) || (code >= 0x2F800 && code <= 0x2FA1F);
 }
 
-static char32_t LowerCode(char32_t code)
+static auto LowerCode(char32_t code) -> char32_t
 {
     const std::span<const LowerRange> ranges{LOWER_RANGES};
     std::size_t low = 0;
@@ -157,7 +160,7 @@ static void AppendLower(char32_t code, std::vector<char32_t> &out)
     out.push_back(LowerCode(code));
 }
 
-static const Decomp *FindDecomp(char32_t code)
+static auto FindDecomp(char32_t code) -> const Decomp *
 {
     const std::span<const Decomp> table{DECOMP_TABLE};
     std::size_t low = 0;
@@ -217,7 +220,7 @@ static void Decompose(char32_t code, std::vector<char32_t> &out)
     }
 }
 
-static std::size_t Utf8Length(std::uint32_t lead)
+static auto Utf8Length(std::uint32_t lead) -> std::size_t
 {
     if (lead < 0x80U)
     {
@@ -238,7 +241,7 @@ static std::size_t Utf8Length(std::uint32_t lead)
     return 0;
 }
 
-static bool IsContinuation(unsigned char byte) { return (static_cast<std::uint32_t>(byte) & 0xC0U) == 0x80U; }
+static auto IsContinuation(unsigned char byte) -> bool { return (static_cast<std::uint32_t>(byte) & 0xC0U) == 0x80U; }
 
 static void AppendUtf8(std::string &out, char32_t code)
 {
@@ -267,7 +270,7 @@ static void AppendUtf8(std::string &out, char32_t code)
     out.push_back(static_cast<char>(0x80U | (value & 0x3FU)));
 }
 
-static std::string Utf8Of(std::span<const char32_t> codes)
+static auto Utf8Of(std::span<const char32_t> codes) -> std::string
 {
     std::string out;
     for (const char32_t code : codes)
@@ -277,14 +280,14 @@ static std::string Utf8Of(std::span<const char32_t> codes)
     return out;
 }
 
-static std::string Utf8OfOne(char32_t code)
+static auto Utf8OfOne(char32_t code) -> std::string
 {
     std::string out;
     AppendUtf8(out, code);
     return out;
 }
 
-static std::vector<char32_t> DecodeUtf8(std::string_view text)
+static auto DecodeUtf8(std::string_view text) -> std::vector<char32_t>
 {
     std::vector<char32_t> codes;
     codes.reserve(text.size());
@@ -417,7 +420,7 @@ static void NormalizeBasicSpan(const std::vector<char32_t> &spaced, std::size_t 
 static void AppendPunctSplit(const std::vector<char32_t> &plain, std::vector<std::string> &tokens)
 {
     std::vector<char32_t> current;
-    const auto flush = [&tokens, &current]
+    const auto flush = [&tokens, &current] -> void
     {
         if (!current.empty())
         {
@@ -440,7 +443,7 @@ static void AppendPunctSplit(const std::vector<char32_t> &plain, std::vector<std
     flush();
 }
 
-static std::vector<std::string> BasicTokenize(std::string_view text)
+static auto BasicTokenize(std::string_view text) -> std::vector<std::string>
 {
     std::vector<char32_t> cleaned;
     CleanBasicCodes(text, cleaned);
@@ -481,8 +484,8 @@ WordPieceTokenizer::WordPieceTokenizer(std::unordered_map<std::string, int64_t> 
 {
 }
 
-std::expected<WordPieceTokenizer, EmbedError> WordPieceTokenizer::FromVocabFile(const std::filesystem::path &vocab_path,
-                                                                                size_t max_sequence_length)
+auto WordPieceTokenizer::FromVocabFile(const std::filesystem::path &vocab_path, size_t max_sequence_length)
+    -> std::expected<WordPieceTokenizer, EmbedError>
 {
     std::ifstream input(vocab_path);
     if (!input)
@@ -528,7 +531,7 @@ std::expected<WordPieceTokenizer, EmbedError> WordPieceTokenizer::FromVocabFile(
                               max_sequence_length);
 }
 
-std::vector<std::string> WordPieceTokenizer::WordPieceTokenize(std::string_view token) const
+auto WordPieceTokenizer::WordPieceTokenize(std::string_view token) const -> std::vector<std::string>
 {
     const std::vector<char32_t> chars = DecodeUtf8(token);
     const std::string unk_token = UnkTokenSymbol();
@@ -573,7 +576,7 @@ std::vector<std::string> WordPieceTokenizer::WordPieceTokenize(std::string_view 
     return pieces;
 }
 
-std::expected<TokenizedInput, EmbedError> WordPieceTokenizer::Encode(std::string_view text) const
+auto WordPieceTokenizer::Encode(std::string_view text) const -> std::expected<TokenizedInput, EmbedError>
 {
     if (text.empty())
     {

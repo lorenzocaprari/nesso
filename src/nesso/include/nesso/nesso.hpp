@@ -94,14 +94,14 @@ struct BundleSkipSummary
     size_t binary = 0;
 };
 
-[[nodiscard]] inline size_t BundleSkipTotal(const BundleSkipSummary &summary)
+[[nodiscard]] inline auto BundleSkipTotal(const BundleSkipSummary &summary) -> size_t
 {
     return summary.directories + summary.symlinks + summary.hardlinks + summary.other + summary.binary;
 }
 
 /// One stderr line for a bundle skip summary. Empty when
 /// `BundleSkipTotal(summary)` is 0.
-[[nodiscard]] std::string FormatBundleSkipSummary(const BundleSkipSummary &summary);
+[[nodiscard]] auto FormatBundleSkipSummary(const BundleSkipSummary &summary) -> std::string;
 
 /// First identity key that differs between a corpus and the loaded model.
 /// `stored` is the corpus value, `loaded` the value of the loaded model.
@@ -141,12 +141,12 @@ struct Error
 };
 
 /// Phrase for `cause`, used after the operation sentence.
-[[nodiscard]] std::string_view Describe(ErrorCause cause);
+[[nodiscard]] auto Describe(ErrorCause cause) -> std::string_view;
 
 /// One stderr line for `error`. Empty when the outcome is no match.
 /// `EmptyInput` is a reason, without an "Error:" prefix. A non-empty `note` on
 /// `EmptyInput` is the zero-chunk `index` line.
-[[nodiscard]] std::string Message(const Error &error);
+[[nodiscard]] auto Message(const Error &error) -> std::string;
 
 inline constexpr size_t DEFAULT_TEXT_TOP_K = 5;
 
@@ -158,9 +158,9 @@ class GrepObserver
 {
   public:
     GrepObserver(const GrepObserver &) = delete;
-    GrepObserver &operator=(const GrepObserver &) = delete;
+    auto operator=(const GrepObserver &) -> GrepObserver & = delete;
     GrepObserver(GrepObserver &&) = delete;
-    GrepObserver &operator=(GrepObserver &&) = delete;
+    auto operator=(GrepObserver &&) -> GrepObserver & = delete;
     virtual ~GrepObserver() = default;
 
     /// The dense top-k after a flush that embedded new lines, only when its
@@ -287,17 +287,17 @@ class Nesso
     Nesso(Config config, std::unique_ptr<embed::Embedder> embedder);
     ~Nesso();
     Nesso(const Nesso &) = delete;
-    Nesso &operator=(const Nesso &) = delete;
+    auto operator=(const Nesso &) -> Nesso & = delete;
     Nesso(Nesso &&) noexcept;
-    Nesso &operator=(Nesso &&) noexcept;
+    auto operator=(Nesso &&) noexcept -> Nesso &;
 
-    [[nodiscard]] std::expected<TextResults, Error> Grep(const GrepRequest &input) const;
-    [[nodiscard]] std::expected<IndexSummary, Error> Index(const IndexRequest &input) const;
-    [[nodiscard]] std::expected<TextResults, Error> Search(const SearchRequest &request) const;
+    [[nodiscard]] auto Grep(const GrepRequest &input) const -> std::expected<TextResults, Error>;
+    [[nodiscard]] auto Index(const IndexRequest &input) const -> std::expected<IndexSummary, Error>;
+    [[nodiscard]] auto Search(const SearchRequest &request) const -> std::expected<TextResults, Error>;
 
   private:
-    [[nodiscard]] std::expected<const embed::Embedder *, Error> Embedder() const;
-    [[nodiscard]] std::expected<const embed::Embedder *, Error> LoadSearchEmbedder() const;
+    [[nodiscard]] auto Embedder() const -> std::expected<const embed::Embedder *, Error>;
+    [[nodiscard]] auto LoadSearchEmbedder() const -> std::expected<const embed::Embedder *, Error>;
 
     Config config_;
     // Created on first use. const operations share that cache.

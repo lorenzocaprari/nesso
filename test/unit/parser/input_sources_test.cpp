@@ -28,10 +28,10 @@ class TempDir
     }
 
     TempDir(const TempDir &) = delete;
-    TempDir &operator=(const TempDir &) = delete;
+    auto operator=(const TempDir &) -> TempDir & = delete;
     ~TempDir() { std::filesystem::remove_all(path_); }
 
-    [[nodiscard]] const std::filesystem::path &Path() const { return path_; }
+    [[nodiscard]] auto Path() const -> const std::filesystem::path & { return path_; }
 
   private:
     std::filesystem::path path_;
@@ -46,7 +46,7 @@ void WriteBytes(const std::filesystem::path &path, std::string_view bytes)
     REQUIRE(output);
 }
 
-std::string Unhex(std::string_view hex)
+auto Unhex(std::string_view hex) -> std::string
 {
     std::string out;
     out.reserve(hex.size() / 2);
@@ -86,7 +86,7 @@ const std::string_view GZIP_JSONL = "1f8b0800f722f26a02ffab56ca4d2d2e4e4c4f55b25
 const std::string_view GZIP_EMPTY = "1f8b0800f722f26a02ff03000000000000000000";
 const std::string_view GZIP_TWO = "1f8b0800f722f26a02ffcbcf4be52a29cfe70200e60bba1208000000";
 
-std::vector<std::string> TextsOf(const std::filesystem::path &path)
+auto TextsOf(const std::filesystem::path &path) -> std::vector<std::string>
 {
     const auto chunks = nesso::parser::Chunker::FromFile(path);
     REQUIRE(chunks);
@@ -289,8 +289,8 @@ TEST_CASE("Chunker maps missing gzip to FileOpenFailure", "[parser][gzip]")
     REQUIRE_FALSE(from_file);
     CHECK(from_file.error() == nesso::parser::ParseError::FileOpenFailure);
 
-    const auto walked =
-        nesso::parser::Chunker::ForEachRecord(missing, 4096, nullptr, "message", [](nesso::parser::ParsedChunk) {});
+    const auto walked = nesso::parser::Chunker::ForEachRecord(missing, 4096, nullptr, "message",
+                                                              [](nesso::parser::ParsedChunk) -> void {});
     REQUIRE_FALSE(walked);
     CHECK(walked.error() == nesso::parser::ParseError::FileOpenFailure);
 

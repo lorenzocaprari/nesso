@@ -79,7 +79,7 @@ struct OverviewResults
 /// "Later" is input order: arguments as given, directories in byte order, so
 /// pass files oldest first. No kept line is `ErrorKind::EmptyInput`. More than
 /// `max_types` types is `ErrorCause::TooManyEventTypes`.
-[[nodiscard]] std::expected<OverviewResults, Error> Overview(const OverviewRequest &request);
+[[nodiscard]] auto Overview(const OverviewRequest &request) -> std::expected<OverviewResults, Error>;
 
 } // namespace nesso
 

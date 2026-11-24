@@ -20,7 +20,7 @@ using namespace nesso::core;
 namespace
 {
 
-std::vector<float> Pack(std::initializer_list<std::span<const float>> rows)
+auto Pack(std::initializer_list<std::span<const float>> rows) -> std::vector<float>
 {
     std::vector<float> matrix;
     for (const std::span<const float> row : rows)
@@ -101,7 +101,7 @@ TEST_CASE("TopK rejects a zero-width or ragged matrix", "[TopK][core][Unit]")
     REQUIRE(ragged.error() == EngineError::CorruptDatabase);
 }
 
-std::uint32_t ScoreBits(float score) { return std::bit_cast<std::uint32_t>(score); }
+auto ScoreBits(float score) -> std::uint32_t { return std::bit_cast<std::uint32_t>(score); }
 
 void RequireSameHits(const std::vector<Hit> &actual, const std::vector<Hit> &expected)
 {
@@ -113,7 +113,7 @@ void RequireSameHits(const std::vector<Hit> &actual, const std::vector<Hit> &exp
     }
 }
 
-std::vector<Hit> OracleTop(std::span<const float> query, std::span<const float> matrix, size_t dims, size_t k)
+auto OracleTop(std::span<const float> query, std::span<const float> matrix, size_t dims, size_t k) -> std::vector<Hit>
 {
     std::vector<Hit> hits;
     const size_t rows = matrix.size() / dims;
@@ -124,7 +124,7 @@ std::vector<Hit> OracleTop(std::span<const float> query, std::span<const float> 
         REQUIRE(score.has_value());
         hits.push_back(Hit{.index = static_cast<uint64_t>(row), .score = *score});
     }
-    const auto better = [](const Hit &left, const Hit &right)
+    const auto better = [](const Hit &left, const Hit &right) -> bool
     { return RankBefore(left.score, left.index, right.score, right.index); };
     detail::SelectTopKInPlace(hits, k, better);
     return hits;
@@ -269,9 +269,9 @@ struct RankContext
     const std::vector<float> *scores = nullptr;
 };
 
-float ContextScore(void *raw, size_t index) { return (*static_cast<const RankContext *>(raw)->scores)[index]; }
+auto ContextScore(void *raw, size_t index) -> float { return (*static_cast<const RankContext *>(raw)->scores)[index]; }
 
-bool ContextKeep(void *raw, size_t index)
+auto ContextKeep(void *raw, size_t index) -> bool
 {
     static_cast<void>(raw);
     return index % 5U != 0U;
@@ -295,7 +295,7 @@ TEST_CASE("RankTop keeps skipped rows out and matches a full sort", "[TopK][core
         }
         expected.push_back(Hit{.index = static_cast<uint64_t>(index), .score = scores[index]});
     }
-    const auto better = [](const Hit &left, const Hit &right)
+    const auto better = [](const Hit &left, const Hit &right) -> bool
     { return RankBefore(left.score, left.index, right.score, right.index); };
 
     for (const size_t threads : {size_t{1}, size_t{2}, size_t{3}, size_t{4}, size_t{7}})
@@ -323,7 +323,7 @@ TEST_CASE("RankTop keeps skipped rows out and matches a full sort", "[TopK][core
 
 TEST_CASE("SelectTopKInPlace clears on empty or zero k", "[TopK][core][Unit]")
 {
-    const auto by_score = [](const Hit &left, const Hit &right) { return left.score > right.score; };
+    const auto by_score = [](const Hit &left, const Hit &right) -> bool { return left.score > right.score; };
 
     std::vector<Hit> results{{.index = 0, .score = 1.0F}};
     detail::SelectTopKInPlace(results, 0, by_score);
@@ -354,7 +354,7 @@ TEST_CASE("RankBefore is a strict weak ordering including NaN and signed zero", 
         {.index = 0, .score = 0.0F},
     }};
 
-    const auto before = [](const Hit &left, const Hit &right)
+    const auto before = [](const Hit &left, const Hit &right) -> bool
     { return RankBefore(left.score, left.index, right.score, right.index); };
 
     for (const Hit &value : values)
@@ -418,7 +418,7 @@ TEST_CASE("RankBefore orders signed zeros by index", "[TopK][core][Unit]")
 TEST_CASE("SelectTopKInPlace places NaN scores last", "[TopK][core][Unit]")
 {
     const float nan = std::numeric_limits<float>::quiet_NaN();
-    const auto better = [](const Hit &left, const Hit &right)
+    const auto better = [](const Hit &left, const Hit &right) -> bool
     { return RankBefore(left.score, left.index, right.score, right.index); };
 
     std::vector<Hit> mixed{{.index = 0, .score = nan},
@@ -450,7 +450,7 @@ TEST_CASE("RankTop with NaN scores matches single and multi-thread results", "[T
         scores[index] = index % 100U == 0U ? static_cast<float>(index % 11U) : nan;
     }
     RankContext context{.scores = &scores};
-    const auto keep_all = [](void *, size_t) { return true; };
+    const auto keep_all = [](void *, size_t) -> bool { return true; };
     constexpr size_t k = 20;
 
     std::vector<Hit> finite_only;
@@ -461,7 +461,7 @@ TEST_CASE("RankTop with NaN scores matches single and multi-thread results", "[T
             finite_only.push_back(Hit{.index = static_cast<uint64_t>(index), .score = scores[index]});
         }
     }
-    const auto better = [](const Hit &left, const Hit &right)
+    const auto better = [](const Hit &left, const Hit &right) -> bool
     { return RankBefore(left.score, left.index, right.score, right.index); };
     detail::SelectTopKInPlace(finite_only, k, better);
 
@@ -508,7 +508,7 @@ TEST_CASE("TopK with NaN rows places them last and matches across threads", "[To
             finite_only.push_back(Hit{.index = static_cast<uint64_t>(row), .score = matrix[row]});
         }
     }
-    const auto better = [](const Hit &left, const Hit &right)
+    const auto better = [](const Hit &left, const Hit &right) -> bool
     { return RankBefore(left.score, left.index, right.score, right.index); };
     detail::SelectTopKInPlace(finite_only, k, better);
     REQUIRE(finite_only.size() < k);

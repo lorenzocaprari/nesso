@@ -57,13 +57,13 @@ class EventTypeTally
 
     /// Records one kept line. Returns false, and records nothing, when the line
     /// has a new key and the tally already holds `max_types` keys.
-    [[nodiscard]] bool Add(const EventLine &line);
+    [[nodiscard]] auto Add(const EventLine &line) -> bool;
 
     /// Every type, in order of first appearance.
-    [[nodiscard]] std::span<const EventTypeStats> Types() const noexcept;
+    [[nodiscard]] auto Types() const noexcept -> std::span<const EventTypeStats>;
 
     /// Kept lines recorded so far.
-    [[nodiscard]] std::uint64_t Lines() const noexcept;
+    [[nodiscard]] auto Lines() const noexcept -> std::uint64_t;
 
   private:
     KeyFunction key_;
@@ -83,8 +83,8 @@ enum class EventOrder : std::uint8_t
 
 /// Indexes into `stats` of the first `top_k` types in `order`. Every key is an
 /// integer, so the result does not depend on the sort algorithm.
-[[nodiscard]] std::vector<std::size_t> RankEventTypes(std::span<const EventTypeStats> stats, EventOrder order,
-                                                      std::size_t top_k);
+[[nodiscard]] auto RankEventTypes(std::span<const EventTypeStats> stats, EventOrder order, std::size_t top_k)
+    -> std::vector<std::size_t>;
 
 } // namespace nesso::core
 

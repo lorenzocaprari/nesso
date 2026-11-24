@@ -26,9 +26,9 @@
 namespace nesso::embed
 {
 
-static size_t AtLeastOne(size_t count) { return count == 0 ? 1 : count; }
+static auto AtLeastOne(size_t count) -> size_t { return count == 0 ? 1 : count; }
 
-static std::uintmax_t PhysicalMemoryBytes()
+static auto PhysicalMemoryBytes() -> std::uintmax_t
 {
     const auto pages = sysconf(_SC_PHYS_PAGES);
     const auto page_size = sysconf(_SC_PAGESIZE);
@@ -39,7 +39,7 @@ static std::uintmax_t PhysicalMemoryBytes()
     return static_cast<std::uintmax_t>(pages) * static_cast<std::uintmax_t>(page_size);
 }
 
-std::uintmax_t MemAvailableBytes(std::istream &meminfo)
+auto MemAvailableBytes(std::istream &meminfo) -> std::uintmax_t
 {
     constexpr std::string_view key = "MemAvailable:";
     std::string line;
@@ -62,7 +62,7 @@ std::uintmax_t MemAvailableBytes(std::istream &meminfo)
     return 0;
 }
 
-static std::string_view Trim(std::string_view text)
+static auto Trim(std::string_view text) -> std::string_view
 {
     while (!text.empty() && (text.front() == ' ' || text.front() == '\t'))
     {
@@ -75,7 +75,7 @@ static std::string_view Trim(std::string_view text)
     return text;
 }
 
-static bool ParseBoundedInt(std::string_view text, int &value)
+static auto ParseBoundedInt(std::string_view text, int &value) -> bool
 {
     if (text.empty())
     {
@@ -95,7 +95,7 @@ static bool ParseBoundedInt(std::string_view text, int &value)
 }
 
 // "0-3,5,8-9". An empty or malformed list is ignored by the caller.
-static std::optional<std::set<int>> ParseCpuList(std::string_view text)
+static auto ParseCpuList(std::string_view text) -> std::optional<std::set<int>>
 {
     text = Trim(text);
     if (text.empty())
@@ -142,7 +142,7 @@ static std::optional<std::set<int>> ParseCpuList(std::string_view text)
 
 // cpu.max is "quota period" microseconds, or "max period". A positive quota
 // below one period is one CPU. nullopt means this file sets no limit.
-static std::optional<size_t> ParseCpuMax(std::string_view text)
+static auto ParseCpuMax(std::string_view text) -> std::optional<size_t>
 {
     text = Trim(text);
     const std::size_t gap = text.find_first_of(" \t");
@@ -169,7 +169,7 @@ static std::optional<size_t> ParseCpuMax(std::string_view text)
     return static_cast<size_t>(cpus == 0 ? 1 : cpus);
 }
 
-static std::optional<std::set<int>> AllowedFromStatus(const std::filesystem::path &status_path)
+static auto AllowedFromStatus(const std::filesystem::path &status_path) -> std::optional<std::set<int>>
 {
     std::ifstream status(status_path);
     if (!status)
@@ -197,7 +197,7 @@ enum class CgroupController : std::uint8_t
 };
 } // namespace
 
-static bool ControllerHas(std::string_view controllers, CgroupController wanted)
+static auto ControllerHas(std::string_view controllers, CgroupController wanted) -> bool
 {
     const std::string_view wanted_name = wanted == CgroupController::Cpu ? "cpu" : "memory";
     std::size_t cursor = 0;
@@ -219,8 +219,8 @@ static bool ControllerHas(std::string_view controllers, CgroupController wanted)
     return false;
 }
 
-static std::optional<size_t> TightestQuota(const std::filesystem::path &root, std::filesystem::path relative,
-                                           const char *file_name)
+static auto TightestQuota(const std::filesystem::path &root, std::filesystem::path relative, const char *file_name)
+    -> std::optional<size_t>
 {
     std::optional<size_t> tightest;
     while (true)
@@ -244,7 +244,7 @@ static std::optional<size_t> TightestQuota(const std::filesystem::path &root, st
     return tightest;
 }
 
-static std::string_view StripSlash(std::string_view path)
+static auto StripSlash(std::string_view path) -> std::string_view
 {
     while (path.starts_with('/'))
     {
@@ -273,7 +273,7 @@ struct CgroupPaths
 };
 } // namespace
 
-static std::optional<CgroupPaths> ReadCgroupPaths(const std::filesystem::path &proc_root)
+static auto ReadCgroupPaths(const std::filesystem::path &proc_root) -> std::optional<CgroupPaths>
 {
     std::ifstream cgroup(proc_root / "self/cgroup");
     if (!cgroup)
@@ -311,7 +311,7 @@ static std::optional<CgroupPaths> ReadCgroupPaths(const std::filesystem::path &p
     return paths;
 }
 
-static std::optional<std::uintmax_t> ParseUintBytes(std::string_view text)
+static auto ParseUintBytes(std::string_view text) -> std::optional<std::uintmax_t>
 {
     text = Trim(text);
     if (text.empty())
@@ -331,7 +331,7 @@ static std::optional<std::uintmax_t> ParseUintBytes(std::string_view text)
     return value;
 }
 
-static std::optional<std::uintmax_t> ReadUintFile(const std::filesystem::path &path)
+static auto ReadUintFile(const std::filesystem::path &path) -> std::optional<std::uintmax_t>
 {
     std::ifstream input(path);
     std::string line;
@@ -361,7 +361,7 @@ struct ProcCgroupRoots
 } // namespace
 
 // nullopt when memory.max is "max", missing, or unreadable.
-static std::optional<std::uintmax_t> V2MemoryHeadroomAt(const std::filesystem::path &directory)
+static auto V2MemoryHeadroomAt(const std::filesystem::path &directory) -> std::optional<std::uintmax_t>
 {
     std::ifstream max_file(directory / "memory.max");
     std::string max_line;
@@ -385,8 +385,8 @@ static std::optional<std::uintmax_t> V2MemoryHeadroomAt(const std::filesystem::p
 
 // Remaining bytes under the tightest finite memory.max on the walk. nullopt
 // when every ancestor is "max" or unreadable.
-static std::optional<std::uintmax_t> TightestV2MemoryHeadroom(const std::filesystem::path &root,
-                                                              std::filesystem::path relative)
+static auto TightestV2MemoryHeadroom(const std::filesystem::path &root, std::filesystem::path relative)
+    -> std::optional<std::uintmax_t>
 {
     std::optional<std::uintmax_t> tightest;
     while (true)
@@ -405,7 +405,7 @@ static std::optional<std::uintmax_t> TightestV2MemoryHeadroom(const std::filesys
     return tightest;
 }
 
-static bool V1MemoryLimitIsUnlimited(std::uintmax_t limit, std::uintmax_t physical_bytes)
+static auto V1MemoryLimitIsUnlimited(std::uintmax_t limit, std::uintmax_t physical_bytes) -> bool
 {
     constexpr std::uintmax_t unlimited_floor = std::uintmax_t{1} << 62U;
     if (limit >= unlimited_floor)
@@ -415,7 +415,8 @@ static bool V1MemoryLimitIsUnlimited(std::uintmax_t limit, std::uintmax_t physic
     return physical_bytes > 0 && limit >= physical_bytes;
 }
 
-static std::optional<std::uintmax_t> TightestV1MemoryHeadroom(const CgroupV1Walk &walk, std::uintmax_t physical_bytes)
+static auto TightestV1MemoryHeadroom(const CgroupV1Walk &walk, std::uintmax_t physical_bytes)
+    -> std::optional<std::uintmax_t>
 {
     std::optional<std::uintmax_t> tightest;
     const std::filesystem::path controller = walk.cgroup_root / "memory";
@@ -440,7 +441,8 @@ static std::optional<std::uintmax_t> TightestV1MemoryHeadroom(const CgroupV1Walk
     return tightest;
 }
 
-static std::optional<std::uintmax_t> CgroupMemoryHeadroom(const ProcCgroupRoots &roots, std::uintmax_t physical_bytes)
+static auto CgroupMemoryHeadroom(const ProcCgroupRoots &roots, std::uintmax_t physical_bytes)
+    -> std::optional<std::uintmax_t>
 {
     const std::optional<CgroupPaths> paths = ReadCgroupPaths(roots.proc_root);
     if (!paths)
@@ -463,7 +465,7 @@ static std::optional<std::uintmax_t> CgroupMemoryHeadroom(const ProcCgroupRoots 
     return tightest;
 }
 
-static std::optional<size_t> TightestV1Quota(const CgroupV1Walk &walk)
+static auto TightestV1Quota(const CgroupV1Walk &walk) -> std::optional<size_t>
 {
     // v1 stores the quota and the period in two files. Rejoin them into the
     // cpu.max shape.
@@ -495,7 +497,7 @@ static std::optional<size_t> TightestV1Quota(const CgroupV1Walk &walk)
     return tightest;
 }
 
-static std::optional<size_t> CgroupCpuLimit(const ProcCgroupRoots &roots)
+static auto CgroupCpuLimit(const ProcCgroupRoots &roots) -> std::optional<size_t>
 {
     const std::optional<CgroupPaths> paths = ReadCgroupPaths(roots.proc_root);
     if (!paths)
@@ -518,7 +520,8 @@ static std::optional<size_t> CgroupCpuLimit(const ProcCgroupRoots &roots)
     return tightest;
 }
 
-static size_t CountPhysicalCores(const std::filesystem::path &cpu_dir, const std::optional<std::set<int>> &allowed)
+static auto CountPhysicalCores(const std::filesystem::path &cpu_dir, const std::optional<std::set<int>> &allowed)
+    -> size_t
 {
     std::set<std::pair<int, int>> cores;
     std::error_code error;
@@ -529,7 +532,8 @@ static size_t CountPhysicalCores(const std::filesystem::path &cpu_dir, const std
         {
             continue;
         }
-        if (!std::ranges::all_of(name.substr(3), [](unsigned char digit) { return digit >= '0' && digit <= '9'; }))
+        if (!std::ranges::all_of(name.substr(3),
+                                 [](unsigned char digit) -> bool { return digit >= '0' && digit <= '9'; }))
         {
             continue;
         }
@@ -555,7 +559,7 @@ static size_t CountPhysicalCores(const std::filesystem::path &cpu_dir, const std
     return cores.size();
 }
 
-MachineResources ReadMachine(const MachineFsRoots &roots)
+auto ReadMachine(const MachineFsRoots &roots) -> MachineResources
 {
     MachineResources machine;
     machine.logical_threads = AtLeastOne(std::thread::hardware_concurrency());
@@ -591,7 +595,7 @@ MachineResources ReadMachine(const MachineFsRoots &roots)
     return machine;
 }
 
-SessionPolicy MakeSessionPolicy(bool quantized, size_t requested_threads, const MachineResources &machine)
+auto MakeSessionPolicy(bool quantized, size_t requested_threads, const MachineResources &machine) -> SessionPolicy
 {
     const size_t logical = AtLeastOne(machine.logical_threads);
     if (!quantized)
@@ -646,7 +650,7 @@ SessionPolicy MakeSessionPolicy(bool quantized, size_t requested_threads, const 
                          .shrink_arena = shrink};
 }
 
-std::string SessionPolicyText(size_t requested_threads, const MachineResources &machine)
+auto SessionPolicyText(size_t requested_threads, const MachineResources &machine) -> std::string
 {
     const SessionPolicy quantized = MakeSessionPolicy(true, requested_threads, machine);
     const SessionPolicy floating = MakeSessionPolicy(false, requested_threads, machine);
@@ -666,7 +670,7 @@ std::string SessionPolicyText(size_t requested_threads, const MachineResources &
     return text;
 }
 
-std::string OverrideWarning(const SessionPolicy &policy, size_t requested_threads)
+auto OverrideWarning(const SessionPolicy &policy, size_t requested_threads) -> std::string
 {
     if (!policy.quantized || requested_threads == 0 || policy.memory_cap == 0 || policy.sessions <= policy.memory_cap)
     {

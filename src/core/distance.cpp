@@ -20,7 +20,7 @@ namespace nesso::core::math
 namespace detail
 {
 
-template <SupportedScalar T> T DotProductScalar(std::span<const T> a, std::span<const T> b) noexcept
+template <SupportedScalar T> auto DotProductScalar(std::span<const T> a, std::span<const T> b) noexcept -> T
 {
     NESSO_ASSERT(a.size() == b.size());
     T sum{};
@@ -31,7 +31,7 @@ template <SupportedScalar T> T DotProductScalar(std::span<const T> a, std::span<
     return sum;
 }
 
-template <SupportedScalar T> T L2SquaredDistanceScalar(std::span<const T> a, std::span<const T> b) noexcept
+template <SupportedScalar T> auto L2SquaredDistanceScalar(std::span<const T> a, std::span<const T> b) noexcept -> T
 {
     NESSO_ASSERT(a.size() == b.size());
     T sum{};
@@ -43,7 +43,7 @@ template <SupportedScalar T> T L2SquaredDistanceScalar(std::span<const T> a, std
     return sum;
 }
 
-DistanceKernel SelectDistanceKernel(std::string_view forced, bool avx2_fma) noexcept
+auto SelectDistanceKernel(std::string_view forced, bool avx2_fma) noexcept -> DistanceKernel
 {
     if (forced == "scalar")
     {
@@ -66,7 +66,7 @@ DistanceKernel SelectDistanceKernel(std::string_view forced, bool avx2_fma) noex
     return DistanceKernel::Scalar;
 }
 
-[[nodiscard]] static bool HostSupportsAvx2Fma() noexcept
+[[nodiscard]] static auto HostSupportsAvx2Fma() noexcept -> bool
 {
 #ifdef _MSC_VER
     // Phase 6 selects AVX2 with __cpuidex and _xgetbv under /arch:AVX2.
@@ -78,9 +78,9 @@ DistanceKernel SelectDistanceKernel(std::string_view forced, bool avx2_fma) noex
 #endif
 }
 
-DistanceKernel SelectedKernel() noexcept
+auto SelectedKernel() noexcept -> DistanceKernel
 {
-    static const DistanceKernel KERNEL = [] noexcept
+    static const DistanceKernel KERNEL = [] noexcept -> DistanceKernel
     {
         // getenv is not thread-safe. The choice is fixed on first use; later
         // calls return the cached kernel and do not read the environment.
@@ -92,7 +92,7 @@ DistanceKernel SelectedKernel() noexcept
     return KERNEL;
 }
 
-float DotProductKernel(DistanceKernel kernel, std::span<const float> a, std::span<const float> b) noexcept
+auto DotProductKernel(DistanceKernel kernel, std::span<const float> a, std::span<const float> b) noexcept -> float
 {
     NESSO_ASSERT(a.size() == b.size());
 #ifdef __x86_64__
@@ -106,7 +106,8 @@ float DotProductKernel(DistanceKernel kernel, std::span<const float> a, std::spa
     return DotProductScalar<float>(a, b);
 }
 
-float L2SquaredDistanceKernel(DistanceKernel kernel, std::span<const float> a, std::span<const float> b) noexcept
+auto L2SquaredDistanceKernel(DistanceKernel kernel, std::span<const float> a, std::span<const float> b) noexcept
+    -> float
 {
     NESSO_ASSERT(a.size() == b.size());
 #ifdef __x86_64__
@@ -129,7 +130,7 @@ template double L2SquaredDistanceScalar<double>(std::span<const double>, std::sp
 
 template <SupportedScalar T>
 // cppcheck-suppress unusedFunction
-std::expected<T, EngineError> CosineSimilarity::Calculate(std::span<const T> a, std::span<const T> b) noexcept
+auto CosineSimilarity::Calculate(std::span<const T> a, std::span<const T> b) noexcept -> std::expected<T, EngineError>
 {
     if (a.size() != b.size()) [[unlikely]]
     {
@@ -165,7 +166,7 @@ template std::expected<double, EngineError> CosineSimilarity::Calculate<double>(
                                                                                 std::span<const double>) noexcept;
 
 template <SupportedScalar T>
-std::expected<T, EngineError> DistanceMetrics::DotProduct(std::span<const T> a, std::span<const T> b) noexcept
+auto DistanceMetrics::DotProduct(std::span<const T> a, std::span<const T> b) noexcept -> std::expected<T, EngineError>
 {
     if (a.size() != b.size()) [[unlikely]]
     {
@@ -190,7 +191,8 @@ template std::expected<double, EngineError> DistanceMetrics::DotProduct<double>(
 
 template <SupportedScalar T>
 // cppcheck-suppress unusedFunction
-std::expected<T, EngineError> DistanceMetrics::L2SquaredDistance(std::span<const T> a, std::span<const T> b) noexcept
+auto DistanceMetrics::L2SquaredDistance(std::span<const T> a, std::span<const T> b) noexcept
+    -> std::expected<T, EngineError>
 {
     if (a.size() != b.size()) [[unlikely]]
     {

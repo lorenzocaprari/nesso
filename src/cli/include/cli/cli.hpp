@@ -29,11 +29,11 @@ struct OverviewCommand
 
 /// Runs one request through the facade and renders the outcome. Returns the
 /// process exit code.
-[[nodiscard]] int Execute(const Nesso &nesso, const GrepCommand &command);
-[[nodiscard]] int Execute(const Nesso &nesso, const IndexRequest &request);
-[[nodiscard]] int Execute(const Nesso &nesso, const SearchRequest &request);
+[[nodiscard]] auto Execute(const Nesso &nesso, const GrepCommand &command) -> int;
+[[nodiscard]] auto Execute(const Nesso &nesso, const IndexRequest &request) -> int;
+[[nodiscard]] auto Execute(const Nesso &nesso, const SearchRequest &request) -> int;
 /// Does not use `nesso`, so no model is loaded.
-[[nodiscard]] int Execute(const Nesso &nesso, const OverviewCommand &command);
+[[nodiscard]] auto Execute(const Nesso &nesso, const OverviewCommand &command) -> int;
 
 } // namespace nesso::cli
 

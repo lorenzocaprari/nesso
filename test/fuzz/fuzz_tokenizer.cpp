@@ -16,7 +16,7 @@ namespace
 
 constexpr std::size_t MAX_ENCODE_BYTES = 65536;
 
-std::string BytesFrom(const std::uint8_t *data, std::size_t size)
+auto BytesFrom(const std::uint8_t *data, std::size_t size) -> std::string
 {
     if (data == nullptr || size == 0)
     {
@@ -27,7 +27,7 @@ std::string BytesFrom(const std::uint8_t *data, std::size_t size)
 
 } // namespace
 
-extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t *data, std::size_t size)
+extern "C" auto LLVMFuzzerTestOneInput(const std::uint8_t *data, std::size_t size) -> int
 {
     const std::string bytes = BytesFrom(data, size);
     const auto input_path =
@@ -67,7 +67,7 @@ extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t *data, std::size_t size
 
 // libFuzzer supplies main. The AFL++ CI job keeps this file-input entry point.
 #ifndef NESSO_LIBFUZZER
-int main(int argc, char *argv[])
+auto main(int argc, char *argv[]) -> int
 {
     if (argc < 2)
     {

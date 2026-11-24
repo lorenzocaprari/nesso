@@ -18,9 +18,9 @@ class TraceSession
     TraceSession();
     ~TraceSession();
     TraceSession(const TraceSession &) = delete;
-    TraceSession &operator=(const TraceSession &) = delete;
+    auto operator=(const TraceSession &) -> TraceSession & = delete;
     TraceSession(TraceSession &&) = delete;
-    TraceSession &operator=(TraceSession &&) = delete;
+    auto operator=(TraceSession &&) -> TraceSession & = delete;
 
   private:
     bool active_ = false;
@@ -33,9 +33,9 @@ class ScopedStage
     explicit ScopedStage(std::string_view name);
     ~ScopedStage();
     ScopedStage(const ScopedStage &) = delete;
-    ScopedStage &operator=(const ScopedStage &) = delete;
+    auto operator=(const ScopedStage &) -> ScopedStage & = delete;
     ScopedStage(ScopedStage &&) = delete;
-    ScopedStage &operator=(ScopedStage &&) = delete;
+    auto operator=(ScopedStage &&) -> ScopedStage & = delete;
 
   private:
     bool active_ = false;

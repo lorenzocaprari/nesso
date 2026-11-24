@@ -27,7 +27,7 @@ struct CloseFile
     }
 };
 
-std::string Captured(std::FILE *file)
+auto Captured(std::FILE *file) -> std::string
 {
     REQUIRE(std::fflush(file) == 0);
     REQUIRE(std::fseek(file, 0, SEEK_SET) == 0);

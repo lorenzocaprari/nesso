@@ -12,7 +12,7 @@
 #include <iostream>
 #include <variant>
 
-int main(int argc, char *argv[]) noexcept
+auto main(int argc, char *argv[]) noexcept -> int
 {
     try
     {
@@ -25,7 +25,7 @@ int main(int argc, char *argv[]) noexcept
         }
 
         const nesso::Nesso nesso{parsed->config};
-        return std::visit([&nesso](const auto &request) { return nesso::cli::Execute(nesso, request); },
+        return std::visit([&nesso](const auto &request) -> auto { return nesso::cli::Execute(nesso, request); },
                           parsed->request);
     }
     catch (const std::format_error &e)

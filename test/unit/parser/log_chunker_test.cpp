@@ -1,6 +1,7 @@
 #include <catch2/catch_all.hpp>
 #include <parser/log_chunker.hpp>
 
+#include <fcntl.h>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -27,7 +28,7 @@ void WriteBytes(const std::filesystem::path &path, std::string_view bytes)
 class FailingInput final : public std::streambuf
 {
   private:
-    int_type underflow() override { throw std::ios_base::failure("read failed"); }
+    auto underflow() -> int_type override { throw std::ios_base::failure("read failed"); }
 };
 
 class FailingAfterPrefix final : public std::streambuf
@@ -40,7 +41,7 @@ class FailingAfterPrefix final : public std::streambuf
     }
 
   private:
-    int_type underflow() override { throw std::ios_base::failure("read failed after probe"); }
+    auto underflow() -> int_type override { throw std::ios_base::failure("read failed after probe"); }
     std::string prefix_ = std::string(4096, 'a');
 };
 
@@ -59,9 +60,9 @@ class ScopedCin
         std::cin.clear(state_);
     }
     ScopedCin(const ScopedCin &) = delete;
-    ScopedCin &operator=(const ScopedCin &) = delete;
+    auto operator=(const ScopedCin &) -> ScopedCin & = delete;
     ScopedCin(ScopedCin &&) = delete;
-    ScopedCin &operator=(ScopedCin &&) = delete;
+    auto operator=(ScopedCin &&) -> ScopedCin & = delete;
 
   private:
     std::streambuf *original_;
@@ -218,7 +219,7 @@ TEST_CASE("Chunker reads any non-JSON name as lines", "[Chunker][parser][Unit]")
     std::filesystem::remove_all(directory);
     std::filesystem::create_directories(directory);
 
-    const auto expect_line = [&](const char *name)
+    const auto expect_line = [&](const char *name) -> void
     {
         const auto path = directory / name;
         WriteBytes(path, "database connection refused\n");
@@ -462,7 +463,7 @@ struct Limited
     size_t truncated = 0;
 };
 
-Limited LimitedLine(const std::string &line, size_t max_line_length)
+auto LimitedLine(const std::string &line, size_t max_line_length) -> Limited
 {
     const auto directory = std::filesystem::temp_directory_path() / "nesso-chunker-limit";
     std::filesystem::create_directories(directory);
@@ -560,8 +561,8 @@ TEST_CASE("Chunker reports stdin read failures", "[Chunker][parser][Unit]")
     {
         FailingInput input;
         const ScopedCin redirected{input};
-        const auto result =
-            nesso::parser::Chunker::ForEachRecord("-", 4096, nullptr, "message", [](nesso::parser::ParsedChunk) {});
+        const auto result = nesso::parser::Chunker::ForEachRecord("-", 4096, nullptr, "message",
+                                                                  [](nesso::parser::ParsedChunk) -> void {});
         REQUIRE_FALSE(result);
         REQUIRE(result.error() == nesso::parser::ParseError::FileOpenFailure);
     }
@@ -613,7 +614,7 @@ TEST_CASE("Chunker preserves stdin probe and record behavior", "[Chunker][parser
         const ScopedCin redirected{*input.rdbuf()};
         std::vector<nesso::parser::ParsedChunk> records;
         REQUIRE(nesso::parser::Chunker::ForEachRecord("-", 5, nullptr, "message",
-                                                      [&records](nesso::parser::ParsedChunk record)
+                                                      [&records](nesso::parser::ParsedChunk record) -> void
                                                       { records.push_back(std::move(record)); }));
         REQUIRE(records.size() == 2);
         REQUIRE(records[0].text == "aaaaa");
@@ -756,7 +757,7 @@ TEST_CASE("Chunker does not re-read stdin records as files", "[Chunker][parser][
 TEST_CASE("Chunker reports non-rewindable file input", "[Chunker][parser][Unit]")
 {
     int descriptors[2]{};
-    REQUIRE(pipe(descriptors) == 0);
+    REQUIRE(pipe2(descriptors, O_CLOEXEC) == 0);
     constexpr std::string_view message = "message\n";
     REQUIRE(write(descriptors[1], message.data(), message.size()) == static_cast<ssize_t>(message.size()));
     REQUIRE(close(descriptors[1]) == 0);
@@ -766,7 +767,7 @@ TEST_CASE("Chunker reports non-rewindable file input", "[Chunker][parser][Unit]"
     REQUIRE_FALSE(chunks);
     REQUIRE(chunks.error() == nesso::parser::ParseError::FileOpenFailure);
 
-    REQUIRE(pipe(descriptors) == 0);
+    REQUIRE(pipe2(descriptors, O_CLOEXEC) == 0);
     const auto source = std::filesystem::path("/proc/self/fd") / std::to_string(descriptors[0]);
     const auto record = nesso::parser::Chunker::ReadRecord(
         source, {.text = {}, .line_number = 1, .byte_offset = 0, .array_element = false, .byte_length = 1}, "message",
@@ -788,8 +789,8 @@ TEST_CASE("Chunker propagates consumer failures for kept and skipped records", "
     WriteBytes(log, "kept\n\n");
     WriteBytes(jsonl, "{bad\n");
     WriteBytes(json, "[{\"message\":\"kept\"},{\"missing\":1}]");
-    const auto fail_kept = [](nesso::parser::ParsedChunk) { throw std::runtime_error("consumer failed"); };
-    const auto fail_skipped = [](const nesso::parser::ParsedChunk &record)
+    const auto fail_kept = [](nesso::parser::ParsedChunk) -> void { throw std::runtime_error("consumer failed"); };
+    const auto fail_skipped = [](const nesso::parser::ParsedChunk &record) -> void
     {
         if (record.skipped)
         {
@@ -841,7 +842,8 @@ TEST_CASE("Chunker propagates consumer failures for kept and skipped records", "
     }
     SECTION("consumer I/O exceptions are not input failures")
     {
-        const auto fail_io = [](nesso::parser::ParsedChunk) { throw std::ios_base::failure("consumer I/O failure"); };
+        const auto fail_io = [](nesso::parser::ParsedChunk) -> void
+        { throw std::ios_base::failure("consumer I/O failure"); };
         REQUIRE_THROWS_AS(nesso::parser::Chunker::ForEachRecord(json, 4096, nullptr, "message", fail_io),
                           std::ios_base::failure);
         REQUIRE_THROWS_AS(nesso::parser::Chunker::ForEachRecord(jsonl, 4096, nullptr, "message", fail_io),
@@ -894,7 +896,7 @@ TEST_CASE("Chunker skips non-object JSON array elements", "[Chunker][parser][Uni
     nesso::parser::ParseStats stats{};
     std::vector<nesso::parser::ParsedChunk> records;
     const auto walked = nesso::parser::Chunker::ForEachRecord(path, 4096, &stats, "message",
-                                                              [&records](nesso::parser::ParsedChunk chunk)
+                                                              [&records](nesso::parser::ParsedChunk chunk) -> void
                                                               { records.push_back(std::move(chunk)); });
     std::filesystem::remove(path);
     REQUIRE(walked);

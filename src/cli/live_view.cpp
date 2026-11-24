@@ -22,7 +22,7 @@
 namespace nesso::cli
 {
 
-bool LiveViewEnabled(const LiveViewInputs &inputs) noexcept
+auto LiveViewEnabled(const LiveViewInputs &inputs) noexcept -> bool
 {
     if (inputs.requested.has_value() && !*inputs.requested)
     {
@@ -36,7 +36,7 @@ bool LiveViewEnabled(const LiveViewInputs &inputs) noexcept
     return !term.empty() && term != "dumb";
 }
 
-std::size_t TerminalWidth(int descriptor) noexcept
+auto TerminalWidth(int descriptor) noexcept -> std::size_t
 {
     winsize size{};
     // TIOCGWINSZ comes from <sys/ioctl.h> through kernel headers.
@@ -48,7 +48,7 @@ std::size_t TerminalWidth(int descriptor) noexcept
     return FALLBACK_TERMINAL_WIDTH;
 }
 
-std::string_view CutToColumns(std::string_view text, std::size_t columns) noexcept
+auto CutToColumns(std::string_view text, std::size_t columns) noexcept -> std::string_view
 {
     std::size_t count = 0;
     for (std::size_t index = 0; index < text.size(); ++index)
@@ -123,10 +123,11 @@ void LiveView::OnScanDone() noexcept
     rows_drawn_ = 0;
 }
 
-std::unique_ptr<LiveView> MakeStderrLiveView()
+auto MakeStderrLiveView() -> std::unique_ptr<LiveView>
 {
     return std::make_unique<LiveView>(
-        stderr, [] { return std::chrono::steady_clock::now(); }, TerminalWidth(STDERR_FILENO));
+        stderr, [] -> std::chrono::steady_clock::time_point { return std::chrono::steady_clock::now(); },
+        TerminalWidth(STDERR_FILENO));
 }
 
 } // namespace nesso::cli

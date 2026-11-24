@@ -32,12 +32,12 @@ class TempDir
     }
 
     TempDir(const TempDir &) = delete;
-    TempDir &operator=(const TempDir &) = delete;
+    auto operator=(const TempDir &) -> TempDir & = delete;
     TempDir(TempDir &&) = delete;
-    TempDir &operator=(TempDir &&) = delete;
+    auto operator=(TempDir &&) -> TempDir & = delete;
     ~TempDir() { std::filesystem::remove_all(path_); }
 
-    [[nodiscard]] const std::filesystem::path &Path() const { return path_; }
+    [[nodiscard]] auto Path() const -> const std::filesystem::path & { return path_; }
 
   private:
     std::filesystem::path path_;
@@ -54,29 +54,31 @@ void WriteFile(const std::filesystem::path &path, std::string_view text)
 class CountingEmbedder final : public nesso::embed::Embedder
 {
   public:
-    [[nodiscard]] size_t sessions() const noexcept override { return 1; }
+    [[nodiscard]] auto sessions() const noexcept -> size_t override { return 1; }
 
-    [[nodiscard]] std::expected<nesso::embed::EmbedderIdentity, nesso::embed::EmbedError> identity() const override
+    [[nodiscard]] auto identity() const
+        -> std::expected<nesso::embed::EmbedderIdentity, nesso::embed::EmbedError> override
     {
         return TestEmbedderIdentity();
     }
 
-    [[nodiscard]] std::expected<std::vector<float>, nesso::embed::EmbedError> embed(std::string_view) const override
+    [[nodiscard]] auto embed(std::string_view) const
+        -> std::expected<std::vector<float>, nesso::embed::EmbedError> override
     {
         ++embeds_;
         return std::vector<float>{1.F, 0.F, 0.F, 0.F};
     }
 
-    [[nodiscard]] std::expected<std::vector<std::vector<float>>, nesso::embed::EmbedError>
-    EmbedBatch(std::span<const std::string> texts, ProgressCallback) const override
+    [[nodiscard]] auto EmbedBatch(std::span<const std::string> texts, ProgressCallback) const
+        -> std::expected<std::vector<std::vector<float>>, nesso::embed::EmbedError> override
     {
         ++batches_;
         return std::vector<std::vector<float>>(texts.size(), std::vector<float>{0.25F, 0.F, 0.F, 0.F});
     }
 
-    [[nodiscard]] size_t Embeds() const { return embeds_; }
+    [[nodiscard]] auto Embeds() const -> size_t { return embeds_; }
 
-    [[nodiscard]] size_t Batches() const { return batches_; }
+    [[nodiscard]] auto Batches() const -> size_t { return batches_; }
 
   private:
     mutable size_t embeds_ = 0;

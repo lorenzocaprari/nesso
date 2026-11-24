@@ -32,21 +32,21 @@ class Embedder
     using ProgressCallback = std::function<void(size_t completed, size_t total)>;
 
     Embedder(const Embedder &) = delete;
-    Embedder &operator=(const Embedder &) = delete;
+    auto operator=(const Embedder &) -> Embedder & = delete;
     Embedder(Embedder &&) = delete;
-    Embedder &operator=(Embedder &&) = delete;
+    auto operator=(Embedder &&) -> Embedder & = delete;
     virtual ~Embedder() = default;
 
-    [[nodiscard]] virtual size_t sessions() const noexcept = 0;
+    [[nodiscard]] virtual auto sessions() const noexcept -> size_t = 0;
 
     /// Identity of the loaded model and vocabulary. Only index and search need to
     /// compute it.
-    [[nodiscard]] virtual std::expected<EmbedderIdentity, EmbedError> identity() const = 0;
+    [[nodiscard]] virtual auto identity() const -> std::expected<EmbedderIdentity, EmbedError> = 0;
 
-    [[nodiscard]] virtual std::expected<std::vector<float>, EmbedError> embed(std::string_view text) const = 0;
+    [[nodiscard]] virtual auto embed(std::string_view text) const -> std::expected<std::vector<float>, EmbedError> = 0;
 
-    [[nodiscard]] virtual std::expected<std::vector<std::vector<float>>, EmbedError>
-    EmbedBatch(std::span<const std::string> texts, ProgressCallback progress) const = 0;
+    [[nodiscard]] virtual auto EmbedBatch(std::span<const std::string> texts, ProgressCallback progress) const
+        -> std::expected<std::vector<std::vector<float>>, EmbedError> = 0;
 
   protected:
     Embedder() = default;

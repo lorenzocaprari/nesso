@@ -14,12 +14,12 @@
 namespace
 {
 
-nesso::core::EventLine Line(std::string_view text, std::uint64_t line = 1)
+auto Line(std::string_view text, std::uint64_t line = 1) -> nesso::core::EventLine
 {
     return {.source = "app.log", .line = line, .array_element = false, .text = text};
 }
 
-nesso::core::EventTypeStats Stats(std::uint64_t count, std::uint64_t first_seen)
+auto Stats(std::uint64_t count, std::uint64_t first_seen) -> nesso::core::EventTypeStats
 {
     return {.key = std::to_string(first_seen),
             .count = count,
@@ -31,7 +31,7 @@ nesso::core::EventTypeStats Stats(std::uint64_t count, std::uint64_t first_seen)
             .text = std::to_string(first_seen)};
 }
 
-std::vector<std::string> KeysOf(const nesso::core::EventTypeTally &tally, const std::vector<std::size_t> &order)
+auto KeysOf(const nesso::core::EventTypeTally &tally, const std::vector<std::size_t> &order) -> std::vector<std::string>
 {
     std::vector<std::string> keys;
     keys.reserve(order.size());
@@ -100,7 +100,8 @@ TEST_CASE("each line's type count is its dedup occurrence count", "[event_types]
 
 TEST_CASE("a key function replaces the masked key", "[event_types]")
 {
-    nesso::core::EventTypeTally tally{4, [](std::string_view text) { return std::string{text.substr(0, 1)}; }};
+    nesso::core::EventTypeTally tally{4, [](std::string_view text) -> std::string
+                                      { return std::string{text.substr(0, 1)}; }};
     REQUIRE(tally.Add(Line("a 1")));
     REQUIRE(tally.Add(Line("a 2")));
     REQUIRE(tally.Add({.source = "rows.json", .line = 3, .array_element = true, .text = "b 1"}));

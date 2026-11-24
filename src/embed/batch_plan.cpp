@@ -24,7 +24,7 @@ struct BatchBudget
 
 // Ascending order makes tokens(next) the padded length of the run that would
 // include it.
-[[nodiscard]] static bool FitsBudget(const BatchBudget &budget)
+[[nodiscard]] static auto FitsBudget(const BatchBudget &budget) -> bool
 {
     if (budget.count >= BATCH_MAX_TEXTS)
     {
@@ -38,7 +38,7 @@ struct BatchBudget
     return next <= BATCH_TOKEN_BUDGET / budget.tokens;
 }
 
-BatchPlan PlanBatches(std::span<const size_t> token_counts)
+auto PlanBatches(std::span<const size_t> token_counts) -> BatchPlan
 {
     BatchPlan plan;
     for (size_t window_start = 0; window_start < token_counts.size(); window_start += BATCH_WINDOW)
@@ -46,7 +46,7 @@ BatchPlan PlanBatches(std::span<const size_t> token_counts)
         const size_t window_end = std::min(token_counts.size(), window_start + BATCH_WINDOW);
         std::vector<size_t> order(window_end - window_start);
         std::ranges::iota(order, window_start);
-        std::ranges::stable_sort(order, [&token_counts](size_t left, size_t right)
+        std::ranges::stable_sort(order, [&token_counts](size_t left, size_t right) -> bool
                                  { return token_counts[left] < token_counts[right]; });
 
         std::vector<size_t> current;
@@ -66,7 +66,7 @@ BatchPlan PlanBatches(std::span<const size_t> token_counts)
     return plan;
 }
 
-std::vector<BatchWave> BatchWaves(size_t batch_count, size_t sessions)
+auto BatchWaves(size_t batch_count, size_t sessions) -> std::vector<BatchWave>
 {
     std::vector<BatchWave> waves;
     if (sessions == 0)
@@ -87,7 +87,7 @@ std::vector<BatchWave> BatchWaves(size_t batch_count, size_t sessions)
     return waves;
 }
 
-std::vector<size_t> ExecutionOrder(const BatchPlan &plan)
+auto ExecutionOrder(const BatchPlan &plan) -> std::vector<size_t>
 {
     std::vector<size_t> order;
     for (const PlannedBatch &batch : plan.batches)

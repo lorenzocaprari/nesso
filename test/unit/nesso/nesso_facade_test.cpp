@@ -50,13 +50,13 @@ class TempDir
     }
 
     TempDir(const TempDir &) = delete;
-    TempDir &operator=(const TempDir &) = delete;
+    auto operator=(const TempDir &) -> TempDir & = delete;
     TempDir(TempDir &&) = delete;
-    TempDir &operator=(TempDir &&) = delete;
+    auto operator=(TempDir &&) -> TempDir & = delete;
 
     ~TempDir() { std::filesystem::remove_all(path_); }
 
-    [[nodiscard]] const std::filesystem::path &Path() const { return path_; }
+    [[nodiscard]] auto Path() const -> const std::filesystem::path & { return path_; }
 
   private:
     std::filesystem::path path_;
@@ -70,7 +70,7 @@ void WriteBytes(const std::filesystem::path &path, const void *data, size_t size
     REQUIRE(output);
 }
 
-nesso::core::CorpusPolicy TestPolicy()
+auto TestPolicy() -> nesso::core::CorpusPolicy
 {
     const auto identity = TestEmbedderIdentity();
     return {{"batch", "window:1024,max:32,tokens:1024,order:length-then-input,run:single"},
@@ -103,19 +103,19 @@ void WriteFixtureCorpus(const std::filesystem::path &path, nesso::core::CorpusPo
     REQUIRE(writer->Finish());
 }
 
-nesso::Nesso WithMissingModel(const std::filesystem::path &root)
+auto WithMissingModel(const std::filesystem::path &root) -> nesso::Nesso
 {
     return nesso::Nesso{nesso::Config{.model_dir = root / "no-models"}};
 }
 
-std::uint32_t MixByte(std::uint32_t hash, unsigned char byte)
+auto MixByte(std::uint32_t hash, unsigned char byte) -> std::uint32_t
 {
     hash ^= byte;
     hash *= 16777619u;
     return hash;
 }
 
-std::uint32_t MixText(std::uint32_t hash, std::string_view text)
+auto MixText(std::uint32_t hash, std::string_view text) -> std::uint32_t
 {
     for (const char byte : text)
     {
@@ -124,7 +124,7 @@ std::uint32_t MixText(std::uint32_t hash, std::string_view text)
     return hash;
 }
 
-std::vector<float> VectorFor(std::string_view text, std::uint32_t window)
+auto VectorFor(std::string_view text, std::uint32_t window) -> std::vector<float>
 {
     std::vector<float> values(4);
     std::uint32_t hash = MixText(2166136261u, text);
@@ -148,22 +148,23 @@ class RecordingEmbedder final : public nesso::embed::Embedder
     {
     }
 
-    [[nodiscard]] size_t sessions() const noexcept override { return sessions_; }
+    [[nodiscard]] auto sessions() const noexcept -> size_t override { return sessions_; }
 
-    [[nodiscard]] std::expected<nesso::embed::EmbedderIdentity, nesso::embed::EmbedError> identity() const override
+    [[nodiscard]] auto identity() const
+        -> std::expected<nesso::embed::EmbedderIdentity, nesso::embed::EmbedError> override
     {
         return identity_;
     }
 
-    [[nodiscard]] std::expected<std::vector<float>, nesso::embed::EmbedError>
-    embed(std::string_view text) const override
+    [[nodiscard]] auto embed(std::string_view text) const
+        -> std::expected<std::vector<float>, nesso::embed::EmbedError> override
     {
         queries_.emplace_back(text);
         return std::vector<float>{1.F, 0.F, 0.F, 0.F};
     }
 
-    [[nodiscard]] std::expected<std::vector<std::vector<float>>, nesso::embed::EmbedError>
-    EmbedBatch(std::span<const std::string> texts, ProgressCallback progress) const override
+    [[nodiscard]] auto EmbedBatch(std::span<const std::string> texts, ProgressCallback progress) const
+        -> std::expected<std::vector<std::vector<float>>, nesso::embed::EmbedError> override
     {
         batches_.push_back(texts.size());
         texts_.insert(texts_.end(), texts.begin(), texts.end());
@@ -190,13 +191,13 @@ class RecordingEmbedder final : public nesso::embed::Embedder
         return embeddings;
     }
 
-    [[nodiscard]] const std::vector<size_t> &Batches() const { return batches_; }
+    [[nodiscard]] auto Batches() const -> const std::vector<size_t> & { return batches_; }
 
     /// Every text `EmbedBatch` received, in order.
-    [[nodiscard]] const std::vector<std::string> &Texts() const { return texts_; }
+    [[nodiscard]] auto Texts() const -> const std::vector<std::string> & { return texts_; }
 
     /// Every text `embed` received, in order.
-    [[nodiscard]] const std::vector<std::string> &Queries() const { return queries_; }
+    [[nodiscard]] auto Queries() const -> const std::vector<std::string> & { return queries_; }
 
   private:
     size_t sessions_;
@@ -206,7 +207,7 @@ class RecordingEmbedder final : public nesso::embed::Embedder
     mutable std::vector<std::string> queries_;
 };
 
-std::string LetterSuffix(std::size_t index)
+auto LetterSuffix(std::size_t index) -> std::string
 {
     std::string suffix;
     do
@@ -228,7 +229,7 @@ void WriteLines(const std::filesystem::path &path, size_t count, std::string_vie
     REQUIRE(output);
 }
 
-std::string ReadFile(const std::filesystem::path &path)
+auto ReadFile(const std::filesystem::path &path) -> std::string
 {
     std::ifstream input(path, std::ios::binary);
     REQUIRE(input);
@@ -319,7 +320,7 @@ TEST_CASE("search names the first identity key that differs from the loaded mode
 {
     const TempDir dir{"nesso_facade_identity"};
     const nesso::Nesso app{nesso::Config{}, std::make_unique<RecordingEmbedder>()};
-    const auto write = [&dir](const std::string &name, const nesso::core::CorpusPolicy &policy)
+    const auto write = [&dir](const std::string &name, const nesso::core::CorpusPolicy &policy) -> std::filesystem::path
     {
         const auto path = dir.Path() / name;
         auto writer = nesso::core::CorpusWriter::Create(path, policy);
@@ -333,7 +334,7 @@ TEST_CASE("search names the first identity key that differs from the loaded mode
         REQUIRE(writer->Finish());
         return path;
     };
-    const auto refused = [&app](const std::filesystem::path &path)
+    const auto refused = [&app](const std::filesystem::path &path) -> nesso::ModelMismatchDetail
     {
         const auto searched = app.Search({.query = "alpha", .index = path});
         REQUIRE_FALSE(searched.has_value());
@@ -466,7 +467,7 @@ TEST_CASE("a missing default model lists every directory it tried", "[nesso][tex
         model_env == nullptr ? std::nullopt : std::optional<std::string>{model_env};
     const std::optional<std::string> saved_xdg =
         xdg_env == nullptr ? std::nullopt : std::optional<std::string>{xdg_env};
-    const auto restore = [&]
+    const auto restore = [&] -> void
     {
         std::filesystem::current_path(previous_dir);
         if (saved_model)
@@ -725,7 +726,7 @@ TEST_CASE("a distinct text keeps the same vector when duplicates are added", "[n
     REQUIRE(plain_chunks->size() == 3);
     REQUIRE(copy_chunks->size() == 6);
 
-    const auto same_bytes = [](const std::vector<float> &left, const std::vector<float> &right)
+    const auto same_bytes = [](const std::vector<float> &left, const std::vector<float> &right) -> bool
     {
         REQUIRE(left.size() == right.size());
         REQUIRE_FALSE(left.empty());
@@ -745,7 +746,7 @@ TEST_CASE("a distinct text keeps the same vector when duplicates are added", "[n
     REQUIRE(copy_hits->matches.size() == 6);
     for (const nesso::TextMatch &match : copy_hits->matches)
     {
-        const auto found = std::ranges::find_if(plain_hits->matches, [&match](const nesso::TextMatch &plain)
+        const auto found = std::ranges::find_if(plain_hits->matches, [&match](const nesso::TextMatch &plain) -> bool
                                                 { return plain.text == match.text; });
         REQUIRE(found != plain_hits->matches.end());
         CHECK(match.score == found->score);
@@ -765,7 +766,7 @@ void WriteText(const std::filesystem::path &path, std::string_view text)
 }
 
 // Line number to dense score, for every match.
-std::vector<std::pair<std::uint64_t, float>> DenseScores(const std::vector<nesso::TextMatch> &matches)
+auto DenseScores(const std::vector<nesso::TextMatch> &matches) -> std::vector<std::pair<std::uint64_t, float>>
 {
     std::vector<std::pair<std::uint64_t, float>> scores;
     scores.reserve(matches.size());
@@ -809,7 +810,7 @@ TEST_CASE("index and grep embed each line's message, not its header", "[nesso][t
     CHECK(grep_probe->Queries() == std::vector<std::string>{query});
     // Output keeps each line's own text, header included.
     REQUIRE(grepped->matches.size() == 4);
-    CHECK(std::ranges::any_of(grepped->matches, [](const nesso::TextMatch &match)
+    CHECK(std::ranges::any_of(grepped->matches, [](const nesso::TextMatch &match) -> bool
                               { return match.text.starts_with("Jun  9 06:06:20 combo sshd[42]: "); }));
 
     const auto found =
@@ -859,7 +860,7 @@ TEST_CASE("search warns on a corpus that embedded whole lines", "[nesso][text]")
     const TempDir dir{"nesso_facade_embed_text"};
     const nesso::Nesso app{nesso::Config{}, std::make_unique<RecordingEmbedder>()};
 
-    const auto search = [&](std::string_view name, nesso::core::CorpusPolicy policy)
+    const auto search = [&](std::string_view name, nesso::core::CorpusPolicy policy) -> bool
     {
         const auto path = dir.Path() / name;
         WriteFixtureCorpus(path, std::move(policy));

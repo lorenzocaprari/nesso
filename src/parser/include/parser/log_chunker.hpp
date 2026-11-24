@@ -82,36 +82,36 @@ class Chunker
     /// `maxLineLength` counts UTF-8 code points, and a longer value is cut after
     /// that many without splitting a sequence. A byte that does not start a
     /// complete sequence counts as one code point.
-    [[nodiscard]] static std::expected<void, ParseError>
-    ForEach(const std::filesystem::path &path, size_t max_line_length, ParseStats *stats, std::string_view json_field,
-            const std::function<void(ParsedChunk)> &consume, const ArchiveLimits &limits = {});
+    [[nodiscard]] static auto ForEach(const std::filesystem::path &path, size_t max_line_length, ParseStats *stats,
+                                      std::string_view json_field, const std::function<void(ParsedChunk)> &consume,
+                                      const ArchiveLimits &limits = {}) -> std::expected<void, ParseError>;
 
     /// Also visits skipped input records, in source order.
-    [[nodiscard]] static std::expected<void, ParseError> ForEachRecord(const std::filesystem::path &path,
-                                                                       size_t max_line_length, ParseStats *stats,
-                                                                       std::string_view json_field,
-                                                                       const std::function<void(ParsedChunk)> &consume,
-                                                                       const ArchiveLimits &limits = {});
+    [[nodiscard]] static auto ForEachRecord(const std::filesystem::path &path, size_t max_line_length,
+                                            ParseStats *stats, std::string_view json_field,
+                                            const std::function<void(ParsedChunk)> &consume,
+                                            const ArchiveLimits &limits = {}) -> std::expected<void, ParseError>;
 
     /// Re-read a kept file record using its source metadata, field and code-point
     /// limit. JSON values are decoded. Stdin and archive members cannot be
     /// re-read this way. `key` supplies lineNumber, byteOffset, byteLength, and
     /// arrayElement.
-    [[nodiscard]] static std::expected<std::string, ParseError> ReadRecord(const std::filesystem::path &path,
-                                                                           const ParsedChunk &key,
-                                                                           std::string_view json_field,
-                                                                           size_t max_line_length);
+    [[nodiscard]] static auto ReadRecord(const std::filesystem::path &path, const ParsedChunk &key,
+                                         std::string_view json_field, size_t max_line_length)
+        -> std::expected<std::string, ParseError>;
 
-    [[nodiscard]] static std::expected<std::vector<ParsedChunk>, ParseError>
-    FromFile(const std::filesystem::path &path, size_t max_line_length = 4096, ParseStats *stats = nullptr,
-             std::string_view json_field = "message", const ArchiveLimits &limits = {});
+    [[nodiscard]] static auto FromFile(const std::filesystem::path &path, size_t max_line_length = 4096,
+                                       ParseStats *stats = nullptr, std::string_view json_field = "message",
+                                       const ArchiveLimits &limits = {})
+        -> std::expected<std::vector<ParsedChunk>, ParseError>;
 
-    [[nodiscard]] static std::expected<std::vector<ParsedChunk>, ParseError>
-    FromLogFile(const std::filesystem::path &path, size_t max_line_length = 4096, ParseStats *stats = nullptr);
+    [[nodiscard]] static auto FromLogFile(const std::filesystem::path &path, size_t max_line_length = 4096,
+                                          ParseStats *stats = nullptr)
+        -> std::expected<std::vector<ParsedChunk>, ParseError>;
 
-    [[nodiscard]] static std::expected<std::vector<ParsedChunk>, ParseError>
-    FromJsonFile(const std::filesystem::path &path, ParseStats *stats = nullptr,
-                 std::string_view json_field = "message", size_t max_line_length = 4096);
+    [[nodiscard]] static auto FromJsonFile(const std::filesystem::path &path, ParseStats *stats = nullptr,
+                                           std::string_view json_field = "message", size_t max_line_length = 4096)
+        -> std::expected<std::vector<ParsedChunk>, ParseError>;
 };
 
 } // namespace nesso::parser

@@ -126,23 +126,29 @@ static void AssertMappedShape(const MappedShape &shape, const Layout &layout, bo
 MappedCorpus::MappedCorpus(std::unique_ptr<Impl> impl) : impl_(std::move(impl)) {}
 MappedCorpus::~MappedCorpus() = default;
 MappedCorpus::MappedCorpus(MappedCorpus &&) noexcept = default;
-MappedCorpus &MappedCorpus::operator=(MappedCorpus &&) noexcept = default;
+auto MappedCorpus::operator=(MappedCorpus &&) noexcept -> MappedCorpus & = default;
 
-const CorpusPolicy &MappedCorpus::Policy() const noexcept { return impl_->policy; }
-std::uint32_t MappedCorpus::Dimensions() const noexcept { return impl_->dimensions; }
-std::span<const SourceInfo> MappedCorpus::Sources() const noexcept { return impl_->sources; }
-std::span<const CorpusLine> MappedCorpus::Lines() const noexcept { return impl_->lines; }
-std::span<const std::string_view> MappedCorpus::Texts() const noexcept { return impl_->texts; }
-std::span<const float> MappedCorpus::Matrix() const noexcept { return impl_->matrix; }
-std::span<const std::string_view> MappedCorpus::LexicalDictionary() const noexcept { return impl_->lexical_dictionary; }
-std::span<const LexicalLinePostings> MappedCorpus::LexicalPostings() const noexcept { return impl_->lexical_postings; }
-LexicalStatus MappedCorpus::GetLexicalStatus() const noexcept { return impl_->lexical_status; }
-std::string_view MappedCorpus::CorpusLexicalTermsVersion() const noexcept
+auto MappedCorpus::Policy() const noexcept -> const CorpusPolicy & { return impl_->policy; }
+auto MappedCorpus::Dimensions() const noexcept -> std::uint32_t { return impl_->dimensions; }
+auto MappedCorpus::Sources() const noexcept -> std::span<const SourceInfo> { return impl_->sources; }
+auto MappedCorpus::Lines() const noexcept -> std::span<const CorpusLine> { return impl_->lines; }
+auto MappedCorpus::Texts() const noexcept -> std::span<const std::string_view> { return impl_->texts; }
+auto MappedCorpus::Matrix() const noexcept -> std::span<const float> { return impl_->matrix; }
+auto MappedCorpus::LexicalDictionary() const noexcept -> std::span<const std::string_view>
+{
+    return impl_->lexical_dictionary;
+}
+auto MappedCorpus::LexicalPostings() const noexcept -> std::span<const LexicalLinePostings>
+{
+    return impl_->lexical_postings;
+}
+auto MappedCorpus::GetLexicalStatus() const noexcept -> LexicalStatus { return impl_->lexical_status; }
+auto MappedCorpus::CorpusLexicalTermsVersion() const noexcept -> std::string_view
 {
     return impl_->corpus_lexical_terms_version;
 }
 
-static bool ReadLayoutFields(std::span<const std::byte> bytes, Layout &layout)
+static auto ReadLayoutFields(std::span<const std::byte> bytes, Layout &layout) -> bool
 {
     return bytes.size() >= HEADER_BYTES && ReadU32(bytes, 8, layout.policy_bytes) &&
            ReadU32(bytes, 12, layout.dimensions) && ReadU64(bytes, 16, layout.source_count) &&
@@ -163,12 +169,13 @@ struct ParsedHeader
 };
 } // namespace
 
-static CorpusMapFailure MakeMapFailure(EngineError code, const std::optional<std::uint32_t> &version = std::nullopt)
+static auto MakeMapFailure(EngineError code, const std::optional<std::uint32_t> &version = std::nullopt)
+    -> CorpusMapFailure
 {
     return {.code = code, .version = version};
 }
 
-static std::expected<ParsedHeader, CorpusMapFailure> MapCorpusHeader(std::span<const std::byte> bytes)
+static auto MapCorpusHeader(std::span<const std::byte> bytes) -> std::expected<ParsedHeader, CorpusMapFailure>
 {
     std::uint32_t version = 0;
     if (bytes.size() < 8 || std::memcmp(bytes.data(), MAGIC.data(), MAGIC.size()) != 0 || !ReadU32(bytes, 4, version))
@@ -196,19 +203,19 @@ static std::expected<ParsedHeader, CorpusMapFailure> MapCorpusHeader(std::span<c
     return ParsedHeader{.layout = layout, .version = version};
 }
 
-static bool CorpusShapeBroken(const Layout &layout)
+static auto CorpusShapeBroken(const Layout &layout) -> bool
 {
     return layout.policy_bytes > MAX_POLICY_BYTES || layout.dimensions > MAX_DIMENSIONS ||
            (layout.distinct_count > 0 && layout.dimensions == 0);
 }
 
-static bool CorpusLimitsExceeded(const Layout &layout)
+static auto CorpusLimitsExceeded(const Layout &layout) -> bool
 {
     return layout.source_count > MAX_SOURCES || layout.line_count > MAX_LINES || layout.distinct_count > MAX_DISTINCT ||
            layout.lexical_bytes > MAX_LEXICAL_BYTES;
 }
 
-static bool CorpusOffsetsBroken(const Layout &layout, std::uint64_t file_size)
+static auto CorpusOffsetsBroken(const Layout &layout, std::uint64_t file_size) -> bool
 {
     return layout.policy_offset != HEADER_BYTES ||
            layout.source_offset != AlignUp(HEADER_BYTES + layout.policy_bytes, 8) ||
@@ -218,7 +225,7 @@ static bool CorpusOffsetsBroken(const Layout &layout, std::uint64_t file_size)
            layout.matrix_offset % 64 != 0;
 }
 
-static bool CorpusSectionsBroken(const Layout &layout, std::span<const std::byte> bytes)
+static auto CorpusSectionsBroken(const Layout &layout, std::span<const std::byte> bytes) -> bool
 {
     return layout.source_count > (layout.line_offset - layout.source_offset) / SOURCE_RECORD_BYTES ||
            layout.distinct_offset - layout.line_offset != layout.line_count * LINE_RECORD_BYTES ||
@@ -227,7 +234,7 @@ static bool CorpusSectionsBroken(const Layout &layout, std::span<const std::byte
            !IsZero(bytes, HEADER_BYTES + layout.policy_bytes, layout.source_offset);
 }
 
-static bool CorpusLexicalBroken(const Layout &layout, std::span<const std::byte> bytes, bool has_lexical)
+static auto CorpusLexicalBroken(const Layout &layout, std::span<const std::byte> bytes, bool has_lexical) -> bool
 {
     return has_lexical &&
            (layout.stored_offset > layout.lexical_offset || layout.lexical_offset > layout.matrix_offset ||
@@ -236,15 +243,15 @@ static bool CorpusLexicalBroken(const Layout &layout, std::span<const std::byte>
             !IsZero(bytes, layout.lexical_offset + layout.lexical_bytes, layout.matrix_offset));
 }
 
-static bool CorpusMatrixBroken(const Layout &layout, std::uint64_t file_size)
+static auto CorpusMatrixBroken(const Layout &layout, std::uint64_t file_size) -> bool
 {
     const std::uint64_t matrix_bytes = layout.distinct_count * layout.dimensions * sizeof(float);
     return !RangeInside(layout.matrix_offset, matrix_bytes, file_size) ||
            layout.matrix_offset + matrix_bytes != file_size;
 }
 
-static std::expected<void, EngineError> ValidateCorpusLayout(const Layout &layout, std::span<const std::byte> bytes,
-                                                             bool has_lexical)
+static auto ValidateCorpusLayout(const Layout &layout, std::span<const std::byte> bytes, bool has_lexical)
+    -> std::expected<void, EngineError>
 {
     if (CorpusShapeBroken(layout))
     {
@@ -276,8 +283,8 @@ struct SourceRecordFields
 };
 } // namespace
 
-static bool SourceRecordRejected(std::span<const std::byte> bytes, std::uint64_t record, std::uint64_t source_cursor,
-                                 std::uint64_t line_limit, SourceRecordFields &fields)
+static auto SourceRecordRejected(std::span<const std::byte> bytes, std::uint64_t record, std::uint64_t source_cursor,
+                                 std::uint64_t line_limit, SourceRecordFields &fields) -> bool
 {
     std::uint32_t reserved = 0;
     return !ReadU64(bytes, record, fields.path_at) || !ReadU32(bytes, record + 8, fields.path_length) ||
@@ -291,8 +298,8 @@ static bool SourceRecordRejected(std::span<const std::byte> bytes, std::uint64_t
            !RangeInside(fields.field_at, fields.field_length, line_limit);
 }
 
-static std::expected<void, EngineError> LoadMappedSources(std::span<const std::byte> bytes, const Layout &layout,
-                                                          std::vector<SourceInfo> &sources)
+static auto LoadMappedSources(std::span<const std::byte> bytes, const Layout &layout, std::vector<SourceInfo> &sources)
+    -> std::expected<void, EngineError>
 {
     sources.reserve(static_cast<std::size_t>(layout.source_count));
     std::uint64_t source_cursor = layout.source_offset + (layout.source_count * SOURCE_RECORD_BYTES);
@@ -325,8 +332,8 @@ static std::expected<void, EngineError> LoadMappedSources(std::span<const std::b
     return {};
 }
 
-static std::expected<void, EngineError> LoadMappedDistinctTexts(std::span<const std::byte> bytes, const Layout &layout,
-                                                                std::vector<std::string_view> &texts)
+static auto LoadMappedDistinctTexts(std::span<const std::byte> bytes, const Layout &layout,
+                                    std::vector<std::string_view> &texts) -> std::expected<void, EngineError>
 {
     texts.reserve(static_cast<std::size_t>(layout.distinct_count));
     std::unordered_set<std::string_view> seen_texts;
@@ -369,8 +376,8 @@ struct LineRecordExtras
 };
 } // namespace
 
-static bool LineRecordRejected(std::span<const std::byte> bytes, std::uint64_t record, std::uint64_t source_count,
-                               std::uint64_t distinct_count, CorpusLine &line, LineRecordExtras &extras)
+static auto LineRecordRejected(std::span<const std::byte> bytes, std::uint64_t record, std::uint64_t source_count,
+                               std::uint64_t distinct_count, CorpusLine &line, LineRecordExtras &extras) -> bool
 {
     std::uint64_t reserved = 0;
     return !ReadU64(bytes, record, line.line_number) || !ReadU64(bytes, record + 8, line.byte_offset) ||
@@ -395,8 +402,8 @@ struct StoredTextSpan
 };
 } // namespace
 
-static std::expected<void, EngineError> TakeStoredLineText(CorpusLine &line, std::span<const std::byte> bytes,
-                                                           const StoredTextSpan &span, std::uint64_t &stored_cursor)
+static auto TakeStoredLineText(CorpusLine &line, std::span<const std::byte> bytes, const StoredTextSpan &span,
+                               std::uint64_t &stored_cursor) -> std::expected<void, EngineError>
 {
     if ((span.flags & LINE_STORED_TEXT) != 0)
     {
@@ -419,7 +426,7 @@ static void AssertLoadedLines(const Layout &layout, std::span<const SourceInfo> 
 {
     NESSO_ASSERT(lines.size() == layout.line_count);
     NESSO_ASSERT(std::ranges::all_of(lines,
-                                     [&](const CorpusLine &line)
+                                     [&](const CorpusLine &line) -> bool
                                      {
                                          return line.source_index < sources.size() &&
                                                 (line.distinct_id == NO_DISTINCT ||
@@ -427,9 +434,9 @@ static void AssertLoadedLines(const Layout &layout, std::span<const SourceInfo> 
                                      }));
 }
 
-static std::expected<void, EngineError> LoadMappedLines(std::span<const std::byte> bytes, const Layout &layout,
-                                                        bool has_lexical, std::span<const SourceInfo> sources,
-                                                        std::vector<CorpusLine> &lines)
+static auto LoadMappedLines(std::span<const std::byte> bytes, const Layout &layout, bool has_lexical,
+                            std::span<const SourceInfo> sources, std::vector<CorpusLine> &lines)
+    -> std::expected<void, EngineError>
 {
     lines.reserve(static_cast<std::size_t>(layout.line_count));
     std::vector<bool> used(static_cast<std::size_t>(layout.distinct_count));
@@ -473,7 +480,7 @@ static std::expected<void, EngineError> LoadMappedLines(std::span<const std::byt
         line.array_element = (extras.flags & LINE_ARRAY_ELEMENT) != 0;
         lines.push_back(line);
     }
-    if (std::ranges::any_of(used, [](bool value) { return !value; }) ||
+    if (std::ranges::any_of(used, [](bool value) -> bool { return !value; }) ||
         (has_lexical ? stored_cursor != layout.lexical_offset : !IsZero(bytes, stored_cursor, layout.matrix_offset)))
     {
         return std::unexpected(EngineError::CorruptDatabase);
@@ -482,10 +489,9 @@ static std::expected<void, EngineError> LoadMappedLines(std::span<const std::byt
     return {};
 }
 
-static std::expected<void, EngineError> DecodeMappedLexical(std::span<const std::byte> bytes, const Layout &layout,
-                                                            std::vector<std::string> &owned_terms,
-                                                            std::vector<std::string_view> &dictionary,
-                                                            std::vector<LexicalLinePostings> &postings)
+static auto DecodeMappedLexical(std::span<const std::byte> bytes, const Layout &layout,
+                                std::vector<std::string> &owned_terms, std::vector<std::string_view> &dictionary,
+                                std::vector<LexicalLinePostings> &postings) -> std::expected<void, EngineError>
 {
     return DecodeLexicalSection(
         bytes.subspan(static_cast<std::size_t>(layout.lexical_offset), static_cast<std::size_t>(layout.lexical_bytes)),
@@ -502,7 +508,7 @@ static void ApplyLexicalPolicy(bool has_lexical, const CorpusPolicy &policy, std
     status = LexicalStatusOf(has_lexical, policy);
 }
 
-std::expected<MappedCorpusFile, CorpusMapFailure> MapCorpusFile(const std::filesystem::path &path)
+auto MapCorpusFile(const std::filesystem::path &path) -> std::expected<MappedCorpusFile, CorpusMapFailure>
 {
     auto mapped = nesso::platform::MappedFile::Open(path);
     if (!mapped)
@@ -519,7 +525,8 @@ std::expected<MappedCorpusFile, CorpusMapFailure> MapCorpusFile(const std::files
     }
     const Layout &layout = header->layout;
     const std::uint32_t version = header->version;
-    const auto fail = [version](EngineError code) { return std::unexpected(MakeMapFailure(code, version)); };
+    const auto fail = [version](EngineError code) -> std::unexpected<nesso::core::CorpusMapFailure>
+    { return std::unexpected(MakeMapFailure(code, version)); };
     // Pre-postings v3 used lexicalOffset=lexicalBytes=0. Those corpora stay
     // readable for dense search; new writers always emit a non-empty section.
     const bool has_lexical = layout.lexical_offset != 0 || layout.lexical_bytes != 0;
@@ -580,7 +587,7 @@ std::expected<MappedCorpusFile, CorpusMapFailure> MapCorpusFile(const std::files
     return MappedCorpusFile{.corpus = MappedCorpus{std::move(impl)}, .version = version};
 }
 
-std::expected<std::vector<CorpusChunk>, EngineError> ReadCorpusFile(const std::filesystem::path &path)
+auto ReadCorpusFile(const std::filesystem::path &path) -> std::expected<std::vector<CorpusChunk>, EngineError>
 {
     auto mapped = MapCorpusFile(path);
     if (!mapped)

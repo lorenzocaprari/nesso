@@ -28,13 +28,13 @@ class MappedFile
     MappedFile() = default;
     ~MappedFile();
     MappedFile(const MappedFile &) = delete;
-    MappedFile &operator=(const MappedFile &) = delete;
+    auto operator=(const MappedFile &) -> MappedFile & = delete;
     MappedFile(MappedFile &&other) noexcept;
-    MappedFile &operator=(MappedFile &&other) noexcept;
+    auto operator=(MappedFile &&other) noexcept -> MappedFile &;
 
-    [[nodiscard]] static std::expected<MappedFile, FileError> Open(const std::filesystem::path &path);
+    [[nodiscard]] static auto Open(const std::filesystem::path &path) -> std::expected<MappedFile, FileError>;
 
-    [[nodiscard]] std::span<const std::byte> Bytes() const noexcept;
+    [[nodiscard]] auto Bytes() const noexcept -> std::span<const std::byte>;
 
   private:
     std::byte *data_ = nullptr;
@@ -42,11 +42,11 @@ class MappedFile
 };
 
 /// Replaces `destination` with `source`. `source` is removed on success.
-[[nodiscard]] std::expected<void, FileError> ReplaceFileAtomically(const std::filesystem::path &source,
-                                                                   const std::filesystem::path &destination);
+[[nodiscard]] auto ReplaceFileAtomically(const std::filesystem::path &source, const std::filesystem::path &destination)
+    -> std::expected<void, FileError>;
 
 /// Peak resident set size in bytes, from getrusage. Zero when the query fails.
-[[nodiscard]] std::int64_t PeakResidentBytes() noexcept;
+[[nodiscard]] auto PeakResidentBytes() noexcept -> std::int64_t;
 
 } // namespace nesso::platform
 

@@ -12,7 +12,7 @@
 namespace nesso::core
 {
 
-ZScoreStats ComputeZScoreStats(std::span<const double> values)
+auto ComputeZScoreStats(std::span<const double> values) -> ZScoreStats
 {
     ZScoreStats stats;
     if (values.empty())
@@ -49,7 +49,7 @@ ZScoreStats ComputeZScoreStats(std::span<const double> values)
     return stats;
 }
 
-double ZScore(double value, const ZScoreStats &stats) noexcept
+auto ZScore(double value, const ZScoreStats &stats) noexcept -> double
 {
     if (stats.deviation == 0.0)
     {
@@ -58,18 +58,18 @@ double ZScore(double value, const ZScoreStats &stats) noexcept
     return (value - stats.mean) / stats.deviation;
 }
 
-bool HybridUsesCoverage(QueryClass query_class) noexcept { return query_class == QueryClass::NaturalLanguage; }
+auto HybridUsesCoverage(QueryClass query_class) noexcept -> bool { return query_class == QueryClass::NaturalLanguage; }
 
-float FuseHybridScore(double dense, double bm25, double coverage, const ZScoreStats &dense_stats,
-                      const ZScoreStats &bm25_stats) noexcept
+auto FuseHybridScore(double dense, double bm25, double coverage, const ZScoreStats &dense_stats,
+                     const ZScoreStats &bm25_stats) noexcept -> float
 {
     const double lexical = HYBRID_LEXICAL_WEIGHT * ZScore(bm25, bm25_stats) * (coverage * coverage);
     const double fused = (HYBRID_DENSE_WEIGHT * ZScore(dense, dense_stats)) + lexical;
     return static_cast<float>(fused);
 }
 
-std::vector<float> FuseHybridScores(std::span<const double> dense, std::span<const double> bm25,
-                                    std::span<const double> coverage)
+auto FuseHybridScores(std::span<const double> dense, std::span<const double> bm25, std::span<const double> coverage)
+    -> std::vector<float>
 {
     if (dense.size() != bm25.size() || dense.size() != coverage.size())
     {

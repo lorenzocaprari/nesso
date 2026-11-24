@@ -42,13 +42,13 @@ class TempDir
 
     ~TempDir() { std::filesystem::remove_all(path_); }
     TempDir(const TempDir &) = delete;
-    TempDir &operator=(const TempDir &) = delete;
+    auto operator=(const TempDir &) -> TempDir & = delete;
     TempDir(TempDir &&) = delete;
-    TempDir &operator=(TempDir &&) = delete;
-    [[nodiscard]] const std::filesystem::path &Path() const { return path_; }
+    auto operator=(TempDir &&) -> TempDir & = delete;
+    [[nodiscard]] auto Path() const -> const std::filesystem::path & { return path_; }
 
   private:
-    static std::filesystem::path UniquePath()
+    static auto UniquePath() -> std::filesystem::path
     {
         static unsigned counter = 0;
         return std::filesystem::temp_directory_path() /
@@ -58,7 +58,7 @@ class TempDir
     std::filesystem::path path_;
 };
 
-CorpusPolicy Policy(std::uint32_t dimensions = 2)
+auto Policy(std::uint32_t dimensions = 2) -> CorpusPolicy
 {
     return {{"batch", "window:1024,max:32,tokens:1024,order:length-then-input"},
             {"bm25", std::string{nesso::core::BM25_POLICY}},
@@ -74,7 +74,7 @@ CorpusPolicy Policy(std::uint32_t dimensions = 2)
             {"vocab.sha256", std::string(64, 'b')}};
 }
 
-std::vector<std::string> TermsOf(std::string_view text) { return nesso::core::LexicalTerms(text); }
+auto TermsOf(std::string_view text) -> std::vector<std::string> { return nesso::core::LexicalTerms(text); }
 
 void WriteBytes(const std::filesystem::path &path, std::string_view bytes)
 {
@@ -84,14 +84,14 @@ void WriteBytes(const std::filesystem::path &path, std::string_view bytes)
     REQUIRE(output);
 }
 
-std::string ReadBytes(const std::filesystem::path &path)
+auto ReadBytes(const std::filesystem::path &path) -> std::string
 {
     std::ifstream input(path, std::ios::binary);
     REQUIRE(input);
     return {std::istreambuf_iterator<char>{input}, std::istreambuf_iterator<char>{}};
 }
 
-std::uint64_t GetU64(std::string_view bytes, std::size_t offset)
+auto GetU64(std::string_view bytes, std::size_t offset) -> std::uint64_t
 {
     REQUIRE(offset + sizeof(std::uint64_t) <= bytes.size());
     std::uint64_t value = 0;
@@ -151,7 +151,7 @@ void WriteExample(const std::filesystem::path &corpus, const std::filesystem::pa
     REQUIRE(writer->Finish());
 }
 
-bool ReadVarintAt(std::string_view bytes, std::size_t &cursor, std::uint64_t &value)
+auto ReadVarintAt(std::string_view bytes, std::size_t &cursor, std::uint64_t &value) -> bool
 {
     value = 0;
     for (unsigned shift = 0; shift < 64; shift += 7)
@@ -180,7 +180,7 @@ struct LexicalSites
     std::uint64_t term_count = 0;
 };
 
-LexicalSites ParseLexicalSites(std::string_view bytes)
+auto ParseLexicalSites(std::string_view bytes) -> LexicalSites
 {
     const auto origin = GetU64(bytes, 88);
     LexicalSites sites;
@@ -228,7 +228,7 @@ LexicalSites ParseLexicalSites(std::string_view bytes)
     return sites;
 }
 
-bool HasSpill(const std::filesystem::path &directory)
+auto HasSpill(const std::filesystem::path &directory) -> bool
 {
     for (const auto &entry : std::filesystem::directory_iterator(directory))
     {
@@ -699,7 +699,7 @@ TEST_CASE("v3 writer reports each count past its cap as a limit", "[corpus][core
     WriteBytes(path, "old corpus");
     const std::array<CorpusLine, 1> alpha{CorpusLine{.line_number = 1, .distinct_id = 0, .stored_text = "alpha beta"}};
     const std::array<std::vector<std::string>, 1> alpha_terms{TermsOf("alpha beta")};
-    const auto writer_with = [&path](std::uint64_t CorpusLimits::*cap, std::uint64_t value)
+    const auto writer_with = [&path](std::uint64_t CorpusLimits::*cap, std::uint64_t value) -> nesso::core::CorpusWriter
     {
         CorpusLimits limits;
         limits.*cap = value;
@@ -788,7 +788,7 @@ TEST_CASE("v3 policy keeps embed.prefix optional and reads a missing key as none
     other.emplace("embed.prefix", "query-passage-v1");
     CHECK(nesso::core::EmbedPrefixOf(other) == "query-passage-v1");
 
-    const auto write = [&dir](const std::string &name, const CorpusPolicy &policy)
+    const auto write = [&dir](const std::string &name, const CorpusPolicy &policy) -> std::filesystem::path
     {
         const auto path = dir.Path() / name;
         auto writer = CorpusWriter::Create(path, policy);

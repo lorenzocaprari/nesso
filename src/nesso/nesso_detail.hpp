@@ -91,7 +91,7 @@ struct LineCounts
     std::string json_field = "message";
 };
 
-inline bool NoKeptLines(const LineCounts &counts) { return counts.skipped == 0 && counts.binary_entries == 0; }
+inline auto NoKeptLines(const LineCounts &counts) -> bool { return counts.skipped == 0 && counts.binary_entries == 0; }
 
 struct Scan
 {
@@ -111,25 +111,25 @@ enum class EffectiveMode : uint8_t
     Lexical
 };
 
-[[nodiscard]] LineCounts MakeLineCounts(const nesso::parser::ParseStats &stats, std::string json_field);
+[[nodiscard]] auto MakeLineCounts(const nesso::parser::ParseStats &stats, std::string json_field) -> LineCounts;
 
 /// Appends the archive member skips `path` added between `before` and `after`
 /// to `scan.bundle_skips`. Plain files and bundles with no skip add nothing.
 void RecordBundleSkips(Scan &scan, const std::filesystem::path &path, const nesso::parser::ParseStats &before,
                        const nesso::parser::ParseStats &after);
 
-[[nodiscard]] Error MakeError(ErrorKind kind, ErrorCause cause, std::filesystem::path path, LineCounts counts,
-                              std::vector<BundleSkipSummary> bundle_skips = {});
+[[nodiscard]] auto MakeError(ErrorKind kind, ErrorCause cause, std::filesystem::path path, LineCounts counts,
+                             std::vector<BundleSkipSummary> bundle_skips = {}) -> Error;
 
-[[nodiscard]] Error ParseFailure(nesso::parser::ParseError code, std::filesystem::path path, const LineCounts &counts,
-                                 const nesso::parser::ArchiveLimits &limits, std::string_view encrypted_entry = {},
-                                 std::vector<BundleSkipSummary> bundle_skips = {});
+[[nodiscard]] auto ParseFailure(nesso::parser::ParseError code, std::filesystem::path path, const LineCounts &counts,
+                                const nesso::parser::ArchiveLimits &limits, std::string_view encrypted_entry = {},
+                                std::vector<BundleSkipSummary> bundle_skips = {}) -> Error;
 
-[[nodiscard]] bool SameSource(const nesso::core::SourceInfo &left, const nesso::core::SourceInfo &right);
+[[nodiscard]] auto SameSource(const nesso::core::SourceInfo &left, const nesso::core::SourceInfo &right) -> bool;
 
-[[nodiscard]] std::expected<Scan, Error> ScanFiles(std::span<const std::filesystem::path> files,
-                                                   std::string_view json_field,
-                                                   const nesso::parser::ArchiveLimits &limits, bool for_index = false);
+[[nodiscard]] auto ScanFiles(std::span<const std::filesystem::path> files, std::string_view json_field,
+                             const nesso::parser::ArchiveLimits &limits, bool for_index = false)
+    -> std::expected<Scan, Error>;
 
 /// Receives the read pass of the sink overload of `ScanFiles`, in input order.
 class ScanSink
@@ -137,9 +137,9 @@ class ScanSink
   public:
     ScanSink() = default;
     ScanSink(const ScanSink &) = delete;
-    ScanSink &operator=(const ScanSink &) = delete;
+    auto operator=(const ScanSink &) -> ScanSink & = delete;
     ScanSink(ScanSink &&) = delete;
-    ScanSink &operator=(ScanSink &&) = delete;
+    auto operator=(ScanSink &&) -> ScanSink & = delete;
     virtual ~ScanSink() = default;
 
     /// Called for each path in `files`, a repeated `-` included, before its
@@ -152,14 +152,13 @@ class ScanSink
 
 /// Same statistics, skips, and errors as the overload above without
 /// `for_index`, in one pass: each chunk goes to `sink`, and stdin is not kept.
-[[nodiscard]] std::expected<Scan, Error> ScanFiles(std::span<const std::filesystem::path> files,
-                                                   std::string_view json_field,
-                                                   const nesso::parser::ArchiveLimits &limits, ScanSink &sink);
+[[nodiscard]] auto ScanFiles(std::span<const std::filesystem::path> files, std::string_view json_field,
+                             const nesso::parser::ArchiveLimits &limits, ScanSink &sink) -> std::expected<Scan, Error>;
 
-[[nodiscard]] std::expected<std::vector<std::filesystem::path>, Error>
-ExpandRequestFiles(std::span<const std::filesystem::path> files);
+[[nodiscard]] auto ExpandRequestFiles(std::span<const std::filesystem::path> files)
+    -> std::expected<std::vector<std::filesystem::path>, Error>;
 
-[[nodiscard]] size_t StreamBatch();
+[[nodiscard]] auto StreamBatch() -> size_t;
 
 struct EmbedProgressSpan
 {
@@ -171,23 +170,25 @@ struct EmbedProgressSpan
 /// Embeds the message of each line in `texts`, without its header
 /// (`parser::SplitLogLine`). `index` and `grep` both embed through here, so a
 /// line gets the same vector from either command. Queries do not pass here.
-[[nodiscard]] std::expected<std::vector<std::vector<float>>, Error>
-EmbedDistinct(std::span<const std::string> texts, const nesso::embed::Embedder &embedder, ProgressReporter &progress,
-              const EmbedProgressSpan &span, const LineCounts &counts);
+[[nodiscard]] auto EmbedDistinct(std::span<const std::string> texts, const nesso::embed::Embedder &embedder,
+                                 ProgressReporter &progress, const EmbedProgressSpan &span, const LineCounts &counts)
+    -> std::expected<std::vector<std::vector<float>>, Error>;
 
-[[nodiscard]] std::expected<nesso::core::CorpusPolicy, Error> MakeCorpusPolicy(const nesso::embed::Embedder &embedder,
-                                                                               const LineCounts &counts);
+[[nodiscard]] auto MakeCorpusPolicy(const nesso::embed::Embedder &embedder, const LineCounts &counts)
+    -> std::expected<nesso::core::CorpusPolicy, Error>;
 
-[[nodiscard]] std::string_view EffectiveModeName(EffectiveMode mode) noexcept;
+[[nodiscard]] auto EffectiveModeName(EffectiveMode mode) noexcept -> std::string_view;
 
-[[nodiscard]] EffectiveMode ResolveEffectiveMode(SearchMode requested, nesso::core::QueryClass query_class) noexcept;
+[[nodiscard]] auto ResolveEffectiveMode(SearchMode requested, nesso::core::QueryClass query_class) noexcept
+    -> EffectiveMode;
 
-[[nodiscard]] std::vector<std::string_view> QueryTermViews(const std::vector<std::string> &terms);
+[[nodiscard]] auto QueryTermViews(const std::vector<std::string> &terms) -> std::vector<std::string_view>;
 
-[[nodiscard]] bool BetterHit(float left_score, uint64_t left_index, float right_score, uint64_t right_index) noexcept;
+[[nodiscard]] auto BetterHit(float left_score, uint64_t left_index, float right_score, uint64_t right_index) noexcept
+    -> bool;
 
 template <typename E>
-[[nodiscard]] std::unexpected<Error> TextFailure(ErrorKind kind, E cause, const LineCounts &counts)
+[[nodiscard]] auto TextFailure(ErrorKind kind, E cause, const LineCounts &counts) -> std::unexpected<Error>
 {
     return std::unexpected(MakeError(kind, CauseOf(cause), {}, counts));
 }

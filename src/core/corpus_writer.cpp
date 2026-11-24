@@ -87,8 +87,8 @@ struct SpilledLine
 };
 } // namespace
 
-static std::expected<SpillFile, EngineError> CreateSpill(const std::filesystem::path &destination,
-                                                         std::string_view suffix)
+static auto CreateSpill(const std::filesystem::path &destination, std::string_view suffix)
+    -> std::expected<SpillFile, EngineError>
 {
     static std::atomic<std::uint64_t> counter{0};
     for (unsigned attempt = 0; attempt < 16; ++attempt)
@@ -119,7 +119,7 @@ static void RemoveFile(const std::filesystem::path &path)
     }
 }
 
-static bool ReadSpilledLine(std::istream &input, SpilledLine &line)
+static auto ReadSpilledLine(std::istream &input, SpilledLine &line) -> bool
 {
     std::uint32_t length = 0;
     if (!ReadU64Stream(input, line.line_number) || !ReadU64Stream(input, line.byte_offset) ||
@@ -133,7 +133,7 @@ static bool ReadSpilledLine(std::istream &input, SpilledLine &line)
     return ReadExact(input, line.stored_text.data(), length);
 }
 
-static bool ReadSpilledText(std::istream &input, std::string &text)
+static auto ReadSpilledText(std::istream &input, std::string &text) -> bool
 {
     std::uint32_t length = 0;
     if (!ReadU32Stream(input, length) || length > MAX_TEXT_BYTES)
@@ -144,13 +144,13 @@ static bool ReadSpilledText(std::istream &input, std::string &text)
     return ReadExact(input, text.data(), length);
 }
 
-static bool Rewind(std::istream &input)
+static auto Rewind(std::istream &input) -> bool
 {
     input.clear();
     input.seekg(0);
     return static_cast<bool>(input);
 }
-static bool SealCorpus(const std::filesystem::path &path)
+static auto SealCorpus(const std::filesystem::path &path) -> bool
 {
     CorpusChecksum checksum{};
     {
@@ -171,7 +171,8 @@ static bool SealCorpus(const std::filesystem::path &path)
     return !file.fail();
 }
 
-std::expected<SourceInfo, EngineError> SourceInfoFor(const std::filesystem::path &path, std::string_view json_field)
+auto SourceInfoFor(const std::filesystem::path &path, std::string_view json_field)
+    -> std::expected<SourceInfo, EngineError>
 {
     SourceInfo source{.path = path.string(), .json_field = std::string{json_field}};
     if (path == "-")
@@ -255,7 +256,7 @@ void CorpusWriter::DiscardSpills(Impl *impl) noexcept
 
 CorpusWriter::~CorpusWriter() { DiscardSpills(impl_.get()); }
 CorpusWriter::CorpusWriter(CorpusWriter &&) noexcept = default;
-CorpusWriter &CorpusWriter::operator=(CorpusWriter &&other) noexcept
+auto CorpusWriter::operator=(CorpusWriter &&other) noexcept -> CorpusWriter &
 {
     if (this != &other)
     {
@@ -265,13 +266,14 @@ CorpusWriter &CorpusWriter::operator=(CorpusWriter &&other) noexcept
     return *this;
 }
 
-std::expected<CorpusWriter, EngineError> CorpusWriter::Create(const std::filesystem::path &path, CorpusPolicy policy)
+auto CorpusWriter::Create(const std::filesystem::path &path, CorpusPolicy policy)
+    -> std::expected<CorpusWriter, EngineError>
 {
     return detail::CorpusWriterAccess::Create(path, std::move(policy), {});
 }
 
-std::expected<CorpusWriter, EngineError>
-detail::CorpusWriterAccess::Create(const std::filesystem::path &path, CorpusPolicy policy, const CorpusLimits &limits)
+auto detail::CorpusWriterAccess::Create(const std::filesystem::path &path, CorpusPolicy policy,
+                                        const CorpusLimits &limits) -> std::expected<CorpusWriter, EngineError>
 {
     const auto dimensions = ValidatePolicy(policy);
     if (!dimensions)
@@ -315,7 +317,7 @@ detail::CorpusWriterAccess::Create(const std::filesystem::path &path, CorpusPoli
     return CorpusWriter{std::move(impl)};
 }
 
-std::expected<std::uint32_t, EngineError> CorpusWriter::AddSource(SourceInfo source)
+auto CorpusWriter::AddSource(SourceInfo source) -> std::expected<std::uint32_t, EngineError>
 {
     if (impl_->failed || impl_->finished)
     {
@@ -335,7 +337,7 @@ std::expected<std::uint32_t, EngineError> CorpusWriter::AddSource(SourceInfo sou
     return source_id;
 }
 
-std::expected<std::uint32_t, EngineError> CorpusWriter::ReserveDistinct(std::string_view text)
+auto CorpusWriter::ReserveDistinct(std::string_view text) -> std::expected<std::uint32_t, EngineError>
 {
     if (impl_->failed || impl_->finished)
     {
@@ -362,7 +364,8 @@ std::expected<std::uint32_t, EngineError> CorpusWriter::ReserveDistinct(std::str
     return distinct_id;
 }
 
-std::expected<void, EngineError> CorpusWriter::AddVector(std::uint32_t distinct_id, std::span<const float> embedding)
+auto CorpusWriter::AddVector(std::uint32_t distinct_id, std::span<const float> embedding)
+    -> std::expected<void, EngineError>
 {
     if (impl_->failed || impl_->finished || distinct_id != impl_->vector_count || distinct_id >= impl_->uses.size())
     {
@@ -381,8 +384,8 @@ std::expected<void, EngineError> CorpusWriter::AddVector(std::uint32_t distinct_
     return {};
 }
 
-std::expected<std::uint32_t, EngineError> CorpusWriter::AddDistinct(std::string_view text,
-                                                                    std::span<const float> embedding)
+auto CorpusWriter::AddDistinct(std::string_view text, std::span<const float> embedding)
+    -> std::expected<std::uint32_t, EngineError>
 {
     if (impl_->vector_count != impl_->uses.size())
     {
@@ -414,9 +417,9 @@ struct LastLineCursor
 };
 } // namespace
 
-static bool AddLineRejected(const CorpusLine &line, std::span<const SourceInfo> sources,
+static auto AddLineRejected(const CorpusLine &line, std::span<const SourceInfo> sources,
                             std::span<const std::uint32_t> uses, std::span<const std::string> terms,
-                            const LastLineCursor &cursor)
+                            const LastLineCursor &cursor) -> bool
 {
     if (line.source_index >= sources.size() || line.line_number == 0 ||
         (line.distinct_id != NO_DISTINCT && line.distinct_id >= uses.size()) ||
@@ -439,11 +442,9 @@ static bool AddLineRejected(const CorpusLine &line, std::span<const SourceInfo> 
            (source.tracked && !RangeInside(line.byte_offset, line.byte_length, source.size));
 }
 
-static std::expected<void, EngineError> ValidateAddLines(std::span<const SourceInfo> sources,
-                                                         std::span<const std::uint32_t> uses,
-                                                         std::span<const CorpusLine> lines,
-                                                         std::span<const std::vector<std::string>> line_terms,
-                                                         LastLineCursor &cursor)
+static auto ValidateAddLines(std::span<const SourceInfo> sources, std::span<const std::uint32_t> uses,
+                             std::span<const CorpusLine> lines, std::span<const std::vector<std::string>> line_terms,
+                             LastLineCursor &cursor) -> std::expected<void, EngineError>
 {
     for (std::size_t index = 0; index < lines.size(); ++index)
     {
@@ -468,10 +469,9 @@ struct SpillCounters
 };
 } // namespace
 
-static std::expected<void, EngineError> SpillAddLines(std::ostream &lines_out, std::ostream &terms_out,
-                                                      std::span<std::uint32_t> uses, SpillCounters &counters,
-                                                      std::span<const CorpusLine> lines,
-                                                      std::span<const std::vector<std::string>> line_terms)
+static auto SpillAddLines(std::ostream &lines_out, std::ostream &terms_out, std::span<std::uint32_t> uses,
+                          SpillCounters &counters, std::span<const CorpusLine> lines,
+                          std::span<const std::vector<std::string>> line_terms) -> std::expected<void, EngineError>
 {
     NESSO_ASSERT(lines.size() == line_terms.size());
     for (std::size_t index = 0; index < lines.size(); ++index)
@@ -511,8 +511,8 @@ static std::expected<void, EngineError> SpillAddLines(std::ostream &lines_out, s
     return {};
 }
 
-std::expected<void, EngineError> CorpusWriter::AddLines(std::span<const CorpusLine> lines,
-                                                        std::span<const std::vector<std::string>> line_terms)
+auto CorpusWriter::AddLines(std::span<const CorpusLine> lines, std::span<const std::vector<std::string>> line_terms)
+    -> std::expected<void, EngineError>
 {
     if (impl_->failed || impl_->finished)
     {
@@ -578,7 +578,7 @@ struct CorpusLayoutSizes
 };
 } // namespace
 
-static CorpusOffsets CorpusLayoutOffsets(std::span<const SourceInfo> sources, const CorpusLayoutSizes &sizes)
+static auto CorpusLayoutOffsets(std::span<const SourceInfo> sources, const CorpusLayoutSizes &sizes) -> CorpusOffsets
 {
     CorpusOffsets offsets;
     offsets.source_offset = AlignUp(HEADER_BYTES + sizes.policy_bytes, 8);
@@ -608,8 +608,8 @@ struct CorpusHeaderCounts
 };
 } // namespace
 
-static bool WriteCorpusHeader(std::ostream &output, std::string_view policy, const CorpusHeaderCounts &counts,
-                              const CorpusOffsets &offsets)
+static auto WriteCorpusHeader(std::ostream &output, std::string_view policy, const CorpusHeaderCounts &counts,
+                              const CorpusOffsets &offsets) -> bool
 {
     return WriteRaw(output, MAGIC.data(), MAGIC.size()) && WriteU32(output, CORPUS_VERSION) &&
            WriteU32(output, static_cast<std::uint32_t>(policy.size())) && WriteU32(output, counts.dimensions) &&
@@ -623,7 +623,8 @@ static bool WriteCorpusHeader(std::ostream &output, std::string_view policy, con
            WritePadding(output, offsets.source_offset - HEADER_BYTES - policy.size());
 }
 
-static bool WriteCorpusSources(std::ostream &output, std::span<const SourceInfo> sources, std::uint64_t source_offset)
+static auto WriteCorpusSources(std::ostream &output, std::span<const SourceInfo> sources, std::uint64_t source_offset)
+    -> bool
 {
     std::uint64_t source_cursor = source_offset + (sources.size() * SOURCE_RECORD_BYTES);
     for (const SourceInfo &source : sources)
@@ -651,8 +652,8 @@ static bool WriteCorpusSources(std::ostream &output, std::span<const SourceInfo>
     return true;
 }
 
-static bool WriteCorpusLineTable(std::istream &lines, std::ostream &output, std::uint64_t line_count,
-                                 std::uint64_t &stored_cursor)
+static auto WriteCorpusLineTable(std::istream &lines, std::ostream &output, std::uint64_t line_count,
+                                 std::uint64_t &stored_cursor) -> bool
 {
     SpilledLine line;
     for (std::uint64_t index = 0; index < line_count; ++index)
@@ -685,8 +686,8 @@ struct DistinctTextLayout
 };
 } // namespace
 
-static bool WriteCorpusDistinctTexts(std::istream &texts, std::istream &lines, std::ostream &output,
-                                     const DistinctTextLayout &layout)
+static auto WriteCorpusDistinctTexts(std::istream &texts, std::istream &lines, std::ostream &output,
+                                     const DistinctTextLayout &layout) -> bool
 {
     std::uint64_t text_cursor = layout.text_offset;
     std::string text;
@@ -723,9 +724,9 @@ struct StoredMatrixCounts
 };
 } // namespace
 
-static bool WriteCorpusStoredAndMatrix(std::istream &lines, std::istream &vectors, std::istream &lexical,
+static auto WriteCorpusStoredAndMatrix(std::istream &lines, std::istream &vectors, std::istream &lexical,
                                        std::ostream &output, const CorpusOffsets &offsets,
-                                       const StoredMatrixCounts &counts)
+                                       const StoredMatrixCounts &counts) -> bool
 {
     SpilledLine line;
     for (std::uint64_t index = 0; index < counts.line_count; ++index)
@@ -767,8 +768,8 @@ struct CorpusSpillStreams
 };
 } // namespace
 
-static bool WriteCorpusSections(const CorpusSpillStreams &streams, const CorpusPolicy &policy,
-                                const CorpusEmitMeta &meta)
+static auto WriteCorpusSections(const CorpusSpillStreams &streams, const CorpusPolicy &policy,
+                                const CorpusEmitMeta &meta) -> bool
 {
     const std::string policy_text = SerializePolicy(policy);
     const CorpusLayoutSizes sizes{.line_count = meta.line_count,
@@ -802,10 +803,10 @@ static bool WriteCorpusSections(const CorpusSpillStreams &streams, const CorpusP
         {.line_count = meta.line_count, .stored_cursor = stored_cursor, .stored_bytes = meta.stored_bytes});
 }
 
-std::expected<void, EngineError> CorpusWriter::Finish()
+auto CorpusWriter::Finish() -> std::expected<void, EngineError>
 {
     if (impl_->failed || impl_->finished || impl_->vector_count != impl_->uses.size() ||
-        std::ranges::any_of(impl_->uses, [](std::uint32_t uses) { return uses == 0; }))
+        std::ranges::any_of(impl_->uses, [](std::uint32_t uses) -> bool { return uses == 0; }))
     {
         return std::unexpected(EngineError::CorruptDatabase);
     }

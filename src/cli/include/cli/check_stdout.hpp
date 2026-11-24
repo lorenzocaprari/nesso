@@ -10,7 +10,7 @@ namespace nesso::cli
 {
 
 /// True when flushing `stream` fails or the stream already has an error.
-[[nodiscard]] inline bool StdoutWriteFailed(FILE *stream) noexcept
+[[nodiscard]] inline auto StdoutWriteFailed(FILE *stream) noexcept -> bool
 {
     return std::fflush(stream) != 0 || std::ferror(stream) != 0;
 }
