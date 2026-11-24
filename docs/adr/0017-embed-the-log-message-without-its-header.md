@@ -31,7 +31,7 @@ Which part of a line should be embedded, how is it cut, and what does a corpus r
 
 Chosen option: "Cut a lossless `{header, message}` split with a fixed grammar and embed the message".
 
-* **Splitter.** `parser::SplitLogLine` (`src/parser/include/parser/line_header.hpp`) returns two views, `header` and `message`, with `header + message` equal to the line, byte for byte. It is one left-to-right pass with no regular expression, locale, or allocation. A header needs a timestamp anchor at the start (ISO 8601 / RFC 3339, RFC 3164, RFC 5424, a bracketed timestamp, an epoch followed by a date, or a compact `YYMMDD HHMMSS` / `YYYYMMDD-HH:MM:SS` form), optionally after a syslog priority, a label column before an epoch, or a log file name (a token containing `.log`) before an ISO timestamp. After the anchor it reads up to 8 fields within 256 bytes, and never takes the last token of the line. A level, the fields after a level, a `name[pid]:` / `component:` tag, and pipe-delimited fields end the header; other fields (numbers, hosts, dates, `[...]`, upper-case words, dotted names) join it only when such a field follows. The header doc comment is the full grammar.
+* **Splitter.** `parser::SplitLogLine` (`src/parser/include/parser/line_header.hpp`) returns two views, `header` and `message`, with `header + message` equal to the line, byte for byte. It is one left-to-right pass with no regular expression, locale, or allocation. A header needs a timestamp anchor at the start (ISO 8601 / RFC 3339, RFC 3164, RFC 5424, a bracketed timestamp, an epoch followed by a date, or a compact `YYMMDD HHMMSS` / `YYYYMMDD-HH:MM:SS` form), optionally after a syslog priority, a label column before an epoch, or a log file name (a token containing `.log`) before an ISO timestamp. After the anchor it reads up to 8 fields within 256 bytes and never takes the last token of the line. Noise fields (dates and times, pids and thread numbers, hosts, `[...]` fields) join the header. A `program[pid]:` tag, and pipe-delimited fields right after the anchor, end the header after them. A level, a dotted component (`org.apache.Main`), or an upper-case subsystem word (`KERNEL`) starts the message, so `FATAL`, `RAS KERNEL`, and Java class names stay embedded. Noise fields join only when such a field follows them; otherwise the header is the anchor alone. The header doc comment is the full grammar.
 * **Fallback.** With no anchor (prose, JSON, `key=value` lines, a leading blank), or when the message would hold no ASCII letter and no non-ASCII byte, the header is empty and the whole line is embedded.
 * **Where the cut is used.** Only in `EmbedDistinct`, which `index` and `grep` both call. Queries are embedded whole. Dedup keys, stored text, BM25 terms, the window promise, and output keep the whole line.
 * **Dedup.** The key stays `MaskTemplate(line)`. A key's vector is the embedding of its first raw line's message, as before it was the first raw line. Two lines with one key differ only in masked tokens, but a range check can still cut them differently (`081109` is a date, `081399` is not; both mask to `<*>`). They share the first line's vector, so `index` and `grep` agree. Lines with different keys and the same message are embedded once per key, as today.
@@ -43,9 +43,24 @@ Chosen option: "Cut a lossless `{header, message}` split with a fixed grammar an
 * Good, because the model sees the message, and long lines keep more message tokens within `tokens.max`.
 * Good, because the split is lossless and kept in one function, so the structured-header work extends it.
 * Neutral, because embedding cost per distinct text is unchanged; shorter inputs make each run cheaper.
-* Bad, because a query whose only clue was in the header (a host name, a level word) loses that clue in dense scoring. BM25 still sees it, so `auto` and `hybrid` keep part of it.
-* Bad, because a message that starts with a word shaped like a tag (`Failed: …`) loses that word to the header.
+* Bad, because a query whose only clue was a host name or a syslog program name loses that clue in dense scoring. BM25 still sees it, so `auto` and `hybrid` keep part of it.
+* Bad, because a message without a level that starts with a word shaped like a tag (`Failed: …`) loses that word to the header.
 * Bad, because existing corpora warn until re-indexed.
+
+### Where the cut ends
+
+The first version cut through the level and the component as well. On the nesso-bench dev split it failed the `eval-retrieval` gate on Hadoop dense paraphrase queries (MRR −0.312, 95% CI [−0.562, −0.062], 8 queries). The losing query looked for "task attempt … no route to host"; the cut had removed `FATAL` and `TaskAttemptListenerImpl`, the words that answered it. Keeping the level, components, and subsystem words, while still cutting syslog program tags and pipe fields, removed every flagged regression on the dev split (local runs, nesso-bench `140bb9e`, `scripts/eval-score-nesso`, baseline `main` after #382):
+
+| Dev report (queries) | Mode | main MRR / nDCG@10 | this rule |
+| --- | --- | --- | --- |
+| all_2k (316) | auto | 0.7664 / 0.7686 | 0.7667 / 0.7755 |
+| all_2k | dense | 0.4380 / 0.4432 | 0.4597 / 0.4709 |
+| formats (72) | auto | 0.8171 / 0.8217 | 0.8106 / 0.8211 |
+| formats | dense | 0.4831 / 0.4920 | 0.4681 / 0.4845 |
+| needle (34) | auto | 0.6201 / 0.6138 | 0.5960 / 0.5901 |
+| needle | dense | 0.6201 / 0.6118 | 0.5679 / 0.5569 |
+
+`eval-retrieval-compare --fail-on-worse` reports no WORSE line on any of the three reports. The needle and formats dense scores are lower but within noise on these query counts. The rule was chosen on the dev split only, after four variants, so the held-out systems scored at release are the check on overfitting.
 
 ### Confirmation
 

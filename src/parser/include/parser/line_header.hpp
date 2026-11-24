@@ -42,32 +42,36 @@ struct LineParts
 ///   an ISO 8601 date and time.
 /// - Anchor: ISO 8601 `YYYY-MM-DD` and `T` or a space and `HH:MM:SS`, with an
 ///   optional `.` or `,` fraction and an optional `Z` or numeric zone; RFC 3164
-///   `Mmm D HH:MM:SS` with an optional year; RFC 5424 `<PRI>1 TIMESTAMP HOST
-///   APP PROCID MSGID SD`; one of those, `Www Mmm DD HH:MM:SS YYYY`, or
+///   `Mmm D HH:MM:SS` with an optional year; RFC 5424 `<PRI>1 TIMESTAMP HOST`
+///   (the rest of an RFC 5424 header must be well formed, and APP-NAME starts
+///   the message); one of those, `Www Mmm DD HH:MM:SS YYYY`, or
 ///   `DD/Mmm/YYYY:HH:MM:SS +zzzz` in square brackets; a 10- or 13-digit epoch
-///   followed by a date; `YYMMDD HHMMSS`; or `YYYYMMDD-HH:MM:SS` with optional
+///   followed by a date; `YYMMDD HHMMSS`; or `YYYYMMDD-H:M:S` with optional
 ///   milliseconds. Months, days, hours, minutes, and seconds are range
 ///   checked.
 ///
-/// After the anchor the scan reads up to `MAX_HEADER_FIELDS` fields, separated
-/// by blanks, a ` - `, or a `|`:
+/// The header holds what says when and where, not what happened. After the
+/// anchor the scan reads up to `MAX_HEADER_FIELDS` fields, separated by blanks
+/// or a ` - `:
 ///
-/// - Speculative fields: another date or time, a number of 1 to 7 digits, a
-///   host (the token after an RFC 3164 timestamp, or letters and digits joined
-///   by `-`, `.`, `:`, `/`, or `_`), a `[...]` field, an upper-case word of 2
-///   to 10 bytes, or a dotted name such as `app.db`.
-/// - A level (`TRACE`, `DEBUG`, `INFO`, `WARN`, `ERROR`, `FATAL`, and the
-///   other syslog severities, any case, bare or as `[x]`, `<x>`, or `x:`) ends
-///   the header so far. After it, a dotted component and `[...]` fields do too.
-/// - A tag, `name`, an optional `(sub)`, an optional `[pid]`, and a `:` before
-///   a blank, ends the header and the scan.
-/// - After an anchor followed by `|`, each field that ends in `|` ends the
-///   header so far.
+/// - Noise fields join the header: another date or time, a number of 1 to 7
+///   digits (a pid or thread), a host (the token after an RFC 3164 timestamp,
+///   or letters and digits joined by `-`, `.`, `:`, `/`, or `_`), and a `[...]`
+///   field of up to 128 bytes.
+/// - A program tag ends the header after it: `name`, an optional `(sub)`, an
+///   optional `[pid]`, and a `:` before a blank, as in `sshd[42]:`.
+/// - A field with meaning starts the message: a level (`TRACE`, `DEBUG`,
+///   `INFO`, `WARN`, `ERROR`, `FATAL`, and the other syslog severities, any
+///   case, bare or as `[x]`, `<x>`, or `x:`), a dotted component such as
+///   `org.apache.Main`, or an upper-case subsystem word of 2 to 10 bytes such
+///   as `KERNEL`. A tag after it stays in the message too.
+/// - After an anchor followed by `|`, each field that ends in `|` joins the
+///   header. A `|` after a noise field ends the header at the anchor.
 ///
-/// Speculative fields join the header only when a later field ends it. The
-/// header also takes the separator after its last field. A field joins only
-/// when it and that separator fit in `MAX_HEADER_BYTES` and text follows them,
-/// so the last token of a line is always in the message.
+/// Noise fields join the header only when a tag or a field with meaning
+/// follows them; otherwise the header is the anchor alone. The header also
+/// takes the separator after its last field. A field joins only when it and
+/// that separator fit in `MAX_HEADER_BYTES` and text follows them.
 ///
 /// The header is empty and the message is the whole line when no anchor starts
 /// the line (prose, a leading blank, JSON, `key=value` fields), or when the

@@ -827,7 +827,7 @@ TEST_CASE("lines that share a dedup key embed the first line's message", "[nesso
     constexpr std::string_view first = "081109 203615 148 INFO dfs.DataNode: block received";
     constexpr std::string_view second = "081399 203615 148 INFO dfs.DataNode: block received";
     REQUIRE(nesso::parser::MaskTemplate(first) == nesso::parser::MaskTemplate(second));
-    REQUIRE(nesso::parser::SplitLogLine(first).message == "block received");
+    REQUIRE(nesso::parser::SplitLogLine(first).message == "INFO dfs.DataNode: block received");
     REQUIRE(nesso::parser::SplitLogLine(second).header.empty());
 
     const TempDir dir{"nesso_facade_shared_key"};
@@ -839,7 +839,7 @@ TEST_CASE("lines that share a dedup key embed the first line's message", "[nesso
     const nesso::Nesso index_app{nesso::Config{}, std::move(index_embedder)};
     const auto corpus = dir.Path() / "shared.nesso";
     REQUIRE(index_app.Index({.files = {log}, .output = corpus}).has_value());
-    CHECK(index_probe->Texts() == std::vector<std::string>{"block received"});
+    CHECK(index_probe->Texts() == std::vector<std::string>{"INFO dfs.DataNode: block received"});
 
     auto grep_embedder = std::make_unique<RecordingEmbedder>();
     const RecordingEmbedder *grep_probe = grep_embedder.get();
@@ -847,7 +847,7 @@ TEST_CASE("lines that share a dedup key embed the first line's message", "[nesso
     const auto grepped =
         grep_app.Grep({.query = "block", .files = {log}, .top_k = 10, .mode = nesso::SearchMode::Dense});
     REQUIRE(grepped.has_value());
-    CHECK(grep_probe->Texts() == std::vector<std::string>{"block received"});
+    CHECK(grep_probe->Texts() == std::vector<std::string>{"INFO dfs.DataNode: block received"});
     REQUIRE(grepped->matches.size() == 2);
     CHECK(grepped->matches[0].score == grepped->matches[1].score);
     CHECK(grepped->matches[0].occurrences == 2);

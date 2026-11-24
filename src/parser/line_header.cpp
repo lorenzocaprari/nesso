@@ -435,7 +435,8 @@ static std::size_t SkipStructuredData(std::string_view text, std::size_t index) 
     return cursor == index ? NO_MATCH : cursor;
 }
 
-// RFC 5424 after the priority: `1 TIMESTAMP HOST APP PROCID MSGID SD`.
+// RFC 5424 after the priority: `1 TIMESTAMP HOST APP PROCID MSGID SD`. The
+// header ends after HOST: APP-NAME is a program name and stays in the message.
 static std::size_t MatchRfc5424(std::string_view text, std::size_t index) noexcept
 {
     if (!At(text, index, '1') || !At(text, index + 1, ' '))
@@ -447,6 +448,7 @@ static std::size_t MatchRfc5424(std::string_view text, std::size_t index) noexce
     {
         return NO_MATCH;
     }
+    std::size_t host_end = NO_MATCH;
     for (int field = 0; field < 4; ++field)
     {
         const std::size_t start = ++cursor;
@@ -458,8 +460,12 @@ static std::size_t MatchRfc5424(std::string_view text, std::size_t index) noexce
         {
             return NO_MATCH;
         }
+        if (field == 0)
+        {
+            host_end = cursor;
+        }
     }
-    return SkipStructuredData(text, cursor + 1);
+    return SkipStructuredData(text, cursor + 1) == NO_MATCH ? NO_MATCH : host_end;
 }
 
 // Blanks, then an optional `|` or a `-` between blanks, then blanks.
@@ -693,17 +699,19 @@ static std::size_t MatchHost(std::string_view text, std::size_t index, bool any_
 struct FieldScan
 {
     std::size_t position = 0;
-    std::size_t commit = 0;
-    bool level_seen = false;
     bool host_next = false;
 };
 
 enum class FieldKind : std::uint8_t
 {
     None,
-    Speculative,
-    Commit,
-    Last
+    // Timestamps, numbers, hosts, and `[...]` fields: cut with the header.
+    Noise,
+    // Levels, dotted components, and upper-case subsystem words: the message
+    // starts here.
+    Meaning,
+    // A `program[pid]:` tag: the header ends after it.
+    Tag
 };
 
 struct Field
@@ -715,38 +723,36 @@ struct Field
 static Field ReadField(std::string_view text, std::size_t index, FieldScan &scan) noexcept
 {
     const bool host_next = std::exchange(scan.host_next, false);
-    if (const std::size_t end = MatchTag(text, index); end != NO_MATCH)
-    {
-        return {.end = end, .kind = FieldKind::Last};
-    }
     if (const std::size_t end = MatchLevel(text, index); end != NO_MATCH)
     {
-        scan.level_seen = true;
-        return {.end = end, .kind = FieldKind::Commit};
+        return {.end = end, .kind = FieldKind::Meaning};
+    }
+    if (const std::size_t end = MatchTag(text, index); end != NO_MATCH)
+    {
+        return {.end = end, .kind = FieldKind::Tag};
     }
     if (const Anchor time = MatchDateTimeField(text, index); time.end != NO_MATCH)
     {
         scan.host_next = time.host_next;
-        return {.end = time.end, .kind = FieldKind::Speculative};
+        return {.end = time.end, .kind = FieldKind::Noise};
     }
-    const FieldKind after_level = scan.level_seen ? FieldKind::Commit : FieldKind::Speculative;
-    for (const auto match : {MatchBracketField, MatchComponent})
+    for (const auto match : {MatchNumber, MatchBracketField})
     {
         if (const std::size_t end = match(text, index); end != NO_MATCH)
         {
-            return {.end = end, .kind = after_level};
+            return {.end = end, .kind = FieldKind::Noise};
         }
     }
-    for (const auto match : {MatchNumber, MatchCapsWord})
+    for (const auto match : {MatchComponent, MatchCapsWord})
     {
         if (const std::size_t end = match(text, index); end != NO_MATCH)
         {
-            return {.end = end, .kind = FieldKind::Speculative};
+            return {.end = end, .kind = FieldKind::Meaning};
         }
     }
     if (const std::size_t end = MatchHost(text, index, host_next); end != NO_MATCH)
     {
-        return {.end = end, .kind = FieldKind::Speculative};
+        return {.end = end, .kind = FieldKind::Noise};
     }
     return {};
 }
@@ -760,10 +766,11 @@ static bool FitsBeforeMessage(std::string_view text, std::size_t end) noexcept
     return next <= MAX_HEADER_BYTES && next < text.size();
 }
 
-// After an anchor followed by `|`: each field that ends in `|` ends the header.
+// After an anchor followed by `|`: each field that ends in `|` joins the
+// header.
 static std::size_t ScanPipeFields(std::string_view text, std::size_t start) noexcept
 {
-    std::size_t commit = start;
+    std::size_t header_end = start;
     std::size_t cursor = start;
     for (std::size_t field = 0; field < MAX_HEADER_FIELDS; ++field)
     {
@@ -776,17 +783,18 @@ static std::size_t ScanPipeFields(std::string_view text, std::size_t start) noex
         {
             break;
         }
-        commit = end + 1;
-        cursor = commit;
+        header_end = end + 1;
+        cursor = header_end;
     }
-    return commit;
+    return header_end;
 }
 
-// Reads fields after the anchor and returns where the header's last field
-// ends.
+// Reads fields after the anchor and returns where the header ends: after the
+// noise fields that come right before the first field with meaning, or after
+// the anchor when no such field follows.
 static std::size_t ScanFields(std::string_view text, std::size_t anchor_end, bool host_next) noexcept
 {
-    FieldScan scan{.position = anchor_end, .commit = anchor_end, .level_seen = false, .host_next = host_next};
+    FieldScan scan{.position = anchor_end, .host_next = host_next};
     for (std::size_t field = 0; field < MAX_HEADER_FIELDS; ++field)
     {
         bool pipe = false;
@@ -797,24 +805,24 @@ static std::size_t ScanFields(std::string_view text, std::size_t anchor_end, boo
         }
         if (pipe)
         {
-            return field == 0 ? ScanPipeFields(text, start) : scan.commit;
+            return field == 0 ? ScanPipeFields(text, start) : anchor_end;
         }
         const Field read = ReadField(text, start, scan);
+        if (read.kind == FieldKind::Meaning)
+        {
+            return scan.position;
+        }
+        if (read.kind == FieldKind::Tag)
+        {
+            return FitsBeforeMessage(text, read.end) ? read.end : scan.position;
+        }
         if (read.kind == FieldKind::None || !FitsBeforeMessage(text, read.end))
         {
             break;
         }
         scan.position = read.end;
-        if (read.kind != FieldKind::Speculative)
-        {
-            scan.commit = read.end;
-        }
-        if (read.kind == FieldKind::Last)
-        {
-            break;
-        }
     }
-    return scan.commit;
+    return anchor_end;
 }
 
 // Where the header's fields end, or `NO_MATCH` when no anchor starts the line.

@@ -61,52 +61,53 @@ TEST_CASE("iso 8601 timestamps start a header", "[line_header]")
     ExpectSplit("2026-11-23 10:00:00 ", "payment timeout after 30s");
     ExpectSplit("2026-11-23T10:00:00.123456789+01:00 ", "cache miss");
     ExpectSplit("2026-11-23T10:00:00-0500 ", "cache miss");
-    ExpectSplit("2026-11-23 10:00:00.123+01:00 ERROR db.pool: ", "connection refused");
-    ExpectSplit("2015-10-18 18:01:47,978 INFO [main] org.apache.hadoop.mapreduce.v2.app.MRAppMaster: ",
-                "Created MRAppMaster for application appattempt_1445144423722_0020_000001");
-    ExpectSplit("2026-11-23 10:00:00,123 - app.db - ERROR - ", "connection pool exhausted");
+    ExpectSplit("2026-11-23 10:00:00.123+01:00 ", "ERROR db.pool: connection refused");
+    ExpectSplit("2015-10-18 18:01:47,978 ",
+                "INFO [main] org.apache.hadoop.mapreduce.v2.app.MRAppMaster: Created MRAppMaster for application");
+    ExpectSplit("2026-11-23 10:00:00,123 - ", "app.db - ERROR - connection pool exhausted");
     ExpectSplit("2026-11-23T10:00:00Z\t", "tab separated");
 }
 
-TEST_CASE("rfc 3164 timestamps take the host and the tag", "[line_header]")
+TEST_CASE("rfc 3164 timestamps take the host and the program tag", "[line_header]")
 {
     ExpectSplit("Jun 14 15:16:01 combo sshd(pam_unix)[19939]: ", "authentication failure; logname= uid=0");
     ExpectSplit("Jun  9 06:06:20 combo kernel: ", "Linux version 2.6.5");
     ExpectSplit("Dec 10 06:55:46 LabSZ sshd[24200]: ", "reversed mapping checking getaddrinfo failed");
     ExpectSplit("<34>Oct 11 22:14:15 mymachine su: ", "'su root' failed for lonvick on /dev/pts/8");
     ExpectSplit("Jun 14 15:16:01 2005 combo cron[12]: ", "job started");
+    // A level before the tag keeps both in the message.
+    ExpectSplit("Jun 14 15:16:01 combo ", "ERROR cron[12]: job failed");
     // No tag: the host stays in the message.
     ExpectSplit("Jun  9 06:06:20 ", "combo syslogd 1.4.1: restart.");
 }
 
-TEST_CASE("rfc 5424 headers end after the structured data", "[line_header]")
+TEST_CASE("rfc 5424 headers end after the host", "[line_header]")
 {
-    ExpectSplit("<34>1 2003-10-11T22:14:15.003Z mymachine.example.com su - ID47 - ",
-                "'su root' failed for lonvick on /dev/pts/8");
-    ExpectSplit(R"(<165>1 2003-10-11T22:14:15.003Z host.example.com evntslog - ID47 [exampleSDID@32473 iut="3" )"
-                R"(eventSource="App\]"][meta seq="1"] )",
-                "An application event log entry");
-    ExpectSplit("<14>1 - host app 12 - - ", "no timestamp recorded");
+    ExpectSplit("<34>1 2003-10-11T22:14:15.003Z mymachine.example.com ",
+                "su - ID47 - 'su root' failed for lonvick on /dev/pts/8");
+    ExpectSplit(
+        "<165>1 2003-10-11T22:14:15.003Z host.example.com ",
+        R"(evntslog - ID47 [exampleSDID@32473 iut="3" eventSource="App\]"][meta seq="1"] An application event)");
+    ExpectSplit("<14>1 - host ", "app 12 - - no timestamp recorded");
     // Unclosed structured data: the generic rules see no anchor after `<14>`.
     ExpectWhole("<14>1 2003-10-11T22:14:15Z host app 12 ID [open data");
 }
 
-TEST_CASE("bracketed timestamps and levels", "[line_header]")
+TEST_CASE("bracketed timestamps keep the level", "[line_header]")
 {
-    ExpectSplit("[Sun Dec 04 04:47:44 2005] [notice] ", "workerEnv.init() ok /etc/httpd/conf/workers2.properties");
-    ExpectSplit("[Sun Dec 04 04:51:18 2005] [error] ", "mod_jk child workerEnv in error state 6");
-    ExpectSplit("[2026-11-23T10:00:00Z] [WARN] ", "disk almost full");
+    ExpectSplit("[Sun Dec 04 04:47:44 2005] ", "[notice] workerEnv.init() ok /etc/httpd/conf/workers2.properties");
+    ExpectSplit("[Sun Dec 04 04:51:18 2005] ", "[error] mod_jk child workerEnv in error state 6");
+    ExpectSplit("[2026-11-23T10:00:00Z] ", "[WARN] disk almost full");
     ExpectSplit("[23/Nov/2026:10:00:00 +0000] ", "GET /index.html took 3 ms");
-    ExpectSplit("2026-11-23T10:00:00Z <info> ", "started");
-    ExpectSplit("2026-11-23T10:00:00Z Error: ", "disk full");
+    ExpectSplit("2026-11-23T10:00:00Z ", "<info> started");
+    ExpectSplit("2026-11-23T10:00:00Z ", "Error: disk full");
     ExpectWhole("[not a time] something happened");
 }
 
 TEST_CASE("an epoch needs a date after it", "[line_header]")
 {
-    ExpectSplit("- 1117838570 2005.06.03 R02-M1-N0-C:J12-U11 2005-06-03-15.42.50.675872 R02-M1-N0-C:J12-U11 RAS "
-                "KERNEL INFO ",
-                "instruction cache parity error corrected");
+    ExpectSplit("- 1117838570 2005.06.03 R02-M1-N0-C:J12-U11 2005-06-03-15.42.50.675872 R02-M1-N0-C:J12-U11 ",
+                "RAS KERNEL INFO instruction cache parity error corrected");
     ExpectSplit("- 1131566461 2005.11.09 dn228 Nov 9 12:01:01 dn228/dn228 crond(pam_unix)[2915]: ",
                 "session closed for user root");
     ExpectSplit("KERNDTLB 1131566461 2005.11.09 tbird-sm1 Nov 10 00:13:10 src@tbird-sm1 kernel: ",
@@ -119,11 +120,13 @@ TEST_CASE("an epoch needs a date after it", "[line_header]")
 
 TEST_CASE("compact timestamps", "[line_header]")
 {
-    ExpectSplit("081109 203615 148 INFO dfs.DataNode$PacketResponder: ",
-                "PacketResponder 1 for block blk_38865049064139660 terminating");
+    ExpectSplit("081109 203615 148 ",
+                "INFO dfs.DataNode$PacketResponder: PacketResponder 1 for block blk_38865049064139660 terminating");
     ExpectSplit("20171223-22:15:29:606|Step_LSC|30002312|", "onStandStepChanged 3579");
     ExpectSplit("20171223-22:15:29.606 ", "dotted milliseconds");
     ExpectSplit("20171223-22:16:0:119|Step_LSC|30002312|", "processHandleBroadcastAction action:TIME_TICK");
+    // A `|` after a noise field ends the header at the anchor.
+    ExpectSplit("20171223-22:15:29 ", "4411 | Step_LSC|x");
     ExpectSplit("20171223-2:6:9 ", "unpadded clock");
     ExpectWhole("20171223-22:16:100 three digit seconds");
     ExpectSplit("20171223-22:15:29 | ", "pipe after a blank");
@@ -133,23 +136,24 @@ TEST_CASE("compact timestamps", "[line_header]")
 
 TEST_CASE("a log file name may come before an iso timestamp", "[line_header]")
 {
-    ExpectSplit(
-        "app-server.log.1.2026-11-23_10:00:00 2026-11-23 10:00:00.008 25746 INFO api.server.wsgi [req-1 - - -] ",
-        "GET /v2/servers status 200");
+    ExpectSplit("app-server.log.1.2026-11-23_10:00:00 2026-11-23 10:00:00.008 25746 ",
+                "INFO api.server.wsgi [req-1 - - -] GET /v2/servers status 200");
     ExpectSplit("/var/log/app.log 2026-11-23T10:00:00Z ", "rotated");
     ExpectWhole("server-1 2026-11-23 10:00:00 boot ok");
     ExpectWhole("app.log 2026-11-23 no time here");
 }
 
-TEST_CASE("speculative fields stay in the message unless a later field ends the header", "[line_header]")
+TEST_CASE("noise fields join the header only before a field with meaning", "[line_header]")
 {
     ExpectSplit("2026-11-23T10:00:00Z ", "3 retries failed");
     ExpectSplit("2026-11-23T10:00:00Z ", "JVM crashed");
     ExpectSplit("2026-11-23T10:00:00Z ", "node12 rebooted");
-    ExpectSplit("2026-11-23T10:00:00Z node12 4411 WARN ", "fan speed low");
-    ExpectSplit("2026-11-23T10:00:00Z 10:00:01 2026-11-23 2026.11.23 INFO ", "several clocks");
+    ExpectSplit("2026-11-23T10:00:00Z node12 4411 ", "WARN fan speed low");
+    ExpectSplit("2026-11-23T10:00:00Z 10:00:01 2026-11-23 2026.11.23 ", "INFO several clocks");
     ExpectSplit("2026-11-23T10:00:00Z ", "Connection reset: peer closed");
-    ExpectSplit("2026-11-23T10:00:00Z ", "[main] app.Main plain message");
+    ExpectSplit("2026-11-23T10:00:00Z [main] ", "app.Main plain message");
+    ExpectSplit("2026-11-23T10:00:00Z [main] [req-7] ", "ERROR worker failed");
+    ExpectSplit("2026-11-23T10:00:00Z ", "[main] plain message");
     ExpectSplit("Jun  9 06:06:20 ", "combo 12345");
 }
 
@@ -160,7 +164,6 @@ TEST_CASE("lines without an anchor or without a message stay whole", "[line_head
     ExpectWhole("database connection refused");
     ExpectWhole("2026-11-23T10:00:00Z");
     ExpectWhole("2026-11-23T10:00:00Z ");
-    // The last field of a line stays in the message.
     ExpectSplit("2026-11-23T10:00:00Z ", "INFO");
     ExpectSplit("2026-11-23T10:00:00Z ", "INFO   ");
     ExpectWhole("Jun  9 06:06:20 12345 678");
@@ -178,15 +181,13 @@ TEST_CASE("lines without an anchor or without a message stay whole", "[line_head
     ExpectWhole("<1234>Jun 14 15:16:01 host app: long priority");
 }
 
-TEST_CASE("a field that ends the line stays in the message", "[line_header]")
+TEST_CASE("a noise field that ends the line stays in the message", "[line_header]")
 {
-    ExpectSplit("1132144099 2005.11.16 R44-M1-N7-C:J02-U11 2005-11-16-04.28.19.392599 R44-M1-N7-C:J02-U11 RAS KERNEL "
-                "FATAL ",
-                "summary...........................1");
-    ExpectSplit("2026-11-23T10:00:00Z ERROR ", "app.db");
-    ExpectSplit("2026-11-23T10:00:00Z ERROR ", "[main]");
-    ExpectSplit("2026-11-23T10:00:00Z ERROR app.db ", "x");
-    ExpectSplit("2026-11-23T10:00:00Z ERROR ", "summary..total stays");
+    ExpectSplit("2026-11-23T10:00:00Z ", "node12 4411");
+    ExpectSplit("2026-11-23T10:00:00Z ", "[main]");
+    ExpectSplit("2026-11-23T10:00:00Z 4411 ", "app.db");
+    ExpectSplit("1132144099 2005.11.16 R44-M1-N7-C:J02-U11 2005-11-16-04.28.19.392599 R44-M1-N7-C:J02-U11 ",
+                "RAS KERNEL FATAL summary...........................1");
 }
 
 TEST_CASE("a header may be followed by json or utf-8", "[line_header]")
@@ -200,20 +201,27 @@ TEST_CASE("a header may be followed by json or utf-8", "[line_header]")
 
 TEST_CASE("the header stops at the field and byte limits", "[line_header]")
 {
-    // Nine speculative words before the level: the scan stops at eight.
-    ExpectSplit("2026-11-23T10:00:00Z ", "AA BB CC DD EE FF GG HH II INFO message here");
+    const std::string anchor = "2026-11-23T10:00:00Z ";
+    // Seven noise fields before the level fit; nine exceed the eight-field limit.
+    ExpectSplit(anchor + "1 2 3 4 5 6 7 ", "INFO message here");
+    ExpectSplit(anchor, "1 2 3 4 5 6 7 8 9 INFO message here");
     // Three bracket fields pass 256 bytes before the level.
     const std::string field = "[" + std::string(100, 'x') + "]";
-    const std::string rest = field + " " + field + " " + field + " INFO too long";
-    ExpectSplit("2026-11-23T10:00:00Z ", rest);
-    // A field that ends at byte 256 fits, but not with the blank after it.
-    const std::string anchor = "2026-11-23T10:00:00Z INFO ";
-    const std::string fill = "[" + std::string(256 - anchor.size() - 2, 'z') + "]";
-    REQUIRE(anchor.size() + fill.size() == nesso::parser::MAX_HEADER_BYTES);
-    ExpectSplit(anchor, fill + " message after the limit");
-    ExpectSplit(anchor + "[" + std::string(100, 'z') + "] ", fill + " message after the limit");
+    ExpectSplit(anchor, field + " " + field + " " + field + " INFO too long");
+    // A noise field may end at byte 255, so its blank is byte 256, but not at 256.
+    const std::string two = field + " " + field + " ";
+    const std::size_t room = nesso::parser::MAX_HEADER_BYTES - anchor.size() - two.size();
+    const std::string fits = "[" + std::string(room - 3, 'z') + "]";
+    REQUIRE(anchor.size() + two.size() + fits.size() + 1 == nesso::parser::MAX_HEADER_BYTES);
+    ExpectSplit(anchor + two + fits + " ", "INFO message after the limit");
+    const std::string full = "[" + std::string(room - 2, 'z') + "]";
+    ExpectSplit(anchor, two + full + " INFO message after the limit");
+    // A name over 96 bytes is not a tag, and a tag past the limit stays in the
+    // message; the noise fields before it stay in the header.
+    ExpectSplit(anchor, "1 2 x" + std::string(120, 't') + ": message after a long name");
+    ExpectSplit(anchor + two, "x" + std::string(40, 't') + ": tag past the limit");
     // A bracket field over 128 bytes is not a field.
-    ExpectSplit("2026-11-23T10:00:00Z ", "[" + std::string(140, 'y') + "] INFO long field");
+    ExpectSplit(anchor, "[" + std::string(140, 'y') + "] INFO long field");
 }
 
 TEST_CASE("every split is lossless on generated lines", "[line_header]")
