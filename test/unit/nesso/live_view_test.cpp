@@ -10,6 +10,7 @@
 #include <chrono>
 #include <cstddef>
 #include <cstdio>
+#include <fcntl.h>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -227,7 +228,7 @@ TEST_CASE("the view is on only for an interactive terminal", "[live_view]")
 TEST_CASE("the width falls back to 80 columns off a terminal", "[live_view]")
 {
     std::array<int, 2> pipe_ends{};
-    REQUIRE(::pipe(pipe_ends.data()) == 0);
+    REQUIRE(::pipe2(pipe_ends.data(), O_CLOEXEC) == 0);
     CHECK(nesso::cli::TerminalWidth(pipe_ends[0]) == nesso::cli::FALLBACK_TERMINAL_WIDTH);
     static_cast<void>(::close(pipe_ends[0]));
     static_cast<void>(::close(pipe_ends[1]));

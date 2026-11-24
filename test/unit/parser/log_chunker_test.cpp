@@ -1,6 +1,7 @@
 #include <catch2/catch_all.hpp>
 #include <parser/log_chunker.hpp>
 
+#include <fcntl.h>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -756,7 +757,7 @@ TEST_CASE("Chunker does not re-read stdin records as files", "[Chunker][parser][
 TEST_CASE("Chunker reports non-rewindable file input", "[Chunker][parser][Unit]")
 {
     int descriptors[2]{};
-    REQUIRE(pipe(descriptors) == 0);
+    REQUIRE(pipe2(descriptors, O_CLOEXEC) == 0);
     constexpr std::string_view message = "message\n";
     REQUIRE(write(descriptors[1], message.data(), message.size()) == static_cast<ssize_t>(message.size()));
     REQUIRE(close(descriptors[1]) == 0);
@@ -766,7 +767,7 @@ TEST_CASE("Chunker reports non-rewindable file input", "[Chunker][parser][Unit]"
     REQUIRE_FALSE(chunks);
     REQUIRE(chunks.error() == nesso::parser::ParseError::FileOpenFailure);
 
-    REQUIRE(pipe(descriptors) == 0);
+    REQUIRE(pipe2(descriptors, O_CLOEXEC) == 0);
     const auto source = std::filesystem::path("/proc/self/fd") / std::to_string(descriptors[0]);
     const auto record = nesso::parser::Chunker::ReadRecord(
         source, {.text = {}, .line_number = 1, .byte_offset = 0, .array_element = false, .byte_length = 1}, "message",

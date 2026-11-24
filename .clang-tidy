@@ -23,6 +23,7 @@
 #   -llvm-header-guard                            (custom NESSO_*/PLATFORM_* guards)
 #   -misc-use-anonymous-namespace                 (prefer static; see misc-use-internal-linkage)
 # Enabled (not disabled): misc-include-cleaner
+#   android-cloexec-*                             (POSIX O_CLOEXEC on open/pipe/fopen/socket)
 #   -modernize-use-trailing-return-type           (classical return types)
 #   -readability-magic-numbers                    (CLI/embed/scoring constants)
 # clang-tidy 23 removed the hicpp module. The five names this file used to
@@ -67,6 +68,7 @@
 #   -clang-analyzer-optin.osx*, -clang-analyzer-fuchsia*, -clang-analyzer-webkit*
 Checks: >
   -*,
+  android-cloexec-*,
   bugprone-*,
   cert-dcl50-cpp,
   cert-dcl58-cpp,

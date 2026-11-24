@@ -51,7 +51,7 @@ MappedFile &MappedFile::operator=(MappedFile &&other) noexcept
 std::expected<MappedFile, FileError> MappedFile::Open(const std::filesystem::path &path)
 {
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg, hicpp-vararg)
-    const int file_descriptor = ::open(path.c_str(), O_RDONLY);
+    const int file_descriptor = ::open(path.c_str(), O_RDONLY | O_CLOEXEC);
     if (file_descriptor < 0)
     {
         return std::unexpected(FileError::OpenFailure);

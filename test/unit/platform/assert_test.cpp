@@ -15,6 +15,7 @@
 #include <charconv>
 #include <cstddef>
 #include <cstdlib>
+#include <fcntl.h>
 #include <string>
 #include <string_view>
 #include <sys/resource.h>
@@ -79,7 +80,7 @@ struct ChildReport
     env_pointers.push_back(nullptr);
 
     int pipes[2] = {-1, -1};
-    REQUIRE(::pipe(pipes) == 0);
+    REQUIRE(::pipe2(pipes, O_CLOEXEC) == 0);
     const struct rlimit core_limit{.rlim_cur = 0, .rlim_max = 0};
     REQUIRE(::setrlimit(RLIMIT_CORE, &core_limit) == 0);
 
