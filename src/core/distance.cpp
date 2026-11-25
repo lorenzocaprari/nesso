@@ -66,15 +66,6 @@ auto SelectDistanceKernel(std::string_view forced, bool avx2_fma) noexcept -> Di
     return DistanceKernel::Scalar;
 }
 
-[[nodiscard]] static auto HostSupportsAvx2Fma() noexcept -> bool
-{
-#if (defined(__x86_64__) || defined(_M_X64)) && (defined(__clang__) || defined(__GNUC__))
-    return __builtin_cpu_supports("avx2") && __builtin_cpu_supports("fma");
-#else
-    return false;
-#endif
-}
-
 auto SelectedKernel() noexcept -> DistanceKernel
 {
     static const DistanceKernel KERNEL = [] noexcept -> DistanceKernel

@@ -21,6 +21,9 @@ enum class DistanceKernel : uint8_t
 
 [[nodiscard]] auto SelectedKernel() noexcept -> DistanceKernel;
 
+/// True when this CPU and OS can run the AVX2+FMA kernels.
+[[nodiscard]] auto HostSupportsAvx2Fma() noexcept -> bool;
+
 [[nodiscard]] auto DotProductKernel(DistanceKernel kernel, std::span<const float> a, std::span<const float> b) noexcept
     -> float;
 

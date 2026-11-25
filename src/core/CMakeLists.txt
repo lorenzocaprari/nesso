@@ -15,6 +15,11 @@ add_library(
   score_fusion.cpp
   sha256.cpp
   top_k.cpp)
+if(WIN32)
+  target_sources(nesso_core PRIVATE cpu_features_win32.cpp)
+else()
+  target_sources(nesso_core PRIVATE cpu_features_posix.cpp)
+endif()
 find_package(Threads REQUIRED)
 target_include_directories(
   nesso_core
