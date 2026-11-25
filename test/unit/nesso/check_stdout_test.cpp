@@ -27,7 +27,7 @@ struct CloseFile
 TEST_CASE("StdoutWriteFailed is false for a writable temp file", "[cli][stdout]")
 {
     const auto path = std::filesystem::temp_directory_path() / "nesso-check-stdout-ok";
-    const std::unique_ptr<std::FILE, CloseFile> stream{std::fopen(path.c_str(), "we")};
+    const std::unique_ptr<std::FILE, CloseFile> stream{std::fopen(path.string().c_str(), "we")};
     REQUIRE(stream != nullptr);
     REQUIRE(std::fputs("ok\n", stream.get()) >= 0);
     CHECK_FALSE(nesso::cli::StdoutWriteFailed(stream.get()));
