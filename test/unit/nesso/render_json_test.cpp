@@ -93,10 +93,14 @@ TEST_CASE("json score is the shortest round-trip form in any locale", "[json]")
     const std::string saved = saved_locale == nullptr ? "C" : saved_locale;
     REQUIRE(std::setlocale(LC_ALL, "C") != nullptr);
     CHECK(nesso::cli::RenderMatchJson(tenth, 1) == under_classic);
+#ifdef _WIN32
+    REQUIRE(std::setlocale(LC_ALL, ".UTF-8") != nullptr);
+#else
     if (std::setlocale(LC_ALL, "C.UTF-8") == nullptr)
     {
         REQUIRE(std::setlocale(LC_ALL, "C.utf8") != nullptr);
     }
+#endif
     CHECK(nesso::cli::RenderMatchJson(tenth, 1) == under_classic);
     REQUIRE(std::setlocale(LC_ALL, saved.c_str()) != nullptr);
 }

@@ -13,7 +13,10 @@
 #include <optional>
 #include <string>
 #include <string_view>
-#ifndef _WIN32
+#ifdef _WIN32
+#include <filesystem>
+#include <process.h>
+#else
 #include <fcntl.h>
 #include <unistd.h>
 #endif
@@ -24,11 +27,25 @@ namespace
 using TimePoint = std::chrono::steady_clock::time_point;
 using std::chrono::milliseconds;
 
+auto OpenCaptureFile() -> std::FILE *
+{
+#ifdef _WIN32
+    // std::tmpfile writes to the drive root here, which needs elevation. "D"
+    // deletes the file when it is closed.
+    static int counter = 0;
+    const auto path = std::filesystem::temp_directory_path() /
+                      ("nesso-live-view-" + std::to_string(_getpid()) + "-" + std::to_string(counter++));
+    return _wfopen(path.c_str(), L"w+bD");
+#else
+    return std::tmpfile();
+#endif
+}
+
 // Collects what the view writes, through a FILE* like stderr.
 class Capture
 {
   public:
-    Capture() : stream_(std::tmpfile()) { REQUIRE(stream_ != nullptr); }
+    Capture() : stream_(OpenCaptureFile()) { REQUIRE(stream_ != nullptr); }
     Capture(const Capture &) = delete;
     auto operator=(const Capture &) -> Capture & = delete;
     Capture(Capture &&) = delete;

@@ -22,19 +22,23 @@ struct CloseFile
     }
 };
 
-// The Microsoft C runtime rejects the "e" (close-on-exec) mode flag.
+auto OpenForWrite(const std::filesystem::path &path) -> std::FILE *
+{
 #ifdef _WIN32
-constexpr const char *WRITE_MODE = "w";
+    // Wide open for non-ACP temp paths; the Microsoft C runtime also rejects
+    // the "e" (close-on-exec) mode flag.
+    return _wfopen(path.c_str(), L"w");
 #else
-constexpr const char *WRITE_MODE = "we";
+    return std::fopen(path.c_str(), "we");
 #endif
+}
 
 } // namespace
 
 TEST_CASE("StdoutWriteFailed is false for a writable temp file", "[cli][stdout]")
 {
     const auto path = std::filesystem::temp_directory_path() / "nesso-check-stdout-ok";
-    std::unique_ptr<std::FILE, CloseFile> stream{std::fopen(path.string().c_str(), WRITE_MODE)};
+    std::unique_ptr<std::FILE, CloseFile> stream{OpenForWrite(path)};
     REQUIRE(stream != nullptr);
     REQUIRE(std::fputs("ok\n", stream.get()) >= 0);
     CHECK_FALSE(nesso::cli::StdoutWriteFailed(stream.get()));
