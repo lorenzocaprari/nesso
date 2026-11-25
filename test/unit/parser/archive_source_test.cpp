@@ -100,7 +100,7 @@ void WriteBundle(const std::filesystem::path &dest, std::string_view format, std
     {
         REQUIRE(archive_write_add_filter_none(writer.get()) == ARCHIVE_OK);
     }
-    REQUIRE(archive_write_open_filename(writer.get(), dest.c_str()) == ARCHIVE_OK);
+    REQUIRE(archive_write_open_filename(writer.get(), dest.string().c_str()) == ARCHIVE_OK);
     for (const Member &member : members)
     {
         std::unique_ptr<archive_entry, EntryFree> entry{archive_entry_new()};
