@@ -1,7 +1,7 @@
 # ClusterFuzzLite builder. Clang, libc++, and libFuzzer come from base-builder.
 # Digest-pinned so Scorecard Pinned-Dependencies accepts the image; Dependabot
 # updates the digest with the docker ecosystem.
-FROM gcr.io/oss-fuzz-base/base-builder@sha256:1f9cf74bc3d7029b528494542f9d9851b256dceed38d3f420989434dc5ae0760
+FROM gcr.io/oss-fuzz-base/base-builder@sha256:ed4aefea5aa72bb8c133576dd13a1417e0fc6eeb27cc0fc7f9880e7e13293b07
 
 # No extra packages in the image. build.sh compiles parser and tokenizer and
 # installs zlib headers when they are missing.
