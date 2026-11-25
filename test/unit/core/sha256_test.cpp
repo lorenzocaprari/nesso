@@ -55,5 +55,10 @@ TEST_CASE("SHA-256 streams file bytes and reports open failures", "[sha256][core
     CHECK(missing.error() == nesso::core::HashError::OpenFailure);
     const auto directory = nesso::core::Sha256File(std::filesystem::temp_directory_path());
     REQUIRE_FALSE(directory);
+#ifdef _WIN32
+    // The Microsoft C++ library cannot open a directory as a stream.
+    CHECK(directory.error() == nesso::core::HashError::OpenFailure);
+#else
     CHECK(directory.error() == nesso::core::HashError::ReadFailure);
+#endif
 }

@@ -43,4 +43,7 @@ add_subdirectory(unit)
 add_subdirectory(integration)
 add_subdirectory(fuzz)
 add_subdirectory(functional)
-add_subdirectory(scripts)
+# Tests of the Linux packaging, CI, and bench scripts; they need Unix tools.
+if(NOT WIN32)
+  add_subdirectory(scripts)
+endif()

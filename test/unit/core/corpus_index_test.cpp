@@ -1045,6 +1045,8 @@ TEST_CASE("v3 file open failures stay distinct from corrupt corpora", "[corpus][
         REQUIRE_FALSE(mapped);
         CHECK(mapped.error().code == EngineError::FileOpenFailure);
     }
+#ifndef _WIN32
+    // Both cases remove a spill the writer holds open, which Windows refuses.
     SECTION("finish cannot reopen a spill")
     {
         const auto path = dir.Path() / "corpus.nesso";
@@ -1087,6 +1089,7 @@ TEST_CASE("v3 file open failures stay distinct from corrupt corpora", "[corpus][
         REQUIRE_FALSE(rejected);
         CHECK(rejected.error() == EngineError::FileOpenFailure);
     }
+#endif
 }
 
 TEST_CASE("v3 map rejects a policy dimension that disagrees with the header", "[corpus][core]")
