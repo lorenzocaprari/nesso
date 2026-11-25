@@ -94,9 +94,11 @@ sudo dnf install ./nesso-0.3.1-1.aarch64.rpm
 ```
 
 ```powershell
-Invoke-WebRequest -Uri https://github.com/lorenzocaprari/nesso/releases/download/v0.3.1/nesso_0.3.1_windows_amd64.zip `
-  -OutFile nesso_0.3.1_windows_amd64.zip
-Expand-Archive nesso_0.3.1_windows_amd64.zip -DestinationPath nesso
+# Windows zip ships on releases that publish nesso_<ver>_windows_amd64.zip
+# (not on v0.3.1). Replace X.Y.Z with that release version.
+Invoke-WebRequest -Uri https://github.com/lorenzocaprari/nesso/releases/download/vX.Y.Z/nesso_X.Y.Z_windows_amd64.zip `
+  -OutFile nesso_X.Y.Z_windows_amd64.zip
+Expand-Archive nesso_X.Y.Z_windows_amd64.zip -DestinationPath nesso
 .\nesso\nesso.exe grep "the disk is full" app.log --model-dir .\nesso\models
 ```
 

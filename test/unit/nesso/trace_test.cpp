@@ -4,6 +4,8 @@
 #include <catch2/catch_all.hpp>
 #include <nesso/trace.hpp>
 
+#include "../env_set.hpp"
+
 #include <cstdlib>
 #include <iostream>
 #include <sstream>
@@ -20,7 +22,7 @@ struct RestoreCerr
 
 struct ClearTraceEnv
 {
-    ~ClearTraceEnv() { unsetenv("NESSO_TRACE"); }
+    ~ClearTraceEnv() { static_cast<void>(nesso::test::EnvClear("NESSO_TRACE")); }
 };
 
 } // namespace
@@ -28,7 +30,7 @@ struct ClearTraceEnv
 TEST_CASE("NESSO_TRACE=1 emits one json line per session", "[trace]")
 {
     const ClearTraceEnv clear_env;
-    unsetenv("NESSO_TRACE");
+    REQUIRE(nesso::test::EnvClear("NESSO_TRACE"));
 
     {
         std::stringstream sink;
@@ -41,7 +43,7 @@ TEST_CASE("NESSO_TRACE=1 emits one json line per session", "[trace]")
         REQUIRE(sink.str().empty());
     }
 
-    REQUIRE(setenv("NESSO_TRACE", "1", 1) == 0);
+    REQUIRE(nesso::test::EnvSet("NESSO_TRACE", "1"));
 
     std::stringstream sink;
     {
@@ -79,7 +81,7 @@ TEST_CASE("NESSO_TRACE=1 emits one json line per session", "[trace]")
 TEST_CASE("ScopedStage drops recording when stage capacity is full", "[trace]")
 {
     const ClearTraceEnv clear_env;
-    REQUIRE(setenv("NESSO_TRACE", "1", 1) == 0);
+    REQUIRE(nesso::test::EnvSet("NESSO_TRACE", "1"));
 
     std::stringstream sink;
     {

@@ -174,8 +174,9 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p dist doc
-          # Notices are optional for CI smoke; release builds fill doc/ properly.
-          touch doc/copyright doc/THIRD_PARTY_NOTICES
+          # Bundled model/Unicode/ORT notices (+ LICENSE in copyright). Full
+          # Conan graph scan for MSVC *.lib is a follow-up.
+          python3 packaging/scripts/third-party-notices --bundled-only doc
           python3 packaging/scripts/package-zip "${NESSO_VER}" \
             build/Release/src/nesso.exe models dist --doc-dir doc
 

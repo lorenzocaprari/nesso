@@ -10,11 +10,13 @@
 #include <chrono>
 #include <cstddef>
 #include <cstdio>
-#include <fcntl.h>
 #include <optional>
 #include <string>
 #include <string_view>
+#ifndef _WIN32
+#include <fcntl.h>
 #include <unistd.h>
+#endif
 
 namespace
 {

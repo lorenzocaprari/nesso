@@ -13,10 +13,40 @@ namespace nesso::platform
 
 inline constexpr std::size_t FALLBACK_TERMINAL_WIDTH = 80;
 
-auto IsStderrTerminal() noexcept -> bool { return _isatty(_fileno(stderr)) != 0; }
+auto IsStderrTerminal() noexcept -> bool
+{
+    const int descriptor = _fileno(stderr);
+    if (_isatty(descriptor) == 0)
+    {
+        return false;
+    }
+    const intptr_t raw = _get_osfhandle(descriptor);
+    if (raw == -1 || raw == reinterpret_cast<intptr_t>(INVALID_HANDLE_VALUE))
+    {
+        return false;
+    }
+    const auto handle = reinterpret_cast<HANDLE>(raw);
+    DWORD mode = 0;
+    if (GetConsoleMode(handle, &mode) == 0)
+    {
+        return false;
+    }
+    // Live view and progress need VT sequences. Enable them when missing;
+    // without VT, treat stderr as a non-terminal so the plain path is used.
+    if ((mode & ENABLE_VIRTUAL_TERMINAL_PROCESSING) == 0 &&
+        SetConsoleMode(handle, mode | ENABLE_VIRTUAL_TERMINAL_PROCESSING) == 0)
+    {
+        return false;
+    }
+    return true;
+}
 
 auto TerminalColumns(int descriptor) noexcept -> std::size_t
 {
+    if (descriptor < 0)
+    {
+        return FALLBACK_TERMINAL_WIDTH;
+    }
     const intptr_t handle = _get_osfhandle(descriptor);
     if (handle == -1 || handle == reinterpret_cast<intptr_t>(INVALID_HANDLE_VALUE))
     {

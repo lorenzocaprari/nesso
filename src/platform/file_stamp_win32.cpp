@@ -43,6 +43,10 @@ auto ReadFileStamp(const std::filesystem::path &path) -> std::optional<FileStamp
     }
     BY_HANDLE_FILE_INFORMATION info{};
     const BOOL ok = GetFileInformationByHandle(file, &info);
+    FILE_BASIC_INFO basic{};
+    // Prefer ChangeTime (metadata updates) over CreationTime; an in-place
+    // rewrite can keep CreationTime and restore LastWriteTime.
+    const BOOL basic_ok = GetFileInformationByHandleEx(file, FileBasicInfo, &basic, sizeof(basic));
     CloseHandle(file);
     if (ok == 0)
     {
@@ -54,7 +58,17 @@ auto ReadFileStamp(const std::filesystem::path &path) -> std::optional<FileStamp
         (static_cast<std::uintmax_t>(info.nFileIndexHigh) << 32U) | static_cast<std::uintmax_t>(info.nFileIndexLow);
     stamp.size = (static_cast<std::intmax_t>(info.nFileSizeHigh) << 32) | static_cast<std::intmax_t>(info.nFileSizeLow);
     FileTimeToUnixParts(info.ftLastWriteTime, stamp.modified_seconds, stamp.modified_nanoseconds);
-    FileTimeToUnixParts(info.ftCreationTime, stamp.changed_seconds, stamp.changed_nanoseconds);
+    if (basic_ok != 0)
+    {
+        FILETIME change{};
+        change.dwLowDateTime = static_cast<DWORD>(basic.ChangeTime.LowPart);
+        change.dwHighDateTime = static_cast<DWORD>(basic.ChangeTime.HighPart);
+        FileTimeToUnixParts(change, stamp.changed_seconds, stamp.changed_nanoseconds);
+    }
+    else
+    {
+        FileTimeToUnixParts(info.ftLastWriteTime, stamp.changed_seconds, stamp.changed_nanoseconds);
+    }
     return stamp;
 }
 

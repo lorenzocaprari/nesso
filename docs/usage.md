@@ -12,7 +12,7 @@ The `.deb`, the `.rpm`, and the container image ship the MiniLM files in `/usr/s
 ./scripts/fetch-model
 ```
 
-An omitted `--model-dir` uses `NESSO_MODEL_DIR`, then `./models` when both files are present, then the platform user-data directory (`$XDG_DATA_HOME/nesso` or `~/.local/share/nesso` on Linux; `%LOCALAPPDATA%\nesso` on Windows), then the packaged location (`/usr/share/nesso` on Linux; `models\` next to the executable on Windows).
+An omitted `--model-dir` uses `NESSO_MODEL_DIR` when that variable is set (even if the directory is incomplete; there is no fallback). When it is unset or empty, lookup tries `./models` when both files are present, then the platform user-data directory (`$XDG_DATA_HOME/nesso` or `~/.local/share/nesso` on Linux; `%LOCALAPPDATA%\nesso` on Windows), then the packaged location (`/usr/share/nesso` on Linux; `models\` next to the executable on Windows).
 
 ## Commands
 

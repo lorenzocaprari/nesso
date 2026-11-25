@@ -253,9 +253,53 @@ def copyright_file(notices: str) -> str:
     return "\n".join(head) + "\n" + notices
 
 
+def bundled_components() -> list[dict]:
+    """Model, Unicode, and vendored ONNX Runtime notices without a Conan graph.
+
+    Used by the Windows zip path: PE/COFF symbol matching and *.lib archives are
+    not wired in strong_symbols/is_linked yet. Apache license text still goes in
+    copyright_file().
+    """
+    components = extra_components()
+    version = next(iter(ONNXRUNTIME_NOTICES))
+    notice = ONNXRUNTIME_NOTICES[version]
+    path = NOTICES / notice
+    if not path.is_file():
+        raise NoticeError(f"missing notice file packaging/notices/{notice}")
+    components.append(
+        {
+            "name": "onnxruntime",
+            "version": version,
+            "license": "MIT",
+            "texts": [("ThirdPartyNotices.txt", path.read_bytes())],
+        }
+    )
+    return components
+
+
+def write_notices(components: list[dict], out_dir: Path) -> None:
+    notices = render(components)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    (out_dir / "THIRD_PARTY_NOTICES").write_text(notices, encoding="utf-8")
+    (out_dir / "copyright").write_text(copyright_file(notices), encoding="utf-8")
+    print(f"third-party-notices: {len(components)} components -> {out_dir}")
+
+
 def main(argv: list[str]) -> int:
+    if len(argv) == 3 and argv[1] == "--bundled-only":
+        out_dir = Path(argv[2])
+        try:
+            write_notices(bundled_components(), out_dir)
+        except (OSError, NoticeError) as error:
+            print(f"error: {error}", file=sys.stderr)
+            return 1
+        return 0
     if len(argv) != 4:
-        print("usage: third-party-notices CONAN_GRAPH_JSON BINARY OUT_DIR", file=sys.stderr)
+        print(
+            "usage: third-party-notices CONAN_GRAPH_JSON BINARY OUT_DIR\n"
+            "       third-party-notices --bundled-only OUT_DIR",
+            file=sys.stderr,
+        )
         return 2
     graph_path, binary, out_dir = Path(argv[1]), Path(argv[2]), Path(argv[3])
     try:
@@ -266,14 +310,10 @@ def main(argv: list[str]) -> int:
         if not binary_symbols:
             raise NoticeError(f"{binary} has no symbol table; run this before stripping")
         components = conan_components(graph, binary_symbols) + extra_components()
+        write_notices(components, out_dir)
     except (OSError, json.JSONDecodeError, NoticeError) as error:
         print(f"error: {error}", file=sys.stderr)
         return 1
-    notices = render(components)
-    out_dir.mkdir(parents=True, exist_ok=True)
-    (out_dir / "THIRD_PARTY_NOTICES").write_text(notices, encoding="utf-8")
-    (out_dir / "copyright").write_text(copyright_file(notices), encoding="utf-8")
-    print(f"third-party-notices: {len(components)} components -> {out_dir}")
     return 0
 
 

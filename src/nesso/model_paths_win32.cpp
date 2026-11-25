@@ -3,40 +3,49 @@
 
 #include <nesso/model_path_roots.hpp>
 
-#include <cstdlib>
 #include <filesystem>
-#include <string_view>
+#include <string>
 #include <vector>
 #include <windows.h>
 
 namespace nesso
 {
 
-static auto EnvOrEmpty(const char *key) -> const char *
-{
-    // NOLINTNEXTLINE(concurrency-mt-unsafe)
-    const char *value = std::getenv(key);
-    return value == nullptr ? "" : value;
-}
-
 auto DefaultPackagedModelDir() -> std::filesystem::path
 {
-    wchar_t module_path[MAX_PATH]{};
-    const DWORD length = GetModuleFileNameW(nullptr, module_path, MAX_PATH);
-    if (length == 0 || length >= MAX_PATH)
+    std::wstring module_path(MAX_PATH, L'\0');
+    for (;;)
     {
-        return {};
+        const DWORD length = GetModuleFileNameW(nullptr, module_path.data(), static_cast<DWORD>(module_path.size()));
+        if (length == 0)
+        {
+            return {};
+        }
+        if (length < module_path.size())
+        {
+            module_path.resize(length);
+            return std::filesystem::path(module_path).parent_path() / "models";
+        }
+        module_path.resize(module_path.size() * 2);
     }
-    return std::filesystem::path(module_path).parent_path() / "models";
 }
 
 auto UserModelDataDirs() -> std::vector<std::filesystem::path>
 {
     std::vector<std::filesystem::path> dirs;
-    if (const char *local = EnvOrEmpty("LOCALAPPDATA"); !std::string_view{local}.empty())
+    const DWORD needed = GetEnvironmentVariableW(L"LOCALAPPDATA", nullptr, 0);
+    if (needed == 0)
     {
-        dirs.push_back(std::filesystem::path(local) / "nesso");
+        return dirs;
     }
+    std::wstring local(needed, L'\0');
+    const DWORD length = GetEnvironmentVariableW(L"LOCALAPPDATA", local.data(), needed);
+    if (length == 0 || length >= needed)
+    {
+        return dirs;
+    }
+    local.resize(length);
+    dirs.push_back(std::filesystem::path(local) / "nesso");
     return dirs;
 }
 

@@ -47,6 +47,13 @@ auto MappedFile::operator=(MappedFile &&other) noexcept -> MappedFile &
 
 auto MappedFile::Open(const std::filesystem::path &path) -> std::expected<MappedFile, FileError>
 {
+    const DWORD attributes = GetFileAttributesW(path.c_str());
+    if (attributes != INVALID_FILE_ATTRIBUTES && (attributes & FILE_ATTRIBUTE_DIRECTORY) != 0)
+    {
+        // Match the POSIX contract: open(2) succeeds on a directory, then
+        // lseek/mmap fail as MapFailure. Missing paths stay OpenFailure.
+        return std::unexpected(FileError::MapFailure);
+    }
     const HANDLE file = CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING,
                                     FILE_ATTRIBUTE_NORMAL, nullptr);
     if (file == INVALID_HANDLE_VALUE)

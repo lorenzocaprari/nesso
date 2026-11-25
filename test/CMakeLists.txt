@@ -2,6 +2,21 @@ find_package(Catch2 CONFIG REQUIRED)
 find_package(nlohmann_json CONFIG REQUIRED)
 find_package(onnxruntime CONFIG REQUIRED)
 
+# clang-cl has no <unistd.h>; harnesses include it only for getpid().
+if(WIN32)
+  include_directories("${CMAKE_CURRENT_SOURCE_DIR}/win_compat")
+endif()
+
+# Coverage-floor harness flags and the bash strip launcher are Unix/GCC only.
+if(NOT WIN32)
+  set(NESSO_TEST_NO_COVERAGE_OPTIONS -fno-profile-arcs -fno-test-coverage)
+  set(NESSO_STRIP_COVERAGE_LAUNCHER
+      "${CMAKE_CURRENT_SOURCE_DIR}/unit/nesso/strip-coverage-flags")
+else()
+  set(NESSO_TEST_NO_COVERAGE_OPTIONS)
+  set(NESSO_STRIP_COVERAGE_LAUNCHER "")
+endif()
+
 file(COPY "${CMAKE_CURRENT_SOURCE_DIR}/fixtures"
      DESTINATION "${CMAKE_CURRENT_BINARY_DIR}")
 set(NESSO_TEST_FIXTURES "${CMAKE_CURRENT_BINARY_DIR}/fixtures")

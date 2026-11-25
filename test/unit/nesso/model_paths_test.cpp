@@ -4,11 +4,14 @@
 #include <catch2/catch_all.hpp>
 #include <nesso/model_paths.hpp>
 
+#include "../env_set.hpp"
+
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <string>
 #include <string_view>
+#include <vector>
 
 namespace
 {
@@ -32,8 +35,12 @@ class EnvGuard
     EnvGuard()
     {
         Snapshot("NESSO_MODEL_DIR");
+#ifdef _WIN32
+        Snapshot("LOCALAPPDATA");
+#else
         Snapshot("XDG_DATA_HOME");
         Snapshot("HOME");
+#endif
     }
 
     EnvGuard(const EnvGuard &) = delete;
@@ -43,14 +50,22 @@ class EnvGuard
 
     ~EnvGuard()
     {
-        Restore("NESSO_MODEL_DIR");
-        Restore("XDG_DATA_HOME");
-        Restore("HOME");
+        for (const Slot &entry : slots_)
+        {
+            if (entry.present)
+            {
+                static_cast<void>(nesso::test::EnvSet(entry.key.c_str(), entry.value));
+            }
+            else
+            {
+                static_cast<void>(nesso::test::EnvClear(entry.key.c_str()));
+            }
+        }
     }
 
-    static void Set(const char *key, const std::string &value) { REQUIRE(setenv(key, value.c_str(), 1) == 0); }
+    static void Set(const char *key, const std::string &value) { REQUIRE(nesso::test::EnvSet(key, value)); }
 
-    static void clear(const char *key) { REQUIRE(unsetenv(key) == 0); }
+    static void clear(const char *key) { REQUIRE(nesso::test::EnvClear(key)); }
 
   private:
     struct Slot
@@ -60,45 +75,19 @@ class EnvGuard
         bool present = false;
     };
 
-    Slot nesso_model_dir_;
-    Slot xdg_data_home_;
-    Slot home_;
-
-    auto GetSlot(const char *key) -> Slot &
-    {
-        if (std::string_view(key) == "NESSO_MODEL_DIR")
-        {
-            return nesso_model_dir_;
-        }
-        if (std::string_view(key) == "XDG_DATA_HOME")
-        {
-            return xdg_data_home_;
-        }
-        return home_;
-    }
+    std::vector<Slot> slots_;
 
     void Snapshot(const char *key)
     {
-        Slot &entry = GetSlot(key);
+        Slot entry;
         entry.key = key;
+        // NOLINTNEXTLINE(concurrency-mt-unsafe)
         if (const char *value = std::getenv(key); value != nullptr)
         {
             entry.present = true;
             entry.value = value;
         }
-    }
-
-    void Restore(const char *key)
-    {
-        const Slot &entry = GetSlot(key);
-        if (entry.present)
-        {
-            setenv(key, entry.value.c_str(), 1);
-        }
-        else
-        {
-            unsetenv(key);
-        }
+        slots_.push_back(std::move(entry));
     }
 };
 
@@ -122,8 +111,12 @@ TEST_CASE("ResolveDefaultModelDir search order")
 {
     EnvGuard env;
     EnvGuard::clear("NESSO_MODEL_DIR");
+#ifdef _WIN32
+    EnvGuard::clear("LOCALAPPDATA");
+#else
     EnvGuard::clear("XDG_DATA_HOME");
     EnvGuard::clear("HOME");
+#endif
 
     const auto root = std::filesystem::temp_directory_path() / "nesso-model-paths-order";
     std::filesystem::remove_all(root);
@@ -152,6 +145,15 @@ TEST_CASE("ResolveDefaultModelDir search order")
         REQUIRE(nesso::ResolveDefaultModelDir({.cwd = cwd, .packaged_dir = packaged}) == cwd / "models");
     }
 
+#ifdef _WIN32
+    SECTION("LOCALAPPDATA/nesso when complete")
+    {
+        const auto local = root / "local";
+        SeedModelDir(local / "nesso");
+        EnvGuard::Set("LOCALAPPDATA", local.string());
+        REQUIRE(nesso::ResolveDefaultModelDir({.cwd = cwd, .packaged_dir = packaged}) == local / "nesso");
+    }
+#else
     SECTION("XDG_DATA_HOME/nesso when complete")
     {
         const auto xdg = root / "xdg";
@@ -168,6 +170,7 @@ TEST_CASE("ResolveDefaultModelDir search order")
         REQUIRE(nesso::ResolveDefaultModelDir({.cwd = cwd, .packaged_dir = packaged}) ==
                 home / ".local" / "share" / "nesso");
     }
+#endif
 
     std::filesystem::remove_all(root);
 }
