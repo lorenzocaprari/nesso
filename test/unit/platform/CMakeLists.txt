@@ -17,6 +17,9 @@ target_link_libraries(experimental_simd_probe_test
 
 set_tests_properties(file_test narrow_cast_test experimental_simd_probe_test
                      PROPERTIES LABELS unit)
+# Catch2 exits 4 when every test case skips, as the probe does where the
+# standard library has no <experimental/simd>.
+set_tests_properties(experimental_simd_probe_test PROPERTIES SKIP_RETURN_CODE 4)
 
 # fork + /proc/self/exe — POSIX only.
 if(NOT WIN32)
