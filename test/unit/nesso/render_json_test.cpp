@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include <catch2/catch_all.hpp>
-#include <cli/render_json.hpp>
+#include <nesso_cli/render_json.hpp>
 
 #include <clocale>
 #include <optional>

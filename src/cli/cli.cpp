@@ -3,11 +3,11 @@
 
 #include "nesso/nesso.hpp"
 #include "nesso/overview.hpp"
-#include <cli/check_stdout.hpp>
-#include <cli/cli.hpp>
-#include <cli/live_view.hpp>
-#include <cli/render_json.hpp>
-#include <cli/render_text.hpp>
+#include <nesso_cli/check_stdout.hpp>
+#include <nesso_cli/cli.hpp>
+#include <nesso_cli/live_view.hpp>
+#include <nesso_cli/render_json.hpp>
+#include <nesso_cli/render_text.hpp>
 
 #include <cstddef>
 #include <cstdio>

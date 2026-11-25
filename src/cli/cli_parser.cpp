@@ -4,15 +4,15 @@
 #include "embed/session_policy.hpp"
 #include "nesso/nesso.hpp"
 #include "nesso/overview.hpp"
-#include <cli/cli.hpp>
-#include <cli/cli_parser.hpp>
+#include <nesso_cli/cli.hpp>
+#include <nesso_cli/cli_parser.hpp>
 
 #include <expected>
 #include <filesystem>
 #include <memory>
 #include <parser/archive_source.hpp>
 
-#include <cli/thread_count.hpp>
+#include <nesso_cli/thread_count.hpp>
 
 #include <CLI/CLI.hpp>
 

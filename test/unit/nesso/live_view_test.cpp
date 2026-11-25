@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include <catch2/catch_all.hpp>
-#include <cli/live_view.hpp>
 #include <nesso/nesso.hpp>
+#include <nesso_cli/live_view.hpp>
 
 #include <algorithm>
 #include <array>

@@ -4,8 +4,8 @@
 #ifndef NESSO_CLI_PARSER_HPP
 #define NESSO_CLI_PARSER_HPP
 
-#include <cli/cli.hpp>
 #include <nesso/nesso.hpp>
+#include <nesso_cli/cli.hpp>
 
 #include <expected>
 #include <variant>

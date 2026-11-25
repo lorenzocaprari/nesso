@@ -1,8 +1,8 @@
 // Copyright (c) 2026 Lorenzo Caprari
 // SPDX-License-Identifier: Apache-2.0
 
-#include <cli/live_view.hpp>
-#include <cli/render_text.hpp>
+#include <nesso_cli/live_view.hpp>
+#include <nesso_cli/render_text.hpp>
 
 #include <nesso/nesso.hpp>
 
