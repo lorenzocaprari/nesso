@@ -218,6 +218,23 @@ class ThirdPartyNoticesTest(unittest.TestCase):
             self.assertEqual(unlinked.returncode, 1)
             self.assertIn("onnxruntime is not linked", unlinked.stderr)
 
+    def test_graph_only_lists_required_packages_without_a_binary(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            f = shipped_graph(pathlib.Path(temp))
+            graph = f.directory / "graph.json"
+            graph.write_text(json.dumps({"graph": {"nodes": f.nodes}}))
+            out = f.directory / "out"
+            result = subprocess.run([sys.executable, str(SCRIPT), "--graph-only", str(graph), str(out)],
+                                    capture_output=True, text=True, check=False)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            notices = (out / "THIRD_PARTY_NOTICES").read_text()
+            for present in ("cli11", "date", "eigen", "onnxruntime", "zlib"):
+                self.assertIn(f"- {present} ", notices)
+            for absent in ("libcurl", "bzip2", "cmake", "catch2"):
+                self.assertNotIn(f"- {absent} ", notices)
+            self.assertIn("- all-MiniLM-L6-v2", notices)
+            self.assertIn("--- ThirdPartyNotices.txt ---", notices)
+
     def test_rejects_bad_input(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             f = shipped_graph(pathlib.Path(temp))

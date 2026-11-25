@@ -18,6 +18,10 @@ Inclusion rule. Only code that ships in the binary is listed:
   library) are not listed.
 Every listed package must have a licenses/ folder.
 
+--graph-only (the Windows zip) takes no binary and skips the symbol test: it
+lists every host package reached through headers or libs, except the
+NO_HEADER_CODE entries and what only they require.
+
 The model, the vocabulary, the Unicode tables in src/embed/unicode_bert.inc,
 and ONNX Runtime's own third-party notices are not Conan license folders.
 Their texts live in packaging/notices/.
@@ -178,16 +182,35 @@ def shipped_nodes(nodes: dict, binary_symbols: set[str]) -> dict[str, dict]:
     return {key: host[key] for key in shipped}
 
 
-def conan_components(graph: dict, binary_symbols: set[str]) -> list[dict]:
+def graph_nodes(graph: object) -> dict:
     try:
-        nodes = graph["graph"]["nodes"]
+        return graph["graph"]["nodes"]
     except (KeyError, TypeError) as error:
         raise NoticeError("input is not a Conan graph (missing graph.nodes)") from error
-    if not any(str(node.get("ref", "")).startswith("onnxruntime/") and is_linked(node, binary_symbols)
-               for key, node in nodes.items() if key != "0"):
-        raise NoticeError("onnxruntime is not linked into the binary")
+
+
+def required_nodes(nodes: dict) -> list[dict]:
+    """Host packages that nesso reaches through headers or libs, linked or not."""
+    required: dict[str, dict] = {}
+    pending = ["0"]
+    while pending:
+        edges = nodes.get(pending.pop(), {}).get("dependencies") or {}
+        for dep, edge in sorted(edges.items()):
+            node = nodes.get(dep)
+            if dep in required or node is None or node.get("context") != "host" or node.get("test"):
+                continue
+            if not edge.get("direct") or not (edge.get("headers") or edge.get("libs")):
+                continue
+            if split_ref(str(node.get("ref", ""))) in NO_HEADER_CODE:
+                continue
+            required[dep] = node
+            pending.append(dep)
+    return list(required.values())
+
+
+def describe(nodes: list[dict]) -> list[dict]:
     components: dict[tuple[str, str], dict] = {}
-    for node in shipped_nodes(nodes, binary_symbols).values():
+    for node in nodes:
         name, version = split_ref(str(node.get("ref", "")))
         if (name, version) in components:
             continue
@@ -205,6 +228,25 @@ def conan_components(graph: dict, binary_symbols: set[str]) -> list[dict]:
             path = NOTICES / notice
             components[(name, version)]["texts"].append(("ThirdPartyNotices.txt", path.read_bytes()))
     return [components[key] for key in sorted(components)]
+
+
+def conan_components(graph: dict, binary_symbols: set[str]) -> list[dict]:
+    nodes = graph_nodes(graph)
+    if not any(str(node.get("ref", "")).startswith("onnxruntime/") and is_linked(node, binary_symbols)
+               for key, node in nodes.items() if key != "0"):
+        raise NoticeError("onnxruntime is not linked into the binary")
+    return describe(list(shipped_nodes(nodes, binary_symbols).values()))
+
+
+def graph_only_components(graph: dict) -> list[dict]:
+    """Windows zip: strong_symbols/is_linked do not read PE or *.lib files, so
+    every required package is listed. That can name more than the binary holds,
+    never less.
+    """
+    components = describe(required_nodes(graph_nodes(graph)))
+    if not any(component["name"] == "onnxruntime" for component in components):
+        raise NoticeError("onnxruntime is not in the Conan graph")
+    return components
 
 
 def extra_components() -> list[dict]:
@@ -253,30 +295,6 @@ def copyright_file(notices: str) -> str:
     return "\n".join(head) + "\n" + notices
 
 
-def bundled_components() -> list[dict]:
-    """Model, Unicode, and vendored ONNX Runtime notices without a Conan graph.
-
-    Used by the Windows zip path: PE/COFF symbol matching and *.lib archives are
-    not wired in strong_symbols/is_linked yet. Apache license text still goes in
-    copyright_file().
-    """
-    components = extra_components()
-    version = next(iter(ONNXRUNTIME_NOTICES))
-    notice = ONNXRUNTIME_NOTICES[version]
-    path = NOTICES / notice
-    if not path.is_file():
-        raise NoticeError(f"missing notice file packaging/notices/{notice}")
-    components.append(
-        {
-            "name": "onnxruntime",
-            "version": version,
-            "license": "MIT",
-            "texts": [("ThirdPartyNotices.txt", path.read_bytes())],
-        }
-    )
-    return components
-
-
 def write_notices(components: list[dict], out_dir: Path) -> None:
     notices = render(components)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -286,31 +304,27 @@ def write_notices(components: list[dict], out_dir: Path) -> None:
 
 
 def main(argv: list[str]) -> int:
-    if len(argv) == 3 and argv[1] == "--bundled-only":
-        out_dir = Path(argv[2])
-        try:
-            write_notices(bundled_components(), out_dir)
-        except (OSError, NoticeError) as error:
-            print(f"error: {error}", file=sys.stderr)
-            return 1
-        return 0
     if len(argv) != 4:
         print(
             "usage: third-party-notices CONAN_GRAPH_JSON BINARY OUT_DIR\n"
-            "       third-party-notices --bundled-only OUT_DIR",
+            "       third-party-notices --graph-only CONAN_GRAPH_JSON OUT_DIR",
             file=sys.stderr,
         )
         return 2
-    graph_path, binary, out_dir = Path(argv[1]), Path(argv[2]), Path(argv[3])
+    graph_only = argv[1] == "--graph-only"
+    graph_path, out_dir = Path(argv[2] if graph_only else argv[1]), Path(argv[3])
     try:
         graph = json.loads(graph_path.read_text(encoding="utf-8"))
-        if not isinstance(graph, dict) or not isinstance(graph.get("graph"), dict) or "nodes" not in graph["graph"]:
-            raise NoticeError("input is not a Conan graph (missing graph.nodes)")
-        binary_symbols = strong_symbols(binary, archive=False)
-        if not binary_symbols:
-            raise NoticeError(f"{binary} has no symbol table; run this before stripping")
-        components = conan_components(graph, binary_symbols) + extra_components()
-        write_notices(components, out_dir)
+        graph_nodes(graph)
+        if graph_only:
+            components = graph_only_components(graph)
+        else:
+            binary = Path(argv[2])
+            binary_symbols = strong_symbols(binary, archive=False)
+            if not binary_symbols:
+                raise NoticeError(f"{binary} has no symbol table; run this before stripping")
+            components = conan_components(graph, binary_symbols)
+        write_notices(components + extra_components(), out_dir)
     except (OSError, json.JSONDecodeError, NoticeError) as error:
         print(f"error: {error}", file=sys.stderr)
         return 1
