@@ -51,3 +51,4 @@ record.
 | 0015 | Index migration and the model header | accepted | 2026-11-23 |
 | 0016 | Embed each text alone so its vector does not depend on its batch | accepted | 2026-11-23 |
 | 0017 | Embed the log message without its header | accepted | 2026-11-23 |
+| 0019 | Native Windows support and MSI delivery | proposed | 2026-11-28 |
