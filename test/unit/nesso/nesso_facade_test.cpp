@@ -13,6 +13,7 @@
 #include <parser/line_header.hpp>
 #include <parser/template_mask.hpp>
 
+#include "../env_set.hpp"
 #include "test_embedder_identity.hpp"
 
 #include <algorithm>
@@ -454,42 +455,63 @@ TEST_CASE("grep, index, and search run the text stages", "[nesso][text]")
 
 TEST_CASE("a missing default model lists every directory it tried", "[nesso][text]")
 {
+#ifndef _WIN32
     if (nesso::ContainsModelFiles("/usr/share/nesso"))
     {
         SKIP("packaged model directory is installed");
     }
+#endif
 
     const TempDir dir{"nesso_facade_default_model"};
     const auto previous_dir = std::filesystem::current_path();
     const char *model_env = std::getenv("NESSO_MODEL_DIR");
-    const char *xdg_env = std::getenv("XDG_DATA_HOME");
+#ifdef _WIN32
+    const char *user_env = std::getenv("LOCALAPPDATA");
+#else
+    const char *user_env = std::getenv("XDG_DATA_HOME");
+#endif
     const std::optional<std::string> saved_model =
         model_env == nullptr ? std::nullopt : std::optional<std::string>{model_env};
-    const std::optional<std::string> saved_xdg =
-        xdg_env == nullptr ? std::nullopt : std::optional<std::string>{xdg_env};
+    const std::optional<std::string> saved_user =
+        user_env == nullptr ? std::nullopt : std::optional<std::string>{user_env};
     const auto restore = [&] -> void
     {
         std::filesystem::current_path(previous_dir);
         if (saved_model)
         {
-            setenv("NESSO_MODEL_DIR", saved_model->c_str(), 1);
+            static_cast<void>(nesso::test::EnvSet("NESSO_MODEL_DIR", *saved_model));
         }
         else
         {
-            unsetenv("NESSO_MODEL_DIR");
+            static_cast<void>(nesso::test::EnvClear("NESSO_MODEL_DIR"));
         }
-        if (saved_xdg)
+#ifdef _WIN32
+        if (saved_user)
         {
-            setenv("XDG_DATA_HOME", saved_xdg->c_str(), 1);
+            static_cast<void>(nesso::test::EnvSet("LOCALAPPDATA", *saved_user));
         }
         else
         {
-            unsetenv("XDG_DATA_HOME");
+            static_cast<void>(nesso::test::EnvClear("LOCALAPPDATA"));
         }
+#else
+        if (saved_user)
+        {
+            static_cast<void>(nesso::test::EnvSet("XDG_DATA_HOME", *saved_user));
+        }
+        else
+        {
+            static_cast<void>(nesso::test::EnvClear("XDG_DATA_HOME"));
+        }
+#endif
     };
 
-    unsetenv("NESSO_MODEL_DIR");
-    setenv("XDG_DATA_HOME", (dir.Path() / "xdg").c_str(), 1);
+    static_cast<void>(nesso::test::EnvClear("NESSO_MODEL_DIR"));
+#ifdef _WIN32
+    static_cast<void>(nesso::test::EnvSet("LOCALAPPDATA", (dir.Path() / "local").string()));
+#else
+    static_cast<void>(nesso::test::EnvSet("XDG_DATA_HOME", (dir.Path() / "xdg").string()));
+#endif
     std::filesystem::current_path(dir.Path());
     const nesso::Nesso app{nesso::Config{}};
     const auto log = std::filesystem::path(NESSO_TEST_FIXTURES) / "grep_sample.log";

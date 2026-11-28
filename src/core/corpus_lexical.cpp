@@ -21,11 +21,11 @@
 #include <istream>
 #include <optional>
 #include <ostream>
+#include <platform/terminal.hpp>
 #include <span>
 #include <string>
 #include <string_view>
 #include <system_error>
-#include <unistd.h>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
@@ -198,8 +198,11 @@ static auto CreateLexicalTemp(const std::filesystem::path &spill_prefix, std::st
     for (unsigned attempt = 0; attempt < 16; ++attempt)
     {
         const auto number = counter.fetch_add(1, std::memory_order_relaxed);
-        std::filesystem::path path = spill_prefix.string() + "." + std::string{suffix} + "." +
-                                     std::to_string(getpid()) + "." + std::to_string(number);
+        // Append on the native path so non-ACP characters on Windows do not
+        // throw from path::string().
+        std::filesystem::path path = spill_prefix;
+        path += "." + std::string{suffix} + "." + std::to_string(nesso::platform::ProcessId()) + "." +
+                std::to_string(number);
         errno = 0;
         std::ofstream output(path, std::ios::binary | std::ios::out | std::ios::noreplace);
         if (output)

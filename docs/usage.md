@@ -6,13 +6,13 @@ Matches go to stdout. Skipped lines, the index summary, and errors go to stderr.
 
 ## Model
 
-The `.deb`, the `.rpm`, and the container image ship the MiniLM files in `/usr/share/nesso`. A source build downloads them once:
+The `.deb`, the `.rpm`, and the container image ship the MiniLM files in `/usr/share/nesso`. The Windows zip ships them under `models/` next to `nesso.exe`. A source build downloads them once:
 
 ```bash
 ./scripts/fetch-model
 ```
 
-An omitted `--model-dir` uses `NESSO_MODEL_DIR`, then `./models` when both files are present, then `$XDG_DATA_HOME/nesso` (or `~/.local/share/nesso`), then `/usr/share/nesso`.
+An omitted `--model-dir` uses `NESSO_MODEL_DIR` when that variable is set (even if the directory is incomplete; there is no fallback). When it is unset or empty, lookup tries `./models` when both files are present, then the platform user-data directory (`$XDG_DATA_HOME/nesso` or `~/.local/share/nesso` on Linux; `%LOCALAPPDATA%\nesso` on Windows), then the packaged location (`/usr/share/nesso` on Linux; `models\` next to the executable on Windows).
 
 ## Commands
 
@@ -77,7 +77,7 @@ The view is on when stderr is a terminal, `TERM` is set and is not `dumb`, and `
 
 `--threads` and `NESSO_THREADS` set the same CPU budget `N`. An explicit `N` must be an integer from 1 to 1024; a value outside that range exits 2. Omit the option and leave the variable unset (or empty) for the default. `--threads` wins when both are set. `nesso search` uses that budget to score the corpus. One thread, and a small corpus, stay on the calling thread. The scores and the ranking match that single-thread scan. `grep` and `index` use the budget for embedding.
 
-For the int8 model on x86, a budget of 4 or less is one intra-op thread and `N` sessions, and the arena is not shrunk. A larger budget uses `I = min(4, N/2)` (integer division) and `S = max(1, N/I)`, and shrinks the arena after each run. `N=8` is 2 sessions of 4 intra-op threads. `N=16` is 4 sessions of 4. On aarch64 `I` is at least 2, including when `N` is 1, so a session does not use the intra-op 1 path. When the option and the variable are both unset, `N` is the number of usable physical cores: topology cores in the process affinity mask (`Cpus_allowed_list`), then reduced by a cgroup `cpu.max` quota when a parent sets one. A positive quota smaller than one period counts as one CPU. The default session count is also reduced while `S` times the per-session estimate exceeds half of `MemAvailable` (total RAM when that key is missing), further capped by remaining cgroup memory headroom when a finite v1 or v2 memory limit applies. An explicit `N` is not reduced; nesso warns on stderr and continues.
+For the int8 model on x86, a budget of 4 or less is one intra-op thread and `N` sessions, and the arena is not shrunk. A larger budget uses `I = min(4, N/2)` (integer division) and `S = max(1, N/I)`, and shrinks the arena after each run. `N=8` is 2 sessions of 4 intra-op threads. `N=16` is 4 sessions of 4. On aarch64 `I` is at least 2, including when `N` is 1, so a session does not use the intra-op 1 path. When the option and the variable are both unset, `N` is the number of usable physical cores: topology cores in the process affinity mask (`Cpus_allowed_list`), then reduced by a cgroup `cpu.max` quota when a parent sets one. A positive quota smaller than one period counts as one CPU. The default session count is also reduced while `S` times the per-session estimate exceeds half of `MemAvailable` (total RAM when that key is missing), further capped by remaining cgroup memory headroom when a finite v1 or v2 memory limit applies. An explicit `N` is not reduced; nesso warns on stderr and continues. On Windows, the core count does not apply the process affinity mask or a CPU quota, and the memory cap uses the smaller of available physical memory and available commit instead of `MemAvailable` or cgroup limits.
 
 For the fp32 model, `N` is the intra-op thread count of the one session. The default is the logical CPU count. On aarch64 that count is at least 2, including when `N` is 1.
 
@@ -119,4 +119,4 @@ For a short sosreport or tarball triage path, see [Quick start](quick-start.md).
 ## What this is not
 
 - Not a hosted service. Text stays on the machine. There is no server, no cloud call, and no API key.
-- Linux only.
+- Linux and Windows x86_64 (Windows ships as a zip; see the README Install section).

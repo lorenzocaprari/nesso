@@ -22,3 +22,8 @@ target_link_libraries(
   nesso_lib
   PUBLIC nesso_parser nesso_core nesso_embed
   PRIVATE nesso_options nlohmann_json::nlohmann_json)
+if(WIN32)
+  target_sources(nesso_lib PRIVATE model_paths_win32.cpp)
+else()
+  target_sources(nesso_lib PRIVATE model_paths_posix.cpp)
+endif()

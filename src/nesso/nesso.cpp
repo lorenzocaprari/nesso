@@ -26,6 +26,8 @@
 #include <parser/line_header.hpp>
 #include <parser/template_mask.hpp>
 
+#include <platform/file_stamp.hpp>
+
 #include <format>
 #include <memory>
 #include <optional>
@@ -33,7 +35,6 @@
 #include <span>
 #include <string>
 #include <string_view>
-#include <sys/stat.h>
 #include <utility>
 #include <vector>
 
@@ -65,47 +66,13 @@ static auto ModelLoadNote(const std::vector<std::filesystem::path> &tried) -> st
 
 namespace
 {
-struct FileStamp
-{
-    std::uintmax_t device = 0;
-    std::uintmax_t inode = 0;
-    std::intmax_t size = 0;
-    std::intmax_t modified_seconds = 0;
-    std::intmax_t modified_nanoseconds = 0;
-    std::intmax_t changed_seconds = 0;
-    std::intmax_t changed_nanoseconds = 0;
-
-    // A defaulted friend cannot be static. The type is already internal.
-    // NOLINTNEXTLINE(llvm-prefer-static-over-anonymous-namespace)
-    friend auto operator==(const FileStamp &, const FileStamp &) -> bool = default;
-};
-} // namespace
-
-static auto ReadFileStamp(const std::filesystem::path &path) -> std::optional<FileStamp>
-{
-    struct stat status{};
-    if (::stat(path.c_str(), &status) != 0)
-    {
-        return std::nullopt;
-    }
-    return FileStamp{.device = static_cast<std::uintmax_t>(status.st_dev),
-                     .inode = static_cast<std::uintmax_t>(status.st_ino),
-                     .size = static_cast<std::intmax_t>(status.st_size),
-                     .modified_seconds = static_cast<std::intmax_t>(status.st_mtim.tv_sec),
-                     .modified_nanoseconds = static_cast<std::intmax_t>(status.st_mtim.tv_nsec),
-                     .changed_seconds = static_cast<std::intmax_t>(status.st_ctim.tv_sec),
-                     .changed_nanoseconds = static_cast<std::intmax_t>(status.st_ctim.tv_nsec)};
-}
-
-namespace
-{
 class OnnxBoundEmbedder final : public nesso::embed::Embedder
 {
   public:
     struct ModelFileStamps
     {
-        std::optional<FileStamp> model;
-        std::optional<FileStamp> vocab;
+        std::optional<nesso::platform::FileStamp> model;
+        std::optional<nesso::platform::FileStamp> vocab;
     };
 
     OnnxBoundEmbedder(std::unique_ptr<nesso::embed::OnnxEmbedder> inner, const std::filesystem::path &model_dir,
@@ -130,15 +97,15 @@ class OnnxBoundEmbedder final : public nesso::embed::Embedder
         {
             return *identity_;
         }
-        if (!model_stamp_ || !vocab_stamp_ || ReadFileStamp(model_path_) != model_stamp_ ||
-            ReadFileStamp(vocab_path_) != vocab_stamp_)
+        if (!model_stamp_ || !vocab_stamp_ || nesso::platform::ReadFileStamp(model_path_) != model_stamp_ ||
+            nesso::platform::ReadFileStamp(vocab_path_) != vocab_stamp_)
         {
             return std::unexpected(nesso::embed::EmbedError::ModelLoadFailure);
         }
         const auto model_hash = nesso::core::Sha256File(model_path_);
         const auto vocab_hash = nesso::core::Sha256File(vocab_path_);
-        if (!model_hash || !vocab_hash || ReadFileStamp(model_path_) != model_stamp_ ||
-            ReadFileStamp(vocab_path_) != vocab_stamp_)
+        if (!model_hash || !vocab_hash || nesso::platform::ReadFileStamp(model_path_) != model_stamp_ ||
+            nesso::platform::ReadFileStamp(vocab_path_) != vocab_stamp_)
         {
             return std::unexpected(nesso::embed::EmbedError::ModelLoadFailure);
         }
@@ -166,8 +133,8 @@ class OnnxBoundEmbedder final : public nesso::embed::Embedder
     std::unique_ptr<nesso::embed::OnnxEmbedder> inner_;
     std::filesystem::path model_path_;
     std::filesystem::path vocab_path_;
-    std::optional<FileStamp> model_stamp_;
-    std::optional<FileStamp> vocab_stamp_;
+    std::optional<nesso::platform::FileStamp> model_stamp_;
+    std::optional<nesso::platform::FileStamp> vocab_stamp_;
     mutable std::optional<nesso::embed::EmbedderIdentity> identity_;
 };
 
@@ -202,8 +169,8 @@ auto Nesso::Embedder() const -> std::expected<const nesso::embed::Embedder *, Er
             tried = ModelDirCandidates();
             model_dir = ResolveDefaultModelDir();
         }
-        auto model_stamp = ReadFileStamp(model_dir / "model.onnx");
-        auto vocab_stamp = ReadFileStamp(model_dir / "vocab.txt");
+        auto model_stamp = nesso::platform::ReadFileStamp(model_dir / "model.onnx");
+        auto vocab_stamp = nesso::platform::ReadFileStamp(model_dir / "vocab.txt");
         auto created = nesso::embed::OnnxEmbedder::Create(model_dir, config_.threads);
         if (!created)
         {
@@ -224,8 +191,8 @@ auto Nesso::Embedder() const -> std::expected<const nesso::embed::Embedder *, Er
         {
             std::println(stderr, "{}", warning);
         }
-        if (ReadFileStamp(model_dir / "model.onnx") != model_stamp ||
-            ReadFileStamp(model_dir / "vocab.txt") != vocab_stamp)
+        if (nesso::platform::ReadFileStamp(model_dir / "model.onnx") != model_stamp ||
+            nesso::platform::ReadFileStamp(model_dir / "vocab.txt") != vocab_stamp)
         {
             model_stamp.reset();
             vocab_stamp.reset();

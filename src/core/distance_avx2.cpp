@@ -17,7 +17,7 @@ namespace
 // the AVX2 and FMA intrinsics legal, and it stops LTO from inlining these
 // bodies into a generic caller. HorizontalSum uses the intrinsics. FloatAddr
 // is always_inline into the kernels and carries the same target.
-#ifdef __GNUC__
+#if defined(__GNUC__) || defined(__clang__)
 #define NESSO_TARGET_AVX2_FMA __attribute__((target("avx2,fma")))
 #else
 #define NESSO_TARGET_AVX2_FMA

@@ -3,7 +3,7 @@
 
 #include "nesso/nesso.hpp"
 #include "nesso/overview.hpp"
-#include <cli/render_json.hpp>
+#include <nesso_cli/render_json.hpp>
 
 #include <cstddef>
 #include <memory>

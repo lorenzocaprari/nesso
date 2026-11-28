@@ -1,0 +1,199 @@
+name: Windows
+
+# Native x86_64 clang-cl build, unit tests, smoke, and zip packaging.
+# Not a Pipeline job and not in ci-gate. Runs on push to main, nightly,
+# workflow_dispatch, and pull requests that touch Windows build inputs.
+
+on:
+  push:
+    branches: ["main"]
+  schedule:
+    - cron: "17 4 * * *"
+  workflow_dispatch:
+  workflow_call:
+  pull_request:
+    branches: ["main"]
+    paths:
+      - ".github/workflows/windows.yml"
+      - "conan/profiles/clang-cl-26"
+      - "conan/profiles/windows-msvc-build"
+      - "conanfile.py"
+      - "conan.lock"
+      - "CMakeLists.txt"
+      - "src/**"
+      - "test/**"
+      - "packaging/scripts/package-zip"
+      - "scripts/fetch-model"
+
+concurrency:
+  group: windows-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  # Workspace-local home so Actions cache can restore packages across runs.
+  # Static CRT + MSVC 194 almost never hits Conan Center; the cache is the
+  # warm path (Linux uses nesso-build-env instead).
+  CONAN_HOME: ${{ github.workspace }}/.conan2
+
+permissions: {}
+
+jobs:
+  build-test-zip:
+    # VS 2022 (Visual Studio 17) with MSVC 14.4x (compiler.version=194).
+    runs-on: windows-2022
+    timeout-minutes: 180
+    permissions:
+      contents: read
+      actions: write
+    steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
+        with:
+          egress-policy: audit
+
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install Ninja
+        run: choco install ninja -y
+
+      # windows-2022 ships CMake 3.31; nesso requires 4.2+ (same Kitware 4.4.5
+      # pin as EL9). Avoid third-party setup actions: dependency-review only
+      # allows Apache-2.0-compatible SPDX ids.
+      - name: Set up CMake
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --proto '=https' --tlsv1.2 -fsSL -o /tmp/cmake.zip \
+            https://github.com/Kitware/CMake/releases/download/v4.4.5/cmake-4.4.5-windows-x86_64.zip
+          echo '326c826486d46a23cf9d5a1c9ee3a567d427bdd02c4a34071937a2a675cff004  /tmp/cmake.zip' | sha256sum -c -
+          mkdir -p "${RUNNER_TEMP}/cmake"
+          unzip -q /tmp/cmake.zip -d "${RUNNER_TEMP}/cmake"
+          cmake_bin="${RUNNER_TEMP}/cmake/cmake-4.4.5-windows-x86_64/bin"
+          echo "${cmake_bin}" >> "${GITHUB_PATH}"
+          "${cmake_bin}/cmake" --version | head -n 1 | grep -q '4.4.5'
+
+      - name: Set up LLVM (clang-cl)
+        uses: KyleMayes/install-llvm-action@98e68e10c96dffcb7bfed8b2144541a66b49aa02 # v2.0.8
+        with:
+          version: "20.1.8"
+
+      - name: Set up Python
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version: "3.12"
+
+      - name: Install Conan
+        run: pip install "conan>=2,<3"
+
+      - name: Restore Conan cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ env.CONAN_HOME }}
+          key: conan-win-x64-${{ hashFiles('conan.lock', 'conan/profiles/clang-cl-26', 'conan/profiles/windows-msvc-build', 'conanfile.py') }}-${{ github.sha }}
+          restore-keys: |
+            conan-win-x64-${{ hashFiles('conan.lock', 'conan/profiles/clang-cl-26', 'conan/profiles/windows-msvc-build', 'conanfile.py') }}-
+            conan-win-x64-
+
+      - name: Append conan source fallback
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "${CONAN_HOME}"
+          # Cache restore may already have global.conf; append the repo
+          # fallback once so reruns do not duplicate lines.
+          if ! grep -Fq 'nesso-vendor' "${CONAN_HOME}/global.conf" 2>/dev/null; then
+            cat conan/global.conf >> "${CONAN_HOME}/global.conf"
+          fi
+
+      # Host deps use msvc package ids (clang-cl-26); build profile pins VS 2022.
+      # --lockfile-partial keeps recipe revisions from conan.lock while allowing
+      # Windows-only build_requires (nasm) that the Linux lock never listed.
+      - name: Conan install
+        id: conan-install
+        shell: bash
+        run: |
+          set -euo pipefail
+          conan install . -pr:h ./conan/profiles/clang-cl-26 \
+            -pr:b ./conan/profiles/windows-msvc-build \
+            --lockfile=conan.lock --lockfile-partial --build=missing
+
+      # Graph for the zip's third-party notices. skip_binaries=False keeps the
+      # package folders, and so the license files, of header-only and unlinked
+      # packages.
+      - name: Conan graph
+        shell: bash
+        run: |
+          set -euo pipefail
+          conan install . -pr:h ./conan/profiles/clang-cl-26 \
+            -pr:b ./conan/profiles/windows-msvc-build \
+            --lockfile=conan.lock --lockfile-partial --build=missing \
+            -c tools.graph:skip_binaries=False --format=json > "${RUNNER_TEMP}/conan-graph.json"
+
+      # Save after install so a later compile/test failure still warms the
+      # package cache. Key includes the lock/profile hash; restore-keys reuse
+      # the latest matching graph across commits.
+      - name: Save Conan cache
+        if: success() && steps.conan-install.outcome == 'success'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ env.CONAN_HOME }}
+          key: conan-win-x64-${{ hashFiles('conan.lock', 'conan/profiles/clang-cl-26', 'conan/profiles/windows-msvc-build', 'conanfile.py') }}-${{ github.sha }}
+
+      - name: Conan build
+        shell: bash
+        run: |
+          set -euo pipefail
+          conan build . -pr:h ./conan/profiles/clang-cl-26 \
+            -pr:b ./conan/profiles/windows-msvc-build \
+            --lockfile=conan.lock --lockfile-partial --build=missing
+
+      - name: Fetch model
+        shell: bash
+        run: ./scripts/fetch-model
+
+      - name: Unit tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          ctest --test-dir build/Release --output-on-failure -j "$(nproc)" -L unit
+
+      - name: Smoke grep index search
+        shell: bash
+        run: |
+          set -euo pipefail
+          bin=build/Release/src/nesso.exe
+          printf '%s\n' 'Oct 11 app: No space left on device' > smoke.log
+          "${bin}" grep "the disk is full" smoke.log --model-dir models
+          "${bin}" index -o smoke.nesso smoke.log --model-dir models
+          "${bin}" search "the disk is full" -i smoke.nesso --model-dir models
+
+      - name: Read version
+        id: ver
+        shell: bash
+        run: |
+          set -euo pipefail
+          ver="$(python3 -c "import pathlib,re; t=pathlib.Path('conanfile.py').read_text(); print(re.search(r'version\s*=\s*\"([^\"]+)\"', t).group(1))")"
+          echo "ver=${ver}" >> "${GITHUB_OUTPUT}"
+
+      - name: Package zip
+        shell: bash
+        env:
+          NESSO_VER: ${{ steps.ver.outputs.ver }}
+        run: |
+          set -euo pipefail
+          mkdir -p dist doc
+          # Conan, model, and Unicode notices (+ LICENSE in copyright).
+          python3 packaging/scripts/third-party-notices --graph-only "${RUNNER_TEMP}/conan-graph.json" doc
+          python3 packaging/scripts/package-zip "${NESSO_VER}" \
+            build/Release/src/nesso.exe models dist --doc-dir doc
+
+      - name: Upload zip
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: nesso-windows-amd64-zip
+          path: dist/nesso_${{ steps.ver.outputs.ver }}_windows_amd64.zip
+          if-no-files-found: error

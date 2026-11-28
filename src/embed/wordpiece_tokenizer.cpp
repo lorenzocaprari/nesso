@@ -5,6 +5,10 @@
 #include <cstddef>
 #include <embed/wordpiece_tokenizer.hpp>
 
+// Used by unicode_bert.inc (included inside namespace nesso::embed; must not
+// #include <array> from the .inc or MSVC STL breaks).
+// NOLINTNEXTLINE(misc-include-cleaner)
+#include <array>
 #include <cstdint>
 #include <expected>
 #include <filesystem>

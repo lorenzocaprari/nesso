@@ -23,7 +23,7 @@ add_test(NAME trace_test COMMAND trace_test)
 target_link_libraries(trace_test PRIVATE nesso_options nesso_lib
                                          Catch2::Catch2WithMain)
 # The harness only redirects stderr. trace.cpp stays in the coverage floor.
-target_compile_options(trace_test PRIVATE -fno-profile-arcs -fno-test-coverage)
+target_compile_options(trace_test PRIVATE ${NESSO_TEST_NO_COVERAGE_OPTIONS})
 
 add_executable(nesso_flush_test nesso_flush_test.cpp)
 add_test(NAME nesso_flush_test COMMAND nesso_flush_test)
@@ -34,19 +34,19 @@ target_link_libraries(
 # gcc expands --coverage after -fno-profile-arcs, and _GLIBCXX_ASSERTIONS then
 # adds uncoverable branches that drop the branch floor. Strip those flags for
 # this harness only. nesso.cpp stays in the floor.
-set_property(
-  TARGET nesso_flush_test
-  PROPERTY CXX_COMPILER_LAUNCHER
-           "${CMAKE_CURRENT_SOURCE_DIR}/strip-coverage-flags")
+if(NESSO_STRIP_COVERAGE_LAUNCHER)
+  set_property(TARGET nesso_flush_test
+               PROPERTY CXX_COMPILER_LAUNCHER ${NESSO_STRIP_COVERAGE_LAUNCHER})
+endif()
 
 add_executable(render_json_test render_json_test.cpp)
 add_test(NAME render_json_test COMMAND render_json_test)
 target_link_libraries(render_json_test PRIVATE nesso_cli Catch2::Catch2WithMain)
 # Catch2 checks add uncoverable branches. render_json.cpp stays in the floor.
-set_property(
-  TARGET render_json_test
-  PROPERTY CXX_COMPILER_LAUNCHER
-           "${CMAKE_CURRENT_SOURCE_DIR}/strip-coverage-flags")
+if(NESSO_STRIP_COVERAGE_LAUNCHER)
+  set_property(TARGET render_json_test
+               PROPERTY CXX_COMPILER_LAUNCHER ${NESSO_STRIP_COVERAGE_LAUNCHER})
+endif()
 
 add_executable(render_text_test render_text_test.cpp)
 add_test(NAME render_text_test COMMAND render_text_test)
@@ -90,10 +90,10 @@ target_link_libraries(overview_render_test PRIVATE nesso_cli
                                                    Catch2::Catch2WithMain)
 # Catch2 checks add uncoverable branches. The library code these call stays in
 # the floor.
-set_property(
-  TARGET nesso_overview_test overview_render_test
-  PROPERTY CXX_COMPILER_LAUNCHER
-           "${CMAKE_CURRENT_SOURCE_DIR}/strip-coverage-flags")
+if(NESSO_STRIP_COVERAGE_LAUNCHER)
+  set_property(TARGET nesso_overview_test overview_render_test
+               PROPERTY CXX_COMPILER_LAUNCHER ${NESSO_STRIP_COVERAGE_LAUNCHER})
+endif()
 
 add_executable(scan_threads_test scan_threads_test.cpp)
 add_test(NAME scan_threads_test COMMAND scan_threads_test)

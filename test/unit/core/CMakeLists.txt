@@ -64,10 +64,10 @@ target_link_libraries(score_fusion_test PRIVATE nesso_options nesso_core
                                                 Catch2::Catch2WithMain)
 # Catch2 checks add uncoverable branches. The library this calls stays in the
 # floor.
-set_property(
-  TARGET dedup_test event_types_test
-  PROPERTY CXX_COMPILER_LAUNCHER
-           "${CMAKE_SOURCE_DIR}/test/unit/nesso/strip-coverage-flags")
+if(NESSO_STRIP_COVERAGE_LAUNCHER)
+  set_property(TARGET dedup_test event_types_test
+               PROPERTY CXX_COMPILER_LAUNCHER ${NESSO_STRIP_COVERAGE_LAUNCHER})
+endif()
 
 add_executable(embed_order_test embed_order_test.cpp)
 add_test(NAME embed_order_test COMMAND embed_order_test)

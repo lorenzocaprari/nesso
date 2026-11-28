@@ -239,15 +239,6 @@ void FillPair(std::mt19937 &rng, std::vector<float> &left, std::vector<float> &r
     }
 }
 
-[[nodiscard]] auto HostHasAvx2Fma() -> bool
-{
-#if defined(__x86_64__)
-    return __builtin_cpu_supports("avx2") && __builtin_cpu_supports("fma");
-#else
-    return false;
-#endif
-}
-
 void RequireKernelMatchesScalar(nesso::core::math::detail::DistanceKernel kernel, std::span<const float> left,
                                 std::span<const float> right)
 {
@@ -291,7 +282,7 @@ TEST_CASE("forced distance kernels match the scalar reference", "[DistanceMetric
     using nesso::core::math::detail::DistanceKernel;
     using nesso::core::math::detail::SelectDistanceKernel;
 
-    const bool avx2_fma = HostHasAvx2Fma();
+    const bool avx2_fma = nesso::core::math::detail::HostSupportsAvx2Fma();
     REQUIRE(SelectDistanceKernel("scalar", avx2_fma) == DistanceKernel::Scalar);
     if (avx2_fma)
     {
@@ -328,13 +319,13 @@ TEST_CASE("SelectedKernel matches automatic selection when NESSO_FORCE_KERNEL is
     }
 
     REQUIRE(nesso::core::math::detail::SelectedKernel() ==
-            nesso::core::math::detail::SelectDistanceKernel("", HostHasAvx2Fma()));
+            nesso::core::math::detail::SelectDistanceKernel("", nesso::core::math::detail::HostSupportsAvx2Fma()));
 }
 
 #if defined(__x86_64__)
 TEST_CASE("float kernels match the scalar oracle", "[DistanceMetrics][core][Unit][avx2]")
 {
-    if (!__builtin_cpu_supports("avx2") || !__builtin_cpu_supports("fma"))
+    if (!nesso::core::math::detail::HostSupportsAvx2Fma())
     {
         SKIP("CPU lacks AVX2+FMA");
     }

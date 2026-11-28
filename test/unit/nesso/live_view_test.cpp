@@ -2,19 +2,24 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include <catch2/catch_all.hpp>
-#include <cli/live_view.hpp>
 #include <nesso/nesso.hpp>
+#include <nesso_cli/live_view.hpp>
 
 #include <algorithm>
 #include <array>
 #include <chrono>
 #include <cstddef>
 #include <cstdio>
-#include <fcntl.h>
 #include <optional>
 #include <string>
 #include <string_view>
+#ifdef _WIN32
+#include <filesystem>
+#include <process.h>
+#else
+#include <fcntl.h>
 #include <unistd.h>
+#endif
 
 namespace
 {
@@ -22,11 +27,25 @@ namespace
 using TimePoint = std::chrono::steady_clock::time_point;
 using std::chrono::milliseconds;
 
+auto OpenCaptureFile() -> std::FILE *
+{
+#ifdef _WIN32
+    // std::tmpfile writes to the drive root here, which needs elevation. "D"
+    // deletes the file when it is closed.
+    static int counter = 0;
+    const auto path = std::filesystem::temp_directory_path() /
+                      ("nesso-live-view-" + std::to_string(_getpid()) + "-" + std::to_string(counter++));
+    return _wfopen(path.c_str(), L"w+bD");
+#else
+    return std::tmpfile();
+#endif
+}
+
 // Collects what the view writes, through a FILE* like stderr.
 class Capture
 {
   public:
-    Capture() : stream_(std::tmpfile()) { REQUIRE(stream_ != nullptr); }
+    Capture() : stream_(OpenCaptureFile()) { REQUIRE(stream_ != nullptr); }
     Capture(const Capture &) = delete;
     auto operator=(const Capture &) -> Capture & = delete;
     Capture(Capture &&) = delete;
@@ -228,11 +247,13 @@ TEST_CASE("the view is on only for an interactive terminal", "[live_view]")
 
 TEST_CASE("the width falls back to 80 columns off a terminal", "[live_view]")
 {
+#ifndef _WIN32
     std::array<int, 2> pipe_ends{};
     REQUIRE(::pipe2(pipe_ends.data(), O_CLOEXEC) == 0);
     CHECK(nesso::cli::TerminalWidth(pipe_ends[0]) == nesso::cli::FALLBACK_TERMINAL_WIDTH);
     static_cast<void>(::close(pipe_ends[0]));
     static_cast<void>(::close(pipe_ends[1]));
+#endif
     CHECK(nesso::cli::TerminalWidth(-1) == nesso::cli::FALLBACK_TERMINAL_WIDTH);
     CHECK(nesso::cli::MakeStderrLiveView() != nullptr);
 }

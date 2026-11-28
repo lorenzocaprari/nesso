@@ -304,7 +304,13 @@ static auto OpenArchiveReader(const std::filesystem::path &path)
     archive_read_support_format_tar(handle);
     archive_read_support_format_zip(handle);
     archive_read_support_format_empty(handle);
-    if (archive_read_open_filename(handle, path.c_str(), 10240) != ARCHIVE_OK)
+    // path::c_str() is wchar_t* on Windows; libarchive exposes a wide opener.
+#ifdef _WIN32
+    const int open_rc = archive_read_open_filename_w(handle, path.c_str(), 10240);
+#else
+    const int open_rc = archive_read_open_filename(handle, path.c_str(), 10240);
+#endif
+    if (open_rc != ARCHIVE_OK)
     {
         return std::unexpected(AfterOpenFailure(path));
     }

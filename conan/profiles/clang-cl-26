@@ -1,0 +1,42 @@
+# clang-cl builds nesso; host dependencies use MSVC package ids so Conan
+# Center binaries are reused (ABI-compatible with clang-cl). Missing host
+# packages build with cl.exe (not clang-cl). The Linux conan.lock pins
+# recipe revisions; Windows CI also passes --lockfile-partial so
+# Windows-only build_requires (e.g. nasm) can resolve.
+#
+# compiler.version=194 is VS 2022 17.10+ / MSVC 14.4x (vcvars_ver=14.4).
+# CI pins windows-2022 (VS 17); that image no longer ships the 14.3 toolset
+# that 193 / v143 select. Consumer runtime_version must be v144 too, or
+# clang-cl's conanvcvars still asks for 14.3.
+
+[settings]
+os=Windows
+arch=x86_64
+compiler=msvc
+compiler.version=194
+compiler.runtime=static
+compiler.runtime_type=Release
+compiler.cppstd=17
+build_type=Release
+
+# Consumer (nesso) only.
+&:compiler=clang
+&:compiler.version=20
+&:compiler.cppstd=26
+&:compiler.runtime=static
+&:compiler.runtime_type=Release
+&:compiler.runtime_version=v144
+
+[conf]
+tools.cmake.cmaketoolchain:generator=Ninja
+tools.microsoft.msbuild:vs_version=17
+# clang-cl only for nesso; dependency builds keep MSVC cl.exe.
+&:tools.build:compiler_executables={"c": "clang-cl", "cpp": "clang-cl"}
+user.nesso:cxxflags=["/O2", "/DNDEBUG", "/GS", "/guard:cf"]
+user.nesso:cflags=["/O2", "/DNDEBUG", "/GS", "/guard:cf"]
+user.nesso:sharedlinkflags=["/GUARD:CF"]
+user.nesso:exelinkflags=["/GUARD:CF"]
+
+[buildenv]
+&:CC=clang-cl
+&:CXX=clang-cl

@@ -4,15 +4,15 @@
 #include "embed/session_policy.hpp"
 #include "nesso/nesso.hpp"
 #include "nesso/overview.hpp"
-#include <cli/cli.hpp>
-#include <cli/cli_parser.hpp>
+#include <nesso_cli/cli.hpp>
+#include <nesso_cli/cli_parser.hpp>
 
 #include <expected>
 #include <filesystem>
 #include <memory>
 #include <parser/archive_source.hpp>
 
-#include <cli/thread_count.hpp>
+#include <nesso_cli/thread_count.hpp>
 
 #include <CLI/CLI.hpp>
 
@@ -68,7 +68,7 @@ static auto PositiveCount() -> CLI::Validator
 }
 
 static constexpr const char *MODEL_DIR_HELP = "Directory containing model.onnx and vocab.txt. "
-                                              "Default: NESSO_MODEL_DIR, ./models, XDG data, /usr/share/nesso";
+                                              "Default: NESSO_MODEL_DIR, ./models, user data, packaged models";
 
 static constexpr const char *TEXT_FILES_HELP = "Text files, directories, or tar/zip bundles. - reads stdin as lines";
 

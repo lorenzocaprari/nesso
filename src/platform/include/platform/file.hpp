@@ -45,7 +45,7 @@ class MappedFile
 [[nodiscard]] auto ReplaceFileAtomically(const std::filesystem::path &source, const std::filesystem::path &destination)
     -> std::expected<void, FileError>;
 
-/// Peak resident set size in bytes, from getrusage. Zero when the query fails.
+/// Peak resident set size in bytes. Zero when the query fails.
 [[nodiscard]] auto PeakResidentBytes() noexcept -> std::int64_t;
 
 } // namespace nesso::platform

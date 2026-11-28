@@ -2,10 +2,10 @@
 
 ## Prerequisites
 
-- **Compiler:** GCC 15+ with C++26 support. Ubuntu CI stays on GCC 15. Release binaries use GCC Toolset 16.2.1 (`conan/profiles/gcc-26-el9`, `conan/profiles/gcc-26-el9-armv8`).
+- **Compiler:** GCC 15+ with C++26 support. Ubuntu CI stays on GCC 15. Release binaries use GCC Toolset 16.2.1 (`conan/profiles/gcc-26-el9`, `conan/profiles/gcc-26-el9-armv8`). Windows release uses clang-cl (`conan/profiles/clang-cl-26`).
 - **Build system:** CMake 4.2+
 - **Package manager:** Conan 2.x
-- **OS:** Linux
+- **OS:** Linux (day-to-day and `.devcontainer` images). Native Windows builds use a Windows host or GitHub `windows-latest`, not the Ubuntu/EL9 build-env images.
 
 ## Build
 
@@ -33,6 +33,26 @@ ctest --test-dir build/Debug --output-on-failure -j "$(nproc)" -L unit
 ctest --test-dir build/Debug --output-on-failure -j "$(nproc)" -L integration
 ctest --test-dir build/Debug --output-on-failure -j "$(nproc)" -L functional
 ```
+
+### Windows Release (clang-cl)
+
+Requires Visual Studio Build Tools (MSVC STL/CRT), LLVM clang-cl, Ninja, Conan 2, and CMake 4.2+ (CI installs 4.4.5). Static CRT; no VCRedist. Example:
+
+```bash
+conan install . -pr:h ./conan/profiles/clang-cl-26 \
+  -pr:b ./conan/profiles/windows-msvc-build \
+  --lockfile=conan.lock --lockfile-partial --build=missing
+conan build . -pr:h ./conan/profiles/clang-cl-26 \
+  -pr:b ./conan/profiles/windows-msvc-build \
+  --lockfile=conan.lock --lockfile-partial --build=missing
+./scripts/fetch-model
+ctest --test-dir build/Release --output-on-failure -L unit
+python3 packaging/scripts/package-zip 0.3.1 build/Release/src/nesso.exe models dist
+```
+
+`clang-cl-26` compiles nesso with clang-cl and resolves host dependencies as MSVC (static CRT) so Conan Center binaries match. Missing packages build with `cl.exe`. `--lockfile-partial` keeps recipe revisions from `conan.lock` while allowing Windows-only build tools such as `nasm`. CI uses `windows-2022` (VS 17 / `compiler.version=194`, MSVC 14.4x) and caches `CONAN_HOME` (`.conan2` in the workspace) keyed on `conan.lock`, the Windows profiles, and `conanfile.py`, so later runs reuse the static-CRT package graph instead of rebuilding ORT/boost every time.
+
+Package and Release call `.github/workflows/windows.yml`. That lane is not part of Pipeline `ci-gate`.
 
 ### Local Release (no LTO)
 

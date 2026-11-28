@@ -92,6 +92,8 @@ TEST_CASE("atomic replace keeps the destination name", "[platform]")
     std::string text;
     REQUIRE(input >> text);
     REQUIRE(text == "v2");
+    // Windows cannot remove a file that is still open.
+    input.close();
     std::filesystem::remove_all(directory);
 }
 

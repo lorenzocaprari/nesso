@@ -1,0 +1,15 @@
+# Build profile for Windows tool_requires. Pins MSVC 14.4x (194) to match
+# the windows-2022 runner toolset; vs_version=17 keeps VS 2022.
+
+[settings]
+os=Windows
+arch=x86_64
+compiler=msvc
+compiler.version=194
+compiler.runtime=dynamic
+compiler.runtime_type=Release
+compiler.cppstd=17
+build_type=Release
+
+[conf]
+tools.microsoft.msbuild:vs_version=17
